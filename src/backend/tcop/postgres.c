@@ -1695,7 +1695,7 @@ exec_plan_message(const char *query_string,	/* source of the query */
 	MemoryContext oldcontext;
 	bool		save_log_statement_stats = log_statement_stats;
 	char		msec_str[32];
-	Oid		   *paramTypes;
+	Oid		   *paramTypes = NULL;
 	CachedPlanSource *psrc;
 
 	/* Statement name should not be empty */
@@ -4941,8 +4941,6 @@ PostgresMain(int argc, char *argv[], const char *username)
 
 	/* can't get here because the above loop never exits */
 	Assert(false);
-
-	return 1;					/* keep compiler quiet */
 }
 
 

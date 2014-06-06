@@ -77,7 +77,9 @@
 #include "pgxc/pgxc.h"
 
 
+#ifndef XCP
 static void drop_datanode_statements(Plan *plannode);
+#endif
 #endif
 
 
@@ -1126,6 +1128,7 @@ GetCachedPlan(CachedPlanSource *plansource, ParamListInfo boundParams,
  * Find and release all Datanode statements referenced by the plan node and subnodes
  */
 #ifdef PGXC
+#ifndef XCP
 static void
 drop_datanode_statements(Plan *plannode)
 {
@@ -1143,6 +1146,7 @@ drop_datanode_statements(Plan *plannode)
 	if (outerPlan(plannode))
 		drop_datanode_statements(outerPlan(plannode));
 }
+#endif
 #endif
 
 /*
