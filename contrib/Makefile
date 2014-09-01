@@ -44,6 +44,7 @@ SUBDIRS = \
 		pgrowlocks	\
 		pgstattuple	\
 		pgxc_clean	\
+		pgxc_ctl	\
 		seg		\
 		spi		\
 		tablefunc	\
