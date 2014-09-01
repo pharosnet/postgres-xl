@@ -6180,6 +6180,7 @@ make_windowagg(PlannerInfo *root, List *tlist,
 	WindowAgg  *node = makeNode(WindowAgg);
 	Plan	   *plan = &node->plan;
 	Path		windowagg_path; /* dummy for result of cost_windowagg */
+	QualCost	qual_cost;
 
 	node->winref = winref;
 	node->partNumCols = partNumCols;
