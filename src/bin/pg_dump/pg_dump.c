@@ -4,6 +4,11 @@
  *	  pg_dump is a utility for dumping out a postgres database
  *	  into a script file.
  *
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ *
+ * Portions Copyright (c) 2012-2014, TransLattice, Inc.
  * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
@@ -137,7 +142,9 @@ static int	column_inserts = 0;
 static int	no_security_labels = 0;
 static int	no_unlogged_table_data = 0;
 static int	serializable_deferrable = 0;
-
+#ifdef PGXC
+static int	include_nodes = 0;
+#endif
 
 static void help(const char *progname);
 static void setup_connection(Archive *AH, const char *dumpencoding,
@@ -190,6 +197,7 @@ static void dumpTable(Archive *fout, TableInfo *tbinfo);
 static void dumpTableSchema(Archive *fout, TableInfo *tbinfo);
 static void dumpAttrDef(Archive *fout, AttrDefInfo *adinfo);
 static void dumpSequence(Archive *fout, TableInfo *tbinfo);
+static void dumpSequenceData(Archive *fout, TableDataInfo *tdinfo);
 static void dumpIndex(Archive *fout, IndxInfo *indxinfo);
 static void dumpConstraint(Archive *fout, ConstraintInfo *coninfo);
 static void dumpTableConstraintComment(Archive *fout, ConstraintInfo *coninfo);
@@ -340,6 +348,9 @@ main(int argc, char **argv)
 		{"use-set-session-authorization", no_argument, &use_setsessauth, 1},
 		{"no-security-labels", no_argument, &no_security_labels, 1},
 		{"no-unlogged-table-data", no_argument, &no_unlogged_table_data, 1},
+#ifdef PGXC
+		{"include-nodes", no_argument, &include_nodes, 1},
+#endif
 
 		{NULL, 0, NULL, 0}
 	};
@@ -816,6 +827,9 @@ help(const char *progname)
 	printf(_("  --use-set-session-authorization\n"
 			 "                               use SET SESSION AUTHORIZATION commands instead of\n"
 			 "                               ALTER OWNER commands to set ownership\n"));
+#ifdef PGXC
+	printf(_("  --include-nodes              include TO NODE clause in the dumped CREATE TABLE commands\n"));
+#endif
 
 	printf(_("\nConnection options:\n"));
 	printf(_("  -h, --host=HOSTNAME      database server host or socket directory\n"));
@@ -1049,6 +1063,9 @@ selectDumpableNamespace(NamespaceInfo *nsinfo)
 		nsinfo->dobj.dump = simple_oid_list_member(&schema_include_oids,
 												   nsinfo->dobj.catId.oid);
 	else if (strncmp(nsinfo->dobj.name, "pg_", 3) == 0 ||
+#ifdef XCP
+			 strncmp(nsinfo->dobj.name, "storm_", 6) == 0 ||
+#endif
 			 strcmp(nsinfo->dobj.name, "information_schema") == 0)
 		nsinfo->dobj.dump = false;
 	else
@@ -1808,6 +1825,23 @@ dumpDatabase(Archive *fout)
 	selectSourceSchema(fout, "pg_catalog");
 
 	/* Get the database owner and parameters from pg_database */
+#ifdef XCP
+	if (fout->remoteVersion >= 90100)
+	{
+		appendPQExpBuffer(dbQry, "SELECT 1262::oid as tableoid, oid, "
+						  "(%s datdba) AS dba, "
+						  "pg_encoding_to_char(encoding) AS encoding, "
+						  "datcollate, datctype, datfrozenxid, "
+						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = dattablespace) AS tablespace, "
+					  "shobj_description(oid, 'pg_database') AS description "
+
+						  "FROM pg_database "
+						  "WHERE datname = ",
+						  username_subquery);
+		appendStringLiteralAH(dbQry, datname, fout);
+	}
+	else
+#endif
 	if (fout->remoteVersion >= 80400)
 	{
 		appendPQExpBuffer(dbQry, "SELECT tableoid, oid, "
@@ -3832,6 +3866,7 @@ getTables(Archive *fout, int *numTables)
 #ifdef PGXC
 	int			i_pgxclocatortype;
 	int			i_pgxcattnum;
+	int			i_pgxc_node_names;
 #endif
 	int			i_reltablespace;
 	int			i_reloptions;
@@ -3883,6 +3918,7 @@ getTables(Archive *fout, int *numTables)
 #ifdef PGXC
 						  "(SELECT pclocatortype from pgxc_class v where v.pcrelid = c.oid) AS pgxclocatortype,"
 						  "(SELECT pcattnum from pgxc_class v where v.pcrelid = c.oid) AS pgxcattnum,"
+						  "(SELECT string_agg(node_name,',') AS pgxc_node_names from pgxc_node n where n.oid in (select unnest(nodeoids) from pgxc_class v where v.pcrelid=c.oid) ) , "
 #endif
 						"array_to_string(c.reloptions, ', ') AS reloptions, "
 						  "array_to_string(array(SELECT 'toast.' || x FROM unnest(tc.reloptions) x), ', ') AS toast_reloptions "
@@ -3941,8 +3977,6 @@ getTables(Archive *fout, int *numTables)
 		/*
 		 * Left join to pick up dependency info linking sequences to their
 		 * owning column, if any (note this dependency is AUTO as of 8.2)
-		 * PGXC is based on PostgreSQL version 8.4, it is not necessary to
-		 * to modify the other SQL queries.
 		 */
 		appendPQExpBuffer(query,
 						  "SELECT c.tableoid, c.oid, c.relname, "
@@ -3957,7 +3991,7 @@ getTables(Archive *fout, int *numTables)
 						  "d.refobjid AS owning_tab, "
 						  "d.refobjsubid AS owning_col, "
 						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = c.reltablespace) AS reltablespace, "
-						  "array_to_string(c.reloptions, ', ') AS reloptions, "
+						"array_to_string(c.reloptions, ', ') AS reloptions, "
 						  "array_to_string(array(SELECT 'toast.' || x FROM unnest(tc.reloptions) x), ', ') AS toast_reloptions "
 						  "FROM pg_class c "
 						  "LEFT JOIN pg_depend d ON "
@@ -4204,6 +4238,7 @@ getTables(Archive *fout, int *numTables)
 #ifdef PGXC
 	i_pgxclocatortype = PQfnumber(res, "pgxclocatortype");
 	i_pgxcattnum = PQfnumber(res, "pgxcattnum");
+	i_pgxc_node_names = PQfnumber(res, "pgxc_node_names");
 #endif
 	i_reltablespace = PQfnumber(res, "reltablespace");
 	i_reloptions = PQfnumber(res, "reloptions");
@@ -4274,6 +4309,7 @@ getTables(Archive *fout, int *numTables)
 			tblinfo[i].pgxclocatortype = *(PQgetvalue(res, i, i_pgxclocatortype));
 			tblinfo[i].pgxcattnum = atoi(PQgetvalue(res, i, i_pgxcattnum));
 		}
+		tblinfo[i].pgxc_node_names = pg_strdup(PQgetvalue(res, i, i_pgxc_node_names));
 #endif
 		tblinfo[i].reltablespace = pg_strdup(PQgetvalue(res, i, i_reltablespace));
 		tblinfo[i].reloptions = pg_strdup(PQgetvalue(res, i, i_reloptions));
@@ -7174,7 +7210,10 @@ dumpDumpableObject(Archive *fout, DumpableObject *dobj)
 			dumpCast(fout, (CastInfo *) dobj);
 			break;
 		case DO_TABLE_DATA:
-			dumpTableData(fout, (TableDataInfo *) dobj);
+			if (((TableDataInfo *) dobj)->tdtable->relkind == RELKIND_SEQUENCE)
+				dumpSequenceData(fout, (TableDataInfo *) dobj);
+			else
+				dumpTableData(fout, (TableDataInfo *) dobj);
 			break;
 		case DO_DUMMY_TYPE:
 			/* table rowtypes and array types are never dumped separately */
@@ -12489,6 +12528,12 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 								  fmtId(tbinfo->attnames[hashkey - 1]));
 			}
 		}
+		if (include_nodes &&
+			tbinfo->pgxc_node_names != NULL &&
+			tbinfo->pgxc_node_names[0] != '\0')
+		{
+			appendPQExpBuffer(q, "\nTO NODE (%s)", tbinfo->pgxc_node_names);
+		}
 #endif
 		/* Dump generic options if any */
 		if (ftoptions && ftoptions[0])
@@ -13446,34 +13491,6 @@ dumpSequence(Archive *fout, TableInfo *tbinfo)
 
 	if (!schemaOnly)
 	{
-#ifdef PGXC
-		/*
-		 * In Postgres-XC it is possible that the current value of a
-		 * sequence cached on each node is different as several sessions
-		 * might use the sequence on different nodes. So what we do here
-		 * to get a consistent dump is to get the next value of sequence.
-		 * This insures that sequence value is unique as nextval is directly
-		 * obtained from GTM.
-		 */
-		resetPQExpBuffer(query);
-		appendPQExpBuffer(query, "SELECT pg_catalog.nextval(");
-		appendStringLiteralAH(query, fmtId(tbinfo->dobj.name), fout);
-		appendPQExpBuffer(query, ");\n");
-		res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
-
-		if (PQntuples(res) != 1)
-		{
-			write_msg(NULL, ngettext("query to get nextval of sequence \"%s\" "
-									 "returned %d rows (expected 1)\n",
-									 "query to get nextval of sequence \"%s\" "
-									 "returned %d rows (expected 1)\n",
-									 PQntuples(res)),
-					  tbinfo->dobj.name, PQntuples(res));
-			exit_nicely(1);
-		}
-
-		last = PQgetvalue(res, 0, 0);
-#endif
 		resetPQExpBuffer(query);
 		appendPQExpBuffer(query, "SELECT pg_catalog.setval(");
 		appendStringLiteralAH(query, fmtId(tbinfo->dobj.name), fout);
@@ -13496,6 +13513,88 @@ dumpSequence(Archive *fout, TableInfo *tbinfo)
 	destroyPQExpBuffer(query);
 	destroyPQExpBuffer(delqry);
 	destroyPQExpBuffer(labelq);
+}
+
+/*
+ * dumpSequenceData
+ *	  write the data of one user-defined sequence
+ */
+static void
+dumpSequenceData(Archive *fout, TableDataInfo *tdinfo)
+{
+	TableInfo  *tbinfo = tdinfo->tdtable;
+	PGresult   *res;
+	char	   *last;
+	bool		called;
+	PQExpBuffer query = createPQExpBuffer();
+
+	/* Make sure we are in proper schema */
+	selectSourceSchema(fout, tbinfo->dobj.namespace->dobj.name);
+
+	appendPQExpBuffer(query,
+					  "SELECT last_value, is_called FROM %s",
+					  fmtId(tbinfo->dobj.name));
+
+	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+
+	if (PQntuples(res) != 1)
+	{
+		write_msg(NULL, ngettext("query to get data of sequence \"%s\" returned %d row (expected 1)\n",
+								 "query to get data of sequence \"%s\" returned %d rows (expected 1)\n",
+								 PQntuples(res)),
+				  tbinfo->dobj.name, PQntuples(res));
+		exit_nicely(1);
+	}
+
+	last = PQgetvalue(res, 0, 0);
+	called = (strcmp(PQgetvalue(res, 0, 1), "t") == 0);
+#ifdef PGXC
+    /* 
+ 	 * In Postgres-XC it is possible that the current value of a
+	 * sequence cached on each node is different as several sessions
+	 * might use the sequence on different nodes. So what we do here
+	 * to get a consistent dump is to get the next value of sequence.
+	 * This insures that sequence value is unique as nextval is directly
+	 * obtained from GTM.
+	 */
+	resetPQExpBuffer(query);
+	appendPQExpBuffer(query, "SELECT pg_catalog.nextval(");
+	appendStringLiteralAH(query, fmtId(tbinfo->dobj.name), fout);
+	appendPQExpBuffer(query, ");\n");
+	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+
+	if (PQntuples(res) != 1)
+	{
+		write_msg(NULL, ngettext("query to get nextval of sequence \"%s\" "
+								 "returned %d rows (expected 1)\n",
+									"query to get nextval of sequence \"%s\" "
+								 "returned %d rows (expected 1)\n",
+								 PQntuples(res)),
+				tbinfo->dobj.name, PQntuples(res));
+		exit_nicely(1);
+	}
+
+	last = PQgetvalue(res, 0, 0);
+#endif
+	resetPQExpBuffer(query);
+	appendPQExpBuffer(query, "SELECT pg_catalog.setval(");
+	appendStringLiteralAH(query, fmtId(tbinfo->dobj.name), fout);
+	appendPQExpBuffer(query, ", %s, %s);\n",
+					  last, (called ? "true" : "false"));
+
+	ArchiveEntry(fout, nilCatalogId, createDumpId(),
+				 tbinfo->dobj.name,
+				 tbinfo->dobj.namespace->dobj.name,
+				 NULL,
+				 tbinfo->rolname,
+				 false, "SEQUENCE SET", SECTION_DATA,
+				 query->data, "", NULL,
+				 &(tbinfo->dobj.dumpId), 1,
+				 NULL, NULL);
+
+	PQclear(res);
+
+	destroyPQExpBuffer(query);
 }
 
 static void

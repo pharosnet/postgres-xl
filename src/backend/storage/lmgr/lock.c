@@ -3,6 +3,11 @@
  * lock.c
  *	  POSTGRES primary lock mechanism
  *
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ *
+ * Portions Copyright (c) 2012-2014, TransLattice, Inc.
  * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
@@ -1232,6 +1237,79 @@ LockCheckConflicts(LockMethod lockMethodTable,
 		PROCLOCK_PRINT("LockCheckConflicts: resolved", proclock);
 		return STATUS_OK;
 	}
+
+
+#ifdef XCP
+	/*
+	 * So the lock is conflicting with locks held by some other backend.
+	 * But the backend may belong to the same distributed session. We need to
+	 * detect such cases and either allow the lock or throw error, because
+	 * waiting for the lock most probably would cause deadlock.
+	 */
+	LWLockAcquire(ProcArrayLock, LW_SHARED);
+	if (proc->coordPid > 0)
+	{
+		/* Count locks held by this process and friends */
+		int myHolding[numLockModes + 1];
+		SHM_QUEUE  *procLocks;
+		PROCLOCK   *nextplock;
+
+		/* Initialize the counters */
+		for (i = 1; i <= numLockModes; i++)
+			myHolding[i] = 0;
+		otherLocks = 0;
+
+		/* Iterate over processes associated with the lock */
+		procLocks = &(lock->procLocks);
+
+		nextplock = (PROCLOCK *) SHMQueueNext(procLocks, procLocks,
+											  offsetof(PROCLOCK, lockLink));
+		while (nextplock)
+		{
+			PGPROC *nextproc = nextplock->tag.myProc;
+
+			if (nextproc->coordPid == proc->coordPid &&
+					nextproc->coordId == proc->coordId)
+			{
+				/*
+				 * The process belongs to same distributed session, count locks
+				 */
+				myLocks = nextplock->holdMask;
+				for (i = 1; i <= numLockModes; i++)
+					myHolding[i] += ((myLocks & LOCKBIT_ON(i)) ? 1 : 0);
+			}
+			/* get next proclock */
+			nextplock = (PROCLOCK *)
+					SHMQueueNext(procLocks, &nextplock->lockLink,
+								 offsetof(PROCLOCK, lockLink));
+		}
+
+		/* Summarize locks held by other processes */
+		for (i = 1; i <= numLockModes; i++)
+		{
+			if (lock->granted[i] > myHolding[i])
+				otherLocks |= LOCKBIT_ON(i);
+		}
+
+		/*
+		 * Yet another check.
+		 */
+		if (!(lockMethodTable->conflictTab[lockmode] & otherLocks))
+		{
+			LWLockRelease(ProcArrayLock);
+			/* no conflict. OK to get the lock */
+			PROCLOCK_PRINT("LockCheckConflicts: resolved as held by friend",
+						   proclock);
+#ifdef LOCK_DEBUG
+			elog(LOG, "Allow lock as held by the same distributed session [%u,%u] %s",
+				 lock->tag.locktag_field1, lock->tag.locktag_field2,
+				 lockMethodTable->lockModeNames[lockmode]);
+#endif
+			return STATUS_OK;
+		}
+	}
+	LWLockRelease(ProcArrayLock);
+#endif
 
 	PROCLOCK_PRINT("LockCheckConflicts: conflicting", proclock);
 	return STATUS_FOUND;

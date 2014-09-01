@@ -4,6 +4,11 @@
  *	  Routines to support inter-object dependencies.
  *
  *
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ *
+ * Portions Copyright (c) 2012-2014, TransLattice, Inc.
  * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  * Portions Copyright (c) 2010-2012 Postgres-XC Development Group
@@ -446,7 +451,7 @@ performRename(const ObjectAddress *object, const char *oldname, const char *newn
 						 NULL,      /* empty stack */
 						 targetObjects,
 						 NULL,
-						 depRel);
+						 &depRel);
 
 	/* Check Objects one by one to see if some of them have to be renamed on GTM */
 	for (i = 0; i < targetObjects->numrefs; i++)
@@ -1264,6 +1269,7 @@ doDeletion(const ObjectAddress *object, int flags)
 						break;
 					case RELKIND_RELATION:
 					case RELKIND_VIEW:
+#ifndef XCP
 						/*
 						 * Flag temporary objects in use in case a temporary table or view
 						 * is dropped by dependency. This check is particularly useful with
@@ -1273,6 +1279,7 @@ doDeletion(const ObjectAddress *object, int flags)
 						 */
 						if (IsTempTable(object->objectId))
 							ExecSetTempObjectIncluded();
+#endif
 						break;
 					default:
 						break;

@@ -234,7 +234,7 @@ static void processCASbits(int cas_bits, int location, const char *constrType,
 		DeallocateStmt PrepareStmt ExecuteStmt
 		DropOwnedStmt ReassignOwnedStmt
 		AlterTSConfigurationStmt AlterTSDictionaryStmt
-		BarrierStmt AlterNodeStmt CreateNodeStmt DropNodeStmt
+		BarrierStmt PauseStmt AlterNodeStmt CreateNodeStmt DropNodeStmt
 		CreateNodeGroupStmt DropNodeGroupStmt
 
 %type <node>	select_no_parens select_with_parens select_clause
@@ -367,6 +367,7 @@ static void processCASbits(int cas_bits, int location, const char *constrType,
 %type <defelt>	opt_binary opt_oids copy_delimiter
 
 %type <str>		DirectStmt CleanConnDbName CleanConnUserName
+%type <boolean>	OptCluster
 /* PGXC_END */
 %type <boolean> copy_from
 
@@ -558,7 +559,7 @@ static void processCASbits(int cas_bits, int location, const char *constrType,
 	OBJECT_P OF OFF OFFSET OIDS ON ONLY OPERATOR OPTION OPTIONS OR
 	ORDER OUT_P OUTER_P OVER OVERLAPS OVERLAY OWNED OWNER
 
-	PARSER PARTIAL PARTITION PASSING PASSWORD PLACING PLANS POSITION
+	PARSER PARTIAL PARTITION PASSING PASSWORD PAUSE PLACING PLANS POSITION
 /* PGXC_BEGIN */
 	PRECEDING PRECISION PREFERRED PRESERVE PREPARE PREPARED PRIMARY
 /* PGXC_END */
@@ -582,7 +583,7 @@ static void processCASbits(int cas_bits, int location, const char *constrType,
 	TRUNCATE TRUSTED TYPE_P TYPES_P
 
 	UNBOUNDED UNCOMMITTED UNENCRYPTED UNION UNIQUE UNKNOWN UNLISTEN UNLOGGED
-	UNTIL UPDATE USER USING
+	UNPAUSE UNTIL UPDATE USER USING
 
 	VACUUM VALID VALIDATE VALIDATOR VALUE_P VALUES VARCHAR VARIADIC VARYING
 	VERBOSE VERSION_P VIEW VOLATILE
@@ -793,6 +794,7 @@ stmt :
 			| LoadStmt
 			| LockStmt
 			| NotifyStmt
+			| PauseStmt
 			| PrepareStmt
 			| ReassignOwnedStmt
 			| ReindexStmt
@@ -8428,6 +8430,20 @@ opt_name_list:
 
 
 /* PGXC_BEGIN */
+PauseStmt: PAUSE CLUSTER
+				{
+					PauseClusterStmt *n = makeNode(PauseClusterStmt);
+					n->pause = true;
+					$$ = (Node *)n;
+				}
+			| UNPAUSE CLUSTER
+				{
+					PauseClusterStmt *n = makeNode(PauseClusterStmt);
+					n->pause = false;
+					$$ = (Node *)n;
+				}
+			;
+
 BarrierStmt: CREATE BARRIER opt_barrier_id
 				{
 					BarrierStmt *n = makeNode(BarrierStmt);
@@ -8489,7 +8505,7 @@ pgxcnode_list:
 /*****************************************************************************
  *
  *		QUERY:
- *		ALTER NODE nodename WITH
+ *		ALTER [CLUSTER] NODE nodename WITH
  *				(
  *					[ TYPE = ('datanode' | 'coordinator'), ]
  *					[ HOST = 'hostname', ]
@@ -8498,13 +8514,17 @@ pgxcnode_list:
  *					[ PREFERRED [ = boolean ], ]
  *				)
  *
+ *             If CLUSTER is mentioned, the command is executed on all nodes.
+ *             PS: We need to add this option on all other pertinent NODE ddl
+ *             operations too!)
  *****************************************************************************/
 
-AlterNodeStmt: ALTER NODE pgxcnode_name OptWith
+AlterNodeStmt: ALTER OptCluster NODE pgxcnode_name OptWith
 				{
 					AlterNodeStmt *n = makeNode(AlterNodeStmt);
-					n->node_name = $3;
-					n->options = $4;
+					n->cluster = $2;
+					n->node_name = $4;
+					n->options = $5;
 					$$ = (Node *)n;
 				}
 		;
@@ -8553,6 +8573,10 @@ DropNodeGroupStmt: DROP NODE GROUP_P pgxcgroup_name
 					n->group_name = $4;
 					$$ = (Node *)n;
 				}
+		;
+
+OptCluster:    CLUSTER                     	{ $$ = TRUE; }
+		  | /* EMPTY */        				{ $$ = FALSE; }
 		;
 
 /* PGXC_END */
@@ -12793,6 +12817,9 @@ unreserved_keyword:
 			| PARTITION
 			| PASSING
 			| PASSWORD
+/* PGXC_BEGIN */
+			| PAUSE
+/* PGXC_END */
 			| PLANS
 			| PRECEDING
 /* PGXC_BEGIN */
@@ -12874,6 +12901,9 @@ unreserved_keyword:
 			| UNKNOWN
 			| UNLISTEN
 			| UNLOGGED
+/* PGXC_BEGIN */
+			| UNPAUSE
+/* PGXC_END */
 			| UNTIL
 			| UPDATE
 			| VACUUM

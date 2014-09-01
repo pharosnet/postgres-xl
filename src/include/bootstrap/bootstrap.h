@@ -28,8 +28,7 @@ typedef enum
 	WalReceiverProcess,
 #ifdef PGXC
 	PoolerProcess,
-#endif
-
+#endif   
 	NUM_AUXPROCTYPES			/* Must be last! */
 } AuxProcType;
 

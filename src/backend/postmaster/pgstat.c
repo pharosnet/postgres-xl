@@ -11,6 +11,11 @@
  *			- Add a pgstat config column to pg_database, so this
  *			  entire thing can be enabled/disabled on a per db basis.
  *
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ *
+ * Portions Copyright (c) 2012-2014, TransLattice, Inc.
  *	Copyright (c) 2001-2012, PostgreSQL Global Development Group
  *
  *	src/backend/postmaster/pgstat.c
@@ -1802,6 +1807,72 @@ pgstat_update_heap_dead_tuples(Relation rel, int delta)
 	if (pgstat_info != NULL)
 		pgstat_info->t_counts.t_delta_dead_tuples -= delta;
 }
+
+
+#ifdef XCP
+/*
+ * pgstat_count_remote_insert - count insertion of n tuples on remote Datanodes
+ */
+void
+pgstat_count_remote_insert(Relation rel, int n)
+{
+	/* Should be only applied to distributed table */
+	Assert(rel->rd_locator_info);
+
+	/* For now use the same counters as for heap insert */
+	pgstat_count_heap_insert(rel, n);
+}
+
+
+/*
+ * pgstat_count_remote_update - count update of n tuples on remote Datanodes
+ */
+void
+pgstat_count_remote_update(Relation rel, int n)
+{
+	PgStat_TableStatus *pgstat_info = rel->pgstat_info;
+
+	/* Should be only applied to distributed table */
+	Assert(rel->rd_locator_info);
+
+	if (pgstat_info != NULL)
+	{
+		/* We have to log the effect at the proper transactional level */
+		int			nest_level = GetCurrentTransactionNestLevel();
+
+		if (pgstat_info->trans == NULL ||
+			pgstat_info->trans->nest_level != nest_level)
+			add_tabstat_xact_level(pgstat_info, nest_level);
+
+		pgstat_info->trans->tuples_updated += n;
+	}
+}
+
+
+/*
+ * pgstat_count_remote_delete - count delete of n tuples on remote Datanodes
+ */
+void
+pgstat_count_remote_delete(Relation rel, int n)
+{
+	PgStat_TableStatus *pgstat_info = rel->pgstat_info;
+
+	/* Should be only applied to distributed table */
+	Assert(rel->rd_locator_info);
+
+	if (pgstat_info != NULL)
+	{
+		/* We have to log the effect at the proper transactional level */
+		int			nest_level = GetCurrentTransactionNestLevel();
+
+		if (pgstat_info->trans == NULL ||
+			pgstat_info->trans->nest_level != nest_level)
+			add_tabstat_xact_level(pgstat_info, nest_level);
+
+		pgstat_info->trans->tuples_deleted += n;
+	}
+}
+#endif
 
 
 /* ----------

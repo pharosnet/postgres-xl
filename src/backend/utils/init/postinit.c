@@ -3,6 +3,11 @@
  * postinit.c
  *	  postgres initialization utilities
  *
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ *
+ * Portions Copyright (c) 2012-2014, TransLattice, Inc.
  * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
@@ -34,6 +39,9 @@
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
 #include "pgstat.h"
+#ifdef XCP
+#include "pgxc/pgxc.h"
+#endif
 #include "postmaster/autovacuum.h"
 #include "postmaster/postmaster.h"
 #include "replication/walsender.h"
@@ -305,6 +313,9 @@ CheckMyDatabase(const char *name, bool am_superuser)
 		 * just document that the connection limit is approximate.
 		 */
 		if (dbform->datconnlimit >= 0 &&
+#ifdef XCP
+			IS_PGXC_COORDINATOR &&
+#endif
 			!am_superuser &&
 			CountDBBackends(MyDatabaseId) > dbform->datconnlimit)
 			ereport(FATAL,

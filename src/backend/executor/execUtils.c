@@ -3,6 +3,11 @@
  * execUtils.c
  *	  miscellaneous executor utility routines
  *
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ *
+ * Portions Copyright (c) 2012-2014, TransLattice, Inc.
  * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
@@ -117,8 +122,10 @@ CreateExecutorState(void)
 	estate->es_result_relations = NULL;
 	estate->es_num_result_relations = 0;
 	estate->es_result_relation_info = NULL;
-#ifdef PGXC	
+#ifdef PGXC
+#ifndef XCP
 	estate->es_result_remoterel = NULL;
+#endif
 #endif
 
 	estate->es_trig_target_relations = NIL;

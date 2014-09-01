@@ -4,6 +4,11 @@
  *	   routines for accessing the system catalogs
  *
  *
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ *
+ * Portions Copyright (c) 2012-2014, TransLattice, Inc.
  * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
@@ -338,6 +343,16 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 			 */
 			if (info->indpred == NIL)
 			{
+#ifdef XCP
+				/*
+				 * If parent relation is distributed the local storage manager
+				 * does not have actual information about index size.
+				 * We have to get relation statistics instead.
+				 */
+				if (IS_PGXC_COORDINATOR && relation->rd_locator_info != NULL)
+					info->pages = indexRelation->rd_rel->relpages;
+				else
+#endif
 				info->pages = RelationGetNumberOfBlocks(indexRelation);
 				info->tuples = rel->tuples;
 			}
@@ -396,7 +411,8 @@ estimate_rel_size(Relation rel, int32 *attr_widths,
 	{
 		case RELKIND_RELATION:
 #ifdef PGXC
-			/* 
+#ifndef XCP
+			/*
 			 * This is a remote table... we have no idea how many pages/rows
 			 * we may get from a scan of this table. However, we should set the
 			 * costs in such a manner that cheapest paths should pick up the
@@ -419,8 +435,21 @@ estimate_rel_size(Relation rel, int32 *attr_widths,
 				break;
 			}
 #endif
+#endif
 		case RELKIND_INDEX:
 		case RELKIND_TOASTVALUE:
+#ifdef XCP
+			if (IS_PGXC_COORDINATOR && rel->rd_locator_info != NULL)
+			{
+				/*
+				 * Remote table does not store rows locally, so storage manager
+				 * does not know how many pages are there, we rely on relation
+				 * statistics.
+				 */
+				curpages = rel->rd_rel->relpages;
+			}
+			else
+#endif
 			/* it has storage, ok to call the smgr */
 			curpages = RelationGetNumberOfBlocks(rel);
 

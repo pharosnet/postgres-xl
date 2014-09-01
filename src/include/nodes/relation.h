@@ -4,6 +4,11 @@
  *	  Definitions for planner's internal data structures.
  *
  *
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ *
+ * Portions Copyright (c) 2012-2014, TransLattice, Inc.
  * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
@@ -18,6 +23,25 @@
 #include "nodes/params.h"
 #include "nodes/parsenodes.h"
 #include "storage/block.h"
+
+
+#ifdef XCP
+/*
+ * Distribution
+ *
+ * Distribution is an attribute of distributed plan node. It describes on which
+ * node execution results can be found.
+ */
+typedef struct Distribution
+{
+	NodeTag		type;
+
+	char		distributionType;
+	Node	   *distributionExpr;
+	Bitmapset  *nodes;
+	Bitmapset  *restrictNodes;
+} Distribution;
+#endif
 
 
 /*
@@ -229,6 +253,7 @@ typedef struct PlannerInfo
 	bool		hasRecursion;	/* true if planning a recursive WITH item */
 
 #ifdef PGXC
+#ifndef XCP
 	/* This field is used only when RemoteScan nodes are involved */
 	int         rs_alias_index; /* used to build the alias reference */
 
@@ -242,6 +267,7 @@ typedef struct PlannerInfo
 	 */
 	List	   *xc_rowMarks;		/* list of PlanRowMarks of type ROW_MARK_EXCLUSIVE & ROW_MARK_SHARE */
 #endif
+#endif
 
 	/* These fields are used only when hasRecursion is true: */
 	int			wt_param_id;	/* PARAM_EXEC ID for the work table */
@@ -250,9 +276,20 @@ typedef struct PlannerInfo
 	/* These fields are workspace for createplan.c */
 	Relids		curOuterRels;	/* outer rels above current node */
 	List	   *curOuterParams; /* not-yet-assigned NestLoopParams */
+#ifdef XCP
+	Bitmapset  *curOuterRestrict; 	/* Datanodes where outer plan is executed */
+#endif
 
 	/* optional private data for join_search_hook, e.g., GEQO */
 	void	   *join_search_private;
+#ifdef XCP
+	/*
+	 * This is NULL for a SELECT query (NULL distribution means "Coordinator"
+	 * everywhere in the planner. For INSERT, UPDATE or DELETE it should match
+	 * to the target table distribution.
+	 */
+	Distribution *distribution; /* Query result distribution */
+#endif
 } PlannerInfo;
 
 
@@ -710,6 +747,9 @@ typedef struct Path
 
 	List	   *pathkeys;		/* sort ordering of path's output */
 	/* pathkeys is a List of PathKey nodes; see above */
+#ifdef XCP
+	Distribution *distribution;
+#endif
 } Path;
 
 /* Macro for extracting a path's parameterization relids; beware double eval */
@@ -947,6 +987,14 @@ typedef struct UniquePath
 	List	   *uniq_exprs;		/* expressions to be made unique */
 } UniquePath;
 
+#ifdef XCP
+typedef struct RemoteSubPath
+{
+	Path		path;
+	Path	   *subpath;
+} RemoteSubPath;
+#endif
+
 /*
  * All join-type paths share these fields.
  */
@@ -1027,45 +1075,6 @@ typedef struct HashPath
 	List	   *path_hashclauses;		/* join clauses used for hashing */
 	int			num_batches;	/* number of batches expected */
 } HashPath;
-
-#ifdef PGXC
-/*
- * A remotequery path represents the queries to be sent to the datanode/s
- *
- * When RemoteQuery plan is created from RemoteQueryPath, we build the query to
- * be executed at the datanode. For building such a query, it's important to get
- * the RHS relation and LHS relation of the JOIN clause. So, instead of storing
- * the outer and inner paths, we find out the RHS and LHS paths and store those
- * here.
- */
-
-typedef struct RemoteQueryPath
-{
-	Path			path;
-	ExecNodes		*rqpath_en;		/* List of datanodes to execute the query on */
-	/*
-	 * If the path represents a JOIN rel, leftpath and rightpath represent the
-	 * RemoteQuery paths for left (outer) and right (inner) side of the JOIN
-	 * resp. jointype and join_restrictlist pertains to such JOINs. 
-	 */
-	struct RemoteQueryPath	*leftpath;
-	struct RemoteQueryPath	*rightpath;
-	JoinType				jointype;
-	List					*join_restrictlist;	/* restrict list corresponding to JOINs,
-												 * only considered if rest of
-												 * the JOIN information is
-												 * available
-												 */
-	bool					rqhas_unshippable_qual; /* TRUE if there is at least
-													 * one qual which can not be
-													 * shipped to the datanodes
-													 */
-	bool					rqhas_temp_rel;			/* TRUE if one of the base relations
-													 * involved in this path is a temporary
-													 * table.
-													 */
-} RemoteQueryPath;
-#endif /* PGXC */
 
 /*
  * Restriction clause info.

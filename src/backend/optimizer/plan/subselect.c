@@ -3,6 +3,11 @@
  * subselect.c
  *	  Planning routines for subselects and parameters.
  *
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ *
+ * Portions Copyright (c) 2012-2014, TransLattice, Inc.
  * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
@@ -496,6 +501,22 @@ make_subplan(PlannerInfo *root, Query *orig_subquery, SubLinkType subLinkType,
 							root,
 							false, tuple_fraction,
 							&subroot);
+#ifdef XCP
+	if (subroot->distribution)
+	{
+		plan = (Plan *) make_remotesubplan(subroot,
+										   plan,
+										   NULL,
+										   subroot->distribution,
+										   subroot->query_pathkeys);
+		/*
+		 * SS_finalize_plan has already been run on the subplan,
+		 * so we have to copy parameter info to wrapper plan node.
+		 */
+		plan->extParam = bms_copy(plan->lefttree->extParam);
+		plan->allParam = bms_copy(plan->lefttree->allParam);
+	}
+#endif
 
 	/* And convert to SubPlan or InitPlan format. */
 	result = build_subplan(root, plan, subroot,
@@ -1079,6 +1100,22 @@ SS_process_ctes(PlannerInfo *root)
 								root,
 								cte->cterecursive, 0.0,
 								&subroot);
+#ifdef XCP
+		if (subroot->distribution)
+		{
+			plan = (Plan *) make_remotesubplan(subroot,
+											   plan,
+											   NULL,
+											   subroot->distribution,
+											   subroot->query_pathkeys);
+			/*
+			 * SS_finalize_plan has already been run on the subplan,
+			 * so we have to copy parameter info to wrapper plan node.
+			 */
+			plan->extParam = bms_copy(plan->lefttree->extParam);
+			plan->allParam = bms_copy(plan->lefttree->allParam);
+		}
+#endif
 
 		/*
 		 * Make a SubPlan node for it.	This is just enough unlike
@@ -2239,6 +2276,11 @@ finalize_plan(PlannerInfo *root, Plan *plan, Bitmapset *valid_params,
 		case T_RemoteQuery:
 			//PGXCTODO
 			context.paramids = bms_add_members(context.paramids, scan_params);
+			break;
+#endif
+
+#ifdef XCP
+		case T_RemoteSubplan:
 			break;
 #endif
 

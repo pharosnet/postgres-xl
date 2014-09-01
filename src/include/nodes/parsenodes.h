@@ -10,6 +10,11 @@
  * the location.
  *
  *
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ *
+ * Portions Copyright (c) 2012-2014, TransLattice, Inc.
  * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  * Portions Copyright (c) 2010-2012 Postgres-XC Development Group
@@ -156,12 +161,16 @@ typedef struct Query
 	List	   *constraintDeps; /* a list of pg_constraint OIDs that the query
 								 * depends on to be semantically valid */
 #ifdef PGXC
+#ifndef XCP
 	/* need this info for PGXC Planner, may be temporary */
 	char		*sql_statement;		/* original query */
+	bool		qry_finalise_aggs;	/* used for queries intended for Datanodes,
+						 * should Datanode finalise the aggregates? */
 	bool		is_local;		/* enforce query execution on local node
 						 * this is used by EXECUTE DIRECT especially. */
 	bool		is_ins_child_sel_parent;/* true if the query is such an INSERT SELECT that
 						 * inserts into a child by selecting from its parent */
+#endif
 #endif
 } Query;
 
@@ -713,7 +722,9 @@ typedef struct RangeTblEntry
 	 */
 
 #ifdef PGXC
+#ifndef XCP
 	char		*relname;
+#endif
 #endif
 
 	/*
@@ -1253,7 +1264,7 @@ typedef enum AlterTableType
 	AT_AddNodeList,				/* ADD NODE nodelist */
 	AT_DeleteNodeList,			/* DELETE NODE nodelist */
 #endif
-	AT_GenericOptions			/* OPTIONS (...) */
+	AT_GenericOptions,			/* OPTIONS (...) */
 } AlterTableType;
 
 typedef struct AlterTableCmd	/* one subcommand of an ALTER TABLE */
@@ -2420,6 +2431,16 @@ typedef struct VacuumStmt
 
 #ifdef PGXC
 /*
+ * ---------------------------
+ *  	Pause Cluster Statement
+ */
+typedef struct PauseClusterStmt
+{
+	NodeTag		type;
+	bool		pause;			/* will be false to unpause */
+} PauseClusterStmt;
+
+/*
  * ----------------------
  *      Barrier Statement
  */
@@ -2448,6 +2469,7 @@ typedef struct AlterNodeStmt
 {
 	NodeTag		type;
 	char		*node_name;
+	bool		cluster;
 	List		*options;
 } AlterNodeStmt;
 

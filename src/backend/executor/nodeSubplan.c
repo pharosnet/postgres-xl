@@ -3,6 +3,11 @@
  * nodeSubplan.c
  *	  routines to support subselects
  *
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ *
+ * Portions Copyright (c) 2012-2014, TransLattice, Inc.
  * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
@@ -659,6 +664,11 @@ ExecInitSubPlan(SubPlan *subplan, PlanState *parent)
 	/* Link the SubPlanState to already-initialized subplan */
 	sstate->planstate = (PlanState *) list_nth(estate->es_subplanstates,
 											   subplan->plan_id - 1);
+
+#ifdef XCP
+	/* subplan is referenced on local node, finish initialization */
+	ExecFinishInitProcNode(sstate->planstate);
+#endif
 
 	/* Initialize subexpressions */
 	sstate->testexpr = ExecInitExpr((Expr *) subplan->testexpr, parent);

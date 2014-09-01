@@ -3,6 +3,11 @@
  * relcache.c
  *	  POSTGRES relation descriptor cache code
  *
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ *
+ * Portions Copyright (c) 2012-2014, TransLattice, Inc.
  * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  * Portions Copyright (c) 2010-2012 Postgres-XC Development Group
@@ -860,7 +865,15 @@ RelationBuildDesc(Oid targetRelId, bool insertIt)
 			break;
 		case RELPERSISTENCE_TEMP:
 			if (isTempOrToastNamespace(relation->rd_rel->relnamespace))
+			{
+#ifdef XCP
+				relation->rd_backend = OidIsValid(MyCoordId) ?
+												MyFirstBackendId : MyBackendId;
+#else
+				
 				relation->rd_backend = MyBackendId;
+#endif
+			}
 			else
 			{
 				/*
@@ -901,9 +914,14 @@ RelationBuildDesc(Oid targetRelId, bool insertIt)
 		relation->trigdesc = NULL;
 
 #ifdef PGXC
+#ifdef XCP
+	if (IS_PGXC_COORDINATOR &&
+		relation->rd_id >= FirstNormalObjectId)
+#else
 	if (IS_PGXC_COORDINATOR &&
 		relation->rd_id >= FirstNormalObjectId &&
 		!IsAutoVacuumWorkerProcess())
+#endif
 		RelationBuildLocator(relation);
 #endif
 	/*
@@ -2542,6 +2560,11 @@ RelationBuildLocalRelation(const char *relname,
 			rel->rd_backend = InvalidBackendId;
 			break;
 		case RELPERSISTENCE_TEMP:
+#ifdef XCP
+			if (OidIsValid(MyCoordId))
+				rel->rd_backend = MyFirstBackendId;
+			else
+#endif
 			rel->rd_backend = MyBackendId;
 			break;
 		default:
@@ -2905,6 +2928,7 @@ RelationCacheInitializePhase3(void)
 							TriggerRelationId);
 
 #define NUM_CRITICAL_LOCAL_INDEXES	7	/* fix if you change list above */
+
 		criticalRelcachesBuilt = true;
 	}
 

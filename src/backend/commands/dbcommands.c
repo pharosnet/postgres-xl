@@ -91,10 +91,11 @@ static bool have_createdb_privilege(void);
 static void remove_dbtablespaces(Oid db_id);
 static bool check_db_file_conflict(Oid db_id);
 static int	errdetail_busy_db(int notherbackends, int npreparedxacts);
+#ifdef PGXC
 static void createdb_xact_callback(bool isCommit, void *arg);
 static void movedb_xact_callback(bool isCommit, void *arg);
 static void movedb_success_callback(Oid db_id, Oid tblspcoid);
-
+#endif
 
 /*
  * CREATE DATABASE

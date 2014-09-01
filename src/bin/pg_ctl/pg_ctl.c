@@ -61,8 +61,8 @@ typedef enum
 	NO_COMMAND = 0,
 	INIT_COMMAND,
 	START_COMMAND,
-	RESTART_COMMAND,
 	STOP_COMMAND,
+	RESTART_COMMAND,
 	RELOAD_COMMAND,
 	STATUS_COMMAND,
 	PROMOTE_COMMAND,
@@ -1791,11 +1791,15 @@ do_help(void)
 	printf(_("  -t, --timeout=SECS     seconds to wait when using -w option\n"));
 	printf(_("  -w                     wait until operation completes\n"));
 	printf(_("  -W                     do not wait until operation completes\n"));
-#ifdef PGXC
-	printf(_("  -Z NODE-TYPE           can be \"coordinator\" or \"datanode\" (Postgres-XC)\n"));
-#endif
 	printf(_("  --help                 show this help, then exit\n"));
 	printf(_("  --version              output version information, then exit\n"));
+#ifdef PGXC
+#ifdef XCP
+	printf(_("  -Z NODE-TYPE           can be \"coordinator\" or \"datanode\" (Postgres-XL)\n"));
+#else
+	printf(_("  -Z NODE-TYPE           can be \"coordinator\" or \"datanode\" (Postgres-XC)\n"));
+#endif
+#endif
 	printf(_("(The default is to wait for shutdown, but not for start or restart.)\n\n"));
 	printf(_("If the -D option is omitted, the environment variable PGDATA is used.\n"));
 
@@ -2110,6 +2114,8 @@ main(int argc, char **argv)
 						pgxcCommand = strdup("--coordinator");
 					else if (strcmp(optarg, "datanode") == 0)
 						pgxcCommand = strdup("--datanode");
+					else if (strcmp(optarg, "restoremode") == 0)
+						pgxcCommand = strdup("--restoremode");
 #endif
 				case 's':
 					silent_mode = true;
@@ -2298,11 +2304,11 @@ main(int argc, char **argv)
 		case START_COMMAND:
 			do_start();
 			break;
-		case RESTART_COMMAND:
-			do_restart();
-			break;
 		case STOP_COMMAND:
 			do_stop();
+			break;
+		case RESTART_COMMAND:
+			do_restart();
 			break;
 		case RELOAD_COMMAND:
 			do_reload();

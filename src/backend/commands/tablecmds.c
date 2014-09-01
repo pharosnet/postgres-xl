@@ -3,6 +3,11 @@
  * tablecmds.c
  *	  Commands for creating and altering table structures and settings
  *
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ *
+ * Portions Copyright (c) 2012-2014, TransLattice, Inc.
  * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  * Portions Copyright (c) 2010-2012 Postgres-XC Development Group
@@ -92,7 +97,6 @@
 #include "catalog/pgxc_class.h"
 #include "catalog/pgxc_node.h"
 #include "commands/sequence.h"
-#include "optimizer/pgxcship.h"
 #include "pgxc/execRemote.h"
 #include "pgxc/redistrib.h"
 #endif
@@ -672,8 +676,25 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId)
 	/*
 	 * Add to pgxc_class.
 	 * we need to do this after CommandCounterIncrement
+	 * Distribution info is to be added under the following conditions:
+	 * 1. The create table command is being run on a coordinator
+	 * 2. The create table command is being run in restore mode and
+	 *    the statement contains distribute by clause.
+	 *    While adding a new datanode to the cluster an existing dump
+	 *    that was taken from a datanode is used, and
+	 *    While adding a new coordinator to the cluster an exiting dump
+	 *    that was taken from a coordinator is used.
+	 *    The dump taken from a datanode does NOT contain any DISTRIBUTE BY
+	 *    clause. This fact is used here to make sure that when the
+	 *    DISTRIBUTE BY clause is missing in the statemnet the system
+	 *    should not try to find out the node list itself.
 	 */
+#ifdef XCP
+	if ((IS_PGXC_COORDINATOR && stmt->distributeby) ||
+			(isRestoreMode && stmt->distributeby != NULL))
+#else
 	if (IS_PGXC_COORDINATOR && relkind == RELKIND_RELATION)
+#endif
 	{
 		AddRelationDistribution(relationId, stmt->distributeby,
 								stmt->subcluster, inheritOids, descriptor);
@@ -978,13 +999,8 @@ RangeVarCallbackForDropRelation(const RangeVar *rel, Oid relOid, Oid oldRelOid,
  * internal to the group that's being truncated.  Finally all the relations
  * are truncated and reindexed.
  */
-#ifdef PGXC
-void
-ExecuteTruncate(TruncateStmt *stmt, const char *sql_statement)
-#else
 void
 ExecuteTruncate(TruncateStmt *stmt)
-#endif
 {
 	List	   *rels = NIL;
 	List	   *relids = NIL;
@@ -994,6 +1010,14 @@ ExecuteTruncate(TruncateStmt *stmt)
 	ResultRelInfo *resultRelInfo;
 	SubTransactionId mySubid;
 	ListCell   *cell;
+
+#ifdef PGXC
+	if (stmt->restart_seqs)
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("PGXC does not support RESTART IDENTITY yet"),
+				 errdetail("The feature is not supported currently")));
+#endif
 
 	/*
 	 * Open, exclusive-lock, and check all the explicitly-specified relations
@@ -1245,42 +1269,6 @@ ExecuteTruncate(TruncateStmt *stmt)
 		ExecASTruncateTriggers(estate, resultRelInfo);
 		resultRelInfo++;
 	}
-
-#ifdef PGXC
-	/*
-	 * In Postgres-XC, TRUNCATE needs to be launched to remote nodes before the
-	 * AFTER triggers are launched. This insures that the triggers are being fired
-	 * by correct events.
-	 */
-	if (IS_PGXC_COORDINATOR && !IsConnFromCoord())
-	{
-		bool is_temp = false;
-		RemoteQuery *step = makeNode(RemoteQuery);
-
-		foreach(cell, stmt->relations)
-		{
-			Oid relid;
-			RangeVar *rel = (RangeVar *) lfirst(cell);
-
-			relid = RangeVarGetRelid(rel, NoLock, false);
-			if (IsTempTable(relid))
-			{
-				is_temp = true;
-				break;
-			}
-		}
-
-        step->combine_type = COMBINE_TYPE_SAME;
-        step->exec_nodes = NULL;
-        step->sql_statement = pstrdup(sql_statement);
-        step->force_autocommit = false;
-        step->exec_type = EXEC_ON_DATANODES;
-        step->is_temp = is_temp;
-        ExecRemoteUtility(step);
-        pfree(step->sql_statement);
-        pfree(step);
-	}
-#endif
 
 	/* Handle queued AFTER triggers */
 	AfterTriggerEndQuery(estate);
@@ -6363,29 +6351,6 @@ ATAddForeignKeyConstraint(AlteredTableInfo *tab, Relation rel,
 		ffeqoperators[i] = ffeqop;
 	}
 
-#ifdef PGXC
-	/* Check the shippability of this foreign key */
-	if (IS_PGXC_COORDINATOR)
-	{
-		List *childRefs = NIL, *parentRefs = NIL;
-
-		/* Prepare call for shippability check */
-		for (i = 0; i < numfks; i++)
-			childRefs = lappend_int(childRefs, fkattnum[i]);
-		for (i = 0; i < numpks; i++)
-			parentRefs = lappend_int(parentRefs, pkattnum[i]);
-
-		/* Now check shippability for this foreign key */
-		if (!pgxc_check_fk_shippability(GetRelationLocInfo(RelationGetRelid(pkrel)),
-										GetRelationLocInfo(RelationGetRelid(rel)),
-										parentRefs,
-										childRefs))
-			ereport(ERROR,
-					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					 errmsg("Cannot create foreign key whose evaluation cannot be enforced to remote nodes")));
-	}
-#endif
-
 	/*
 	 * Record the FK constraint in pg_constraint.
 	 */
@@ -6469,6 +6434,15 @@ ATExecValidateConstraint(Relation rel, char *constrName, bool recurse,
 	HeapTuple	tuple;
 	Form_pg_constraint con = NULL;
 	bool		found = false;
+
+#ifdef XCP
+	/*
+	 * Do not validate distributed relations on Coordinator, let Datanode do
+	 * that when executing the ALTER TABLE statement.
+	 */
+	if (IS_PGXC_COORDINATOR && rel->rd_locator_info)
+		return;
+#endif
 
 	conrel = heap_open(ConstraintRelationId, RowExclusiveLock);
 
@@ -10277,16 +10251,12 @@ ATCheckCmd(Relation rel, AlterTableCmd *cmd)
 	switch (cmd->subtype)
 	{
 		case AT_DropColumn:
-			{
-				AttrNumber attnum = get_attnum(RelationGetRelid(rel),
-											   cmd->name);
-				/* Distribution column cannot be dropped */
-				if (IsDistribColumn(RelationGetRelid(rel), attnum))
-					ereport(ERROR,
-							(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+			/* Distribution column cannot be dropped */
+			if (IsDistColumnForRelId(RelationGetRelid(rel), cmd->name))
+				ereport(ERROR,
+						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 						 errmsg("Distribution column cannot be dropped")));
-				break;
-			}
+			break;
 
 		default:
 			break;
@@ -10308,6 +10278,9 @@ BuildRedistribCommands(Oid relid, List *subCmds)
 	Oid		   *new_oid_array;	/* Modified list of Oids */
 	int			new_num, i;	/* Modified number of Oids */
 	ListCell   *item;
+#ifdef XCP
+	char		node_type = PGXC_NODE_DATANODE;
+#endif
 
 	/* Get necessary information about relation */
 	rel = relation_open(redistribState->relid, NoLock);
@@ -10373,48 +10346,17 @@ BuildRedistribCommands(Oid relid, List *subCmds)
 
 	/* Build relation node list for new locator info */
 	for (i = 0; i < new_num; i++)
+#ifdef XCP
+		newLocInfo->nodeList = lappend_int(newLocInfo->nodeList,
+										   PGXCNodeGetNodeId(new_oid_array[i],
+															 &node_type));
+#else
 		newLocInfo->nodeList = lappend_int(newLocInfo->nodeList,
 										   PGXCNodeGetNodeId(new_oid_array[i],
 															 PGXC_NODE_DATANODE));
-
+#endif
 	/* Build the command tree for table redistribution */
 	PGXCRedistribCreateCommandList(redistribState, newLocInfo);
-
-	/*
-	 * Using the new locator info already available, check if constraints on
-	 * relation are compatible with the new distribution.
-	 */
-	foreach(item, RelationGetIndexList(rel))
-	{
-		Oid			indid = lfirst_oid(item);
-		Relation	indexRel = index_open(indid, AccessShareLock);
-		List	   *indexColNums = NIL;
-		int2vector	colIds = indexRel->rd_index->indkey;
-
-		/*
-		 * Prepare call to shippability check. Attributes set to 0 correspond
-		 * to index expressions and are evaluated internally, so they are not
-		 * appended in given list.
-		 */
-		for (i = 0; i < colIds.dim1; i++)
-		{
-			if (colIds.values[i] > 0)
-				indexColNums = lappend_int(indexColNums, colIds.values[i]);
-		}
-
-		if (!pgxc_check_index_shippability(newLocInfo,
-										indexRel->rd_index->indisprimary,
-										indexRel->rd_index->indisunique,
-										indexRel->rd_index->indisexclusion,
-										indexColNums,
-										indexRel->rd_indexprs))
-			ereport(ERROR,
-					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					 errmsg("Cannot alter table to distribution incompatible "
-							"with existing constraints")));
-
-		index_close(indexRel, AccessShareLock);
-	}
 
 	/* Clean up */
 	FreeRelationLocInfo(newLocInfo);
@@ -10619,10 +10561,10 @@ AlterTableNamespace(AlterObjectSchemaStmt *stmt)
 	if (IS_PGXC_COORDINATOR &&
 		!IsConnFromCoord() &&
 		rel->rd_rel->relkind == RELKIND_SEQUENCE &&
-		!IsTempSequence(relid))
+		!IsTempSequence(RelationGetRelid(rel)))
 	{
 		char *seqname = GetGlobalSeqName(rel, NULL, NULL);
-		char *newseqname = GetGlobalSeqName(rel, NULL, stmt->newschema);
+		char *newseqname = GetGlobalSeqName(rel, NULL, get_namespace_name(nspOid));
 
 		/* We also need to rename it on the GTM */
 		if (RenameSequenceGTM(seqname, newseqname) < 0)
@@ -10638,8 +10580,6 @@ AlterTableNamespace(AlterObjectSchemaStmt *stmt)
 	}
 #endif
 
-	/* close rel, but keep lock until commit */
-	relation_close(rel, NoLock);
 }
 
 /*
@@ -10796,7 +10736,7 @@ AlterSeqNamespaces(Relation classRel, Relation rel,
 			!IsTempSequence(RelationGetRelid(seqRel)))
 		{
 			char *seqname = GetGlobalSeqName(seqRel, NULL, NULL);
-			char *newseqname = GetGlobalSeqName(seqRel, NULL, newNspName);
+			char *newseqname = GetGlobalSeqName(seqRel, NULL, get_namespace_name(newNspOid));
 
 			/* We also need to rename it on the GTM */
 			if (RenameSequenceGTM(seqname, newseqname) < 0)

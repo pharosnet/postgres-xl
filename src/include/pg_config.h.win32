@@ -542,13 +542,13 @@
 #define MEMSET_LOOP_LIMIT 1024
 
 /* Define to the address where bug reports for this package should be sent. */
-#define PACKAGE_BUGREPORT "postgres-xc-bugs@lists.sourceforge.net"
+#define PACKAGE_BUGREPORT "postgres-xl-bugs@lists.sourceforge.net"
 
 /* Define to the full name of this package. */
-#define PACKAGE_NAME "Postgres-XC"
+#define PACKAGE_NAME "Postgres-XL"
 
 /* Define to the full name and version of this package. */
-#define PACKAGE_STRING "Postgres-XC 1.1devel"
+#define PACKAGE_STRING "Postgres-XL 9.2.0"
 
 /* Define to the version of this package. */
 #define PACKAGE_VERSION "9.2beta2"
@@ -560,7 +560,7 @@
 #define PG_VERSION_NUM 90200
 
 /* Define to the one symbol short name of this package. */
-#define PACKAGE_TARNAME "postgres-xc"
+#define PACKAGE_TARNAME "postgres-xl"
 
 /* Postgres-XC version as a string */
 #define PGXC_VERSION "1.1devel"

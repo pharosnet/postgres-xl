@@ -18,6 +18,11 @@
  * "x" to be considered equal() to another reference to "x" in the query.
  *
  *
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ *
+ * Portions Copyright (c) 2012-2014, TransLattice, Inc.
  * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  * Portions Copyright (c) 2010-2012 Postgres-XC Development Group
@@ -186,11 +191,17 @@ static bool
 _equalAggref(const Aggref *a, const Aggref *b)
 {
 	COMPARE_SCALAR_FIELD(aggfnoid);
+#ifndef XCP
+	/*
+	 * In XCP ignore aggtype difference because Phase 1 of aggregate have
+	 * aggtype set to aggtrantype
+	 */
 	COMPARE_SCALAR_FIELD(aggtype);
 #ifdef PGXC
 	COMPARE_SCALAR_FIELD(aggtrantype);
 	COMPARE_SCALAR_FIELD(agghas_collectfn);
 #endif /* PGXC */
+#endif /* XCP */
 	COMPARE_SCALAR_FIELD(aggcollid);
 	COMPARE_SCALAR_FIELD(inputcollid);
 	COMPARE_NODE_FIELD(args);
@@ -931,7 +942,9 @@ _equalQuery(const Query *a, const Query *b)
 	COMPARE_NODE_FIELD(constraintDeps);
 
 #ifdef PGXC
+#ifndef XCP
 	COMPARE_SCALAR_FIELD(is_ins_child_sel_parent);
+#endif
 #endif
 
 	return true;
@@ -2366,6 +2379,18 @@ _equalXmlSerialize(const XmlSerialize *a, const XmlSerialize *b)
 	return true;
 }
 
+#ifdef XCP
+static bool
+_equalDistribution(Distribution *a, Distribution *b)
+{
+	COMPARE_SCALAR_FIELD(distributionType);
+	COMPARE_NODE_FIELD(distributionExpr);
+	COMPARE_BITMAPSET_FIELD(nodes);
+
+	return true;
+}
+#endif
+
 /*
  * Stuff from pg_list.h
  */
@@ -2467,6 +2492,17 @@ _equalBarrierStmt(const BarrierStmt *a, const BarrierStmt *b)
 	return true;
 }
 
+#ifdef XCP
+/*
+ * Lock Cluster stuff
+ */
+static bool
+_equalPauseClusterStmt(PauseClusterStmt *a, PauseClusterStmt *b)
+{
+	COMPARE_SCALAR_FIELD(pause);
+	return true;
+}
+#endif
 /*
  * stuff from nodemgr.h
  */
@@ -2989,6 +3025,11 @@ equal(const void *a, const void *b)
 		case T_BarrierStmt:
 			retval = _equalBarrierStmt(a, b);
 			break;
+#ifdef XCP
+		case T_PauseClusterStmt:
+			retval = _equalPauseClusterStmt(a, b);
+			break;
+#endif
 		case T_AlterNodeStmt:
 			retval = _equalAlterNodeStmt(a, b);
 			break;
@@ -3135,6 +3176,11 @@ equal(const void *a, const void *b)
 		case T_XmlSerialize:
 			retval = _equalXmlSerialize(a, b);
 			break;
+#ifdef XCP
+		case T_Distribution:
+			retval = _equalDistribution(a, b);
+			break;
+#endif
 
 		default:
 			elog(ERROR, "unrecognized node type: %d",

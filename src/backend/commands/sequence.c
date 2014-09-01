@@ -3,6 +3,11 @@
  * sequence.c
  *	  PostgreSQL sequences support code.
  *
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ *
+ * Portions Copyright (c) 2012-2014, TransLattice, Inc.
  * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  * Portions Copyright (c) 2010-2012 Postgres-XC Development Group
@@ -41,6 +46,9 @@
 /* PGXC_COORD */
 #include "access/gtm.h"
 #include "utils/memutils.h"
+#ifdef XCP
+#include "utils/timestamp.h"
+#endif
 #endif
 
 /*
@@ -54,6 +62,12 @@
  * The "special area" of a sequence's buffer page looks like this.
  */
 #define SEQ_MAGIC	  0x1717
+
+/* Configuration options */
+#ifdef XCP
+
+int			SequenceRangeVal = 1;
+#endif
 
 typedef struct sequence_magic
 {
@@ -82,6 +96,10 @@ typedef struct SeqTableData
 	/* if last != cached, we have not used up all the cached values */
 	int64		increment;		/* copy of sequence's increment field */
 	/* note that increment is zero until we first do read_info() */
+#ifdef XCP
+	TimestampTz last_call_time; /* the time when the last call as made */
+	int64		range_multiplier; /* multiply this value with 2 next time */
+#endif
 } SeqTableData;
 
 typedef SeqTableData *SeqTable;
@@ -125,7 +143,7 @@ static void init_params(List *options, bool isInit,
 						Form_pg_sequence new, List **owned_by, bool *is_restart);
 #else
 static void init_params(List *options, bool isInit,
-						Form_pg_sequence new, List **owned_by);
+			Form_pg_sequence new, List **owned_by);
 #endif
 static void do_setval(Oid relid, int64 next, bool iscalled);
 static void process_owned_by(Relation seqrel, List *owned_by);
@@ -562,7 +580,6 @@ AlterSequence(AlterSeqStmt *stmt)
 
 	/* Now okay to update the on-disk tuple */
 	memcpy(seq, &new, sizeof(FormData_pg_sequence));
-
 #ifdef PGXC
 	increment = new.increment_by;
 	min_value = new.min_value;
@@ -731,19 +748,85 @@ nextval_internal(Oid relid)
 	page = BufferGetPage(buf);
 
 #ifdef PGXC  /* PGXC_COORD */
+#ifdef XCP
+	/* Allow nextval executed on datanodes */
+	if (!is_temp)
+#else
 	if (IS_PGXC_COORDINATOR && !is_temp)
+#endif
 	{
+#ifdef XCP
+		int64 range = seq->cache_value; /* how many values to ask from GTM? */
+		int64 rangemax; /* the max value returned from the GTM for our request */
+#endif
 		char *seqname = GetGlobalSeqName(seqrel, NULL, NULL);
 
 		/*
 		 * Above, we still use the page as a locking mechanism to handle
 		 * concurrency
 		 */
+#ifdef XCP
+		/*
+		 * If the user has set a CACHE parameter, we use that. Else we pass in
+		 * the SequenceRangeVal value
+		 */
+		if (range == DEFAULT_CACHEVAL && SequenceRangeVal > range)
+		{
+			TimestampTz curtime = GetCurrentTimestamp();
+
+			if (!TimestampDifferenceExceeds(elm->last_call_time,
+													curtime, 1000))
+			{
+				/*
+				 * The previous GetNextValGTM call was made just a while back.
+				 * Request double the range of what was requested in the
+				 * earlier call. Honor the SequenceRangeVal boundary
+				 * value to limit very large range requests!
+				 */
+				elm->range_multiplier *= 2;
+				if (elm->range_multiplier < SequenceRangeVal)
+					range = elm->range_multiplier;
+				else
+					elm->range_multiplier = range = SequenceRangeVal;
+
+				elog(DEBUG1, "increase sequence range %ld", range);
+			}
+			else if (TimestampDifferenceExceeds(elm->last_call_time,
+												curtime, 5000))
+			{
+				/* The previous GetNextValGTM call was pretty old */
+				range = elm->range_multiplier = DEFAULT_CACHEVAL;
+				elog(DEBUG1, "reset sequence range %ld", range);
+			}
+			else if (TimestampDifferenceExceeds(elm->last_call_time,
+												curtime, 3000))
+			{
+				/*
+				 * The previous GetNextValGTM call was made quite some time
+				 * ago. Try to reduce the range request to reduce the gap
+				 */
+				if (elm->range_multiplier != DEFAULT_CACHEVAL)
+				{
+					range = elm->range_multiplier =
+								rint(elm->range_multiplier/2);
+					elog(DEBUG1, "decrease sequence range %ld", range);
+				}
+			}
+			else
+			{
+				/*
+				 * Current range_multiplier alllows to cache sequence values
+				 * for 1-3 seconds of work. Keep that rate.
+				 */
+				range = elm->range_multiplier;
+			}
+			elm->last_call_time = curtime;
+		}
+
+		result = (int64) GetNextValGTM(seqname, range, &rangemax);
+#else
 		result = (int64) GetNextValGTM(seqname);
-		if (result < 0)
-			ereport(ERROR,
-					(errcode(ERRCODE_CONNECTION_FAILURE),
-					 errmsg("GTM error, could not obtain sequence value")));
+#endif
 		pfree(seqname);
 
 		/* Update the on-disk data */
@@ -752,7 +835,11 @@ nextval_internal(Oid relid)
 
 		/* save info in local cache */
 		elm->last = result;			/* last returned number */
+#ifdef XCP
+		elm->cached = rangemax;		/* last fetched range max limit */
+#else
 		elm->cached = result;		/* last fetched number */
+#endif
 		elm->last_valid = true;
 
 		last_used_seq = elm;
@@ -875,11 +962,11 @@ nextval_internal(Oid relid)
 			/* Temporary sequences can go through normal process */
 			if (is_temp)
 			{
-#endif
 			/*
 			 * This part is not taken into account,
 			 * result has been received from GTM
 			 */
+#endif
 			last = next;
 			if (rescnt == 1)	/* if it's first result - */
 				result = next;	/* it's what to return */
@@ -896,8 +983,8 @@ nextval_internal(Oid relid)
 	/* Temporary sequences go through normal process */
 	if (is_temp)
 	{
-#endif
 	/* Result has been received from GTM */
+#endif
 	/* save info in local cache */
 	elm->last = result;			/* last returned number */
 	elm->cached = last;			/* last fetched number */
@@ -978,13 +1065,47 @@ currval_oid(PG_FUNCTION_ARGS)
 				 errmsg("permission denied for sequence %s",
 						RelationGetRelationName(seqrel))));
 
+#ifdef XCP
+	{
+		/*
+ 		 * Always contact GTM for currval regardless of valid
+ 		 * elm->last_valid value
+ 		 */
+		{
+			char *seqname = GetGlobalSeqName(seqrel, NULL, NULL);
+			result = (int64) GetCurrentValGTM(seqname);
+			pfree(seqname);
+		}
+	}
+#else
 	if (!elm->last_valid)
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 				 errmsg("currval of sequence \"%s\" is not yet defined in this session",
 						RelationGetRelationName(seqrel))));
+#endif
 
+#ifndef XCP
+#ifdef PGXC
+	if (IS_PGXC_COORDINATOR &&
+		seqrel->rd_backend != MyBackendId)
+	{
+		char *seqname = GetGlobalSeqName(seqrel, NULL, NULL);
+
+		result = (int64) GetCurrentValGTM(seqname);
+		if (result < 0)
+			ereport(ERROR,
+					(errcode(ERRCODE_CONNECTION_FAILURE),
+					 errmsg("GTM error, could not obtain sequence value")));
+		pfree(seqname);
+	}
+	else {
+#endif
 	result = elm->last;
+#ifdef PGXC
+	}
+#endif
+#endif
 	relation_close(seqrel, NoLock);
 
 	PG_RETURN_INT64(result);
@@ -1086,7 +1207,12 @@ do_setval(Oid relid, int64 next, bool iscalled)
 	}
 
 #ifdef PGXC
+#ifdef XCP
+	/* Allow to execute on datanodes */
+	if (!is_temp)
+#else
 	if (IS_PGXC_COORDINATOR && !is_temp)
+#endif
 	{
 		char *seqname = GetGlobalSeqName(seqrel, NULL, NULL);
 
@@ -1286,6 +1412,10 @@ init_sequence(Oid relid, SeqTable *p_elm, Relation *p_rel)
 		elm->lxid = InvalidLocalTransactionId;
 		elm->last_valid = false;
 		elm->last = elm->cached = elm->increment = 0;
+#ifdef XCP
+		elm->last_call_time = 0;
+		elm->range_multiplier = DEFAULT_CACHEVAL;
+#endif
 		elm->next = seqtab;
 		seqtab = elm;
 	}
@@ -1561,8 +1691,8 @@ init_params(List *options, bool isInit,
 		snprintf(bufm, sizeof(bufm), INT64_FORMAT, new->max_value);
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("START value (%s) cannot be greater than MAXVALUE (%s)",
-						bufs, bufm)));
+			  errmsg("START value (%s) cannot be greater than MAXVALUE (%s)",
+					 bufs, bufm)));
 	}
 
 	/* RESTART [WITH] */
@@ -1595,8 +1725,8 @@ init_params(List *options, bool isInit,
 		snprintf(bufm, sizeof(bufm), INT64_FORMAT, new->min_value);
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("RESTART value (%s) cannot be less than MINVALUE (%s)",
-						bufs, bufm)));
+			   errmsg("RESTART value (%s) cannot be less than MINVALUE (%s)",
+					  bufs, bufm)));
 	}
 	if (new->last_value > new->max_value)
 	{
@@ -1607,8 +1737,8 @@ init_params(List *options, bool isInit,
 		snprintf(bufm, sizeof(bufm), INT64_FORMAT, new->max_value);
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-						 errmsg("RESTART value (%s) cannot be greater than MAXVALUE (%s)",
-								bufs, bufm)));
+			errmsg("RESTART value (%s) cannot be greater than MAXVALUE (%s)",
+				   bufs, bufm)));
 	}
 
 	/* CACHE */

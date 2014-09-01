@@ -3048,6 +3048,17 @@ exec_stmt_execsql(PLpgSQL_execstate *estate,
 						q->commandType == CMD_UPDATE ||
 						q->commandType == CMD_DELETE)
 						stmt->mod_stmt = true;
+					/* PGXCTODO: Support a better parameter interface for XC with DMLs */
+					if (q->commandType == CMD_INSERT ||
+						q->commandType == CMD_UPDATE ||
+						q->commandType == CMD_DELETE)
+						ereport(ERROR,
+								(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+#ifdef XCP
+								 errmsg("Postgres-XL does not support DML queries in PL/pgSQL")));
+#else
+								 errmsg("Postgres-XC does not support DML queries in PL/pgSQL")));
+#endif
 				}
 			}
 		}

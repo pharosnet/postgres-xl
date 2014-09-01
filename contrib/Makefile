@@ -51,7 +51,8 @@ SUBDIRS = \
 		test_parser	\
 		tsearch2	\
 		unaccent	\
-		vacuumlo
+		vacuumlo	\
+		stormstats
 
 ifeq ($(with_openssl),yes)
 SUBDIRS += sslinfo

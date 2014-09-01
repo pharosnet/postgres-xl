@@ -3,6 +3,11 @@
  * proc.c
  *	  routines to manage per-process shared memory data structure
  *
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ *
+ * Portions Copyright (c) 2012-2014, TransLattice, Inc.
  * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
@@ -357,6 +362,10 @@ InitProcess(void)
 	MyProc->backendId = InvalidBackendId;
 	MyProc->databaseId = InvalidOid;
 	MyProc->roleId = InvalidOid;
+#ifdef XCP
+	MyProc->coordId = InvalidOid;
+	MyProc->coordPid = 0;
+#endif
 	MyPgXact->inCommit = false;
 	MyPgXact->vacuumFlags = 0;
 #ifdef PGXC
@@ -518,6 +527,10 @@ InitAuxiliaryProcess(void)
 	MyProc->backendId = InvalidBackendId;
 	MyProc->databaseId = InvalidOid;
 	MyProc->roleId = InvalidOid;
+#ifdef XCP
+	MyProc->coordId = InvalidOid;
+	MyProc->coordPid = 0;
+#endif
 #ifdef PGXC
 	MyProc->isPooler = false;
 	if (IsPGXCPoolerProcess())

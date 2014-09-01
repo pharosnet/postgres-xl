@@ -220,7 +220,7 @@ foreach my $catname ( @{ $catalogs->{names} } )
                     {cmax      => 'cid'},
                     {tableoid  => 'oid'}
 #PGXC_BEGIN
-                    ,{xc_node_id  => 'int4'}
+					,{ xc_node_id  => 'int4' }
 #PGXC_END
                 );
                 foreach my $attr (@SYS_ATTRS)

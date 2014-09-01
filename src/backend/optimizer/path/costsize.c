@@ -57,6 +57,11 @@
  * values.
  *
  *
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ *
+ * Portions Copyright (c) 2012-2014, TransLattice, Inc.
  * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
@@ -97,6 +102,10 @@ double		random_page_cost = DEFAULT_RANDOM_PAGE_COST;
 double		cpu_tuple_cost = DEFAULT_CPU_TUPLE_COST;
 double		cpu_index_tuple_cost = DEFAULT_CPU_INDEX_TUPLE_COST;
 double		cpu_operator_cost = DEFAULT_CPU_OPERATOR_COST;
+#ifdef XCP
+double		network_byte_cost = DEFAULT_NETWORK_BYTE_COST;
+double		remote_query_cost = DEFAULT_REMOTE_QUERY_COST;
+#endif
 
 int			effective_cache_size = DEFAULT_EFFECTIVE_CACHE_SIZE;
 
@@ -114,11 +123,8 @@ bool		enable_material = true;
 bool		enable_mergejoin = true;
 bool		enable_hashjoin = true;
 #ifdef PGXC
-bool		enable_fast_query_shipping = true;
 bool		enable_remotejoin = true;
 bool		enable_remotegroup = true;
-bool		enable_remotesort = true;
-bool		enable_remotelimit = true;
 #endif
 
 typedef struct
@@ -2242,6 +2248,15 @@ final_cost_mergejoin(PlannerInfo *root, MergePath *path,
 			 relation_byte_size(inner_path_rows, inner_path->parent->width) >
 			 (work_mem * 1024L))
 		path->materialize_inner = true;
+#ifdef XCP
+	/*
+	 * Even if innersortkeys are specified, we never add the Sort node on top
+	 * of RemoteSubplan, instead we set up internal sorter.
+	 * Since RemoteSubplan does not support mark/restore we must materialize it
+	 */
+	else if (inner_path->pathtype == T_RemoteSubplan)
+		path->materialize_inner = true;
+#endif
 	else
 		path->materialize_inner = false;
 
@@ -2850,22 +2865,6 @@ cost_rescan(PlannerInfo *root, Path *path,
 	}
 }
 
-#ifdef PGXC
-/*
- * cost_remotequery
- * As of now the function just sets the costs to 0 to make this path the
- * cheapest.
- * PGXC_TODO: Ideally, we should estimate the costs of network transfer from
- * datanodes and any datanode costs involved.
- */
-void
-cost_remotequery(RemoteQueryPath *rqpath, PlannerInfo *root, RelOptInfo *rel)
-{
-	rqpath->path.startup_cost = 0;
-	rqpath->path.total_cost = 0;
-	rqpath->path.rows = rel->rows;
-}
-#endif /* PGXC */
 
 /*
  * cost_qual_eval
@@ -4032,3 +4031,30 @@ page_size(double tuples, int width)
 {
 	return ceil(relation_byte_size(tuples, width) / BLCKSZ);
 }
+
+
+#ifdef XCP
+void
+cost_remote_subplan(Path *path,
+			  Cost input_startup_cost, Cost input_total_cost,
+			  double tuples, int width, int replication)
+{
+	Cost		startup_cost = input_startup_cost + remote_query_cost;
+	Cost		run_cost = input_total_cost - input_startup_cost;
+
+	path->rows = tuples;
+
+	/*
+	 * Charge 2x cpu_operator_cost per tuple to reflect bookkeeping overhead.
+	 */
+	run_cost += 2 * cpu_operator_cost * tuples;
+
+	/*
+	 * Estimate cost of sending data over network
+	 */
+	run_cost += network_byte_cost * tuples * width * replication;
+
+	path->startup_cost = startup_cost;
+	path->total_cost = startup_cost + run_cost;
+}
+#endif
