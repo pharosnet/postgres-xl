@@ -2,7 +2,9 @@
 -- INT4
 --
 
-CREATE TABLE INT4_TBL(f1 int4);
+--XL: because of how it is used later, make replicated to avoid failures
+--    to avoid partition column update
+CREATE TABLE INT4_TBL(f1 int4) DISTRIBUTE BY REPLICATION;
 
 INSERT INTO INT4_TBL(f1) VALUES ('   0  ');
 

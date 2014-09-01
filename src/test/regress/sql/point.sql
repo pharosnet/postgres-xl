@@ -2,7 +2,7 @@
 -- POINT
 --
 
--- Postgres-XC case: point type cannot use ORDER BY so table
+-- Postgres-XL case: point type cannot use ORDER BY so table
 -- is replicated for regression tests whatever the cluster configuration
 CREATE TABLE POINT_TBL(f1 point) DISTRIBUTE BY REPLICATION;
 

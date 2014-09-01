@@ -149,8 +149,6 @@ DROP TABLE tmp;
 -- rename - check on both non-temp and temp tables
 --
 CREATE TABLE tmp (regtable int);
--- Enforce use of COMMIT instead of 2PC for temporary objects
-SET enforce_two_phase_commit TO off;
 CREATE TEMP TABLE tmp (tmptable int);
 
 ALTER TABLE tmp RENAME TO tmp_new;
@@ -1262,10 +1260,10 @@ select case when c.relname like 'pg_toast%' then 'pg_toast' else c.relname end, 
 from pg_locks l join pg_class c on l.relation = c.oid
 where virtualtransaction = (
         select virtualtransaction
-        from pg_locks
+        from pg_catalog.pg_locks
         where transactionid = txid_current()::integer)
 and locktype = 'relation'
-and relnamespace != (select oid from pg_namespace where nspname = 'pg_catalog')
+and relnamespace not in (select oid from pg_namespace where nspname = 'pg_catalog' or nspname = 'storm_catalog')
 and c.relname != 'my_locks'
 group by c.relname;
 

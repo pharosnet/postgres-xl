@@ -73,12 +73,9 @@ SELECT n, n IS OF (text) as is_text FROM t ORDER BY n;
 --      |         +->D-+->F
 --      +->E-+->G
 
--- Enforce use of COMMIT instead of 2PC for temporary objects
-SET enforce_two_phase_commit TO off;
-
 CREATE TEMP TABLE department (
 	id INTEGER PRIMARY KEY,  -- department ID
-	parent_department INTEGER ,
+	parent_department INTEGER REFERENCES department, -- upper department ID
 	name TEXT -- department name
 );
 
@@ -182,16 +179,16 @@ SELECT pg_get_viewdef('vsubdepartment'::regclass);
 SELECT pg_get_viewdef('vsubdepartment'::regclass, true);
 
 -- corner case in which sub-WITH gets initialized first
-select * from (with recursive q as (
-      (select * from department order by id)
+with recursive q as (
+      select * from department
     union all
       (with x as (select * from q)
        select * from x)
     )
-select * from q limit 24) rel_alias order by 1, 2, 3;
+select * from q limit 24;
 
-select * from (with recursive q as (
-      (select * from department order by id)
+with recursive q as (
+      select * from department
     union all
       (with recursive x as (
            select * from department
@@ -217,7 +214,7 @@ WITH RECURSIVE t(i,j) AS (
 --
 CREATE TEMPORARY TABLE tree(
     id INTEGER PRIMARY KEY,
-    parent_id INTEGER 
+    parent_id INTEGER REFERENCES tree(id)
 );
 
 INSERT INTO tree
@@ -352,7 +349,7 @@ WITH t AS (
 	SELECT a FROM y
 )
 INSERT INTO y
-SELECT a+20 FROM t order by 1 RETURNING *;
+SELECT a+20 FROM t RETURNING *;
 
 SELECT * FROM y order by 1;
 
@@ -562,7 +559,7 @@ WITH t AS (
         (20)
     RETURNING *
 )
-SELECT * FROM t order by 1;
+SELECT * FROM t;
 
 SELECT * FROM y order by 1;
 
@@ -572,7 +569,7 @@ WITH t AS (
     SET a=a+1
     RETURNING *
 )
-SELECT * FROM t order by 1;
+SELECT * FROM t;
 
 SELECT * FROM y order by 1;
 
@@ -582,7 +579,7 @@ WITH t AS (
     WHERE a <= 10
     RETURNING *
 )
-SELECT * FROM t order by 1;
+SELECT * FROM t;
 
 SELECT * FROM y order by 1;
 
@@ -596,7 +593,7 @@ WITH RECURSIVE t AS (
 )
 SELECT * FROM t
 UNION ALL
-SELECT * FROM t2 order by 1;
+SELECT * FROM t2;
 
 SELECT * FROM y order by 1;
 
@@ -634,7 +631,7 @@ WITH t1 AS ( DELETE FROM bug6051 RETURNING * )
 INSERT INTO bug6051 SELECT * FROM t1;
 
 SELECT * FROM bug6051 ORDER BY 1;
-SELECT * FROM bug6051_2 ORDER BY 1;
+SELECT * FROM bug6051_2;
 
 -- a truly recursive CTE in the same list
 WITH RECURSIVE t(a) AS (
@@ -655,7 +652,7 @@ WITH t AS (
     WHERE a <= 10
     RETURNING *
 )
-INSERT INTO y SELECT -a FROM t ORDER BY 1 RETURNING *;
+INSERT INTO y SELECT -a FROM t RETURNING *;
 
 SELECT * FROM y order by 1;
 
@@ -663,7 +660,7 @@ SELECT * FROM y order by 1;
 WITH t AS (
     UPDATE y SET a = a * 100 RETURNING *
 )
-SELECT * FROM t ORDER BY 1 LIMIT 10;
+SELECT * FROM t LIMIT 10;
 
 SELECT * FROM y order by 1;
 
@@ -681,7 +678,7 @@ WITH RECURSIVE t1 AS (
 SELECT 1;
 
 SELECT * FROM y order by 1;
-SELECT * FROM yy order by 1;
+SELECT * FROM yy;
 
 WITH RECURSIVE t1 AS (
   INSERT INTO yy SELECT * FROM t2 RETURNING *

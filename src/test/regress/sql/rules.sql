@@ -7,7 +7,7 @@
 --
 -- Tables and rules for the view test
 --
-create table rtest_t1 (a int4, b int4) distribute by roundrobin;
+create table rtest_t1 (a int4, b int4) distribute by replication;
 create table rtest_t2 (a int4, b int4);
 create table rtest_t3 (a int4, b int4);
 
@@ -768,7 +768,7 @@ drop table cchild;
 --
 -- Check that ruleutils are working
 --
-SELECT viewname, definition FROM pg_views WHERE schemaname <> 'information_schema' ORDER BY viewname;
+SELECT viewname, definition FROM pg_views WHERE schemaname <> 'information_schema' AND schemaname <> 'storm_catalog' ORDER BY viewname;
 
 SELECT tablename, rulename, definition FROM pg_rules
 	ORDER BY tablename, rulename;
@@ -895,9 +895,6 @@ reset client_min_messages;
 -- check corner case where an entirely-dummy subplan is created by
 -- constraint exclusion
 --
--- Enforce use of COMMIT instead of 2PC for temporary objects
-SET enforce_two_phase_commit TO off;
-
 create temp table t1 (a integer primary key) distribute by replication;
 
 create temp table t1_1 (check (a >= 0 and a < 10)) inherits (t1) distribute by replication;
