@@ -343,6 +343,20 @@ PostgreSQL documentation
     <variablelist>
      <varlistentry>
       <term><option>-s <replaceable class="parameter">interval</replaceable></option></term>
+      <term><option>--status-interval=<replaceable class="parameter">interval</replaceable></option></term>
+      <listitem>
+       <para>
+        Specifies the number of seconds between status packets sent back to the
+        server. This is required when streaming the transaction log (using
+        <literal>--xlog=stream</literal>) if replication timeout is configured
+        on the server, and allows for easier monitoring. A value of zero disables
+        the status updates completely. The default value is 10 seconds.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-s <replaceable class="parameter">interval</replaceable></option></term>
       <term><option>--statusint=<replaceable class="parameter">interval</replaceable></option></term>
       <listitem>
        <para>
