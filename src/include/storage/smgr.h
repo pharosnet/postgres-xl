@@ -76,10 +76,10 @@ typedef SMgrRelationData *SMgrRelation;
 #ifdef XCP
 #define SmgrIsTemp(smgr) \
 	(!OidIsValid(MyCoordId) && \
-	((smgr)->smgr_rnode.backend != InvalidBackendId))
+	RelFileNodeBackendIsTemp((smgr)->smgr_rnode))
 #else
 #define SmgrIsTemp(smgr) \
-	((smgr)->smgr_rnode.backend != InvalidBackendId)
+	RelFileNodeBackendIsTemp((smgr)->smgr_rnode)
 #endif
 
 extern void smgrinit(void);

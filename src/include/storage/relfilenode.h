@@ -87,6 +87,9 @@ typedef struct RelFileNodeBackend
 	BackendId	backend;
 } RelFileNodeBackend;
 
+#define RelFileNodeBackendIsTemp(rnode) \
+	(!OidIsValid(MyCoordId) && ((rnode).backend != InvalidBackendId))
+
 /*
  * Note: RelFileNodeEquals and RelFileNodeBackendEquals compare relNode first
  * since that is most likely to be different in two unequal RelFileNodes.  It
