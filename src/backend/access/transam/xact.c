@@ -4613,6 +4613,8 @@ BeginInternalSubTransaction(char *name)
 {
 	TransactionState s = CurrentTransactionState;
 
+	elog(ERROR, "Internal subtransactions not supported in Postgres-XL");
+
 	switch (s->blockState)
 	{
 		case TBLOCK_STARTED:
