@@ -2732,7 +2732,10 @@ PrepareTransaction(void)
 	{
 		char		*nodestring;
 		if (saveNodeString)
+		{
 			pfree(saveNodeString);
+			saveNodeString = NULL;
+		}
 
 		/* Needed in PrePrepare_Remote to submit nodes to GTM */
 		s->topGlobalTransansactionId = s->transactionId;
