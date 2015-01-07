@@ -263,6 +263,9 @@ recurse_set_operations(Node *setOp, PlannerInfo *root,
 		rel->subplan = subplan;
 		rel->subroot = subroot;
 
+		if (root->recursiveOk)	
+			root->recursiveOk = subroot->recursiveOk;
+
 		/*
 		 * Estimate number of groups if caller wants it.  If the subquery used
 		 * grouping or aggregation, its output is probably mostly unique
@@ -434,7 +437,7 @@ generate_recursion_plan(SetOperationStmt *setOp, PlannerInfo *root,
 	/*
 	 * And make the plan node.
 	 */
-	plan = (Plan *) make_recursive_union(tlist, lplan, rplan,
+	plan = (Plan *) make_recursive_union(root, tlist, lplan, rplan,
 										 root->wt_param_id,
 										 groupList, numGroups);
 

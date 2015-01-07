@@ -77,7 +77,7 @@ CREATE TEMP TABLE department (
 	id INTEGER PRIMARY KEY,  -- department ID
 	parent_department INTEGER REFERENCES department, -- upper department ID
 	name TEXT -- department name
-);
+) DISTRIBUTE BY REPLICATION;
 
 INSERT INTO department VALUES (0, NULL, 'ROOT');
 INSERT INTO department VALUES (1, 0, 'A');
@@ -214,8 +214,8 @@ WITH RECURSIVE t(i,j) AS (
 --
 CREATE TEMPORARY TABLE tree(
     id INTEGER PRIMARY KEY,
-    parent_id INTEGER REFERENCES tree(id)
-);
+    parent_id INTEGER 
+) DISTRIBUTE BY REPLICATION;
 
 INSERT INTO tree
 VALUES (1, NULL), (2, 1), (3,1), (4,2), (5,2), (6,2), (7,3), (8,3),
@@ -263,7 +263,7 @@ SELECT t1.id, t2.path, t2 FROM t AS t1 JOIN t AS t2 ON
 --
 -- test cycle detection
 --
-create temp table graph( f int, t int, label text );
+create temp table graph( f int, t int, label text ) DISTRIBUTE BY REPLICATION;
 
 insert into graph values
 	(1, 2, 'arc 1 -> 2'),
@@ -342,7 +342,7 @@ WITH RECURSIVE
 -- Test WITH attached to a data-modifying statement
 --
 
-CREATE TEMPORARY TABLE y (a INTEGER);
+CREATE TEMPORARY TABLE y (a INTEGER) DISTRIBUTE BY REPLICATION;
 INSERT INTO y SELECT generate_series(1, 10);
 
 WITH t AS (
@@ -397,7 +397,7 @@ WITH RECURSIVE x(n) AS (SELECT n FROM x)
 WITH RECURSIVE x(n) AS (SELECT n FROM x UNION ALL SELECT 1)
 	SELECT * FROM x;
 
-CREATE TEMPORARY TABLE y (a INTEGER);
+CREATE TEMPORARY TABLE y (a INTEGER) DISTRIBUTE BY REPLICATION;
 INSERT INTO y SELECT generate_series(1, 10);
 
 -- LEFT JOIN
@@ -504,7 +504,7 @@ WITH RECURSIVE foo(i) AS
 SELECT * FROM foo;
 
 -- disallow OLD/NEW reference in CTE
-CREATE TEMPORARY TABLE x (n integer);
+CREATE TEMPORARY TABLE x (n integer) DISTRIBUTE BY REPLICATION  ;
 CREATE RULE r2 AS ON UPDATE TO x DO INSTEAD
     WITH t AS (SELECT OLD.*) UPDATE y SET a = t.n FROM t;
 
@@ -621,7 +621,7 @@ INSERT INTO bug6051 SELECT * FROM t1;
 
 SELECT * FROM bug6051 ORDER BY 1;
 
-CREATE TEMP TABLE bug6051_2 (i int);
+CREATE TEMP TABLE bug6051_2 (i int) DISTRIBUTE BY REPLICATION;
 
 CREATE RULE bug6051_ins AS ON INSERT TO bug6051 DO INSTEAD
  INSERT INTO bug6051_2
@@ -668,7 +668,7 @@ SELECT * FROM y order by 1;
 
 TRUNCATE TABLE y;
 INSERT INTO y SELECT generate_series(1, 3);
-CREATE TEMPORARY TABLE yy (a INTEGER);
+CREATE TEMPORARY TABLE yy (a INTEGER) DISTRIBUTE BY REPLICATION;
 
 WITH RECURSIVE t1 AS (
   INSERT INTO y SELECT * FROM y RETURNING *
@@ -763,9 +763,9 @@ DROP FUNCTION y_trigger();
 
 -- WITH attached to inherited UPDATE or DELETE
 
-CREATE TEMP TABLE parent ( id int, val text );
-CREATE TEMP TABLE child1 ( ) INHERITS ( parent );
-CREATE TEMP TABLE child2 ( ) INHERITS ( parent );
+CREATE TEMP TABLE parent ( id int, val text ) DISTRIBUTE BY REPLICATION;
+CREATE TEMP TABLE child1 ( ) INHERITS ( parent ) DISTRIBUTE BY REPLICATION;
+CREATE TEMP TABLE child2 ( ) INHERITS ( parent ) DISTRIBUTE BY REPLICATION;
 
 INSERT INTO parent VALUES ( 1, 'p1' );
 INSERT INTO child1 VALUES ( 11, 'c11' ),( 12, 'c12' );
