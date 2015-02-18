@@ -408,6 +408,17 @@ ExecFinishInitProcNode(PlanState *node)
 			break;
 		}
 
+		case T_MergeAppendState:
+		{
+			MergeAppendState    *mappend = (MergeAppendState *) node;
+			int 			i;
+
+			for (i = 0; i < mappend->ms_nplans; i++)
+				ExecFinishInitProcNode(mappend->mergeplans[i]);
+
+			break;
+		}
+
 		case T_SubqueryScanState:
 			ExecFinishInitProcNode(((SubqueryScanState *) node)->subplan);
 			break;
