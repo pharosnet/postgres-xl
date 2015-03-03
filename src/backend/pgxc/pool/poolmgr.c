@@ -2562,16 +2562,16 @@ grow_pool(DatabasePool *dbPool, Oid node)
 
 	nodePool = (PGXCNodePool *) hash_search(dbPool->nodePools, &node,
 											HASH_ENTER, &found);
+	nodePool->connstr = build_node_conn_str(node, dbPool);
+	if (!nodePool->connstr)
+	{
+		ereport(ERROR,
+				(errcode(ERRCODE_INTERNAL_ERROR),
+				 errmsg("could not build connection string for node %u", node)));
+	}
+
 	if (!found)
 	{
-		nodePool->connstr = build_node_conn_str(node, dbPool);
-		if (!nodePool->connstr)
-		{
-			ereport(ERROR,
-					(errcode(ERRCODE_INTERNAL_ERROR),
-					 errmsg("could not build connection string for node %u", node)));
-		}
-
 		nodePool->slot = (PGXCNodePoolSlot **) palloc0(MaxPoolSize * sizeof(PGXCNodePoolSlot *));
 		if (!nodePool->slot)
 		{
