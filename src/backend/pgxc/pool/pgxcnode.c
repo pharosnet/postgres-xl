@@ -1405,6 +1405,7 @@ pgxc_node_send_plan(PGXCNodeHandle * handle, const char *statement,
 	int			msgLen;
 	char	  **paramTypes = (char **)palloc(sizeof(char *) * num_params);
 	int			i;
+	short		tmp_num_params;
 
 	/* Invalid connection state, return error */
 	if (handle->state != DN_CONNECTION_STATE_IDLE)
@@ -1449,8 +1450,9 @@ pgxc_node_send_plan(PGXCNodeHandle * handle, const char *statement,
 	memcpy(handle->outBuffer + handle->outEnd, planstr, planLen);
 	handle->outEnd += planLen;
 	/* parameter types */
-	*((short *)(handle->outBuffer + handle->outEnd)) = htons(num_params);
-	handle->outEnd += sizeof(num_params);
+	tmp_num_params = htons(num_params);
+	memcpy(handle->outBuffer + handle->outEnd, &tmp_num_params, sizeof(tmp_num_params));
+	handle->outEnd += sizeof(tmp_num_params);
 	/*
 	 * instead of parameter ids we should send parameter names (qualified by
 	 * schema name if required). The OIDs of types can be different on
