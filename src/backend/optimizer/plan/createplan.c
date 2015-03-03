@@ -4720,10 +4720,7 @@ make_remotesubplan(PlannerInfo *root,
 		node->distributionKey = InvalidAttrNumber;
 		node->distributionNodes = NIL;
 	}
-	plan->qual = NIL;
-	plan->lefttree = lefttree;
-	plan->righttree = NULL;
-	copy_plan_costsize(plan, lefttree);
+
 	/* determine where subplan will be executed */
 	if (execDistribution)
 	{
@@ -4768,7 +4765,7 @@ make_remotesubplan(PlannerInfo *root,
 		}
 		bms_free(tmpset);
 	}
-	plan->targetlist = lefttree->targetlist;
+
 	/* We do not need to merge sort if only one node is yielding tuples */
 	if (pathkeys && node->execOnAll && list_length(node->nodeList) > 1)
 	{
@@ -4952,6 +4949,13 @@ make_remotesubplan(PlannerInfo *root,
 		node->sort->sortCollations = collations;
 		node->sort->nullsFirst = nullsFirst;
 	}
+
+	plan->qual = NIL;
+	plan->targetlist = lefttree->targetlist;
+	plan->lefttree = lefttree;
+	plan->righttree = NULL;
+	copy_plan_costsize(plan, lefttree);
+
 	node->cursor = get_internal_cursor();
 	node->unique = 0;
 	return node;
