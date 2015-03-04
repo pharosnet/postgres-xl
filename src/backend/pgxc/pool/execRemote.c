@@ -3139,7 +3139,6 @@ prepare_err:
 			conn->ck_resp_rollback = false;
 			/* sanity checks */
 			Assert(conn->sock != NO_SOCKET);
-			Assert(conn->transaction_status == 'I');
 			Assert(conn->state == DN_CONNECTION_STATE_IDLE);
 			/* Send down abort prepared command */
 			if (pgxc_node_send_gxid(conn, auxXid))
@@ -3180,7 +3179,6 @@ prepare_err:
 			conn->ck_resp_rollback = false;
 			/* sanity checks */
 			Assert(conn->sock != NO_SOCKET);
-			Assert(conn->transaction_status = 'I');
 			Assert(conn->state = DN_CONNECTION_STATE_IDLE);
 			/* Send down abort prepared command */
 			if (pgxc_node_send_gxid(conn, auxXid))
@@ -3220,6 +3218,13 @@ prepare_err:
 		/* Receive responses */
 		pgxc_node_receive_responses(conn_count, connections, NULL, &combiner2);
 		CloseCombiner(&combiner2);
+	}
+
+	if (!temp_object_included && !PersistentConnections)
+	{
+		/* Clean up remote sessions */
+		pgxc_node_remote_cleanup_all();
+		release_handles();
 	}
 
 	pfree_pgxc_all_handles(handles);
