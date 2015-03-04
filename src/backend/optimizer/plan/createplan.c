@@ -6783,7 +6783,7 @@ make_result(PlannerInfo *root,
 					}
 				}
 
-				if (pushdown->distributionKey != InvalidAttrNumber)
+				if (pushdown->distributionKey == InvalidAttrNumber)
 				{
 					/* Not found, adding */
 					TargetEntry    *newtle;
