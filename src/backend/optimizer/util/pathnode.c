@@ -1202,6 +1202,8 @@ set_joinpath_distribution(PlannerInfo *root, JoinPath *pathnode)
 				{
 					EquivalenceMember *em = (EquivalenceMember *) lfirst(emc);
 					Expr	   *var = (Expr *)em->em_expr;
+					if (IsA(var, RelabelType))
+						var = ((RelabelType *) var)->arg;
 					if (!found_outer)
 						found_outer = equal(var, outerd->distributionExpr);
 
@@ -1234,6 +1236,8 @@ set_joinpath_distribution(PlannerInfo *root, JoinPath *pathnode)
 
 							em = (EquivalenceMember *) lfirst(emc);
 							emvar = (Expr *)em->em_expr;
+							if (IsA(emvar, RelabelType))
+								emvar = ((RelabelType *) emvar)->arg;
 							if (equal(var, emvar))
 							{
 								targetd->distributionExpr = (Node *) var;
