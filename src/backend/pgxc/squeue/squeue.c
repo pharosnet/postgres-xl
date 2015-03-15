@@ -948,6 +948,13 @@ SharedQueueReset(SharedQueue squeue, int consumerIdx)
 {
 	SQueueSync *sqsync = squeue->sq_sync;
 
+	/* 
+	 * We may have already cleaned up, but then an abort signalled us to clean up.
+	 * Avoid segmentation fault on abort
+	 */
+	if (!sqsync)
+		return;
+
 	if (consumerIdx == -1)
 	{
 		int i;
