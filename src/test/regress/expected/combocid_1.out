@@ -48,9 +48,10 @@ INSERT INTO combocidtest VALUES (333);
 DECLARE c CURSOR FOR SELECT ctid,cmin,* FROM combocidtest ORDER BY ctid;
 DELETE FROM combocidtest;
 FETCH ALL FROM c;
- ctid | cmin | foobar 
-------+------+--------
-(0 rows)
+ ctid  | cmin | foobar 
+-------+------+--------
+ (0,3) |    0 |    333
+(1 row)
 
 ROLLBACK;
 SELECT ctid,cmin,* FROM combocidtest ORDER BY ctid;

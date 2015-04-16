@@ -1971,36 +1971,17 @@ begin
 	return x;
 end$$ language plpgsql;
 select trap_zero_divide(50);
-NOTICE:  should see this
-NOTICE:  should see this only if 50 <> 0
-NOTICE:  should see this only if 50 fits in smallint
- trap_zero_divide 
-------------------
-                2
-(1 row)
-
+ERROR:  Internal subtransactions not supported in Postgres-XL
+CONTEXT:  PL/pgSQL function trap_zero_divide(integer) line 5 during statement block entry
 select trap_zero_divide(0);
-NOTICE:  should see this
-NOTICE:  caught division_by_zero
- trap_zero_divide 
-------------------
-               -1
-(1 row)
-
+ERROR:  Internal subtransactions not supported in Postgres-XL
+CONTEXT:  PL/pgSQL function trap_zero_divide(integer) line 5 during statement block entry
 select trap_zero_divide(100000);
-NOTICE:  should see this
-NOTICE:  should see this only if 100000 <> 0
-NOTICE:  caught numeric_value_out_of_range
- trap_zero_divide 
-------------------
-               -2
-(1 row)
-
+ERROR:  Internal subtransactions not supported in Postgres-XL
+CONTEXT:  PL/pgSQL function trap_zero_divide(integer) line 5 during statement block entry
 select trap_zero_divide(-100);
-NOTICE:  should see this
-NOTICE:  should see this only if -100 <> 0
-NOTICE:  should see this only if -100 fits in smallint
-ERROR:  -100 is less than zero
+ERROR:  Internal subtransactions not supported in Postgres-XL
+CONTEXT:  PL/pgSQL function trap_zero_divide(integer) line 5 during statement block entry
 create function trap_matching_test(int) returns int as $$
 declare x int;
 	sx smallint;
@@ -2023,32 +2004,18 @@ begin
 end$$ language plpgsql;
 -- PGXCTODO: This is failing due to issue 3522907, complicated SELECT queries in plpgsql functions
 select trap_matching_test(50);
-ERROR:  bind message supplies 1 parameters, but prepared statement "" requires 0
-CONTEXT:  SQL statement "select        unique1 from tenk1 where unique2 =
-			(select unique2 from tenk1 b where ten = $1)"
-PL/pgSQL function trap_matching_test(integer) line 9 at SQL statement
+ERROR:  Internal subtransactions not supported in Postgres-XL
+CONTEXT:  PL/pgSQL function trap_matching_test(integer) line 6 during statement block entry
 select trap_matching_test(0);
-NOTICE:  caught data_exception
- trap_matching_test 
---------------------
-                 -1
-(1 row)
-
+ERROR:  Internal subtransactions not supported in Postgres-XL
+CONTEXT:  PL/pgSQL function trap_matching_test(integer) line 6 during statement block entry
 select trap_matching_test(100000);
-NOTICE:  caught data_exception
- trap_matching_test 
---------------------
-                 -1
-(1 row)
-
+ERROR:  Internal subtransactions not supported in Postgres-XL
+CONTEXT:  PL/pgSQL function trap_matching_test(integer) line 6 during statement block entry
 -- PGXCTODO: This is failing due to issue 3522907, complicated SELECT queries in plpgsql functions
 select trap_matching_test(1);
-ERROR:  bind message supplies 1 parameters, but prepared statement "" requires 0
-CONTEXT:  SQL statement "select        unique1 from tenk1 where unique2 =
-			(select unique2 from tenk1 b where ten = $1)"
-PL/pgSQL function trap_matching_test(integer) line 9 at SQL statement
--- Enforce use of COMMIT instead of 2PC for temporary objects
-SET enforce_two_phase_commit TO off;
+ERROR:  Internal subtransactions not supported in Postgres-XL
+CONTEXT:  PL/pgSQL function trap_matching_test(integer) line 6 during statement block entry
 create temp table foo (f1 int);
 create function blockme() returns int as $$
 declare x int;
@@ -2073,12 +2040,8 @@ begin
 end$$ language plpgsql;
 set statement_timeout to 2000;
 select blockme();
-NOTICE:  nyeah nyeah, can't stop me
- blockme 
----------
-      20
-(1 row)
-
+ERROR:  Internal subtransactions not supported in Postgres-XL
+CONTEXT:  PL/pgSQL function blockme() line 6 during statement block entry
 reset statement_timeout;
 select * from foo order by 1;
  f1 
@@ -2105,20 +2068,8 @@ begin
   return x;
 end$$ language plpgsql;
 select test_variable_storage();
-NOTICE:  should see this
-CONTEXT:  SQL statement "SELECT trap_zero_divide(-100)"
-PL/pgSQL function test_variable_storage() line 8 at PERFORM
-NOTICE:  should see this only if -100 <> 0
-CONTEXT:  SQL statement "SELECT trap_zero_divide(-100)"
-PL/pgSQL function test_variable_storage() line 8 at PERFORM
-NOTICE:  should see this only if -100 fits in smallint
-CONTEXT:  SQL statement "SELECT trap_zero_divide(-100)"
-PL/pgSQL function test_variable_storage() line 8 at PERFORM
- test_variable_storage 
------------------------
- 123456789012
-(1 row)
-
+ERROR:  Internal subtransactions not supported in Postgres-XL
+CONTEXT:  PL/pgSQL function test_variable_storage() line 5 during statement block entry
 --
 -- test foreign key error trapping
 --
@@ -2153,29 +2104,18 @@ begin
 	return 1;
 end$$ language plpgsql;
 select trap_foreign_key(1);
- trap_foreign_key 
-------------------
-                1
-(1 row)
-
+ERROR:  Internal subtransactions not supported in Postgres-XL
+CONTEXT:  PL/pgSQL function trap_foreign_key(integer) line 3 during statement block entry
 select trap_foreign_key(2);	-- detects FK violation
-NOTICE:  caught foreign_key_violation
- trap_foreign_key 
-------------------
-                0
-(1 row)
-
+ERROR:  Internal subtransactions not supported in Postgres-XL
+CONTEXT:  PL/pgSQL function trap_foreign_key(integer) line 3 during statement block entry
 begin;
   set constraints all deferred;
   select trap_foreign_key(2);	-- should not detect FK violation
-NOTICE:  caught foreign_key_violation
- trap_foreign_key 
-------------------
-                0
-(1 row)
-
+ERROR:  Internal subtransactions not supported in Postgres-XL
+CONTEXT:  PL/pgSQL function trap_foreign_key(integer) line 3 during statement block entry
   savepoint x;
-ERROR:  SAVEPOINT is not yet supported.
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
     set constraints all immediate; -- fails
 ERROR:  current transaction is aborted, commands ignored until end of transaction block
   rollback to x;
@@ -2518,13 +2458,8 @@ EXCEPTION
 END;
 $$ LANGUAGE plpgsql;
 SELECT reraise_test();
-NOTICE:  exception syntax_error thrown in inner block, reraising
-NOTICE:  RIGHT - exception syntax_error caught in inner block
- reraise_test 
---------------
- 
-(1 row)
-
+ERROR:  Internal subtransactions not supported in Postgres-XL
+CONTEXT:  PL/pgSQL function reraise_test() line 2 during statement block entry
 --
 -- reject function definitions that contain malformed SQL queries at
 -- compile-time, where possible
@@ -2673,15 +2608,8 @@ begin
     end;
 end; $$ language plpgsql;
 select excpt_test3();
-NOTICE:  caught exception P0001 user exception
-NOTICE:  P0001 user exception
-NOTICE:  caught exception 22012 division by zero
-NOTICE:  P0001 user exception
- excpt_test3 
--------------
- 
-(1 row)
-
+ERROR:  Internal subtransactions not supported in Postgres-XL
+CONTEXT:  PL/pgSQL function excpt_test3() line 3 during statement block entry
 drop function excpt_test1();
 drop function excpt_test2();
 drop function excpt_test3();
@@ -3657,9 +3585,8 @@ begin
 end;
 $$ language plpgsql;
 select raise_test();
-NOTICE:  SQLSTATE: 22012 SQLERRM: check me
-ERROR:  check me
-DETAIL:  some detail info
+ERROR:  Internal subtransactions not supported in Postgres-XL
+CONTEXT:  PL/pgSQL function raise_test() line 2 during statement block entry
 create or replace function raise_test() returns void as $$
 begin
   raise 'check me'
@@ -3671,9 +3598,8 @@ begin
 end;
 $$ language plpgsql;
 select raise_test();
-NOTICE:  SQLSTATE: 1234F SQLERRM: check me
-ERROR:  check me
-DETAIL:  some detail info
+ERROR:  Internal subtransactions not supported in Postgres-XL
+CONTEXT:  PL/pgSQL function raise_test() line 2 during statement block entry
 -- SQLSTATE specification in WHEN
 create or replace function raise_test() returns void as $$
 begin
@@ -3686,9 +3612,8 @@ begin
 end;
 $$ language plpgsql;
 select raise_test();
-NOTICE:  SQLSTATE: 1234F SQLERRM: check me
-ERROR:  check me
-DETAIL:  some detail info
+ERROR:  Internal subtransactions not supported in Postgres-XL
+CONTEXT:  PL/pgSQL function raise_test() line 2 during statement block entry
 create or replace function raise_test() returns void as $$
 begin
   raise division_by_zero using detail = 'some detail info';
@@ -3699,9 +3624,8 @@ begin
 end;
 $$ language plpgsql;
 select raise_test();
-NOTICE:  SQLSTATE: 22012 SQLERRM: division_by_zero
-ERROR:  division_by_zero
-DETAIL:  some detail info
+ERROR:  Internal subtransactions not supported in Postgres-XL
+CONTEXT:  PL/pgSQL function raise_test() line 2 during statement block entry
 create or replace function raise_test() returns void as $$
 begin
   raise division_by_zero;
@@ -3787,12 +3711,8 @@ exception when others then
 end;
 $$ language plpgsql;
 select stacked_diagnostics_test();
-NOTICE:  sqlstate: 22012, message: division by zero, context: [PL/pgSQL function zero_divide() line 4 at RETURN <- SQL statement "SELECT zero_divide()" <- PL/pgSQL function stacked_diagnostics_test() line 6 at PERFORM]
- stacked_diagnostics_test 
---------------------------
- 
-(1 row)
-
+ERROR:  Internal subtransactions not supported in Postgres-XL
+CONTEXT:  PL/pgSQL function stacked_diagnostics_test() line 5 during statement block entry
 create or replace function stacked_diagnostics_test() returns void as $$
 declare _detail text;
         _hint text;
@@ -3808,12 +3728,8 @@ exception when others then
 end;
 $$ language plpgsql;
 select stacked_diagnostics_test();
-NOTICE:  message: custom exception, detail: some detail of custom exception, hint: some hint related to custom exception
- stacked_diagnostics_test 
---------------------------
- 
-(1 row)
-
+ERROR:  Internal subtransactions not supported in Postgres-XL
+CONTEXT:  PL/pgSQL function stacked_diagnostics_test() line 5 during statement block entry
 -- fail, cannot use stacked diagnostics statement outside handler
 create or replace function stacked_diagnostics_test() returns void as $$
 declare _detail text;
@@ -3844,8 +3760,8 @@ exception
 end;
 $$ language plpgsql;
 select raise_test();
-NOTICE:  22012
-ERROR:  substitute message
+ERROR:  Internal subtransactions not supported in Postgres-XL
+CONTEXT:  PL/pgSQL function raise_test() line 2 during statement block entry
 drop function raise_test();
 -- test CASE statement
 create or replace function case_test(bigint) returns text as $$
@@ -3931,12 +3847,8 @@ exception
 end
 $$ language plpgsql;
 select catch();
-NOTICE:  caught case_not_found 20000 case not found
- catch 
--------
- 
-(1 row)
-
+ERROR:  Internal subtransactions not supported in Postgres-XL
+CONTEXT:  PL/pgSQL function catch() line 2 during statement block entry
 -- test the searched variant too, as well as ELSE
 create or replace function case_test(bigint) returns text as $$
 declare a int = 10;
@@ -4157,17 +4069,11 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 SELECT * FROM leaker_1(false);
- leaker_1 
-----------
-        1
-(1 row)
-
+ERROR:  Internal subtransactions not supported in Postgres-XL
+CONTEXT:  PL/pgSQL function leaker_1(boolean) line 5 during statement block entry
 SELECT * FROM leaker_1(true);
- leaker_1 
-----------
-        0
-(1 row)
-
+ERROR:  Internal subtransactions not supported in Postgres-XL
+CONTEXT:  PL/pgSQL function leaker_1(boolean) line 5 during statement block entry
 DROP FUNCTION leaker_1(bool);
 DROP FUNCTION leaker_2(bool);
 -- Test for appropriate cleanup of non-simple expression evaluations
@@ -4207,11 +4113,8 @@ begin
 end;
 $$ LANGUAGE plpgsql;
 SELECT nonsimple_expr_test();
- nonsimple_expr_test 
----------------------
-                   1
-(1 row)
-
+ERROR:  Internal subtransactions not supported in Postgres-XL
+CONTEXT:  PL/pgSQL function nonsimple_expr_test() line 5 during statement block entry
 DROP FUNCTION nonsimple_expr_test();
 --
 -- Test cases involving recursion and error recovery in simple expressions
@@ -4718,3 +4621,132 @@ ERROR:  value for domain orderedarray violates check constraint "sorted"
 CONTEXT:  PL/pgSQL function testoa(integer,integer,integer) line 5 at assignment
 drop function arrayassign1();
 drop function testoa(x1 int, x2 int, x3 int);
+-- Check that DMLs in a plpgsql function work OK, when subsequent queries need
+-- to open new datanode connections
+CREATE OR REPLACE FUNCTION TestJoinTempTable_CT()
+RETURNS void AS $$
+BEGIN
+        CREATE TABLE IF NOT EXISTS RealTable(ProductId int, ScenarioId int);
+        TRUNCATE TABLE RealTable;
+
+        CREATE TABLE IF NOT EXISTS TmpBar(NodeId int)
+                DISTRIBUTE BY REPLICATION;
+        CREATE TABLE IF NOT EXISTS TmpFoo(TempId int)
+                DISTRIBUTE BY REPLICATION;
+END ;
+$$ LANGUAGE plpgsql;
+CREATE OR REPLACE FUNCTION TestJoinTempTable_INSERT()
+RETURNS void AS $$
+BEGIN
+        INSERT INTO RealTable(ProductId, ScenarioId)
+                SELECT generate_series(1,1000) as ProductId, (random() * 100)::int as ScenarioId;
+
+        INSERT INTO TmpBar(NodeId)
+                SELECT generate_series(1,1000);
+		RAISE INFO 'number of existing rows in RealTable - %', (SELECT count(*) FROM RealTable);
+		RAISE INFO 'number of existing rows in TmpBar - %', (SELECT count(*) FROM TmpBar);
+		RAISE INFO 'number of existing rows in TmpFoo - %', (SELECT count(*) FROM TmpFoo);
+        INSERT INTO TmpFoo(TempId)
+               SELECT DISTINCT(PR.ProductId)
+                 FROM RealTable AS PR
+                 JOIN TmpBar tmp1 ON PR.ProductId = tmp1.NodeId;
+
+		RAISE INFO 'number of rows produced by query - %',
+				(SELECT COUNT(DISTINCT(PR.ProductId))
+				 FROM RealTable AS PR
+                 JOIN TmpBar tmp1 ON PR.ProductId = tmp1.NodeId);
+		RAISE INFO 'number of rows in TmpFoo - %', (SELECT count(*) FROM TmpFoo);
+		RAISE INFO 'number of existing rows in TmpFoo - %', (SELECT count(*) FROM TmpFoo);
+		RAISE INFO 'number of existing rows in TmpFoo - %', (SELECT count(*) FROM TmpFoo);
+END ;
+$$ LANGUAGE plpgsql;
+SELECT TestJoinTempTable_CT();
+ testjointemptable_ct 
+----------------------
+ 
+(1 row)
+
+SELECT TestJoinTempTable_INSERT();
+INFO:  number of existing rows in RealTable - 1000
+INFO:  number of existing rows in TmpBar - 1000
+INFO:  number of existing rows in TmpFoo - 0
+INFO:  number of rows produced by query - 1000
+INFO:  number of rows in TmpFoo - 1000
+INFO:  number of existing rows in TmpFoo - 1000
+INFO:  number of existing rows in TmpFoo - 1000
+ testjointemptable_insert 
+--------------------------
+ 
+(1 row)
+
+DROP TABLE RealTable;
+DROP TABLE TmpBar;
+DROP TABLE TmpFoo;
+CREATE OR REPLACE FUNCTION TestJoinTempTable()
+RETURNS void AS $$
+BEGIN
+        CREATE TABLE IF NOT EXISTS RealTable(ProductId int, ScenarioId int);
+        TRUNCATE TABLE RealTable;
+
+        CREATE TEMPORARY TABLE IF NOT EXISTS TmpBar(NodeId int)
+                DISTRIBUTE BY REPLICATION;
+        CREATE TEMPORARY TABLE IF NOT EXISTS TmpFoo(TempId int)
+                DISTRIBUTE BY REPLICATION;
+
+        INSERT INTO RealTable(ProductId, ScenarioId)
+                SELECT generate_series(1,1000) as ProductId, (random() * 100)::int as ScenarioId;
+
+        INSERT INTO TmpBar(NodeId)
+                SELECT generate_series(1,1000);
+
+        INSERT INTO TmpFoo(TempId)
+               SELECT DISTINCT(PR.ProductId)
+                 FROM RealTable AS PR
+                 JOIN TmpBar tmp1 ON PR.ProductId = tmp1.NodeId;
+END ;
+$$ LANGUAGE plpgsql;
+SELECT TestJoinTempTable();
+ testjointemptable 
+-------------------
+ 
+(1 row)
+
+-- Multiple invokations of the function showed interesting issues with command
+-- passdown. So add that to the test case
+SELECT TestJoinTempTable();
+NOTICE:  relation "realtable" already exists, skipping
+CONTEXT:  SQL statement "CREATE TABLE IF NOT EXISTS RealTable(ProductId int, ScenarioId int)"
+PL/pgSQL function testjointemptable() line 3 at SQL statement
+NOTICE:  relation "tmpbar" already exists, skipping
+CONTEXT:  SQL statement "CREATE TEMPORARY TABLE IF NOT EXISTS TmpBar(NodeId int)
+                DISTRIBUTE BY REPLICATION"
+PL/pgSQL function testjointemptable() line 6 at SQL statement
+NOTICE:  relation "tmpfoo" already exists, skipping
+CONTEXT:  SQL statement "CREATE TEMPORARY TABLE IF NOT EXISTS TmpFoo(TempId int)
+                DISTRIBUTE BY REPLICATION"
+PL/pgSQL function testjointemptable() line 8 at SQL statement
+ testjointemptable 
+-------------------
+ 
+(1 row)
+
+SELECT TestJoinTempTable();
+NOTICE:  relation "realtable" already exists, skipping
+CONTEXT:  SQL statement "CREATE TABLE IF NOT EXISTS RealTable(ProductId int, ScenarioId int)"
+PL/pgSQL function testjointemptable() line 3 at SQL statement
+NOTICE:  relation "tmpbar" already exists, skipping
+CONTEXT:  SQL statement "CREATE TEMPORARY TABLE IF NOT EXISTS TmpBar(NodeId int)
+                DISTRIBUTE BY REPLICATION"
+PL/pgSQL function testjointemptable() line 6 at SQL statement
+NOTICE:  relation "tmpfoo" already exists, skipping
+CONTEXT:  SQL statement "CREATE TEMPORARY TABLE IF NOT EXISTS TmpFoo(TempId int)
+                DISTRIBUTE BY REPLICATION"
+PL/pgSQL function testjointemptable() line 8 at SQL statement
+ testjointemptable 
+-------------------
+ 
+(1 row)
+
+DROP TABLE RealTable;
+DROP TABLE TmpBar;
+DROP TABLE TmpFoo;
