@@ -6,7 +6,7 @@
 --
 -- Tables and rules for the view test
 --
-create table rtest_t1 (a int4, b int4) distribute by roundrobin;
+create table rtest_t1 (a int4, b int4) distribute by replication;
 create table rtest_t2 (a int4, b int4);
 create table rtest_t3 (a int4, b int4);
 create view rtest_v1 as select * from rtest_t1;
@@ -151,26 +151,19 @@ select * from rtest_v1 order by a, b;
 
 -- delete with constant expression
 delete from rtest_v1 where a = 1;
-ERROR:  could not plan this distributed statement
-DETAIL:  The plan suggests moving data of the target table between data nodes, possible data corruption.
 select * from rtest_v1 order by a, b;
  a | b  
 ---+----
- 1 | 11
  2 | 12
-(2 rows)
+(1 row)
 
 insert into rtest_v1 values (1, 11);
 delete from rtest_v1 where b = 12;
-ERROR:  could not plan this distributed statement
-DETAIL:  The plan suggests moving data of the target table between data nodes, possible data corruption.
 select * from rtest_v1 order by a, b;
  a | b  
 ---+----
  1 | 11
- 1 | 11
- 2 | 12
-(3 rows)
+(1 row)
 
 insert into rtest_v1 values (2, 12);
 insert into rtest_v1 values (2, 13);
@@ -178,11 +171,9 @@ select * from rtest_v1 order by a, b;
  a | b  
 ---+----
  1 | 11
- 1 | 11
- 2 | 12
  2 | 12
  2 | 13
-(5 rows)
+(3 rows)
 
 ** Remember the delete rule on rtest_v1: It says
 ** DO INSTEAD DELETE FROM rtest_t1 WHERE a = old.a
@@ -193,17 +184,11 @@ select * from rtest_v1 order by a, b;
 ** So this time both rows with a = 2 must get deleted
 \r
 delete from rtest_v1 where b = 12;
-ERROR:  could not plan this distributed statement
-DETAIL:  The plan suggests moving data of the target table between data nodes, possible data corruption.
 select * from rtest_v1 order by a, b;
  a | b  
 ---+----
  1 | 11
- 1 | 11
- 2 | 12
- 2 | 12
- 2 | 13
-(5 rows)
+(1 row)
 
 delete from rtest_v1;
 -- insert select
@@ -255,65 +240,41 @@ select * from rtest_v1 where b isnull order by a, b;
 -- let attribute a differ (must be done on rtest_t1 - see above)
 update rtest_t1 set a = a + 10 where b isnull;
 delete from rtest_v1 where b isnull;
-ERROR:  could not plan this distributed statement
-DETAIL:  The plan suggests moving data of the target table between data nodes, possible data corruption.
 select * from rtest_v1 order by a, b;
- a  | b  
-----+----
-  1 | 21
-  2 | 22
-  3 | 23
- 11 |   
- 12 |   
- 13 |   
- 14 |   
- 15 |   
-(8 rows)
+ a | b  
+---+----
+ 1 | 21
+ 2 | 22
+ 3 | 23
+(3 rows)
 
 -- now updates with constant expression
 update rtest_v1 set b = 42 where a = 2;
-ERROR:  Partition column can't be updated in current version
 select * from rtest_v1 order by a, b;
- a  | b  
-----+----
-  1 | 21
-  2 | 22
-  3 | 23
- 11 |   
- 12 |   
- 13 |   
- 14 |   
- 15 |   
-(8 rows)
+ a | b  
+---+----
+ 1 | 21
+ 2 | 42
+ 3 | 23
+(3 rows)
 
 update rtest_v1 set b = 99 where b = 42;
-ERROR:  Partition column can't be updated in current version
 select * from rtest_v1 order by a, b;
- a  | b  
-----+----
-  1 | 21
-  2 | 22
-  3 | 23
- 11 |   
- 12 |   
- 13 |   
- 14 |   
- 15 |   
-(8 rows)
+ a | b  
+---+----
+ 1 | 21
+ 2 | 99
+ 3 | 23
+(3 rows)
 
 update rtest_v1 set b = 88 where b < 50;
 select * from rtest_v1 order by a, b;
- a  | b  
-----+----
-  1 | 88
-  2 | 88
-  3 | 88
- 11 |   
- 12 |   
- 13 |   
- 14 |   
- 15 |   
-(8 rows)
+ a | b  
+---+----
+ 1 | 88
+ 2 | 99
+ 3 | 88
+(3 rows)
 
 delete from rtest_v1;
 insert into rtest_v1 select rtest_t2.a, rtest_t3.b
@@ -329,7 +290,8 @@ select * from rtest_v1 order by a, b;
 
 -- updates in a mergejoin
 update rtest_v1 set b = rtest_t2.b from rtest_t2 where rtest_v1.a = rtest_t2.a;
-ERROR:  Partition column can't be updated in current version
+ERROR:  could not plan this distributed update
+DETAIL:  correlated UPDATE or updating distribution column currently not supported in Postgres-XL.
 select * from rtest_v1 order by a, b;
  a | b  
 ---+----
@@ -367,7 +329,8 @@ select * from rtest_v1 order by a, b;
 (8 rows)
 
 update rtest_v1 set a = rtest_t3.a + 20 from rtest_t3 where rtest_v1.b = rtest_t3.b;
-ERROR:  Partition column can't be updated in current version
+ERROR:  could not plan this distributed update
+DETAIL:  correlated UPDATE or updating distribution column currently not supported in Postgres-XL.
 select * from rtest_v1 order by a, b;
  a  | b  
 ----+----
@@ -397,7 +360,8 @@ insert into rtest_admin values ('jw', 'orion');
 insert into rtest_admin values ('jw', 'notjw');
 insert into rtest_admin values ('bm', 'neptun');
 update rtest_system set sysname = 'pluto' where sysname = 'neptun';
-ERROR:  Partition column can't be updated in current version
+ERROR:  could not plan this distributed update
+DETAIL:  correlated UPDATE or updating distribution column currently not supported in Postgres-XL.
 select * from rtest_interface order by sysname, ifname;
  sysname | ifname 
 ---------+--------
@@ -416,7 +380,8 @@ select * from rtest_admin order by pname, sysname;
 (3 rows)
 
 update rtest_person set pname = 'jwieck' where pdesc = 'Jan Wieck';
-ERROR:  Partition column can't be updated in current version
+ERROR:  could not plan this distributed update
+DETAIL:  correlated UPDATE or updating distribution column currently not supported in Postgres-XL.
 -- Note: use ORDER BY here to ensure consistent output across all systems.
 -- The above UPDATE affects two rows with equal keys, so they could be
 -- updated in either order depending on the whim of the local qsort().
@@ -429,8 +394,8 @@ select * from rtest_admin order by pname, sysname;
 (3 rows)
 
 delete from rtest_system where sysname = 'orion';
-ERROR:  could not plan this distributed statement
-DETAIL:  The plan suggests moving data of the target table between data nodes, possible data corruption.
+ERROR:  could not plan this distributed delete
+DETAIL:  correlated or complex DELETE is currently not supported in Postgres-XL.
 select * from rtest_interface order by sysname, ifname;
  sysname | ifname 
 ---------+--------
@@ -486,7 +451,8 @@ select ename, who = current_user as "matches user", action, newsal, oldsal from 
 
 update rtest_empmass set salary = salary + '1000.00';
 update rtest_emp set salary = rtest_empmass.salary from rtest_empmass where rtest_emp.ename = rtest_empmass.ename;
-ERROR:  Partition column can't be updated in current version
+ERROR:  could not plan this distributed update
+DETAIL:  correlated UPDATE or updating distribution column currently not supported in Postgres-XL.
 select ename, who = current_user as "matches user", action, newsal, oldsal from rtest_emplog order by ename, action, newsal;
         ename         | matches user |   action   |   newsal   |   oldsal   
 ----------------------+--------------+------------+------------+------------
@@ -501,8 +467,8 @@ select ename, who = current_user as "matches user", action, newsal, oldsal from 
 (8 rows)
 
 delete from rtest_emp using rtest_empmass where rtest_emp.ename = rtest_empmass.ename;
-ERROR:  could not plan this distributed statement
-DETAIL:  The plan suggests moving data of the target table between data nodes, possible data corruption.
+ERROR:  could not plan this distributed delete
+DETAIL:  correlated or complex DELETE is currently not supported in Postgres-XL.
 select ename, who = current_user as "matches user", action, newsal, oldsal from rtest_emplog order by ename, action, newsal;
         ename         | matches user |   action   |   newsal   |   oldsal   
 ----------------------+--------------+------------+------------+------------
@@ -1136,7 +1102,8 @@ SELECT * FROM shoelace ORDER BY sl_name;
 (8 rows)
 
 insert into shoelace_ok select * from shoelace_arrive;
-ERROR:  Partition column can't be updated in current version
+ERROR:  could not plan this distributed update
+DETAIL:  correlated UPDATE or updating distribution column currently not supported in Postgres-XL.
 SELECT * FROM shoelace ORDER BY sl_name;
   sl_name   | sl_avail |  sl_color  | sl_len | sl_unit  | sl_len_cm 
 ------------+----------+------------+--------+----------+-----------
@@ -1179,8 +1146,8 @@ SELECT * FROM shoelace_candelete;
 DELETE FROM shoelace WHERE EXISTS
     (SELECT * FROM shoelace_candelete
              WHERE sl_name = shoelace.sl_name);
-ERROR:  could not plan this distributed statement
-DETAIL:  The plan suggests moving data of the target table between data nodes, possible data corruption.
+ERROR:  could not plan this distributed delete
+DETAIL:  correlated or complex DELETE is currently not supported in Postgres-XL.
 SELECT * FROM shoelace ORDER BY sl_name;
   sl_name   | sl_avail |  sl_color  | sl_len | sl_unit  | sl_len_cm 
 ------------+----------+------------+--------+----------+-----------
@@ -1281,7 +1248,8 @@ select * from vview order by pid;
 (2 rows)
 
 update vview set descrip='test1' where pid=1;
-ERROR:  Partition column can't be updated in current version
+ERROR:  could not plan this distributed update
+DETAIL:  correlated UPDATE or updating distribution column currently not supported in Postgres-XL.
 select * from vview order by pid;
  pid |   txt   | descrip  
 -----+---------+----------
@@ -1290,7 +1258,8 @@ select * from vview order by pid;
 (2 rows)
 
 update vview set descrip='test2' where pid=2;
-ERROR:  Partition column can't be updated in current version
+ERROR:  could not plan this distributed update
+DETAIL:  correlated UPDATE or updating distribution column currently not supported in Postgres-XL.
 select * from vview order by pid;
  pid |   txt   | descrip  
 -----+---------+----------
@@ -1299,7 +1268,8 @@ select * from vview order by pid;
 (2 rows)
 
 update vview set descrip='test3' where pid=3;
-ERROR:  Partition column can't be updated in current version
+ERROR:  could not plan this distributed update
+DETAIL:  correlated UPDATE or updating distribution column currently not supported in Postgres-XL.
 select * from vview order by pid;
  pid |   txt   | descrip  
 -----+---------+----------
@@ -1584,7 +1554,8 @@ create rule t1_upd_2 as on update to t1
 set constraint_exclusion = on;
 insert into t1 select * from generate_series(5,19,1) g;
 update t1 set a = 4 where a = 5;
-ERROR:  Partition column can't be updated in current version
+ERROR:  could not plan this distributed update
+DETAIL:  correlated UPDATE or updating distribution column currently not supported in Postgres-XL.
 select * from only t1 order by 1;
  a 
 ---

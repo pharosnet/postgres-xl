@@ -2717,19 +2717,13 @@ DROP TABLE onek_with_null;
 EXPLAIN (NODES OFF, COSTS OFF)
 SELECT * FROM tenk1
   WHERE thousand = 42 AND (tenthous = 1 OR tenthous = 3 OR tenthous = 42);
-                                                                  QUERY PLAN                                                                   
------------------------------------------------------------------------------------------------------------------------------------------------
+                              QUERY PLAN                               
+-----------------------------------------------------------------------
  Remote Subquery Scan on all
-   ->  Bitmap Heap Scan on tenk1
-         Recheck Cond: (((thousand = 42) AND (tenthous = 1)) OR ((thousand = 42) AND (tenthous = 3)) OR ((thousand = 42) AND (tenthous = 42)))
-         ->  BitmapOr
-               ->  Bitmap Index Scan on tenk1_thous_tenthous
-                     Index Cond: ((thousand = 42) AND (tenthous = 1))
-               ->  Bitmap Index Scan on tenk1_thous_tenthous
-                     Index Cond: ((thousand = 42) AND (tenthous = 3))
-               ->  Bitmap Index Scan on tenk1_thous_tenthous
-                     Index Cond: ((thousand = 42) AND (tenthous = 42))
-(10 rows)
+   ->  Index Scan using tenk1_thous_tenthous on tenk1
+         Index Cond: (thousand = 42)
+         Filter: ((tenthous = 1) OR (tenthous = 3) OR (tenthous = 42))
+(4 rows)
 
 SELECT * FROM tenk1
   WHERE thousand = 42 AND (tenthous = 1 OR tenthous = 3 OR tenthous = 42);
@@ -2741,22 +2735,15 @@ SELECT * FROM tenk1
 EXPLAIN (NODES OFF, COSTS OFF)
 SELECT count(*) FROM tenk1
   WHERE hundred = 42 AND (thousand = 42 OR thousand = 99);
-                                         QUERY PLAN                                          
----------------------------------------------------------------------------------------------
+                            QUERY PLAN                            
+------------------------------------------------------------------
  Aggregate
    ->  Remote Subquery Scan on all
          ->  Aggregate
-               ->  Bitmap Heap Scan on tenk1
-                     Recheck Cond: ((hundred = 42) AND ((thousand = 42) OR (thousand = 99)))
-                     ->  BitmapAnd
-                           ->  Bitmap Index Scan on tenk1_hundred
-                                 Index Cond: (hundred = 42)
-                           ->  BitmapOr
-                                 ->  Bitmap Index Scan on tenk1_thous_tenthous
-                                       Index Cond: (thousand = 42)
-                                 ->  Bitmap Index Scan on tenk1_thous_tenthous
-                                       Index Cond: (thousand = 99)
-(13 rows)
+               ->  Index Scan using tenk1_hundred on tenk1
+                     Index Cond: (hundred = 42)
+                     Filter: ((thousand = 42) OR (thousand = 99))
+(6 rows)
 
 SELECT count(*) FROM tenk1
   WHERE hundred = 42 AND (thousand = 42 OR thousand = 99);
@@ -2792,55 +2779,4 @@ SELECT count(*) FROM dupindexcols
 -------
     97
 (1 row)
-
---
--- Check ordering of =ANY indexqual results (bug in 9.2.0)
---
-vacuum analyze tenk1;		-- ensure we get consistent plans here
-explain (costs off)
-SELECT unique1 FROM tenk1
-WHERE unique1 IN (1,42,7)
-ORDER BY unique1;
-                               QUERY PLAN                                
--------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode_1,datanode_2)
-   ->  Sort
-         Sort Key: unique1
-         ->  Bitmap Heap Scan on tenk1
-               Recheck Cond: (unique1 = ANY ('{1,42,7}'::integer[]))
-               ->  Bitmap Index Scan on tenk1_unique1
-                     Index Cond: (unique1 = ANY ('{1,42,7}'::integer[]))
-(7 rows)
-
-SELECT unique1 FROM tenk1
-WHERE unique1 IN (1,42,7)
-ORDER BY unique1;
- unique1 
----------
-       1
-       7
-      42
-(3 rows)
-
-explain (costs off)
-SELECT thousand, tenthous FROM tenk1
-WHERE thousand < 2 AND tenthous IN (1001,3000)
-ORDER BY thousand;
-                                         QUERY PLAN                                         
---------------------------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode_1,datanode_2)
-   ->  Sort
-         Sort Key: thousand
-         ->  Index Only Scan using tenk1_thous_tenthous on tenk1
-               Index Cond: ((thousand < 2) AND (tenthous = ANY ('{1001,3000}'::integer[])))
-(5 rows)
-
-SELECT thousand, tenthous FROM tenk1
-WHERE thousand < 2 AND tenthous IN (1001,3000)
-ORDER BY thousand;
- thousand | tenthous 
-----------+----------
-        0 |     3000
-        1 |     1001
-(2 rows)
 
