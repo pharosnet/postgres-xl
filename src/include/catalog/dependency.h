@@ -4,7 +4,7 @@
  *	  Routines to support inter-object dependencies.
  *
  *
- * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  * Portions Copyright (c) 2010-2012 Postgres-XC Development Group
  *
@@ -59,7 +59,7 @@
  * DEPENDENCY_PIN ('p'): there is no dependent object; this type of entry
  * is a signal that the system itself depends on the referenced object,
  * and so that object must never be deleted.  Entries of this type are
- * created only during initdb.	The fields for the dependent object
+ * created only during initdb.  The fields for the dependent object
  * contain zeroes.
  *
  * Other dependency flavors may be needed in future.
@@ -152,7 +152,8 @@ typedef enum ObjectClass
 #endif
 	OCLASS_DEFACL,				/* pg_default_acl */
 	OCLASS_EXTENSION,			/* pg_extension */
-	MAX_OCLASS				/* MUST BE LAST */
+	OCLASS_EVENT_TRIGGER,		/* pg_event_trigger */
+	MAX_OCLASS					/* MUST BE LAST */
 } ObjectClass;
 
 
@@ -186,9 +187,6 @@ extern void recordDependencyOnSingleRelExpr(const ObjectAddress *depender,
 								DependencyType self_behavior);
 
 extern ObjectClass getObjectClass(const ObjectAddress *object);
-
-extern char *getObjectDescription(const ObjectAddress *object);
-extern char *getObjectDescriptionOids(Oid classid, Oid objid);
 
 extern ObjectAddresses *new_object_addresses(void);
 

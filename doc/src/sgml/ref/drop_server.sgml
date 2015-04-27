@@ -4,6 +4,10 @@ PostgreSQL documentation
 -->
 
 <refentry id="SQL-DROPSERVER">
+ <indexterm zone="sql-dropserver">
+  <primary>DROP SERVER</primary>
+ </indexterm>
+
  <refmeta>
   <refentrytitle>DROP SERVER</refentrytitle>
   <manvolnum>7</manvolnum>
@@ -15,13 +19,9 @@ PostgreSQL documentation
   <refpurpose>remove a foreign server descriptor</refpurpose>
  </refnamediv>
 
- <indexterm zone="sql-dropserver">
-  <primary>DROP SERVER</primary>
- </indexterm>
-
  <refsynopsisdiv>
 <synopsis>
-DROP SERVER [ IF EXISTS ] <replaceable class="parameter">server_name</replaceable> [ CASCADE | RESTRICT ]
+DROP SERVER [ IF EXISTS ] <replaceable class="parameter">name</replaceable> [ CASCADE | RESTRICT ]
 </synopsis>
  </refsynopsisdiv>
 
@@ -50,7 +50,7 @@ DROP SERVER [ IF EXISTS ] <replaceable class="parameter">server_name</replaceabl
    </varlistentry>
 
    <varlistentry>
-    <term><replaceable class="parameter">server_name</replaceable></term>
+    <term><replaceable class="parameter">name</replaceable></term>
     <listitem>
      <para>
       The name of an existing server.

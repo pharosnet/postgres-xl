@@ -4,7 +4,7 @@
  *	  This file contains routines to support creation of toast tables
  *
  *
- * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -16,6 +16,7 @@
 
 #include "access/tuptoaster.h"
 #include "access/xact.h"
+#include "catalog/binary_upgrade.h"
 #include "catalog/dependency.h"
 #include "catalog/heap.h"
 #include "catalog/index.h"
@@ -26,22 +27,23 @@
 #include "catalog/toasting.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
+#include "storage/lock.h"
 #include "utils/builtins.h"
 #include "utils/rel.h"
 #include "utils/syscache.h"
 
 /* Potentially set by contrib/pg_upgrade_support functions */
-extern Oid	binary_upgrade_next_toast_pg_class_oid;
-
 Oid			binary_upgrade_next_toast_pg_type_oid = InvalidOid;
 
+static void CheckAndCreateToastTable(Oid relOid, Datum reloptions,
+						 LOCKMODE lockmode, bool check);
 static bool create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
-				   Datum reloptions);
+				   Datum reloptions, LOCKMODE lockmode, bool check);
 static bool needs_toast_table(Relation rel);
 
 
 /*
- * AlterTableCreateToastTable
+ * CreateToastTable variants
  *		If the table needs a toast table, and doesn't already have one,
  *		then create a toast table for it.
  *
@@ -53,21 +55,32 @@ static bool needs_toast_table(Relation rel);
  * to end with CommandCounterIncrement if it makes any changes.
  */
 void
-AlterTableCreateToastTable(Oid relOid, Datum reloptions)
+AlterTableCreateToastTable(Oid relOid, Datum reloptions, LOCKMODE lockmode)
+{
+	CheckAndCreateToastTable(relOid, reloptions, lockmode, true);
+}
+
+void
+NewHeapCreateToastTable(Oid relOid, Datum reloptions, LOCKMODE lockmode)
+{
+	CheckAndCreateToastTable(relOid, reloptions, lockmode, false);
+}
+
+void
+NewRelationCreateToastTable(Oid relOid, Datum reloptions)
+{
+	CheckAndCreateToastTable(relOid, reloptions, AccessExclusiveLock, false);
+}
+
+static void
+CheckAndCreateToastTable(Oid relOid, Datum reloptions, LOCKMODE lockmode, bool check)
 {
 	Relation	rel;
 
-	/*
-	 * Grab an exclusive lock on the target table, since we'll update its
-	 * pg_class tuple. This is redundant for all present uses, since caller
-	 * will have such a lock already.  But the lock is needed to ensure that
-	 * concurrent readers of the pg_class tuple won't have visibility issues,
-	 * so let's be safe.
-	 */
-	rel = heap_open(relOid, AccessExclusiveLock);
+	rel = heap_open(relOid, lockmode);
 
 	/* create_toast_table does all the work */
-	(void) create_toast_table(rel, InvalidOid, InvalidOid, reloptions);
+	(void) create_toast_table(rel, InvalidOid, InvalidOid, reloptions, lockmode, check);
 
 	heap_close(rel, NoLock);
 }
@@ -84,16 +97,16 @@ BootstrapToastTable(char *relName, Oid toastOid, Oid toastIndexOid)
 
 	rel = heap_openrv(makeRangeVar(NULL, relName, -1), AccessExclusiveLock);
 
-	/* Note: during bootstrap may see uncataloged relation */
 	if (rel->rd_rel->relkind != RELKIND_RELATION &&
-		rel->rd_rel->relkind != RELKIND_UNCATALOGED)
+		rel->rd_rel->relkind != RELKIND_MATVIEW)
 		ereport(ERROR,
 				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-				 errmsg("\"%s\" is not a table",
+				 errmsg("\"%s\" is not a table or materialized view",
 						relName)));
 
 	/* create_toast_table does all the work */
-	if (!create_toast_table(rel, toastOid, toastIndexOid, (Datum) 0))
+	if (!create_toast_table(rel, toastOid, toastIndexOid, (Datum) 0,
+							AccessExclusiveLock, false))
 		elog(ERROR, "\"%s\" does not require a toast table",
 			 relName);
 
@@ -109,7 +122,8 @@ BootstrapToastTable(char *relName, Oid toastOid, Oid toastIndexOid)
  * bootstrap they can be nonzero to specify hand-assigned OIDs
  */
 static bool
-create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid, Datum reloptions)
+create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
+				   Datum reloptions, LOCKMODE lockmode, bool check)
 {
 	Oid			relOid = RelationGetRelid(rel);
 	HeapTuple	reltup;
@@ -163,6 +177,13 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid, Datum reloptio
 		return false;
 
 	/*
+	 * If requested check lockmode is sufficient. This is a cross check in
+	 * case of errors or conflicting decisions in earlier code.
+	 */
+	if (check && lockmode != AccessExclusiveLock)
+		elog(ERROR, "AccessExclusiveLock required to add toast table.");
+
+	/*
 	 * Create the toast table and its index
 	 */
 	snprintf(toast_relname, sizeof(toast_relname),
@@ -198,7 +219,7 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid, Datum reloptio
 	 * Toast tables for regular relations go in pg_toast; those for temp
 	 * relations go into the per-backend temp-toast-table namespace.
 	 */
-	if (RelationUsesTempNamespace(rel))
+	if (isTempOrToastNamespace(rel->rd_rel->relnamespace))
 		namespaceid = GetTempToastNamespace();
 	else
 		namespaceid = PG_TOAST_NAMESPACE;
@@ -228,6 +249,7 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid, Datum reloptio
 										   ONCOMMIT_NOOP,
 										   reloptions,
 										   false,
+										   true,
 										   true);
 	Assert(toast_relid != InvalidOid);
 
@@ -281,7 +303,7 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid, Datum reloptio
 				 rel->rd_rel->reltablespace,
 				 collationObjectId, classObjectId, coloptions, (Datum) 0,
 				 true, false, false, false,
-				 true, false, false);
+				 true, false, false, true);
 
 	heap_close(toast_rel, NoLock);
 
@@ -340,7 +362,7 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid, Datum reloptio
 }
 
 /*
- * Check to see whether the table needs a TOAST table.	It does only if
+ * Check to see whether the table needs a TOAST table.  It does only if
  * (1) there are any toastable attributes, and (2) the maximum length
  * of a tuple could exceed TOAST_TUPLE_THRESHOLD.  (We don't want to
  * create a toast table for something like "f1 varchar(20)".)

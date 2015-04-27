@@ -1050,7 +1050,6 @@ SELECT * from ONLY d ORDER BY d.aa;
 
 -- Confirm PRIMARY KEY adds NOT NULL constraint to child table
 CREATE TEMP TABLE z (b TEXT, PRIMARY KEY(aa, b)) inherits (a);
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "z_pkey" for table "z"
 INSERT INTO z VALUES (NULL, 'text'); -- should fail
 ERROR:  null value in column "aa" violates not-null constraint
 DETAIL:  Failing row contains (null, text).
@@ -1072,11 +1071,18 @@ insert into bar2 values(2,2,2);
 insert into bar2 values(3,3,3);
 insert into bar2 values(4,4,4);
 update bar set f2 = f2 + 100 where f1 in (select f1 from foo);
-SELECT relname, bar.* FROM bar, pg_class where bar.tableoid = pg_class.oid
-order by 1,2;
- relname | f1 | f2 
----------+----+----
-(0 rows)
+select tableoid::regclass::text as relname, bar.* from bar order by 1,2;
+ relname | f1 | f2  
+---------+----+-----
+ bar     |  1 | 101
+ bar     |  2 | 102
+ bar     |  3 | 103
+ bar     |  4 |   4
+ bar2    |  1 | 101
+ bar2    |  2 | 102
+ bar2    |  3 | 103
+ bar2    |  4 |   4
+(8 rows)
 
 -- In Postgres-XL OIDs are not consistent across the cluster. Hence above
 -- queries do not show any result. Hence in order to ensure data consistency, we
@@ -1113,6 +1119,24 @@ SELECT * FROM bar2 ORDER BY f1, f2;
   4 |   4 |  4
 (4 rows)
 
+-- Check UPDATE with inherited target and an appendrel subquery
+update bar set f2 = f2 + 100
+from
+  ( select f1 from foo union all select f1+3 from foo ) ss
+where bar.f1 = ss.f1;
+select tableoid::regclass::text as relname, bar.* from bar order by 1,2;
+ relname | f1 | f2  
+---------+----+-----
+ bar     |  1 | 201
+ bar     |  2 | 202
+ bar     |  3 | 203
+ bar     |  4 | 104
+ bar2    |  1 | 201
+ bar2    |  2 | 202
+ bar2    |  3 | 203
+ bar2    |  4 | 104
+(8 rows)
+
 /* Test multiple inheritance of column defaults */
 CREATE TABLE firstparent (tomorrow date default now()::date + 1);
 CREATE TABLE secondparent (tomorrow date default  now() :: date  +  1);
@@ -1139,7 +1163,7 @@ select * from d;
 
 -- Test non-inheritable parent constraints
 create table p1(ff1 int);
-alter table p1 add constraint p1chk check no inherit (ff1 > 0);
+alter table p1 add constraint p1chk check (ff1 > 0) no inherit;
 alter table p1 add constraint p2chk check (ff1 > 10);
 -- connoinherit should be true for NO INHERIT constraint
 select pc.relname, pgc.conname, pgc.contype, pgc.conislocal, pgc.coninhcount, pgc.connoinherit from pg_class as pc inner join pg_constraint as pgc on (pgc.conrelid = pc.oid) where pc.relname = 'p1' order by 1,2;
@@ -1157,7 +1181,7 @@ create table c1 () inherits (p1);
 --------+---------+-----------
  ff1    | integer | 
 Check constraints:
-    "p1chk" CHECK NO INHERIT (ff1 > 0)
+    "p1chk" CHECK (ff1 > 0) NO INHERIT
     "p2chk" CHECK (ff1 > 10)
 Number of child tables: 1 (Use \d+ to list them.)
 
@@ -1438,7 +1462,6 @@ ALTER TABLE inhts RENAME d TO dd;
  dd     | integer |           | plain   |              | 
 Inherits: inht1,
           inhs1
-Has OIDs: no
 Distribute By: HASH(aa)
 Location Nodes: ALL DATANODES
 
@@ -1461,7 +1484,6 @@ ALTER TABLE inht1 RENAME aa TO aaa;
  z      | integer |           | plain   |              | 
 Inherits: inht2,
           inht3
-Has OIDs: no
 Distribute By: HASH(aaa)
 Location Nodes: ALL DATANODES
 
@@ -1481,7 +1503,6 @@ ERROR:  cannot rename inherited column "b"
  d      | integer |           | plain   |              | 
 Inherits: inht2,
           inhs1
-Has OIDs: no
 Distribute By: HASH(aaaa)
 Location Nodes: ALL DATANODES
 
@@ -1517,6 +1538,113 @@ DETAIL:  drop cascades to table inht2
 drop cascades to table inhts
 drop cascades to table inht3
 drop cascades to table inht4
+-- Test non-inheritable indices [UNIQUE, EXCLUDE] contraints
+CREATE TABLE test_constraints (id int, val1 varchar, val2 int, UNIQUE(val1, val2));
+CREATE TABLE test_constraints_inh () INHERITS (test_constraints);
+\d+ test_constraints
+                        Table "public.test_constraints"
+ Column |       Type        | Modifiers | Storage  | Stats target | Description 
+--------+-------------------+-----------+----------+--------------+-------------
+ id     | integer           |           | plain    |              | 
+ val1   | character varying |           | extended |              | 
+ val2   | integer           |           | plain    |              | 
+Indexes:
+    "test_constraints_val1_val2_key" UNIQUE CONSTRAINT, btree (val1, val2)
+Child tables: test_constraints_inh
+
+ALTER TABLE ONLY test_constraints DROP CONSTRAINT test_constraints_val1_val2_key;
+\d+ test_constraints
+                        Table "public.test_constraints"
+ Column |       Type        | Modifiers | Storage  | Stats target | Description 
+--------+-------------------+-----------+----------+--------------+-------------
+ id     | integer           |           | plain    |              | 
+ val1   | character varying |           | extended |              | 
+ val2   | integer           |           | plain    |              | 
+Child tables: test_constraints_inh
+
+\d+ test_constraints_inh
+                      Table "public.test_constraints_inh"
+ Column |       Type        | Modifiers | Storage  | Stats target | Description 
+--------+-------------------+-----------+----------+--------------+-------------
+ id     | integer           |           | plain    |              | 
+ val1   | character varying |           | extended |              | 
+ val2   | integer           |           | plain    |              | 
+Inherits: test_constraints
+
+DROP TABLE test_constraints_inh;
+DROP TABLE test_constraints;
+CREATE TABLE test_ex_constraints (
+    c circle,
+    EXCLUDE USING gist (c WITH &&)
+);
+CREATE TABLE test_ex_constraints_inh () INHERITS (test_ex_constraints);
+\d+ test_ex_constraints
+                 Table "public.test_ex_constraints"
+ Column |  Type  | Modifiers | Storage | Stats target | Description 
+--------+--------+-----------+---------+--------------+-------------
+ c      | circle |           | plain   |              | 
+Indexes:
+    "test_ex_constraints_c_excl" EXCLUDE USING gist (c WITH &&)
+Child tables: test_ex_constraints_inh
+
+ALTER TABLE test_ex_constraints DROP CONSTRAINT test_ex_constraints_c_excl;
+\d+ test_ex_constraints
+                 Table "public.test_ex_constraints"
+ Column |  Type  | Modifiers | Storage | Stats target | Description 
+--------+--------+-----------+---------+--------------+-------------
+ c      | circle |           | plain   |              | 
+Child tables: test_ex_constraints_inh
+
+\d+ test_ex_constraints_inh
+               Table "public.test_ex_constraints_inh"
+ Column |  Type  | Modifiers | Storage | Stats target | Description 
+--------+--------+-----------+---------+--------------+-------------
+ c      | circle |           | plain   |              | 
+Inherits: test_ex_constraints
+
+DROP TABLE test_ex_constraints_inh;
+DROP TABLE test_ex_constraints;
+-- Test non-inheritable foreign key contraints
+CREATE TABLE test_primary_constraints(id int PRIMARY KEY);
+CREATE TABLE test_foreign_constraints(id1 int REFERENCES test_primary_constraints(id));
+CREATE TABLE test_foreign_constraints_inh () INHERITS (test_foreign_constraints);
+\d+ test_primary_constraints
+               Table "public.test_primary_constraints"
+ Column |  Type   | Modifiers | Storage | Stats target | Description 
+--------+---------+-----------+---------+--------------+-------------
+ id     | integer | not null  | plain   |              | 
+Indexes:
+    "test_primary_constraints_pkey" PRIMARY KEY, btree (id)
+Referenced by:
+    TABLE "test_foreign_constraints" CONSTRAINT "test_foreign_constraints_id1_fkey" FOREIGN KEY (id1) REFERENCES test_primary_constraints(id)
+
+\d+ test_foreign_constraints
+               Table "public.test_foreign_constraints"
+ Column |  Type   | Modifiers | Storage | Stats target | Description 
+--------+---------+-----------+---------+--------------+-------------
+ id1    | integer |           | plain   |              | 
+Foreign-key constraints:
+    "test_foreign_constraints_id1_fkey" FOREIGN KEY (id1) REFERENCES test_primary_constraints(id)
+Child tables: test_foreign_constraints_inh
+
+ALTER TABLE test_foreign_constraints DROP CONSTRAINT test_foreign_constraints_id1_fkey;
+\d+ test_foreign_constraints
+               Table "public.test_foreign_constraints"
+ Column |  Type   | Modifiers | Storage | Stats target | Description 
+--------+---------+-----------+---------+--------------+-------------
+ id1    | integer |           | plain   |              | 
+Child tables: test_foreign_constraints_inh
+
+\d+ test_foreign_constraints_inh
+             Table "public.test_foreign_constraints_inh"
+ Column |  Type   | Modifiers | Storage | Stats target | Description 
+--------+---------+-----------+---------+--------------+-------------
+ id1    | integer |           | plain   |              | 
+Inherits: test_foreign_constraints
+
+DROP TABLE test_foreign_constraints_inh;
+DROP TABLE test_foreign_constraints;
+DROP TABLE test_primary_constraints;
 --
 -- Test parameterized append plans for inheritance trees
 --
@@ -1535,9 +1663,9 @@ analyze patest0;
 analyze patest1;
 analyze patest2;
 explain (costs off, num_nodes off, nodes off)
-select * from patest0 join (select f1 from int4_tbl where f1 = 0 limit 1) ss on id = f1;
-                        QUERY PLAN                        
-----------------------------------------------------------
+select * from patest0 join (select f1 from int4_tbl limit 1) ss on id = f1;
+                    QUERY PLAN                    
+--------------------------------------------------
  Nested Loop
    ->  Limit
          ->  Remote Subquery Scan on all
@@ -1609,17 +1737,12 @@ drop cascades to table patest2
 -- Test merge-append plans for inheritance trees
 --
 create table matest0 (id serial primary key, name text);
-NOTICE:  CREATE TABLE will create implicit sequence "matest0_id_seq" for serial column "matest0.id"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "matest0_pkey" for table "matest0"
 create table matest1 (id integer primary key) inherits (matest0);
 NOTICE:  merging column "id" with inherited definition
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "matest1_pkey" for table "matest1"
 create table matest2 (id integer primary key) inherits (matest0);
 NOTICE:  merging column "id" with inherited definition
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "matest2_pkey" for table "matest2"
 create table matest3 (id integer primary key) inherits (matest0);
 NOTICE:  merging column "id" with inherited definition
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "matest3_pkey" for table "matest3"
 create index matest0i on matest0 ((1-id));
 create index matest1i on matest1 ((1-id));
 -- create index matest2i on matest2 ((1-id));  -- intentionally missing
@@ -1635,10 +1758,10 @@ explain (verbose, costs off, nodes off) select * from matest0 order by 1-id;
                                    QUERY PLAN                                    
 ---------------------------------------------------------------------------------
  Sort
-   Output: public.matest0.id, public.matest0.name, ((1 - public.matest0.id))
-   Sort Key: ((1 - public.matest0.id))
+   Output: matest0.id, matest0.name, ((1 - matest0.id))
+   Sort Key: ((1 - matest0.id))
    ->  Result
-         Output: public.matest0.id, public.matest0.name, (1 - public.matest0.id)
+         Output: matest0.id, matest0.name, (1 - matest0.id)
          ->  Append
                ->  Remote Subquery Scan on all
                      Output: public.matest0.id, public.matest0.name
@@ -1668,6 +1791,28 @@ select * from matest0 order by 1-id;
   2 | Test 2
   1 | Test 1
 (6 rows)
+
+explain (verbose, costs off) select min(1-id) from matest0;
+               QUERY PLAN               
+----------------------------------------
+ Aggregate
+   Output: min((1 - matest0.id))
+   ->  Append
+         ->  Seq Scan on public.matest0
+               Output: matest0.id
+         ->  Seq Scan on public.matest1
+               Output: matest1.id
+         ->  Seq Scan on public.matest2
+               Output: matest2.id
+         ->  Seq Scan on public.matest3
+               Output: matest3.id
+(11 rows)
+
+select min(1-id) from matest0;
+ min 
+-----
+  -5
+(1 row)
 
 reset enable_indexscan;
 set enable_seqscan = off;  -- plan with fewest seqscans should be merge
@@ -1709,6 +1854,42 @@ select * from matest0 order by 1-id;
   2 | Test 2
   1 | Test 1
 (6 rows)
+
+explain (verbose, costs off) select min(1-id) from matest0;
+                                QUERY PLAN                                
+--------------------------------------------------------------------------
+ Result
+   Output: $0
+   InitPlan 1 (returns $0)
+     ->  Limit
+           Output: ((1 - matest0.id))
+           ->  Result
+                 Output: ((1 - matest0.id))
+                 ->  Merge Append
+                       Sort Key: ((1 - matest0.id))
+                       ->  Index Scan using matest0i on public.matest0
+                             Output: matest0.id, (1 - matest0.id)
+                             Index Cond: ((1 - matest0.id) IS NOT NULL)
+                       ->  Index Scan using matest1i on public.matest1
+                             Output: matest1.id, (1 - matest1.id)
+                             Index Cond: ((1 - matest1.id) IS NOT NULL)
+                       ->  Sort
+                             Output: matest2.id, ((1 - matest2.id))
+                             Sort Key: ((1 - matest2.id))
+                             ->  Bitmap Heap Scan on public.matest2
+                                   Output: matest2.id, (1 - matest2.id)
+                                   Filter: ((1 - matest2.id) IS NOT NULL)
+                                   ->  Bitmap Index Scan on matest2_pkey
+                       ->  Index Scan using matest3i on public.matest3
+                             Output: matest3.id, (1 - matest3.id)
+                             Index Cond: ((1 - matest3.id) IS NOT NULL)
+(25 rows)
+
+select min(1-id) from matest0;
+ min 
+-----
+  -5
+(1 row)
 
 reset enable_seqscan;
 drop table matest0 cascade;

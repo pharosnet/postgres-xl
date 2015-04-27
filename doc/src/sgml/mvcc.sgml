@@ -41,12 +41,12 @@
     for developers to manage concurrent access to data.  Internally,
     data consistency is maintained by using a multiversion
     model (Multiversion Concurrency Control, <acronym>MVCC</acronym>).
-    This means that while querying a database each transaction sees
+    This means that each SQL statement sees
     a snapshot of data (a <firstterm>database version</firstterm>)
     as it was some
     time ago, regardless of the current state of the underlying data.
-    This protects the transaction from viewing inconsistent data that
-    could be caused by (other) concurrent transaction updates on the same
+    This prevents statements from viewing inconsistent data produced
+    by concurrent transactions performing updates on the same
     data rows, providing <firstterm>transaction isolation</firstterm>
     for each database session.  <acronym>MVCC</acronym>, by eschewing
     the locking methodologies of traditional database systems,
@@ -260,6 +260,18 @@
     command <xref linkend="sql-set-transaction">.
    </para>
 
+   <important>
+     <para>
+       Some <productname>PostgreSQL</productname> data types and functions have
+       special rules regarding transactional behavior.  In particular, changes
+       made to a sequence (and therefore the counter of a
+       column declared using <type>serial</type>) are immediately visible
+       to all other transactions and are not rolled back if the transaction
+       that made the changes aborts.  See <xref linkend="functions-sequence">
+       and <xref linkend="datatype-serial">.
+     </para>
+   </important>
+
   <sect2 id="xact-read-committed">
    <title>Read Committed Isolation Level</title>
 
@@ -286,7 +298,8 @@
     though they are not yet committed.  Also note that two successive
     <command>SELECT</command> commands can see different data, even
     though they are within a single transaction, if other transactions
-    commit changes during execution of the first <command>SELECT</command>.
+    commit changes after the first <command>SELECT</command> starts and
+    before the second <command>SELECT</command> starts.
    </para>
 
    <para>
@@ -503,8 +516,9 @@ ERROR:  could not serialize access due to concurrent update
    </indexterm>
 
    <para>
-    The <firstterm>Serializable</firstterm> isolation level provides the strictest transaction
-    isolation.  This level emulates serial transaction execution,
+    The <firstterm>Serializable</firstterm> isolation level provides
+    the strictest transaction isolation.  This level emulates serial
+    transaction execution for all committed transactions;
     as if transactions had been executed one after another, serially,
     rather than concurrently.  However, like the Repeatable Read level,
     applications using this level must
@@ -557,6 +571,20 @@ ERROR:  could not serialize access due to read/write dependencies among transact
     executed before B, B would have computed the sum 330, not 300, and
     similarly the other order would have resulted in a different sum
     computed by A.
+   </para>
+
+   <para>
+    When relying on Serializable transactions to prevent anomalies, it is
+    important that any data read from a permanent user table not be
+    considered valid until the transaction which read it has successfully
+    committed.  This is true even for read-only transactions, except that
+    data read within a <firstterm>deferrable</firstterm> read-only
+    transaction is known to be valid as soon as it is read, because such a
+    transaction waits until it can acquire a snapshot guaranteed to be free
+    from such problems before starting to read any data.  In all other cases
+    applications must not depend on results read during a transaction that
+    later aborted; instead, they should retry the transaction until it
+    succeeds.
    </para>
 
    <para>
@@ -837,7 +865,9 @@ ERROR:  could not serialize access due to read/write dependencies among transact
         <para>
          Acquired by <command>VACUUM</command> (without <option>FULL</option>),
          <command>ANALYZE</>, <command>CREATE INDEX CONCURRENTLY</>, and
-         some forms of <command>ALTER TABLE</command>.
+         <command>ALTER TABLE VALIDATE</command> and other
+         <command>ALTER TABLE</command> variants (for full details see
+         <xref linkend="SQL-ALTERTABLE">).
         </para>
        </listitem>
       </varlistentry>
@@ -901,8 +931,7 @@ ERROR:  could not serialize access due to read/write dependencies among transact
         </para>
 
         <para>
-         This lock mode is not automatically acquired on tables by any
-         <productname>PostgreSQL</productname> command.
+         Acquired by <command>REFRESH MATERIALIZED VIEW CONCURRENTLY</command>.
         </para>
        </listitem>
       </varlistentry>
@@ -924,10 +953,11 @@ ERROR:  could not serialize access due to read/write dependencies among transact
         </para>
 
         <para>
-         Acquired by the <command>ALTER TABLE</>, <command>DROP TABLE</>,
+         Acquired by the <command>DROP TABLE</>,
          <command>TRUNCATE</command>, <command>REINDEX</command>,
          <command>CLUSTER</command>, and <command>VACUUM FULL</command>
-         commands.
+         commands. Many forms of <command>ALTER TABLE</> also acquire
+         a lock at this level (see <xref linkend="SQL-ALTERTABLE">).
          This is also the default lock mode for <command>LOCK TABLE</command>
          statements that do not specify a mode explicitly.
         </para>
@@ -1339,7 +1369,7 @@ SELECT pg_advisory_lock(q.id) FROM
    <para>
     As mentioned in <xref linkend="xact-serializable">, Serializable
     transactions are just Repeatable Read transactions which add
-    non-blocking monitoring for dangerous patterns of read/write conflicts.
+    nonblocking monitoring for dangerous patterns of read/write conflicts.
     When a pattern is detected which could cause a cycle in the apparent
     order of execution, one of the transactions involved is rolled back to
     break the cycle.

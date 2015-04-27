@@ -192,12 +192,17 @@ typedef double fsec_t;
 #define DTK_DATE_M		(DTK_M(YEAR) | DTK_M(MONTH) | DTK_M(DAY))
 #define DTK_TIME_M		(DTK_M(HOUR) | DTK_M(MINUTE) | DTK_M(SECOND))
 
-#define MAXDATELEN		63		/* maximum possible length of an input date
-								 * string (not counting tr. null) */
-#define MAXDATEFIELDS	25		/* maximum possible number of fields in a date
-								 * string */
-#define TOKMAXLEN		10		/* only this many chars are stored in
-								 * datetktbl */
+/*
+ * Working buffer size for input and output of interval, timestamp, etc.
+ * Inputs that need more working space will be rejected early.  Longer outputs
+ * will overrun buffers, so this must suffice for all possible output.  As of
+ * this writing, PGTYPESinterval_to_asc() needs the most space at ~90 bytes.
+ */
+#define MAXDATELEN		128
+/* maximum possible number of fields in a date string */
+#define MAXDATEFIELDS	25
+/* only this many chars are stored in datetktbl */
+#define TOKMAXLEN		10
 
 /* keep this struct small; it gets used a lot */
 typedef struct
@@ -250,7 +255,7 @@ do { \
  *	DAYS_PER_MONTH is very imprecise.  The more accurate value is
  *	365.2425/12 = 30.436875, or '30 days 10:29:06'.  Right now we only
  *	return an integral number of days, but someday perhaps we should
- *	also return a 'time' value to be used as well.	ISO 8601 suggests
+ *	also return a 'time' value to be used as well.  ISO 8601 suggests
  *	30 days.
  */
 #define DAYS_PER_MONTH	30		/* assumes exactly 30 days per month */
@@ -348,6 +353,10 @@ void		GetCurrentDateTime(struct tm *);
 int			date2j(int, int, int);
 void		TrimTrailingZeros(char *);
 void		dt2time(double, int *, int *, int *, fsec_t *);
+int PGTYPEStimestamp_defmt_scan(char **str, char *fmt, timestamp * d,
+							int *year, int *month, int *day,
+							int *hour, int *minute, int *second,
+							int *tz);
 
 extern char *pgtypes_date_weekdays_short[];
 extern char *pgtypes_date_months[];

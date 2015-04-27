@@ -59,10 +59,6 @@ SELECT '' AS thirty, p.f1, l.s, p.f1 ## l.s AS closest
    FROM LSEG_TBL l, POINT_TBL p ORDER BY (l.s[0])[0], (l.s[0])[1], p.f1[0], p.f1[1];
 
 --
--- Lines
---
-
---
 -- Boxes
 --
 

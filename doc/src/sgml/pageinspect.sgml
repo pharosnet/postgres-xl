@@ -20,6 +20,9 @@
    <varlistentry>
     <term>
      <function>get_raw_page(relname text, fork text, blkno int) returns bytea</function>
+     <indexterm>
+      <primary>get_raw_page</primary>
+     </indexterm>
     </term>
 
     <listitem>
@@ -51,6 +54,9 @@
    <varlistentry>
     <term>
      <function>page_header(page bytea) returns record</function>
+     <indexterm>
+      <primary>page_header</primary>
+     </indexterm>
     </term>
 
     <listitem>
@@ -64,9 +70,9 @@
       passed as argument.  For example:
 <screen>
 test=# SELECT * FROM page_header(get_raw_page('pg_class', 0));
-    lsn    | tli | flags | lower | upper | special | pagesize | version | prune_xid
------------+-----+-------+-------+-------+---------+----------+---------+-----------
- 0/24A1B50 |   1 |     1 |   232 |   368 |    8192 |     8192 |       4 |         0
+    lsn    | checksum | flags  | lower | upper | special | pagesize | version | prune_xid
+-----------+----------+--------+-------+-------+---------+----------+---------+-----------
+ 0/24A1B50 |        1 |      1 |   232 |   368 |    8192 |     8192 |       4 |         0
 </screen>
       The returned columns correspond to the fields in the
       <structname>PageHeaderData</> struct.
@@ -78,6 +84,9 @@ test=# SELECT * FROM page_header(get_raw_page('pg_class', 0));
    <varlistentry>
     <term>
      <function>heap_page_items(page bytea) returns setof record</function>
+     <indexterm>
+      <primary>heap_page_items</primary>
+     </indexterm>
     </term>
 
     <listitem>
@@ -94,7 +103,7 @@ test=# SELECT * FROM page_header(get_raw_page('pg_class', 0));
 test=# SELECT * FROM heap_page_items(get_raw_page('pg_class', 0));
 </screen>
       See <filename>src/include/storage/itemid.h</> and
-      <filename>src/include/access/htup.h</> for explanations of the fields
+      <filename>src/include/access/htup_details.h</> for explanations of the fields
       returned.
      </para>
     </listitem>
@@ -103,6 +112,9 @@ test=# SELECT * FROM heap_page_items(get_raw_page('pg_class', 0));
    <varlistentry>
     <term>
      <function>bt_metap(relname text) returns record</function>
+     <indexterm>
+      <primary>bt_metap</primary>
+     </indexterm>
     </term>
 
     <listitem>
@@ -126,6 +138,9 @@ fastlevel | 0
    <varlistentry>
     <term>
      <function>bt_page_stats(relname text, blkno int) returns record</function>
+     <indexterm>
+      <primary>bt_page_stats</primary>
+     </indexterm>
     </term>
 
     <listitem>
@@ -154,6 +169,9 @@ btpo_flags    | 3
    <varlistentry>
     <term>
      <function>bt_page_items(relname text, blkno int) returns setof record</function>
+     <indexterm>
+      <primary>bt_page_items</primary>
+     </indexterm>
     </term>
 
     <listitem>
@@ -180,6 +198,9 @@ test=# SELECT * FROM bt_page_items('pg_cast_oid_index', 1);
    <varlistentry>
     <term>
      <function>fsm_page_contents(page bytea) returns text</function>
+     <indexterm>
+      <primary>fsm_page_contents</primary>
+     </indexterm>
     </term>
 
     <listitem>

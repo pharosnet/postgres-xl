@@ -1,12 +1,12 @@
 (This file does not appear in release tarballs.)
 
-In a release or snapshot tarball of Postgres-XC, documentation files named
-INSTALL and HISTORY will appear in this directory.  However, these files are
-not stored in git and so will not be present if you are using a git checkout.
-If you are using git, you can view the most recent install instructions at:
-	http://postgres-xc.sourceforge.net/docs/1_0/installation.html
-and the current release notes at:
-	http://postgres-xc.sourceforge.net/docs/1_0/release.html
+In a release or snapshot tarball of Postgres-XL, a documentation file named
+INSTALL will appear in this directory.  However, this file is not stored in
+git and so will not be present if you are using a git checkout.
+
+If you are using a git checkout, you can view the most recent installation
+instructions at:
+	http://files.postgres-xl.org/documentation/installation.html
 
 Users compiling from git will also need compatible versions of Bison, Flex,
 and Perl, as discussed in the install documentation.  These programs are not

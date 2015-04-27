@@ -8,7 +8,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -532,18 +532,17 @@ FetchStatementTargetList(Node *stmt)
  * currently only honored for PORTAL_ONE_SELECT portals).  Most callers
  * should simply pass zero.
  *
- * The use_active_snapshot parameter is currently used only for
- * PORTAL_ONE_SELECT portals.  If it is true, the active snapshot will
- * be used when starting up the executor; if false, a new snapshot will
- * be taken.  This is used both for cursors and to avoid taking an entirely
- * new snapshot when it isn't necessary.
+ * The caller can optionally pass a snapshot to be used; pass InvalidSnapshot
+ * for the normal behavior of setting a new snapshot.  This parameter is
+ * presently ignored for non-PORTAL_ONE_SELECT portals (it's only intended
+ * to be used for cursors).
  *
  * On return, portal is ready to accept PortalRun() calls, and the result
  * tupdesc (if any) is known.
  */
 void
 PortalStart(Portal portal, ParamListInfo params,
-			int eflags, bool use_active_snapshot)
+			int eflags, Snapshot snapshot)
 {
 	Portal		saveActivePortal;
 	ResourceOwner saveResourceOwner;
@@ -568,7 +567,8 @@ PortalStart(Portal portal, ParamListInfo params,
 	PG_TRY();
 	{
 		ActivePortal = portal;
-		CurrentResourceOwner = portal->resowner;
+		if (portal->resowner)
+			CurrentResourceOwner = portal->resowner;
 		PortalContext = PortalGetHeapMemory(portal);
 
 		oldContext = MemoryContextSwitchTo(PortalGetHeapMemory(portal));
@@ -784,8 +784,8 @@ PortalStart(Portal portal, ParamListInfo params,
 			case PORTAL_ONE_SELECT:
 
 				/* Must set snapshot before starting executor. */
-				if (use_active_snapshot)
-					PushActiveSnapshot(GetActiveSnapshot());
+				if (snapshot)
+					PushActiveSnapshot(snapshot);
 				else
 					PushActiveSnapshot(GetTransactionSnapshot());
 
@@ -842,7 +842,7 @@ PortalStart(Portal portal, ParamListInfo params,
 
 				/*
 				 * We don't start the executor until we are told to run the
-				 * portal.	We do need to set up the result tupdesc.
+				 * portal.  We do need to set up the result tupdesc.
 				 */
 				{
 					PlannedStmt *pstmt;
@@ -1058,7 +1058,8 @@ PortalRun(Portal portal, long count, bool isTopLevel,
 	PG_TRY();
 	{
 		ActivePortal = portal;
-		CurrentResourceOwner = portal->resowner;
+		if (portal->resowner)
+			CurrentResourceOwner = portal->resowner;
 		PortalContext = PortalGetHeapMemory(portal);
 
 		MemoryContextSwitchTo(PortalContext);
@@ -1371,7 +1372,7 @@ PortalRunSelect(Portal portal,
 	Assert(queryDesc || portal->holdStore);
 
 	/*
-	 * Force the queryDesc destination to the right thing.	This supports
+	 * Force the queryDesc destination to the right thing.  This supports
 	 * MOVE, for example, which will pass in dest = DestNone.  This is okay to
 	 * change as long as we do it on every fetch.  (The Executor must not
 	 * assume that dest never changes.)
@@ -1649,12 +1650,12 @@ PortalRunUtility(Portal portal, Node *utilityStmt, bool isTopLevel,
 	elog(DEBUG3, "ProcessUtility");
 
 	/*
-	 * Set snapshot if utility stmt needs one.	Most reliable way to do this
+	 * Set snapshot if utility stmt needs one.  Most reliable way to do this
 	 * seems to be to enumerate those that do not need one; this is a short
 	 * list.  Transaction control, LOCK, and SET must *not* set a snapshot
 	 * since they need to be executable at the start of a transaction-snapshot
 	 * mode transaction without freezing a snapshot.  By extension we allow
-	 * SHOW not to set a snapshot.	The other stmts listed are just efficiency
+	 * SHOW not to set a snapshot.  The other stmts listed are just efficiency
 	 * hacks.  Beware of listing anything that can modify the database --- if,
 	 * say, it has to update an index with expressions that invoke
 	 * user-defined functions, then it had better have a snapshot.
@@ -1689,8 +1690,8 @@ PortalRunUtility(Portal portal, Node *utilityStmt, bool isTopLevel,
 
 	ProcessUtility(utilityStmt,
 				   portal->sourceText,
+			   isTopLevel ? PROCESS_UTILITY_TOPLEVEL : PROCESS_UTILITY_QUERY,
 				   portal->portalParams,
-				   isTopLevel,
 				   dest,
 #ifdef PGXC
 				   false,
@@ -1702,7 +1703,7 @@ PortalRunUtility(Portal portal, Node *utilityStmt, bool isTopLevel,
 
 	/*
 	 * Some utility commands may pop the ActiveSnapshot stack from under us,
-	 * so we only pop the stack if we actually see a snapshot set.	Note that
+	 * so we only pop the stack if we actually see a snapshot set.  Note that
 	 * the set of utility commands that do this must be the same set
 	 * disallowed to run inside a transaction; otherwise, we could be popping
 	 * a snapshot that belongs to some other operation.
@@ -1938,7 +1939,8 @@ PortalRunFetch(Portal portal,
 	PG_TRY();
 	{
 		ActivePortal = portal;
-		CurrentResourceOwner = portal->resowner;
+		if (portal->resowner)
+			CurrentResourceOwner = portal->resowner;
 		PortalContext = PortalGetHeapMemory(portal);
 
 		oldContext = MemoryContextSwitchTo(PortalContext);
@@ -2042,7 +2044,7 @@ DoPortalRunFetch(Portal portal,
 				 * Definition: Rewind to start, advance count-1 rows, return
 				 * next row (if any).  In practice, if the goal is less than
 				 * halfway back to the start, it's better to scan from where
-				 * we are.	In any case, we arrange to fetch the target row
+				 * we are.  In any case, we arrange to fetch the target row
 				 * going forwards.
 				 */
 				if (portal->posOverflow || portal->portalPos == LONG_MAX ||
@@ -2129,7 +2131,7 @@ DoPortalRunFetch(Portal portal,
 	forward = (fdirection == FETCH_FORWARD);
 
 	/*
-	 * Zero count means to re-fetch the current row, if any (per SQL92)
+	 * Zero count means to re-fetch the current row, if any (per SQL)
 	 */
 	if (count == 0)
 	{
@@ -2149,7 +2151,7 @@ DoPortalRunFetch(Portal portal,
 			 * If we are sitting on a row, back up one so we can re-fetch it.
 			 * If we are not sitting on a row, we still have to start up and
 			 * shut down the executor so that the destination is initialized
-			 * and shut down correctly; so keep going.	To PortalRunSelect,
+			 * and shut down correctly; so keep going.  To PortalRunSelect,
 			 * count == 0 means we will retrieve no row.
 			 */
 			if (on_row)
@@ -2185,6 +2187,9 @@ DoPortalRunFetch(Portal portal,
 static void
 DoPortalRewind(Portal portal)
 {
+	QueryDesc  *queryDesc;
+
+	/* Rewind holdStore, if we have one */
 	if (portal->holdStore)
 	{
 		MemoryContext oldcontext;
@@ -2193,8 +2198,15 @@ DoPortalRewind(Portal portal)
 		tuplestore_rescan(portal->holdStore);
 		MemoryContextSwitchTo(oldcontext);
 	}
-	if (PortalGetQueryDesc(portal))
-		ExecutorRewind(PortalGetQueryDesc(portal));
+
+	/* Rewind executor, if active */
+	queryDesc = PortalGetQueryDesc(portal);
+	if (queryDesc)
+	{
+		PushActiveSnapshot(queryDesc->snapshot);
+		ExecutorRewind(queryDesc);
+		PopActiveSnapshot();
+	}
 
 	portal->atStart = true;
 	portal->atEnd = false;

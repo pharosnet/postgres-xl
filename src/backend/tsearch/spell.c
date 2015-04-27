@@ -3,7 +3,7 @@
  * spell.c
  *		Normalizing word with ISpell
  *
- * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  *
  *
  * IDENTIFICATION
@@ -255,7 +255,7 @@ NIAddSpell(IspellDict *Conf, const char *word, const char *flag)
 	}
 	Conf->Spell[Conf->nspell] = (SPELL *) tmpalloc(SPELLHDRSZ + strlen(word) + 1);
 	strcpy(Conf->Spell[Conf->nspell]->word, word);
-	strncpy(Conf->Spell[Conf->nspell]->p.flag, flag, MAXFLAGLEN);
+	strlcpy(Conf->Spell[Conf->nspell]->p.flag, flag, MAXFLAGLEN);
 	Conf->nspell++;
 }
 
@@ -404,7 +404,7 @@ NIAddAffix(IspellDict *Conf, int flag, char flagflags, const char *mask, const c
 		Affix->issimple = 0;
 		Affix->isregis = 1;
 		RS_compile(&(Affix->reg.regis), (type == FF_SUFFIX) ? true : false,
-				   (mask && *mask) ? mask : VoidString);
+				   *mask ? mask : VoidString);
 	}
 	else
 	{

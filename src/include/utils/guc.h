@@ -9,7 +9,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Copyright (c) 2000-2012, PostgreSQL Global Development Group
+ * Copyright (c) 2000-2014, PostgreSQL Global Development Group
  * Written by Peter Eisentraut <peter_e@gmx.net>.
  *
  * src/include/utils/guc.h
@@ -45,7 +45,7 @@
  * configuration file, or by client request in the connection startup
  * packet (e.g., from libpq's PGOPTIONS variable).  Furthermore, an
  * already-started backend will ignore changes to such an option in the
- * configuration file.	The idea is that these options are fixed for a
+ * configuration file.  The idea is that these options are fixed for a
  * given backend once it's started, but they can vary across backends.
  *
  * SUSET options can be set at postmaster startup, with the SIGHUP
@@ -77,11 +77,15 @@ typedef enum
  * dividing line between "interactive" and "non-interactive" sources for
  * error reporting purposes.
  *
- * PGC_S_TEST is used when testing values to be stored as per-database or
- * per-user defaults ("doit" will always be false, so this never gets stored
- * as the actual source of any value).	This is an interactive case, but
- * it needs its own source value because some assign hooks need to make
- * different validity checks in this case.
+ * PGC_S_TEST is used when testing values to be used later ("doit" will always
+ * be false, so this never gets stored as the actual source of any value).
+ * For example, ALTER DATABASE/ROLE tests proposed per-database or per-user
+ * defaults this way, and CREATE FUNCTION tests proposed function SET clauses
+ * this way.  This is an interactive case, but it needs its own source value
+ * because some assign hooks need to make different validity checks in this
+ * case.  In particular, references to nonexistent database objects generally
+ * shouldn't throw hard errors in this case, at most NOTICEs, since the
+ * objects might exist by the time the setting is used for real.
  *
  * NB: see GucSource_Names in guc.c if you change this.
  */
@@ -92,6 +96,7 @@ typedef enum
 	PGC_S_ENV_VAR,				/* postmaster environment variable */
 	PGC_S_FILE,					/* postgresql.conf */
 	PGC_S_ARGV,					/* postmaster command line */
+	PGC_S_GLOBAL,				/* global in-database setting */
 	PGC_S_DATABASE,				/* per-database setting */
 	PGC_S_USER,					/* per-user setting */
 	PGC_S_DATABASE_USER,		/* per-user-and-database setting */
@@ -121,6 +126,11 @@ extern bool ParseConfigFile(const char *config_file, const char *calling_file,
 extern bool ParseConfigFp(FILE *fp, const char *config_file,
 			  int depth, int elevel,
 			  ConfigVariable **head_p, ConfigVariable **tail_p);
+extern bool ParseConfigDirectory(const char *includedir,
+					 const char *calling_file,
+					 int depth, int elevel,
+					 ConfigVariable **head_p,
+					 ConfigVariable **tail_p);
 extern void FreeConfigVariables(ConfigVariable *list);
 
 /*
@@ -325,6 +335,7 @@ extern bool parse_real(const char *value, double *result);
 extern int set_config_option(const char *name, const char *value,
 				  GucContext context, GucSource source,
 				  GucAction action, bool changeVal, int elevel);
+extern void AlterSystemSetConfigFile(AlterSystemStmt *setstmt);
 extern char *GetConfigOptionByName(const char *name, const char **varname);
 extern void GetConfigOptionByNum(int varnum, const char **values, bool *noshow);
 extern int	GetNumConfigOptions(void);
@@ -337,7 +348,7 @@ extern TupleDesc GetPGVariableResultDesc(const char *name);
 extern char *RewriteBeginQuery(char *query_string, const char *name, List *args);
 #endif
 
-extern void ExecSetVariableStmt(VariableSetStmt *stmt);
+extern void ExecSetVariableStmt(VariableSetStmt *stmt, bool isTopLevel);
 extern char *ExtractSetVariableArgs(VariableSetStmt *stmt);
 
 extern void ProcessGUCArray(ArrayType *array,

@@ -11,15 +11,15 @@
  * log can be broken into relatively small, independent segments.
  *
  * XLOG interactions: this module generates an XLOG record whenever a new
- * CLOG page is initialized to zeroes.	Other writes of CLOG come from
+ * CLOG page is initialized to zeroes.  Other writes of CLOG come from
  * recording of transaction commit or abort in xact.c, which generates its
  * own XLOG records for these events and will re-perform the status update
- * on redo; so we need make no additional XLOG entry here.	For synchronous
+ * on redo; so we need make no additional XLOG entry here.  For synchronous
  * transaction commits, the XLOG is guaranteed flushed through the XLOG commit
  * record before we are called to log a commit, so the WAL rule "write xlog
  * before data" is satisfied automatically.  However, for async commits we
  * must track the latest LSN affecting each CLOG page, so that we can flush
- * XLOG that far and satisfy the WAL rule.	We don't have to worry about this
+ * XLOG that far and satisfy the WAL rule.  We don't have to worry about this
  * for aborts (whether sync or async), since the post-crash assumption would
  * be that such transactions failed anyway.
  *
@@ -28,7 +28,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  * Portions Copyright (c) 2010-2012 Postgres-XC Development Group
  *
@@ -116,7 +116,7 @@ static void set_status_by_pages(int nsubxids, TransactionId *subxids,
  * in the tree of xid. In various cases nsubxids may be zero.
  *
  * lsn must be the WAL location of the commit record when recording an async
- * commit.	For a synchronous commit it can be InvalidXLogRecPtr, since the
+ * commit.  For a synchronous commit it can be InvalidXLogRecPtr, since the
  * caller guarantees the commit record is already flushed in that case.  It
  * should be InvalidXLogRecPtr for abort cases, too.
  *
@@ -392,7 +392,7 @@ TransactionIdSetStatusBit(TransactionId xid, XidStatus status, XLogRecPtr lsn, i
 	{
 		int			lsnindex = GetLSNIndex(slotno, xid);
 
-		if (XLByteLT(ClogCtl->shared->group_lsn[lsnindex], lsn))
+		if (ClogCtl->shared->group_lsn[lsnindex] < lsn)
 			ClogCtl->shared->group_lsn[lsnindex] = lsn;
 	}
 }
@@ -444,7 +444,7 @@ TransactionIdGetStatus(TransactionId xid, XLogRecPtr *lsn)
  * Testing during the PostgreSQL 9.2 development cycle revealed that on a
  * large multi-processor system, it was possible to have more CLOG page
  * requests in flight at one time than the numebr of CLOG buffers which existed
- * at that time, which was hardcoded to 8.	Further testing revealed that
+ * at that time, which was hardcoded to 8.  Further testing revealed that
  * performance dropped off with more than 32 CLOG buffers, possibly because
  * the linear buffer search algorithm doesn't scale well.
  *
@@ -686,7 +686,7 @@ ExtendCLOG(TransactionId newestXact)
 #endif
 
 	/* Zero the page and make an XLOG entry about it */
-	ZeroCLOGPage(pageno, !InRecovery);
+	ZeroCLOGPage(pageno, true);
 
 	LWLockRelease(CLogControlLock);
 }
@@ -830,27 +830,4 @@ clog_redo(XLogRecPtr lsn, XLogRecord *record)
 	}
 	else
 		elog(PANIC, "clog_redo: unknown op code %u", info);
-}
-
-void
-clog_desc(StringInfo buf, uint8 xl_info, char *rec)
-{
-	uint8		info = xl_info & ~XLR_INFO_MASK;
-
-	if (info == CLOG_ZEROPAGE)
-	{
-		int			pageno;
-
-		memcpy(&pageno, rec, sizeof(int));
-		appendStringInfo(buf, "zeropage: %d", pageno);
-	}
-	else if (info == CLOG_TRUNCATE)
-	{
-		int			pageno;
-
-		memcpy(&pageno, rec, sizeof(int));
-		appendStringInfo(buf, "truncate before: %d", pageno);
-	}
-	else
-		appendStringInfo(buf, "UNKNOWN");
 }

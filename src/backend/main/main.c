@@ -9,7 +9,7 @@
  * proper FooMain() routine for the incarnation.
  *
  *
- * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -20,7 +20,6 @@
  */
 #include "postgres.h"
 
-#include <pwd.h>
 #include <unistd.h>
 
 #if defined(__alpha) && defined(__osf__)		/* no __alpha__ ? */
@@ -36,14 +35,15 @@
 #endif
 
 #include "bootstrap/bootstrap.h"
+#include "common/username.h"
 #include "postmaster/postmaster.h"
+#include "storage/barrier.h"
+#include "storage/spin.h"
 #include "tcop/tcopprot.h"
 #include "utils/help_config.h"
+#include "utils/memutils.h"
 #include "utils/pg_locale.h"
 #include "utils/ps_status.h"
-#ifdef WIN32
-#include "libpq/pqsignal.h"
-#endif
 
 
 const char *progname;
@@ -52,7 +52,6 @@ const char *progname;
 static void startup_hacks(const char *progname);
 static void help(const char *progname);
 static void check_root(const char *progname);
-static char *get_current_username(const char *progname);
 
 
 /*
@@ -61,6 +60,8 @@ static char *get_current_username(const char *progname);
 int
 main(int argc, char *argv[])
 {
+	bool		do_check_root = true;
+
 	progname = get_progname(argv[0]);
 
 	/*
@@ -70,7 +71,7 @@ main(int argc, char *argv[])
 
 	/*
 	 * Remember the physical location of the initially given argv[] array for
-	 * possible use by ps display.	On some platforms, the argv[] storage must
+	 * possible use by ps display.  On some platforms, the argv[] storage must
 	 * be overwritten in order to set the process title for ps. In such cases
 	 * save_ps_display_args makes and returns a new copy of the argv[] array.
 	 *
@@ -90,10 +91,19 @@ main(int argc, char *argv[])
 #endif
 
 	/*
-	 * Set up locale information from environment.	Note that LC_CTYPE and
+	 * Fire up essential subsystems: error and memory management
+	 *
+	 * Code after this point is allowed to use elog/ereport, though
+	 * localization of messages may not work right away, and messages won't go
+	 * anywhere but stderr until GUC settings get loaded.
+	 */
+	MemoryContextInit();
+
+	/*
+	 * Set up locale information from environment.  Note that LC_CTYPE and
 	 * LC_COLLATE will be overridden later from pg_control if we are in an
 	 * already-initialized database.  We set them here so that they will be
-	 * available to fill pg_control during initdb.	LC_MESSAGES will get set
+	 * available to fill pg_control during initdb.  LC_MESSAGES will get set
 	 * later during GUC option processing, but we set it here to allow startup
 	 * error messages to be localized.
 	 */
@@ -146,7 +156,8 @@ main(int argc, char *argv[])
 	unsetenv("LC_ALL");
 
 	/*
-	 * Catch standard options before doing much else
+	 * Catch standard options before doing much else, in particular before we
+	 * insist on not being root.
 	 */
 	if (argc > 1)
 	{
@@ -160,12 +171,29 @@ main(int argc, char *argv[])
 			puts("postgres (PostgreSQL) " PG_VERSION);
 			exit(0);
 		}
+
+		/*
+		 * In addition to the above, we allow "--describe-config" and "-C var"
+		 * to be called by root.  This is reasonably safe since these are
+		 * read-only activities.  The -C case is important because pg_ctl may
+		 * try to invoke it while still holding administrator privileges on
+		 * Windows.  Note that while -C can normally be in any argv position,
+		 * if you wanna bypass the root check you gotta put it first.  This
+		 * reduces the risk that we might misinterpret some other mode's -C
+		 * switch as being the postmaster/postgres one.
+		 */
+		if (strcmp(argv[1], "--describe-config") == 0)
+			do_check_root = false;
+		else if (argc > 2 && strcmp(argv[1], "-C") == 0)
+			do_check_root = false;
 	}
 
 	/*
-	 * Make sure we are not running as root.
+	 * Make sure we are not running as root, unless it's safe for the selected
+	 * option.
 	 */
-	check_root(progname);
+	if (do_check_root)
+		check_root(progname);
 
 	/*
 	 * Dispatch to one of various subprograms depending on first argument.
@@ -173,7 +201,7 @@ main(int argc, char *argv[])
 
 #ifdef EXEC_BACKEND
 	if (argc > 1 && strncmp(argv[1], "--fork", 6) == 0)
-		exit(SubPostmasterMain(argc, argv));
+		SubPostmasterMain(argc, argv);	/* does not return */
 #endif
 
 #ifdef WIN32
@@ -189,22 +217,23 @@ main(int argc, char *argv[])
 
 	if (argc > 1 && strcmp(argv[1], "--boot") == 0)
 		AuxiliaryProcessMain(argc, argv);		/* does not return */
-
-	if (argc > 1 && strcmp(argv[1], "--describe-config") == 0)
-		exit(GucInfoMain());
-
-	if (argc > 1 && strcmp(argv[1], "--single") == 0)
-		exit(PostgresMain(argc, argv, get_current_username(progname)));
-
-	exit(PostmasterMain(argc, argv));
+	else if (argc > 1 && strcmp(argv[1], "--describe-config") == 0)
+		GucInfoMain();			/* does not return */
+	else if (argc > 1 && strcmp(argv[1], "--single") == 0)
+		PostgresMain(argc, argv,
+					 NULL,		/* no dbname */
+					 strdup(get_user_name_or_exit(progname)));	/* does not return */
+	else
+		PostmasterMain(argc, argv);		/* does not return */
+	abort();					/* should not get here */
 }
 
 
 
 /*
- * Place platform-specific startup hacks here.	This is the right
+ * Place platform-specific startup hacks here.  This is the right
  * place to put code that must be executed early in the launch of any new
- * server process.	Note that this code will NOT be executed when a backend
+ * server process.  Note that this code will NOT be executed when a backend
  * or sub-bootstrap process is forked, unless we are in a fork/exec
  * environment (ie EXEC_BACKEND is defined).
  *
@@ -261,12 +290,22 @@ startup_hacks(const char *progname)
 		SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
 	}
 #endif   /* WIN32 */
+
+	/*
+	 * Initialize dummy_spinlock, in case we are on a platform where we have
+	 * to use the fallback implementation of pg_memory_barrier().
+	 */
+	SpinLockInit(&dummy_spinlock);
 }
 
 
 /*
  * Help display should match the options accepted by PostmasterMain()
  * and PostgresMain().
+ *
+ * XXX On Windows, non-ASCII localizations of these messages only display
+ * correctly if the console output code page covers the necessary characters.
+ * Messages emitted in write_console() do not exhibit this problem.
  */
 static void
 help(const char *progname)
@@ -295,10 +334,10 @@ help(const char *progname)
 	printf(_("  -p PORT            port number to listen on\n"));
 	printf(_("  -s                 show statistics after each query\n"));
 	printf(_("  -S WORK-MEM        set amount of memory for sorts (in kB)\n"));
+	printf(_("  -V, --version      output version information, then exit\n"));
 	printf(_("  --NAME=VALUE       set run-time parameter\n"));
 	printf(_("  --describe-config  describe configuration parameters, then exit\n"));
-	printf(_("  --help             show this help, then exit\n"));
-	printf(_("  --version          output version information, then exit\n"));
+	printf(_("  -?, --help         show this help, then exit\n"));
 
 	printf(_("\nDeveloper options:\n"));
 	printf(_("  -f s|i|n|m|h       forbid use of some plan types\n"));
@@ -377,37 +416,4 @@ check_root(const char *progname)
 		exit(1);
 	}
 #endif   /* WIN32 */
-}
-
-
-
-static char *
-get_current_username(const char *progname)
-{
-#ifndef WIN32
-	struct passwd *pw;
-
-	pw = getpwuid(geteuid());
-	if (pw == NULL)
-	{
-		write_stderr("%s: invalid effective UID: %d\n",
-					 progname, (int) geteuid());
-		exit(1);
-	}
-	/* Allocate new memory because later getpwuid() calls can overwrite it. */
-	return strdup(pw->pw_name);
-#else
-	unsigned long namesize = 256 /* UNLEN */ + 1;
-	char	   *name;
-
-	name = malloc(namesize);
-	if (!GetUserName(name, &namesize))
-	{
-		write_stderr("%s: could not determine user name (GetUserName failed)\n",
-					 progname);
-		exit(1);
-	}
-
-	return name;
-#endif
 }

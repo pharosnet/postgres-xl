@@ -3,7 +3,7 @@
  * fe-exec.c
  *	  functions related to sending a query down to the backend
  *
- * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -38,7 +38,8 @@ char	   *const pgresStatus[] = {
 	"PGRES_BAD_RESPONSE",
 	"PGRES_NONFATAL_ERROR",
 	"PGRES_FATAL_ERROR",
-	"PGRES_COPY_BOTH"
+	"PGRES_COPY_BOTH",
+	"PGRES_SINGLE_TUPLE"
 };
 
 /*
@@ -51,8 +52,6 @@ static bool static_std_strings = false;
 
 static PGEvent *dupEvents(PGEvent *events, int count);
 static bool pqAddTuple(PGresult *res, PGresAttValue *tup);
-static int pqStdRowProcessor(PGresult *res, const PGdataValue *columns,
-				  const char **errmsgp, void *param);
 static bool PQsendQueryStart(PGconn *conn);
 static int PQsendQueryGuts(PGconn *conn,
 				const char *command,
@@ -64,8 +63,7 @@ static int PQsendQueryGuts(PGconn *conn,
 				const int *paramFormats,
 				int resultFormat);
 static void parseInput(PGconn *conn);
-static int dummyRowProcessor(PGresult *res, const PGdataValue *columns,
-				  const char **errmsgp, void *param);
+static PGresult *getCopyResult(PGconn *conn, ExecStatusType copytype);
 static bool PQexecStart(PGconn *conn);
 static PGresult *PQexecFinish(PGconn *conn);
 static int PQsendDescribe(PGconn *conn, char desc_type,
@@ -96,7 +94,7 @@ static int	check_field_number(const PGresult *res, int field_num);
  * doesn't tell us up front how many tuples will be returned.)
  * All other subsidiary storage for a PGresult is kept in PGresult_data blocks
  * of size PGRESULT_DATA_BLOCKSIZE.  The overhead at the start of each block
- * is just a link to the next one, if any.	Free-space management info is
+ * is just a link to the next one, if any.  Free-space management info is
  * kept in the owning PGresult.
  * A query returning a small amount of data will thus require three malloc
  * calls: one for the PGresult, one for the tuples pointer array, and one
@@ -115,7 +113,7 @@ static int	check_field_number(const PGresult *res, int field_num);
  *	 blocks, instead of being crammed into a regular allocation block.
  * Requirements for correct function are:
  * PGRESULT_ALIGN_BOUNDARY must be a multiple of the alignment requirements
- *		of all machine data types.	(Currently this is set from configure
+ *		of all machine data types.  (Currently this is set from configure
  *		tests, so it should be OK automatically.)
  * PGRESULT_SEP_ALLOC_THRESHOLD + PGRESULT_BLOCK_OVERHEAD <=
  *			PGRESULT_DATA_BLOCKSIZE
@@ -181,6 +179,7 @@ PQmakeEmptyPGresult(PGconn *conn, ExecStatusType status)
 			case PGRES_COPY_OUT:
 			case PGRES_COPY_IN:
 			case PGRES_COPY_BOTH:
+			case PGRES_SINGLE_TUPLE:
 				/* non-error cases */
 				break;
 			default:
@@ -269,10 +268,10 @@ PQsetResultAttrs(PGresult *res, int numAttributes, PGresAttDesc *attDescs)
  * Returns a deep copy of the provided 'src' PGresult, which cannot be NULL.
  * The 'flags' argument controls which portions of the result will or will
  * NOT be copied.  The created result is always put into the
- * PGRES_TUPLES_OK status.	The source result error message is not copied,
+ * PGRES_TUPLES_OK status.  The source result error message is not copied,
  * although cmdStatus is.
  *
- * To set custom attributes, use PQsetResultAttrs.	That function requires
+ * To set custom attributes, use PQsetResultAttrs.  That function requires
  * that there are no attrs contained in the result, so to use that
  * function you cannot use the PG_COPYRES_ATTRS or PG_COPYRES_TUPLES
  * options with this function.
@@ -281,7 +280,7 @@ PQsetResultAttrs(PGresult *res, int numAttributes, PGresAttDesc *attDescs)
  *	 PG_COPYRES_ATTRS - Copy the source result's attributes
  *
  *	 PG_COPYRES_TUPLES - Copy the source result's tuples.  This implies
- *	 copying the attrs, seeeing how the attrs are needed by the tuples.
+ *	 copying the attrs, seeing how the attrs are needed by the tuples.
  *
  *	 PG_COPYRES_EVENTS - Copy the source result's events.
  *
@@ -300,7 +299,7 @@ PQcopyResult(const PGresult *src, int flags)
 	if (!dest)
 		return NULL;
 
-	/* Always copy these over.	Is cmdStatus really useful here? */
+	/* Always copy these over.  Is cmdStatus really useful here? */
 	dest->client_encoding = src->client_encoding;
 	strcpy(dest->cmdStatus, src->cmdStatus);
 
@@ -698,6 +697,8 @@ PQclear(PGresult *res)
 
 /*
  * Handy subroutine to deallocate any partially constructed async result.
+ *
+ * Any "next" result gets cleared too.
  */
 void
 pqClearAsyncResult(PGconn *conn)
@@ -705,6 +706,9 @@ pqClearAsyncResult(PGconn *conn)
 	if (conn->result)
 		PQclear(conn->result);
 	conn->result = NULL;
+	if (conn->next_result)
+		PQclear(conn->next_result);
+	conn->next_result = NULL;
 }
 
 /*
@@ -753,12 +757,11 @@ pqPrepareAsyncResult(PGconn *conn)
 	PGresult   *res;
 
 	/*
-	 * conn->result is the PGresult to return.	If it is NULL (which probably
+	 * conn->result is the PGresult to return.  If it is NULL (which probably
 	 * shouldn't happen) we assume there is an appropriate error message in
 	 * conn->errorMessage.
 	 */
 	res = conn->result;
-	conn->result = NULL;		/* handing over ownership to caller */
 	if (!res)
 		res = PQmakeEmptyPGresult(conn, PGRES_FATAL_ERROR);
 	else
@@ -771,6 +774,16 @@ pqPrepareAsyncResult(PGconn *conn)
 		appendPQExpBufferStr(&conn->errorMessage,
 							 PQresultErrorMessage(res));
 	}
+
+	/*
+	 * Replace conn->result with next_result, if any.  In the normal case
+	 * there isn't a next result and we're just dropping ownership of the
+	 * current result.  In single-row mode this restores the situation to what
+	 * it was before we created the current single-row result.
+	 */
+	conn->result = conn->next_result;
+	conn->next_result = NULL;
+
 	return res;
 }
 
@@ -981,85 +994,55 @@ pqSaveParameterStatus(PGconn *conn, const char *name, const char *value)
 
 
 /*
- * PQsetRowProcessor
- *	  Set function that copies row data out from the network buffer,
- *	  along with a passthrough parameter for it.
- */
-void
-PQsetRowProcessor(PGconn *conn, PQrowProcessor func, void *param)
-{
-	if (!conn)
-		return;
-
-	if (func)
-	{
-		/* set custom row processor */
-		conn->rowProcessor = func;
-		conn->rowProcessorParam = param;
-	}
-	else
-	{
-		/* set default row processor */
-		conn->rowProcessor = pqStdRowProcessor;
-		conn->rowProcessorParam = conn;
-	}
-}
-
-/*
- * PQgetRowProcessor
- *	  Get current row processor of PGconn.
- *	  If param is not NULL, also store the passthrough parameter at *param.
- */
-PQrowProcessor
-PQgetRowProcessor(const PGconn *conn, void **param)
-{
-	if (!conn)
-	{
-		if (param)
-			*param = NULL;
-		return NULL;
-	}
-
-	if (param)
-		*param = conn->rowProcessorParam;
-	return conn->rowProcessor;
-}
-
-/*
- * pqStdRowProcessor
- *	  Add the received row to the PGresult structure
- *	  Returns 1 if OK, -1 if error occurred.
+ * pqRowProcessor
+ *	  Add the received row to the current async result (conn->result).
+ *	  Returns 1 if OK, 0 if error occurred.
  *
- * Note: "param" should point to the PGconn, but we don't actually need that
- * as of the current coding.
+ * On error, *errmsgp can be set to an error string to be returned.
+ * If it is left NULL, the error is presumed to be "out of memory".
+ *
+ * In single-row mode, we create a new result holding just the current row,
+ * stashing the previous result in conn->next_result so that it becomes
+ * active again after pqPrepareAsyncResult().  This allows the result metadata
+ * (column descriptions) to be carried forward to each result row.
  */
-static int
-pqStdRowProcessor(PGresult *res, const PGdataValue *columns,
-				  const char **errmsgp, void *param)
+int
+pqRowProcessor(PGconn *conn, const char **errmsgp)
 {
+	PGresult   *res = conn->result;
 	int			nfields = res->numAttributes;
+	const PGdataValue *columns = conn->rowBuf;
 	PGresAttValue *tup;
 	int			i;
 
-	if (columns == NULL)
+	/*
+	 * In single-row mode, make a new PGresult that will hold just this one
+	 * row; the original conn->result is left unchanged so that it can be used
+	 * again as the template for future rows.
+	 */
+	if (conn->singleRowMode)
 	{
-		/* New result set ... we have nothing to do in this function. */
-		return 1;
+		/* Copy everything that should be in the result at this point */
+		res = PQcopyResult(res,
+						   PG_COPYRES_ATTRS | PG_COPYRES_EVENTS |
+						   PG_COPYRES_NOTICEHOOKS);
+		if (!res)
+			return 0;
 	}
 
 	/*
 	 * Basically we just allocate space in the PGresult for each field and
 	 * copy the data over.
 	 *
-	 * Note: on malloc failure, we return -1 leaving *errmsgp still NULL,
-	 * which caller will take to mean "out of memory".	This is preferable to
-	 * trying to set up such a message here, because evidently there's not
-	 * enough memory for gettext() to do anything.
+	 * Note: on malloc failure, we return 0 leaving *errmsgp still NULL, which
+	 * caller will take to mean "out of memory".  This is preferable to trying
+	 * to set up such a message here, because evidently there's not enough
+	 * memory for gettext() to do anything.
 	 */
 	tup = (PGresAttValue *)
 		pqResultAlloc(res, nfields * sizeof(PGresAttValue), TRUE);
 	if (tup == NULL)
-		return -1;
+		goto fail;
 
 	for (i = 0; i < nfields; i++)
 	{
@@ -1078,7 +1061,7 @@ pqStdRowProcessor(PGresult *res, const PGdataValue *columns,
 
 			val = (char *) pqResultAlloc(res, clen + 1, isbinary);
 			if (val == NULL)
-				return -1;
+				goto fail;
 
 			/* copy and zero-terminate the data (even if it's binary) */
 			memcpy(val, columns[i].value, clen);
@@ -1091,10 +1074,30 @@ pqStdRowProcessor(PGresult *res, const PGdataValue *columns,
 
 	/* And add the tuple to the PGresult's tuple array */
 	if (!pqAddTuple(res, tup))
-		return -1;
+		goto fail;
 
-	/* Success */
+	/*
+	 * Success.  In single-row mode, make the result available to the client
+	 * immediately.
+	 */
+	if (conn->singleRowMode)
+	{
+		/* Change result status to special single-row value */
+		res->resultStatus = PGRES_SINGLE_TUPLE;
+		/* Stash old result for re-use later */
+		conn->next_result = conn->result;
+		conn->result = res;
+		/* And mark the result ready to return */
+		conn->asyncStatus = PGASYNC_READY;
+	}
+
 	return 1;
+
+fail:
+	/* release locally allocated PGresult, if we made one */
+	if (res != conn->result)
+		PQclear(res);
+	return 0;
 }
 
 
@@ -1111,6 +1114,7 @@ PQsendQuery(PGconn *conn, const char *query)
 	if (!PQsendQueryStart(conn))
 		return 0;
 
+	/* check the argument */
 	if (!query)
 	{
 		printfPQExpBuffer(&conn->errorMessage,
@@ -1168,10 +1172,17 @@ PQsendQueryParams(PGconn *conn,
 	if (!PQsendQueryStart(conn))
 		return 0;
 
+	/* check the arguments */
 	if (!command)
 	{
 		printfPQExpBuffer(&conn->errorMessage,
 						libpq_gettext("command string is a null pointer\n"));
+		return 0;
+	}
+	if (nParams < 0 || nParams > 65535)
+	{
+		printfPQExpBuffer(&conn->errorMessage,
+		libpq_gettext("number of parameters must be between 0 and 65535\n"));
 		return 0;
 	}
 
@@ -1201,17 +1212,23 @@ PQsendPrepare(PGconn *conn,
 	if (!PQsendQueryStart(conn))
 		return 0;
 
+	/* check the arguments */
 	if (!stmtName)
 	{
 		printfPQExpBuffer(&conn->errorMessage,
 						libpq_gettext("statement name is a null pointer\n"));
 		return 0;
 	}
-
 	if (!query)
 	{
 		printfPQExpBuffer(&conn->errorMessage,
 						libpq_gettext("command string is a null pointer\n"));
+		return 0;
+	}
+	if (nParams < 0 || nParams > 65535)
+	{
+		printfPQExpBuffer(&conn->errorMessage,
+		libpq_gettext("number of parameters must be between 0 and 65535\n"));
 		return 0;
 	}
 
@@ -1296,10 +1313,17 @@ PQsendQueryPrepared(PGconn *conn,
 	if (!PQsendQueryStart(conn))
 		return 0;
 
+	/* check the arguments */
 	if (!stmtName)
 	{
 		printfPQExpBuffer(&conn->errorMessage,
 						libpq_gettext("statement name is a null pointer\n"));
+		return 0;
+	}
+	if (nParams < 0 || nParams > 65535)
+	{
+		printfPQExpBuffer(&conn->errorMessage,
+		libpq_gettext("number of parameters must be between 0 and 65535\n"));
 		return 0;
 	}
 
@@ -1343,6 +1367,10 @@ PQsendQueryStart(PGconn *conn)
 
 	/* initialize async result-accumulation state */
 	conn->result = NULL;
+	conn->next_result = NULL;
+
+	/* reset single-row processing mode */
+	conn->singleRowMode = false;
 
 	/* ready to send command message */
 	return true;
@@ -1541,10 +1569,35 @@ pqHandleSendFailure(PGconn *conn)
 		 /* loop until no more data readable */ ;
 
 	/*
-	 * Parse any available input messages.	Since we are in PGASYNC_IDLE
+	 * Parse any available input messages.  Since we are in PGASYNC_IDLE
 	 * state, only NOTICE and NOTIFY messages will be eaten.
 	 */
 	parseInput(conn);
+}
+
+/*
+ * Select row-by-row processing mode
+ */
+int
+PQsetSingleRowMode(PGconn *conn)
+{
+	/*
+	 * Only allow setting the flag when we have launched a query and not yet
+	 * received any results.
+	 */
+	if (!conn)
+		return 0;
+	if (conn->asyncStatus != PGASYNC_BUSY)
+		return 0;
+	if (conn->queryclass != PGQUERY_SIMPLE &&
+		conn->queryclass != PGQUERY_EXTENDED)
+		return 0;
+	if (conn->result)
+		return 0;
+
+	/* OK, set flag */
+	conn->singleRowMode = true;
+	return 1;
 }
 
 /*
@@ -1587,9 +1640,6 @@ PQconsumeInput(PGconn *conn)
  * parseInput: if appropriate, parse input data from backend
  * until input is exhausted or a stopping state is reached.
  * Note that this function will NOT attempt to read more data from the backend.
- *
- * Note: callers of parseInput must be prepared for a longjmp exit when we are
- * in PGASYNC_BUSY state, since an external row processor might do that.
  */
 static void
 parseInput(PGconn *conn)
@@ -1685,22 +1735,13 @@ PQgetResult(PGconn *conn)
 			conn->asyncStatus = PGASYNC_BUSY;
 			break;
 		case PGASYNC_COPY_IN:
-			if (conn->result && conn->result->resultStatus == PGRES_COPY_IN)
-				res = pqPrepareAsyncResult(conn);
-			else
-				res = PQmakeEmptyPGresult(conn, PGRES_COPY_IN);
+			res = getCopyResult(conn, PGRES_COPY_IN);
 			break;
 		case PGASYNC_COPY_OUT:
-			if (conn->result && conn->result->resultStatus == PGRES_COPY_OUT)
-				res = pqPrepareAsyncResult(conn);
-			else
-				res = PQmakeEmptyPGresult(conn, PGRES_COPY_OUT);
+			res = getCopyResult(conn, PGRES_COPY_OUT);
 			break;
 		case PGASYNC_COPY_BOTH:
-			if (conn->result && conn->result->resultStatus == PGRES_COPY_BOTH)
-				res = pqPrepareAsyncResult(conn);
-			else
-				res = PQmakeEmptyPGresult(conn, PGRES_COPY_BOTH);
+			res = getCopyResult(conn, PGRES_COPY_BOTH);
 			break;
 		default:
 			printfPQExpBuffer(&conn->errorMessage,
@@ -1738,46 +1779,33 @@ PQgetResult(PGconn *conn)
 }
 
 /*
- * PQskipResult
- *	  Get the next PGresult produced by a query, but discard any data rows.
- *
- * This is mainly useful for cleaning up after a longjmp out of a row
- * processor, when resuming processing of the current query result isn't
- * wanted.	Note that this is of little value in an async-style application,
- * since any preceding calls to PQisBusy would have already called the regular
- * row processor.
+ * getCopyResult
+ *	  Helper for PQgetResult: generate result for COPY-in-progress cases
  */
-PGresult *
-PQskipResult(PGconn *conn)
+static PGresult *
+getCopyResult(PGconn *conn, ExecStatusType copytype)
 {
-	PGresult   *res;
-	PQrowProcessor savedRowProcessor;
+	/*
+	 * If the server connection has been lost, don't pretend everything is
+	 * hunky-dory; instead return a PGRES_FATAL_ERROR result, and reset the
+	 * asyncStatus to idle (corresponding to what we'd do if we'd detected I/O
+	 * error in the earlier steps in PQgetResult).  The text returned in the
+	 * result is whatever is in conn->errorMessage; we hope that was filled
+	 * with something relevant when the lost connection was detected.
+	 */
+	if (conn->status != CONNECTION_OK)
+	{
+		pqSaveErrorResult(conn);
+		conn->asyncStatus = PGASYNC_IDLE;
+		return pqPrepareAsyncResult(conn);
+	}
 
-	if (!conn)
-		return NULL;
+	/* If we have an async result for the COPY, return that */
+	if (conn->result && conn->result->resultStatus == copytype)
+		return pqPrepareAsyncResult(conn);
 
-	/* temporarily install dummy row processor */
-	savedRowProcessor = conn->rowProcessor;
-	conn->rowProcessor = dummyRowProcessor;
-	/* no need to save/change rowProcessorParam */
-
-	/* fetch the next result */
-	res = PQgetResult(conn);
-
-	/* restore previous row processor */
-	conn->rowProcessor = savedRowProcessor;
-
-	return res;
-}
-
-/*
- * Do-nothing row processor for PQskipResult
- */
-static int
-dummyRowProcessor(PGresult *res, const PGdataValue *columns,
-				  const char **errmsgp, void *param)
-{
-	return 1;
+	/* Otherwise, invent a suitable PGresult */
+	return PQmakeEmptyPGresult(conn, copytype);
 }
 
 
@@ -1886,7 +1914,7 @@ PQexecStart(PGconn *conn)
 	 * Silently discard any prior query result that application didn't eat.
 	 * This is probably poor design, but it's here for backward compatibility.
 	 */
-	while ((result = PQskipResult(conn)) != NULL)
+	while ((result = PQgetResult(conn)) != NULL)
 	{
 		ExecStatusType resultStatus = result->resultStatus;
 
@@ -2003,7 +2031,7 @@ PQexecFinish(PGconn *conn)
  * If the query was not even sent, return NULL; conn->errorMessage is set to
  * a relevant message.
  * If the query was sent, a new PGresult is returned (which could indicate
- * either success or failure).	On success, the PGresult contains status
+ * either success or failure).  On success, the PGresult contains status
  * PGRES_COMMAND_OK, and its parameter and column-heading fields describe
  * the statement's inputs and outputs respectively.
  * The user is responsible for freeing the PGresult via PQclear()
@@ -2239,7 +2267,8 @@ PQputCopyEnd(PGconn *conn, const char *errormsg)
 {
 	if (!conn)
 		return -1;
-	if (conn->asyncStatus != PGASYNC_COPY_IN)
+	if (conn->asyncStatus != PGASYNC_COPY_IN &&
+		conn->asyncStatus != PGASYNC_COPY_BOTH)
 	{
 		printfPQExpBuffer(&conn->errorMessage,
 						  libpq_gettext("no COPY in progress\n"));
@@ -2299,7 +2328,10 @@ PQputCopyEnd(PGconn *conn, const char *errormsg)
 	}
 
 	/* Return to active duty */
-	conn->asyncStatus = PGASYNC_BUSY;
+	if (conn->asyncStatus == PGASYNC_COPY_BOTH)
+		conn->asyncStatus = PGASYNC_COPY_OUT;
+	else
+		conn->asyncStatus = PGASYNC_BUSY;
 	resetPQExpBuffer(&conn->errorMessage);
 
 	/* Try to flush data */
@@ -2342,7 +2374,7 @@ PQgetCopyData(PGconn *conn, char **buffer, int async)
  * PQgetline - gets a newline-terminated string from the backend.
  *
  * Chiefly here so that applications can use "COPY <rel> to stdout"
- * and read the output string.	Returns a null-terminated string in s.
+ * and read the output string.  Returns a null-terminated string in s.
  *
  * XXX this routine is now deprecated, because it can't handle binary data.
  * If called during a COPY BINARY we return EOF.
@@ -2456,7 +2488,7 @@ PQputnbytes(PGconn *conn, const char *buffer, int nbytes)
  *		the application must call this routine to finish the command protocol.
  *
  * When using protocol 3.0 this is deprecated; it's cleaner to use PQgetResult
- * to get the transfer status.	Note however that when using 2.0 protocol,
+ * to get the transfer status.  Note however that when using 2.0 protocol,
  * recovering from a copy failure often requires a PQreset.  PQendcopy will
  * take care of that, PQgetResult won't.
  *
@@ -2517,7 +2549,7 @@ PQfn(PGconn *conn,
 	/* clear the error string */
 	resetPQExpBuffer(&conn->errorMessage);
 
-	if (conn->sock < 0 || conn->asyncStatus != PGASYNC_IDLE ||
+	if (conn->sock == PGINVALID_SOCKET || conn->asyncStatus != PGASYNC_IDLE ||
 		conn->result != NULL)
 	{
 		printfPQExpBuffer(&conn->errorMessage,
@@ -2684,7 +2716,7 @@ PQfname(const PGresult *res, int field_num)
  * downcasing in the frontend might follow different locale rules than
  * downcasing in the backend...
  *
- * Returns -1 if no match.	In the present backend it is also possible
+ * Returns -1 if no match.  In the present backend it is also possible
  * to have multiple matches, in which case the first one is found.
  */
 int
@@ -2692,7 +2724,8 @@ PQfnumber(const PGresult *res, const char *field_name)
 {
 	char	   *field_case;
 	bool		in_quotes;
-	char	   *iptr;
+	bool		all_lower = true;
+	const char *iptr;
 	char	   *optr;
 	int			i;
 
@@ -2707,6 +2740,28 @@ PQfnumber(const PGresult *res, const char *field_name)
 		field_name[0] == '\0' ||
 		res->attDescs == NULL)
 		return -1;
+
+	/*
+	 * Check if we can avoid the strdup() and related work because the
+	 * passed-in string wouldn't be changed before we do the check anyway.
+	 */
+	for (iptr = field_name; *iptr; iptr++)
+	{
+		char		c = *iptr;
+
+		if (c == '"' || c != pg_tolower((unsigned char) c))
+		{
+			all_lower = false;
+			break;
+		}
+	}
+
+	if (all_lower)
+		for (i = 0; i < res->numAttributes; i++)
+			if (strcmp(field_name, res->attDescs[i].name) == 0)
+				return i;
+
+	/* Fall through to the normal check if that didn't work out. */
 
 	/*
 	 * Note: this code will not reject partially quoted strings, eg
@@ -2851,7 +2906,7 @@ PQoidStatus(const PGresult *res)
 
 	size_t		len;
 
-	if (!res || !res->cmdStatus || strncmp(res->cmdStatus, "INSERT ", 7) != 0)
+	if (!res || strncmp(res->cmdStatus, "INSERT ", 7) != 0)
 		return "";
 
 	len = strspn(res->cmdStatus + 7, "0123456789");
@@ -2875,7 +2930,6 @@ PQoidValue(const PGresult *res)
 	unsigned long result;
 
 	if (!res ||
-		!res->cmdStatus ||
 		strncmp(res->cmdStatus, "INSERT ", 7) != 0 ||
 		res->cmdStatus[7] < '0' ||
 		res->cmdStatus[7] > '9')
@@ -3095,7 +3149,7 @@ PQfreemem(void *ptr)
  *
  * This function is here only for binary backward compatibility.
  * New code should use PQfreemem().  A macro will automatically map
- * calls to PQfreemem.	It should be removed in the future.  bjm 2003-03-24
+ * calls to PQfreemem.  It should be removed in the future.  bjm 2003-03-24
  */
 
 #undef PQfreeNotify
@@ -3290,7 +3344,7 @@ PQescapeInternal(PGconn *conn, const char *str, size_t len, bool as_ident)
 	/*
 	 * If we are escaping a literal that contains backslashes, we use the
 	 * escape string syntax so that the result is correct under either value
-	 * of standard_conforming_strings.	We also emit a leading space in this
+	 * of standard_conforming_strings.  We also emit a leading space in this
 	 * case, to guard against the possibility that the result might be
 	 * interpolated immediately following an identifier.
 	 */

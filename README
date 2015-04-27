@@ -17,9 +17,8 @@ which are listed here:
 See the file INSTALL for instructions on how to build and install
 Postgres-XL.  That file also lists supported operating systems and
 hardware platforms and contains information regarding any other
-software packages that are required to build or run the Postgres-XL
-system.  Changes between all Postgres-XL releases are recorded in the
-file HISTORY.  Copyright and license information can be found in the
+software packages that are required to build or run the PostgreSQL-XL
+system.  Copyright and license information can be found in the
 file COPYRIGHT.  A comprehensive documentation set is included in this
 distribution; it can be read as described in the installation
 instructions.

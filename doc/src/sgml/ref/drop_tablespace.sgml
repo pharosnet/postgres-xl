@@ -4,6 +4,10 @@ PostgreSQL documentation
 -->
 
 <refentry id="SQL-DROPTABLESPACE">
+ <indexterm zone="sql-droptablespace">
+  <primary>DROP TABLESPACE</primary>
+ </indexterm>
+
  <refmeta>
   <refentrytitle>DROP TABLESPACE</refentrytitle>
   <manvolnum>7</manvolnum>
@@ -15,13 +19,9 @@ PostgreSQL documentation
   <refpurpose>remove a tablespace</refpurpose>
  </refnamediv>
 
- <indexterm zone="sql-droptablespace">
-  <primary>DROP TABLESPACE</primary>
- </indexterm>
-
  <refsynopsisdiv>
 <synopsis>
-DROP TABLESPACE [ IF EXISTS ] <replaceable class="PARAMETER">tablespace_name</replaceable>
+DROP TABLESPACE [ IF EXISTS ] <replaceable class="PARAMETER">name</replaceable>
 </synopsis>
  </refsynopsisdiv>
 
@@ -60,7 +60,7 @@ DROP TABLESPACE [ IF EXISTS ] <replaceable class="PARAMETER">tablespace_name</re
    </varlistentry>
 
    <varlistentry>
-    <term><replaceable class="PARAMETER">tablespace_name</replaceable></term>
+    <term><replaceable class="PARAMETER">name</replaceable></term>
     <listitem>
      <para>
       The name of a tablespace.

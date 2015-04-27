@@ -3,7 +3,7 @@
  * auto_explain.c
  *
  *
- * Copyright (c) 2008-2012, PostgreSQL Global Development Group
+ * Copyright (c) 2008-2014, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *	  contrib/auto_explain/auto_explain.c
@@ -11,6 +11,8 @@
  *-------------------------------------------------------------------------
  */
 #include "postgres.h"
+
+#include <limits.h>
 
 #include "commands/explain.h"
 #include "executor/instrument.h"
@@ -23,6 +25,7 @@ static int	auto_explain_log_min_duration = -1; /* msec or -1 */
 static bool auto_explain_log_analyze = false;
 static bool auto_explain_log_verbose = false;
 static bool auto_explain_log_buffers = false;
+static bool auto_explain_log_triggers = false;
 static bool auto_explain_log_timing = false;
 static int	auto_explain_log_format = EXPLAIN_FORMAT_TEXT;
 static bool auto_explain_log_nested_statements = false;
@@ -104,6 +107,17 @@ _PG_init(void)
 							 "Log buffers usage.",
 							 NULL,
 							 &auto_explain_log_buffers,
+							 false,
+							 PGC_SUSET,
+							 0,
+							 NULL,
+							 NULL,
+							 NULL);
+
+	DefineCustomBoolVariable("auto_explain.log_triggers",
+							 "Include trigger statistics in plans.",
+						"This has no effect unless log_analyze is also set.",
+							 &auto_explain_log_triggers,
 							 false,
 							 PGC_SUSET,
 							 0,
@@ -293,6 +307,8 @@ explain_ExecutorEnd(QueryDesc *queryDesc)
 			ExplainBeginOutput(&es);
 			ExplainQueryText(&es, queryDesc);
 			ExplainPrintPlan(&es, queryDesc);
+			if (es.analyze && auto_explain_log_triggers)
+				ExplainPrintTriggers(&es, queryDesc);
 			ExplainEndOutput(&es);
 
 			/* Remove last line break */

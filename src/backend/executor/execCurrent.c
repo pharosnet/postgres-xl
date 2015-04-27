@@ -8,7 +8,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *	src/backend/executor/execCurrent.c
@@ -152,7 +152,7 @@ execCurrentOf(CurrentOfExpr *cexpr,
 
 		/*
 		 * This table didn't produce the cursor's current row; some other
-		 * inheritance child of the same parent must have.	Signal caller to
+		 * inheritance child of the same parent must have.  Signal caller to
 		 * do nothing on this table.
 		 */
 		return false;

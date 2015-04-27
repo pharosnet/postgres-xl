@@ -2,7 +2,7 @@
 /*
  * Scanner for the configuration file
  *
- * Copyright (c) 2000-2012, PostgreSQL Global Development Group
+ * Copyright (c) 2000-2014, PostgreSQL Global Development Group
  *
  * src/backend/utils/misc/guc-file.l
  */
@@ -120,6 +120,7 @@ ProcessConfigFile(GucContext context)
 				   *head,
 				   *tail;
 	int			i;
+	char		*ErrorConfFile = ConfigFileName;
 
 	/*
 	 * Config files are processed on startup (by the postmaster only)
@@ -134,13 +135,29 @@ ProcessConfigFile(GucContext context)
 	 */
 	elevel = IsUnderPostmaster ? DEBUG2 : LOG;
 
-	/* Parse the file into a list of option names and values */
+	/* Parse the main config file into a list of option names and values */
 	head = tail = NULL;
 
 	if (!ParseConfigFile(ConfigFileName, NULL, true, 0, elevel, &head, &tail))
 	{
 		/* Syntax error(s) detected in the file, so bail out */
 		error = true;
+		goto cleanup_list;
+	}
+
+	/*
+	 * Parse the PG_AUTOCONF_FILENAME file, if present, after the main file
+	 * to replace any parameters set by ALTER SYSTEM command.  Because this
+	 * file is in the data directory, we can't read it until the DataDir has
+	 * been set.
+	 */
+	if (DataDir &&
+		!ParseConfigFile(PG_AUTOCONF_FILENAME, NULL, false, 0, elevel,
+						 &head, &tail))
+	{
+		/* Syntax error(s) detected in the file, so bail out */
+		error = true;
+		ErrorConfFile = PG_AUTOCONF_FILENAME;
 		goto cleanup_list;
 	}
 
@@ -192,6 +209,7 @@ ProcessConfigFile(GucContext context)
 							item->name,
 							item->filename, item->sourceline)));
 			error = true;
+			ErrorConfFile = item->filename;
 		}
 	}
 
@@ -318,7 +336,10 @@ ProcessConfigFile(GucContext context)
 			}
 		}
 		else if (scres == 0)
+		{
 			error = true;
+			ErrorConfFile = item->filename;
+		}
 		/* else no error but variable's active value was not changed */
 
 		/*
@@ -339,8 +360,6 @@ ProcessConfigFile(GucContext context)
 	PgReloadTime = GetCurrentTimestamp();
 
  cleanup_list:
-	FreeConfigVariables(head);
-
 	if (error)
 	{
 		/* During postmaster startup, any error is fatal */
@@ -348,17 +367,55 @@ ProcessConfigFile(GucContext context)
 			ereport(ERROR,
 					(errcode(ERRCODE_CONFIG_FILE_ERROR),
 					 errmsg("configuration file \"%s\" contains errors",
-							ConfigFileName)));
+							ErrorConfFile)));
 		else if (apply)
 			ereport(elevel,
 					(errcode(ERRCODE_CONFIG_FILE_ERROR),
 					 errmsg("configuration file \"%s\" contains errors; unaffected changes were applied",
-							ConfigFileName)));
+							ErrorConfFile)));
 		else
 			ereport(elevel,
 					(errcode(ERRCODE_CONFIG_FILE_ERROR),
 					 errmsg("configuration file \"%s\" contains errors; no changes were applied",
-							ConfigFileName)));
+							ErrorConfFile)));
+	}
+
+	/*
+	 * Calling FreeConfigVariables() any earlier than this can cause problems,
+	 * because ErrorConfFile could be pointing to a string that will be freed
+	 * here.
+	 */
+	FreeConfigVariables(head);
+}
+
+/*
+ * Given a configuration file or directory location that may be a relative
+ * path, return an absolute one.  We consider the location to be relative to
+ * the directory holding the calling file, or to DataDir if no calling file.
+ */
+static char *
+AbsoluteConfigLocation(const char *location, const char *calling_file)
+{
+	char		abs_path[MAXPGPATH];
+
+	if (is_absolute_path(location))
+		return pstrdup(location);
+	else
+	{
+		if (calling_file != NULL)
+		{
+			strlcpy(abs_path, calling_file, sizeof(abs_path));
+			get_parent_directory(abs_path);
+			join_path_components(abs_path, abs_path, location);
+			canonicalize_path(abs_path);
+		}
+		else
+		{
+			AssertState(DataDir);
+			join_path_components(abs_path, DataDir, location);
+			canonicalize_path(abs_path);
+		}
+		return pstrdup(abs_path);
 	}
 }
 
@@ -376,9 +433,9 @@ ParseConfigFile(const char *config_file, const char *calling_file, bool strict,
 				ConfigVariable **head_p,
 				ConfigVariable **tail_p)
 {
+	char	   *abs_path;
 	bool		OK = true;
 	FILE	   *fp;
-	char		abs_path[MAXPGPATH];
 
 	/*
 	 * Reject too-deep include nesting depth.  This is just a safety check
@@ -394,32 +451,8 @@ ParseConfigFile(const char *config_file, const char *calling_file, bool strict,
 		return false;
 	}
 
-	/*
-	 * If config_file is a relative path, convert to absolute.  We consider
-	 * it to be relative to the directory holding the calling file.
-	 */
-	if (!is_absolute_path(config_file))
-	{
-		if (calling_file != NULL)
-		{
-			strlcpy(abs_path, calling_file, sizeof(abs_path));
-			get_parent_directory(abs_path);
-			join_path_components(abs_path, abs_path, config_file);
-			canonicalize_path(abs_path);
-			config_file = abs_path;
-		}
-		else
-		{
-			/*
-			 * calling_file is NULL, we make an absolute path from $PGDATA
-			 */
-			join_path_components(abs_path, data_directory, config_file);
-			canonicalize_path(abs_path);
-			config_file = abs_path;
-		}
-	}
-
-	fp = AllocateFile(config_file, "r");
+	abs_path = AbsoluteConfigLocation(config_file, calling_file);
+	fp = AllocateFile(abs_path, "r");
 	if (!fp)
 	{
 		if (strict)
@@ -427,19 +460,23 @@ ParseConfigFile(const char *config_file, const char *calling_file, bool strict,
 			ereport(elevel,
 					(errcode_for_file_access(),
 					 errmsg("could not open configuration file \"%s\": %m",
-							config_file)));
-			return false;
+							abs_path)));
+			OK = false;
+			goto cleanup;
 		}
 
 		ereport(LOG,
 				(errmsg("skipping missing configuration file \"%s\"",
-						config_file)));
-		return OK;
+						abs_path)));
+		goto cleanup;
 	}
 
-	OK = ParseConfigFp(fp, config_file, depth, elevel, head_p, tail_p);
+	OK = ParseConfigFp(fp, abs_path, depth, elevel, head_p, tail_p);
 
-	FreeFile(fp);
+cleanup:
+	if (fp)
+		FreeFile(fp);
+	pfree(abs_path);
 
 	return OK;
 }
@@ -563,7 +600,22 @@ ParseConfigFp(FILE *fp, const char *config_file, int depth, int elevel,
 		}
 
 		/* OK, process the option name and value */
-		if (guc_name_compare(opt_name, "include_if_exists") == 0)
+		if (guc_name_compare(opt_name, "include_dir") == 0)
+		{
+			/*
+			 * An include_dir directive isn't a variable and should be
+			 * processed immediately.
+			 */
+			if (!ParseConfigDirectory(opt_value, config_file,
+								 depth + 1, elevel,
+								 head_p, tail_p))
+				OK = false;
+			yy_switch_to_buffer(lex_buffer);
+			ConfigFileLineno = save_ConfigFileLineno;
+			pfree(opt_name);
+			pfree(opt_value);
+		}
+		else if (guc_name_compare(opt_name, "include_if_exists") == 0)
 		{
 			/*
 			 * An include_if_exists directive isn't a variable and should be
@@ -665,6 +717,115 @@ cleanup:
 	return OK;
 }
 
+/*
+ * Read and parse all config files in a subdirectory in alphabetical order
+ */
+bool
+ParseConfigDirectory(const char *includedir,
+					 const char *calling_file,
+					 int depth, int elevel,
+					 ConfigVariable **head_p,
+					 ConfigVariable **tail_p)
+{
+	char	   *directory;
+	DIR		   *d;
+	struct dirent *de;
+	char	  **filenames = NULL;
+	int			num_filenames = 0;
+	int			size_filenames = 0;
+	bool		status;
+
+	directory = AbsoluteConfigLocation(includedir, calling_file);
+	d = AllocateDir(directory);
+	if (d == NULL)
+	{
+		ereport(elevel,
+				(errcode_for_file_access(),
+				 errmsg("could not open configuration directory \"%s\": %m",
+						directory)));
+		status = false;
+		goto cleanup;
+	}
+
+	/*
+	 * Read the directory and put the filenames in an array, so we can sort
+	 * them prior to processing the contents.
+	 */
+	while ((de = ReadDir(d, directory)) != NULL)
+	{
+		struct stat st;
+		char	filename[MAXPGPATH];
+
+		/*
+		 * Only parse files with names ending in ".conf".  Explicitly reject
+		 * files starting with ".".  This excludes things like "." and "..",
+		 * as well as typical hidden files, backup files, and editor debris.
+		 */
+		if (strlen(de->d_name) < 6)
+			continue;
+		if (de->d_name[0] == '.')
+			continue;
+		if (strcmp(de->d_name + strlen(de->d_name) - 5, ".conf") != 0)
+			continue;
+
+		join_path_components(filename, directory, de->d_name);
+		canonicalize_path(filename);
+		if (stat(filename, &st) == 0)
+		{
+			if (!S_ISDIR(st.st_mode))
+			{
+				/* Add file to list, increasing its size in blocks of 32 */
+				if (num_filenames == size_filenames)
+				{
+					size_filenames += 32;
+					if (num_filenames == 0)
+						/* Must initialize, repalloc won't take NULL input */
+						filenames = palloc(size_filenames * sizeof(char *));
+					else
+						filenames = repalloc(filenames, size_filenames * sizeof(char *));
+				}
+				filenames[num_filenames] = pstrdup(filename);
+				num_filenames++;
+			}
+		}
+		else
+		{
+			/*
+			 * stat does not care about permissions, so the most likely reason
+			 * a file can't be accessed now is if it was removed between the
+			 * directory listing and now.
+			 */
+			ereport(elevel,
+					(errcode_for_file_access(),
+					 errmsg("could not stat file \"%s\": %m",
+							filename)));
+			status = false;
+			goto cleanup;
+		}
+	}
+
+	if (num_filenames > 0)
+	{
+		int			i;
+		qsort(filenames, num_filenames, sizeof(char *), pg_qsort_strcmp);
+		for (i = 0; i < num_filenames; i++)
+		{
+			if (!ParseConfigFile(filenames[i], NULL, true,
+								 depth, elevel, head_p, tail_p))
+			{
+				status = false;
+				goto cleanup;
+			}
+		}
+	}
+	status = true;
+
+cleanup:
+	if (d)
+		FreeDir(d);
+	pfree(directory);
+	return status;
+}
 
 /*
  * Free a list of ConfigVariables, including the names and the values

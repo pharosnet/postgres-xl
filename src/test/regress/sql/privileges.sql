@@ -37,7 +37,7 @@ ALTER GROUP regressgroup1 ADD USER regressuser4;
 
 ALTER GROUP regressgroup2 ADD USER regressuser2;	-- duplicate
 ALTER GROUP regressgroup2 DROP USER regressuser2;
-ALTER GROUP regressgroup2 ADD USER regressuser4;
+GRANT regressgroup2 TO regressuser4 WITH ADMIN OPTION;
 
 -- test owner privileges
 
@@ -147,6 +147,8 @@ CREATE VIEW atestv1 AS SELECT * FROM atest1; -- ok
 /* The next *should* fail, but it's not implemented that way yet. */
 CREATE VIEW atestv2 AS SELECT * FROM atest2;
 CREATE VIEW atestv3 AS SELECT * FROM atest3; -- ok
+/* Empty view is a corner case that failed in 9.2. */
+CREATE VIEW atestv0 AS SELECT 0 as x WHERE false; -- ok
 
 SELECT * FROM atestv1; -- ok
 SELECT * FROM atestv2; -- fail
@@ -158,6 +160,22 @@ SET SESSION AUTHORIZATION regressuser4;
 SELECT * FROM atestv1; -- ok
 SELECT * FROM atestv2; -- fail
 SELECT * FROM atestv3; -- fail due to issue 3520503, see above
+SELECT * FROM atestv0; -- fail
+
+-- Appendrels excluded by constraints failed to check permissions in 8.4-9.2.
+select * from
+  ((select a.q1 as x from int8_tbl a offset 0)
+   union all
+   (select b.q2 as x from int8_tbl b offset 0)) ss
+where false;
+
+set constraint_exclusion = on;
+select * from
+  ((select a.q1 as x, random() from int8_tbl a where q1 > 0)
+   union all
+   (select b.q2 as x, random() from int8_tbl b where q2 > 0)) ss
+where x < 0;
+reset constraint_exclusion;
 
 CREATE VIEW atestv4 AS SELECT * FROM atestv3; -- nested view
 SELECT * FROM atestv4; -- fail due to issue 3520503, see above
@@ -582,6 +600,33 @@ SELECT has_table_privilege('regressuser3', 'atest4', 'SELECT'); -- false
 SELECT has_table_privilege('regressuser1', 'atest4', 'SELECT WITH GRANT OPTION'); -- true
 
 
+-- Admin options
+
+SET SESSION AUTHORIZATION regressuser4;
+CREATE FUNCTION dogrant_ok() RETURNS void LANGUAGE sql SECURITY DEFINER AS
+	'GRANT regressgroup2 TO regressuser5';
+GRANT regressgroup2 TO regressuser5; -- ok: had ADMIN OPTION
+SET ROLE regressgroup2;
+GRANT regressgroup2 TO regressuser5; -- fails: SET ROLE suspended privilege
+
+SET SESSION AUTHORIZATION regressuser1;
+GRANT regressgroup2 TO regressuser5; -- fails: no ADMIN OPTION
+SELECT dogrant_ok();			-- ok: SECURITY DEFINER conveys ADMIN
+SET ROLE regressgroup2;
+GRANT regressgroup2 TO regressuser5; -- fails: SET ROLE did not help
+
+SET SESSION AUTHORIZATION regressgroup2;
+GRANT regressgroup2 TO regressuser5; -- ok: a role can self-admin
+CREATE FUNCTION dogrant_fails() RETURNS void LANGUAGE sql SECURITY DEFINER AS
+	'GRANT regressgroup2 TO regressuser5';
+SELECT dogrant_fails();			-- fails: no self-admin in SECURITY DEFINER
+DROP FUNCTION dogrant_fails();
+
+SET SESSION AUTHORIZATION regressuser4;
+DROP FUNCTION dogrant_ok();
+REVOKE regressgroup2 FROM regressuser5;
+
+
 -- has_sequence_privilege tests
 \c -
 
@@ -796,6 +841,57 @@ DROP SCHEMA testns CASCADE;
 RESET client_min_messages;
 
 
+-- Change owner of the schema & and rename of new schema owner
+\c -
+
+CREATE ROLE schemauser1 superuser login;
+CREATE ROLE schemauser2 superuser login;
+
+SET SESSION ROLE schemauser1;
+CREATE SCHEMA testns;
+
+SELECT nspname, rolname FROM pg_namespace, pg_roles WHERE pg_namespace.nspname = 'testns' AND pg_namespace.nspowner = pg_roles.oid;
+
+ALTER SCHEMA testns OWNER TO schemauser2;
+ALTER ROLE schemauser2 RENAME TO schemauser_renamed;
+SELECT nspname, rolname FROM pg_namespace, pg_roles WHERE pg_namespace.nspname = 'testns' AND pg_namespace.nspowner = pg_roles.oid;
+
+set session role schemauser_renamed;
+SET client_min_messages TO 'warning';
+DROP SCHEMA testns CASCADE;
+RESET client_min_messages;
+
+-- clean up
+\c -
+
+DROP ROLE schemauser1;
+DROP ROLE schemauser_renamed;
+
+
+-- test that dependent privileges are revoked (or not) properly
+\c -
+
+set session role regressuser1;
+create table dep_priv_test (a int);
+grant select on dep_priv_test to regressuser2 with grant option;
+grant select on dep_priv_test to regressuser3 with grant option;
+set session role regressuser2;
+grant select on dep_priv_test to regressuser4 with grant option;
+set session role regressuser3;
+grant select on dep_priv_test to regressuser4 with grant option;
+set session role regressuser4;
+grant select on dep_priv_test to regressuser5;
+\dp dep_priv_test
+set session role regressuser2;
+revoke select on dep_priv_test from regressuser4 cascade;
+\dp dep_priv_test
+set session role regressuser3;
+revoke select on dep_priv_test from regressuser4 cascade;
+\dp dep_priv_test
+set session role regressuser1;
+drop table dep_priv_test;
+
+
 -- clean up
 
 \c
@@ -805,6 +901,7 @@ drop sequence x_seq;
 DROP FUNCTION testfunc2(int);
 DROP FUNCTION testfunc4(boolean);
 
+DROP VIEW atestv0;
 DROP VIEW atestv1;
 DROP VIEW atestv2;
 -- this should cascade to drop atestv4

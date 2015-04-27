@@ -9,7 +9,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -22,11 +22,12 @@
 #include <signal.h>
 #include <unistd.h>
 
-#include "bootstrap/bootstrap.h"
 #include "commands/async.h"
 #include "miscadmin.h"
 #include "storage/latch.h"
 #include "storage/ipc.h"
+#include "storage/proc.h"
+#include "storage/shmem.h"
 #include "storage/sinval.h"
 #include "tcop/tcopprot.h"
 #ifdef PGXC
@@ -63,6 +64,14 @@ typedef struct
  * more than one of any auxiliary process type at a time.)
  */
 #define NumProcSignalSlots	(MaxBackends + NUM_AUXPROCTYPES)
+
+/*
+ * If this flag is set, the process latch will be set whenever SIGUSR1
+ * is received.  This is useful when waiting for a signal from the postmaster.
+ * Spurious wakeups must be expected.  Make sure that the flag is cleared
+ * in the error path.
+ */
+bool		set_latch_on_sigusr1;
 
 static ProcSignalSlot *ProcSignalSlots = NULL;
 static volatile ProcSignalSlot *MyProcSignalSlot = NULL;
@@ -146,6 +155,13 @@ CleanupProcSignalState(int status, Datum arg)
 
 	slot = &ProcSignalSlots[pss_idx - 1];
 	Assert(slot == MyProcSignalSlot);
+
+	/*
+	 * Clear MyProcSignalSlot, so that a SIGUSR1 received after this point
+	 * won't try to access it after it's no longer ours (and perhaps even
+	 * after we've unmapped the shared memory segment).
+	 */
+	MyProcSignalSlot = NULL;
 
 	/* sanity check */
 	if (slot->pss_pid != MyProcPid)
@@ -287,6 +303,9 @@ procsignal_sigusr1_handler(SIGNAL_ARGS)
 
 	if (CheckProcSignal(PROCSIG_RECOVERY_CONFLICT_BUFFERPIN))
 		RecoveryConflictInterrupt(PROCSIG_RECOVERY_CONFLICT_BUFFERPIN);
+
+	if (set_latch_on_sigusr1 && MyProc != NULL)
+		SetLatch(&MyProc->procLatch);
 
 	latch_sigusr1_handler();
 

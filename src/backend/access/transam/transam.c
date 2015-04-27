@@ -3,7 +3,7 @@
  * transam.c
  *	  postgres transaction log interface routines
  *
- * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -27,9 +27,6 @@
 #ifdef PGXC
 #include "utils/builtins.h"
 #endif
-
-/* Handy constant for an invalid xlog recptr */
-const XLogRecPtr InvalidXLogRecPtr = {0, 0};
 
 /*
  * Single-item cache for results of TransactionLogFetch.  It's worth having
@@ -177,7 +174,7 @@ TransactionIdDidCommit(TransactionId transactionId)
 	 * be a window just after database startup where we do not have complete
 	 * knowledge in pg_subtrans of the transactions after TransactionXmin.
 	 * StartupSUBTRANS() has ensured that any missing information will be
-	 * zeroed.	Since this case should not happen under normal conditions, it
+	 * zeroed.  Since this case should not happen under normal conditions, it
 	 * seems reasonable to emit a WARNING for it.
 	 */
 	if (xidstatus == TRANSACTION_STATUS_SUB_COMMITTED)
@@ -333,7 +330,7 @@ TransactionIdPrecedes(TransactionId id1, TransactionId id2)
 {
 	/*
 	 * If either ID is a permanent XID then we can just do unsigned
-	 * comparison.	If both are normal, do a modulo-2^31 comparison.
+	 * comparison.  If both are normal, do a modulo-2^32 comparison.
 	 */
 	int32		diff;
 
