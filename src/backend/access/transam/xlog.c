@@ -5456,6 +5456,10 @@ getRecordTimestamp(XLogRecord *record, TimestampTz *recordXtime)
 static bool
 recoveryStopsBefore(XLogRecord *record)
 {
+#ifdef PGXC
+	bool		stopsAtThisBarrier = false;
+	char		*recordBarrierId = NULL;
+#endif
 	bool		stopsHere = false;
 	uint8		record_info;
 	bool		isCommit;

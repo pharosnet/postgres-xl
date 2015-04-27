@@ -396,7 +396,7 @@ stop_gtm(void)
 	fflush(stderr);
 
 	snprintf(buf, sizeof(buf),
-			 SYSTEMQUOTE "\"%s/gtm_ctl\" stop -Z gtm -D \"%s/%s\" -m fast" SYSTEMQUOTE,
+			 "\"%s/gtm_ctl\" stop -Z gtm -D \"%s/%s\" -m fast",
 			 bindir, temp_install, data_folder);
 	r = system(buf);
 	if (r != 0)
@@ -422,7 +422,7 @@ stop_node(PGXCNodeTypeNum node)
 	fflush(stderr);
 
 	snprintf(buf, sizeof(buf),
-			 SYSTEMQUOTE "\"%s/pg_ctl\" stop -D \"%s/%s\" -s -m fast" SYSTEMQUOTE,
+			 "\"%s/pg_ctl\" stop -D \"%s/%s\" -s -m fast",
 			 bindir, temp_install, data_folder);
 	r = system(buf);
 	if (r != 0)
@@ -625,7 +625,7 @@ calculate_node_port(PGXCNodeTypeNum node, bool is_main)
 	 * Check if there is a postmaster running already.
 	 */
 	snprintf(buf, sizeof(buf),
-			 SYSTEMQUOTE "\"%s/psql\" -p %d -X postgres <%s 2>%s" SYSTEMQUOTE,
+			 "\"%s/psql\" -p %d -X postgres <%s 2>%s",
 			 bindir, port_number, DEVNULL, DEVNULL);
 
 	for (i = 0; i < 16; i++)
@@ -738,7 +738,7 @@ start_node(PGXCNodeTypeNum node, bool is_coord, bool is_main)
 		/* Case of a GTM start */
 		header(_("starting GTM process"));
 		snprintf(buf, sizeof(buf),
-				 SYSTEMQUOTE "\"%s/gtm\" -D \"%s/%s\" -p %d -x 10000 > \"%s/log/gtm.log\" 2>&1" SYSTEMQUOTE,
+				 "\"%s/gtm\" -D \"%s/%s\" -p %d -x 10000 > \"%s/log/gtm.log\" 2>&1",
 				 bindir, temp_install, data_folder, port_number,
 				 outputdir);
 	}
@@ -747,7 +747,7 @@ start_node(PGXCNodeTypeNum node, bool is_coord, bool is_main)
 		/* Case of normal nodes, start the node */
 		if (is_main)
 			snprintf(buf, sizeof(buf),
-					 SYSTEMQUOTE "\"%s/postgres\" %s -i -p %d -D \"%s/%s\"%s -c \"listen_addresses=%s\" > \"%s/log/postmaster_%d.log\" 2>&1" SYSTEMQUOTE,
+					 "\"%s/postgres\" %s -i -p %d -D \"%s/%s\"%s -c \"listen_addresses=%s\" > \"%s/log/postmaster_%d.log\" 2>&1",
 					 bindir,
 					 is_coord ? "--coordinator" : "--datanode",
 					 port_number,
@@ -758,7 +758,7 @@ start_node(PGXCNodeTypeNum node, bool is_coord, bool is_main)
 					 node);
 		else
 			snprintf(buf, sizeof(buf),
-					 SYSTEMQUOTE "\"%s/postgres\" %s -i -p %d -D \"%s/%s\"%s > \"%s/log/postmaster_%d.log\" 2>&1" SYSTEMQUOTE,
+					 "\"%s/postgres\" %s -i -p %d -D \"%s/%s\"%s > \"%s/log/postmaster_%d.log\" 2>&1",
 					 bindir,
 					 is_coord ? "--coordinator" : "--datanode",
 					 port_number,
@@ -800,7 +800,7 @@ initdb_node(PGXCNodeTypeNum node)
 	if (node == PGXC_GTM)
 	{
 		snprintf(buf, sizeof(buf),
-				 SYSTEMQUOTE "\"%s/initgtm\" -Z gtm -D \"%s/%s\" --noclean%s > \"%s/log/initgtm.log\" 2>&1" SYSTEMQUOTE,
+				 "\"%s/initgtm\" -Z gtm -D \"%s/%s\" --noclean%s > \"%s/log/initgtm.log\" 2>&1",
 				 bindir, temp_install, data_folder,
 				 debug ? " --debug" : "",
 				 outputdir);
@@ -813,7 +813,7 @@ initdb_node(PGXCNodeTypeNum node)
 	else
 	{
 		snprintf(buf, sizeof(buf),
-				 SYSTEMQUOTE "\"%s/initdb\" --nodename %s -D \"%s/%s\" -L \"%s\" --noclean%s%s > \"%s/log/initdb.log\" 2>&1" SYSTEMQUOTE,
+				 "\"%s/initdb\" --nodename %s -D \"%s/%s\" -L \"%s\" --noclean%s%s > \"%s/log/initdb.log\" 2>&1",
 				 bindir, (char *)get_node_name(node), temp_install, data_folder, datadir,
 				 debug ? " --debug" : "",
 				 nolocale ? " --no-locale" : "",
@@ -909,7 +909,7 @@ psql_command_node(const char *database, PGXCNodeTypeNum node, const char *query,
 
 	/* And now we can build and execute the shell command */
 	snprintf(psql_cmd, sizeof(psql_cmd),
-			 SYSTEMQUOTE "\"%s%spsql\" -X -p %d -c \"%s\" \"%s\"" SYSTEMQUOTE,
+			 "\"%s%spsql\" -X -p %d -c \"%s\" \"%s\"",
 			 psqldir ? psqldir : "",
 			 psqldir ? "/" : "",
 			 get_port_number(node),
@@ -1050,7 +1050,7 @@ check_node_running(PGXCNodeTypeNum node)
 	char		buf[MAXPGPATH * 4];
 
 	snprintf(buf, sizeof(buf),
-			 SYSTEMQUOTE "\"%s/psql\" -p %d -X postgres <%s 2>%s" SYSTEMQUOTE,
+			 "\"%s/psql\" -p %d -X postgres <%s 2>%s",
 			 bindir, get_port_number(node), DEVNULL, DEVNULL);
 
 	return system(buf) == 0;
@@ -2733,7 +2733,6 @@ regression_main(int argc, char *argv[], init_function ifunc, test_function tfunc
 	int			i;
 	int			option_index;
 	char		buf[MAXPGPATH * 4];
-	char		buf2[MAXPGPATH * 4];
 
 	progname = get_progname(argv[0]);
 	set_pglocale_pgservice(argv[0], PG_TEXTDOMAIN("pg_regress"));

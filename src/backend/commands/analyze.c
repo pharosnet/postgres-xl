@@ -3030,10 +3030,10 @@ analyze_rel_coordinator(Relation onerel, bool inh, int attr_cnt,
 		Datum 			value;
 		bool			isnull;
 		int 			colnum = 1;
-		int2			attnum;
+		int16			attnum;
 //		float4			reltuples;
 		float4			nullfrac;
-		int4 			width;
+		int32 			width;
 		float4			distinct;
 		VacAttrStats   *stats = NULL;
 
@@ -3070,7 +3070,7 @@ analyze_rel_coordinator(Relation onerel, bool inh, int attr_cnt,
 			/* Detailed statistics */
 			for (i = 1; i <= STATISTIC_NUM_SLOTS; i++)
 			{
-				int2 		kind;
+				int16 		kind;
 				float4	   *numbers;
 				Datum	   *values;
 				int			nnumbers, nvalues;

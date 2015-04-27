@@ -4340,7 +4340,7 @@ make_viewdef(StringInfo buf, HeapTuple ruletup, TupleDesc rulettc,
 void
 deparse_query(Query *query, StringInfo buf, List *parentnamespace)
 {
-	get_query_def(query, buf, parentnamespace, NULL, 0, 0);
+	get_query_def(query, buf, parentnamespace, NULL, 0, 0, 0);
 }
 
 /* code borrowed from get_insert_query_def */
@@ -4364,7 +4364,7 @@ get_query_def_from_valuesList(Query *query, StringInfo buf)
 	 * consistent results.	Note we assume it's OK to scribble on the passed
 	 * querytree!
 	 */
-	AcquireRewriteLocks(query, false);
+	AcquireRewriteLocks(query, false, false);
 
 	context.buf = buf;
 	context.namespaces = NIL;
@@ -4373,11 +4373,10 @@ get_query_def_from_valuesList(Query *query, StringInfo buf)
 	context.varprefix = (list_length(query->rtable) != 1);
 	context.prettyFlags = 0;
 	context.indentLevel = 0;
-#ifdef PGXC
-#ifndef XCP
+	context.wrapColumn = 0;
+#ifndef XCP	
 	context.finalise_aggs = query->qry_finalise_aggs;
-#endif /* XCP */
-#endif /* PGXC */
+#endif	
 
 	dpns.rtable = query->rtable;
 	dpns.ctes = query->cteList;
@@ -4473,7 +4472,8 @@ get_query_def_from_valuesList(Query *query, StringInfo buf)
 	{
 		/* Add the SELECT */
 		get_query_def(select_rte->subquery, buf, NIL, NULL,
-					  context.prettyFlags, context.indentLevel);
+					  context.prettyFlags, context.wrapColumn,
+					  context.indentLevel);
 	}
 	else if (values_rte)
 	{
@@ -9095,7 +9095,7 @@ get_from_clause_item(Node *jtnode, Query *query, deparse_context *context)
 			 */
 			appendStringInfo(buf, " %s",
 							 quote_identifier(rte->eref->aliasname));
-			gavealias = true;
+			printalias = true;
 		}
 #endif
 		else if (rte->rtekind == RTE_FUNCTION)

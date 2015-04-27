@@ -1662,12 +1662,14 @@ vacuum_rel_coordinator(Relation onerel)
 						idx_frozenxid = InvalidTransactionId;
 					}
 					/* save changes */
+					/* !!TODO Get multi-xid from remote nodes */
 					vac_update_relstats(Irel[i],
 										(BlockNumber) idx_pages,
 										(double) idx_tuples,
 										0,
 										false,
-										idx_frozenxid);
+										idx_frozenxid,
+										InvalidMultiXactId);
 				}
 			}
 		}
@@ -1690,7 +1692,8 @@ vacuum_rel_coordinator(Relation onerel)
 							(double) num_tuples,
 							visibilitymap_count(onerel),
 							hasindex,
-							min_frozenxid);
+							min_frozenxid,
+							InvalidMultiXactId);
 	}
 }
 #endif

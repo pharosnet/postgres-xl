@@ -995,6 +995,11 @@ EventTriggerSupportsObjectClass(ObjectClass objclass)
 		case OCLASS_USER_MAPPING:
 		case OCLASS_DEFACL:
 		case OCLASS_EXTENSION:
+#ifdef PGXC
+		case OCLASS_PGXC_CLASS:
+		case OCLASS_PGXC_NODE:
+		case OCLASS_PGXC_GROUP:
+#endif
 			return true;
 
 		case MAX_OCLASS:

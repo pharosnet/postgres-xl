@@ -151,11 +151,11 @@ typedef FormData_pg_aggregate *Form_pg_aggregate;
 
 /* avg */
 DATA(insert ( 2100	n 0 int8_avg_accum	numeric_avg_collect	numeric_avg int8_avg_accum	int8_accum_inv	numeric_avg		f f 0	2281 2281	128 2281	128 _null_ _null_	_null_ ));
-DATA(insert ( 2101	n 0 int4_avg_accum	int8_avg_collect	int8_avg		int4_avg_accum	int4_avg_accum_inv	int8_avg	f f 0	1016	1016	0	1016	0	"{0,0}" "{0,0}	"{0,0}" ));
-DATA(insert ( 2102	n 0 int2_avg_accum	int8_avg_collect	int8_avg		int2_avg_accum	int2_avg_accum_inv	int8_avg	f f 0	1016	1016	0	1016	0	"{0,0}" "{0,0}	"{0,0}" ));
+DATA(insert ( 2101	n 0 int4_avg_accum	int8_avg_collect	int8_avg int4_avg_accum	int4_avg_accum_inv	int8_avg	f f 0	1016 1016	0	1016	0	"{0,0}" "{0,0}"	"{0,0}" ));
+DATA(insert ( 2102	n 0 int2_avg_accum	int8_avg_collect	int8_avg int2_avg_accum	int2_avg_accum_inv	int8_avg	f f 0	1016 1016	0	1016	0	"{0,0}" "{0,0}"	"{0,0}" ));
 DATA(insert ( 2103	n 0 numeric_avg_accum numeric_avg_collect	numeric_avg	numeric_avg_accum numeric_accum_inv numeric_avg f f 0	2281	2281	128 2281	128 _null_ _null_	_null_ ));
-DATA(insert ( 2104	n 0 float4_accum	float8_collect	float8_avg		-				-				-				f f 0	1022	1022	0	0		0	"{0,0,0}" "{0,0,0}	_null_ ));
-DATA(insert ( 2105	n 0 float8_accum	float8_collect	float8_avg		-				-				-				f f 0	1022	1022	0	0		0	"{0,0,0}" "{0,0,0}	_null_ ));
+DATA(insert ( 2104	n 0 float4_accum	float8_collect	float8_avg		-				-				-				f f 0	1022	1022	0	0		0	"{0,0,0}" "{0,0,0}"	_null_ ));
+DATA(insert ( 2105	n 0 float8_accum	float8_collect	float8_avg		-				-				-				f f 0	1022	1022	0	0		0	"{0,0,0}" "{0,0,0}"	_null_ ));
 DATA(insert ( 2106	n 0 interval_accum	interval_collect	interval_avg	interval_accum	interval_accum_inv interval_avg f f 0	1187	1187	0	1187	0	"{0 second,0 second}" "{0 second,0 second}"	"{0 second,0 second}" ));
 
 /* sum */
@@ -220,8 +220,8 @@ DATA(insert ( 2803	n 0 int8inc			int8_sum_to_int8	-				int8inc			int8dec			-				
 DATA(insert ( 2718	n 0 int8_accum	numeric_collect	numeric_var_pop		int8_accum		int8_accum_inv	numeric_var_pop f f 0	2281	2281	128 2281	128 _null_	_null_	_null_ ));
 DATA(insert ( 2719	n 0 int4_accum	numeric_collect	numeric_var_pop		int4_accum		int4_accum_inv	numeric_var_pop f f 0	2281	2281	128 2281	128 _null_	_null_	_null_ ));
 DATA(insert ( 2720	n 0 int2_accum	numeric_collect	numeric_var_pop		int2_accum		int2_accum_inv	numeric_var_pop f f 0	2281	2281	128 2281	128 _null_	_null_	_null_ ));
-DATA(insert ( 2721	n 0 float4_accum	float8_collect	float8_var_pop	-				-				-				f f 0	1022	1022	0	0		0	"{0,0,0}"	"{0,0,0}	_null_ ));
-DATA(insert ( 2722	n 0 float8_accum	float8_collect	float8_var_pop	-				-				-				f f 0	1022	1022	0	0		0	"{0,0,0}"	"{0,0,0}	_null_ ));
+DATA(insert ( 2721	n 0 float4_accum	float8_collect	float8_var_pop	-				-				-				f f 0	1022	1022	0	0		0	"{0,0,0}"	"{0,0,0}"	_null_ ));
+DATA(insert ( 2722	n 0 float8_accum	float8_collect	float8_var_pop	-				-				-				f f 0	1022	1022	0	0		0	"{0,0,0}"	"{0,0,0}"	_null_ ));
 DATA(insert ( 2723	n 0 numeric_accum	numeric_collect	numeric_var_pop numeric_accum numeric_accum_inv numeric_var_pop f f 0	2281	2281	128 2281	128 _null_	_null_	_null_ ));
 
 /* var_samp */

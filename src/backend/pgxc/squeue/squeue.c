@@ -26,6 +26,7 @@
 #include "catalog/pgxc_node.h"
 #include "commands/prepare.h"
 #include "executor/executor.h"
+#include "nodes/pg_list.h"
 #include "pgxc/nodemgr.h"
 #include "pgxc/pgxc.h"
 #include "pgxc/pgxcnode.h"

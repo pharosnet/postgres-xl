@@ -110,6 +110,9 @@ typedef struct WindowStatePerAggData
 	/* Oids of transition functions */
 	Oid			transfn_oid;
 	Oid			invtransfn_oid; /* may be InvalidOid */
+#ifdef PGXC
+	Oid			collectfn_oid;
+#endif	
 	Oid			finalfn_oid;	/* may be InvalidOid */
 
 	/*

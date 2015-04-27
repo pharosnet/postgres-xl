@@ -2273,8 +2273,10 @@ List* get_parsed_hba(void) {
 	FILE	   *file;
 	List	   *hba_lines = NIL;
 	List	   *hba_line_nums = NIL;
+	List	   *hba_raw_lines = NIL;
 	ListCell   *line,
-			   *line_num;
+			   *line_num,
+			   *raw_line;
 	List	   *new_parsed_lines = NIL;
 	bool		ok = true;
 	MemoryContext	linecxt;
@@ -2294,10 +2296,10 @@ List* get_parsed_hba(void) {
 		 * the initial startup. If it happens on reload, we just keep the old
 		 * version around.
 		 */
-		return false;
+		return NULL;
 	}
 
-	linecxt = tokenize_file(HbaFileName, file, &hba_lines, &hba_line_nums);
+	linecxt = tokenize_file(HbaFileName, file, &hba_lines, &hba_line_nums, &hba_raw_lines);
 	FreeFile(file);
 
 	/* Now parse all the lines */
@@ -2307,11 +2309,11 @@ List* get_parsed_hba(void) {
 								   ALLOCSET_DEFAULT_MINSIZE,
 								   ALLOCSET_DEFAULT_MAXSIZE);
 	oldcxt = MemoryContextSwitchTo(hbacxt);
-	forboth(line, hba_lines, line_num, hba_line_nums)
+	forthree(line, hba_lines, line_num, hba_line_nums, raw_line, hba_raw_lines)
 	{
 		HbaLine    *newline;
 
-		if ((newline = parse_hba_line(lfirst(line), lfirst_int(line_num))) == NULL)
+		if ((newline = parse_hba_line(lfirst(line), lfirst_int(line_num), lfirst(raw_line))) == NULL)
 		{
 			/*
 			 * Parse error in the file, so indicate there's a problem.  NB: a

@@ -3800,9 +3800,8 @@ QueryRewriteCTAS(Query *parsetree)
 	deparse_query(cparsetree, &cquery, NIL);
 
 	/* Finally, fire off the query to run the DDL */
-	ProcessUtility(cparsetree->utilityStmt, cquery.data, NULL, true, NULL,
-					false,
-					NULL);
+	ProcessUtility(cparsetree->utilityStmt, cquery.data, PROCESS_UTILITY_QUERY,
+			NULL, NULL, false, NULL);
 
 	/*
 	 * Now fold the CTAS statement into an INSERT INTO statement. The

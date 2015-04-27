@@ -33,6 +33,7 @@
 #include "utils/rangetypes.h"
 #ifdef XCP
 #include "access/htup.h"
+#include "access/htup_details.h"
 #include "catalog/pg_type.h"
 #include "utils/lsyscache.h"
 #include "utils/syscache.h"

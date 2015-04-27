@@ -2335,11 +2335,8 @@ _readFunctionScan(void)
 {
 	READ_SCAN_FIELDS(FunctionScan);
 
-	READ_NODE_FIELD(funcexpr);
-	READ_NODE_FIELD(funccolnames);
-	READ_NODE_FIELD(funccoltypes);
-	READ_NODE_FIELD(funccoltypmods);
-	READ_NODE_FIELD(funccolcollations);
+	READ_NODE_FIELD(functions);
+	READ_BOOL_FIELD(funcordinality);
 
 	READ_DONE();
 }

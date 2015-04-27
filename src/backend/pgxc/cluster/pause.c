@@ -472,7 +472,7 @@ ReleaseClusterLock(bool exclusive)
 		 * Decrement our count. If a PAUSE is waiting inside AcquireClusterLock
 		 * elsewhere, it will wake out of sleep and do the needful
 		 */
-		if (clinfo->cl_process_count > 0);
+		if (clinfo->cl_process_count > 0)
 			clinfo->cl_process_count--;
 	}
 	SpinLockRelease(&clinfo->cl_mutex);

@@ -113,6 +113,7 @@ static void transformLockingClause(ParseState *pstate, Query *qry,
 
 #ifdef XCP
 static void ParseAnalyze_rtable_walk(List *rtable);
+static void ParseAnalyze_substitute_func(FuncExpr *funcexpr);
 #endif
 
 /*
@@ -2965,59 +2966,69 @@ static void
 ParseAnalyze_rtable_walk(List *rtable)
 {
 	ListCell 		*item;
-	StringInfoData 	buf;
 
 	if (!IsUnderPostmaster || superuser())
 		return;
 
-	initStringInfo(&buf);
 	foreach(item, rtable)
 	{
 		RangeTblEntry *rte = (RangeTblEntry *) lfirst(item);
 
-		resetStringInfo(&buf);
-		if (rte->rtekind == RTE_FUNCTION &&
-				 get_func_namespace(((FuncExpr *) rte->funcexpr)->funcid) ==
-				 PG_CATALOG_NAMESPACE)
+		if (rte->rtekind == RTE_FUNCTION)
 		{
-			Oid funcid = InvalidOid;
-
-			FuncExpr *funcexpr = (FuncExpr *) rte->funcexpr;
-			const char *funcname = get_func_name(funcexpr->funcid);
-
-			/* Check if the funcname is in storm_catalog_remap_string */
-			appendStringInfoString(&buf, funcname);
-			appendStringInfoChar(&buf, ',');
-
-			elog(DEBUG2, "the constructed name is %s", buf.data);
-
-			/*
-			 * The unqualified function name should be satisfied from the
-			 * storm_catalog appropriately. Just provide a warning for now if
-			 * it is not..
-			 */
-			if (strstr(storm_catalog_remap_string, buf.data))
+			ListCell 		*lc;
+			foreach(lc, rte->functions)
 			{
-				Oid *argtypes = NULL;
-				int nargs;
-
-				get_func_signature(funcexpr->funcid, &argtypes, &nargs);
-				funcid = get_funcid(funcname, buildoidvector(argtypes, nargs),
-									STORM_CATALOG_NAMESPACE);
+				RangeTblFunction *rtfunc = (RangeTblFunction *) lfirst(lc);
+				ParseAnalyze_substitute_func((FuncExpr *) rtfunc->funcexpr);
 			}
-			else
-				continue;
-
-			if (get_func_namespace(funcid) != STORM_CATALOG_NAMESPACE)
-				ereport(WARNING,
-					(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
-					 errmsg("Entry (%s) present in storm_catalog_remap_string "
-							"but object not picked from STORM_CATALOG", funcname)));
-			else /* change the funcid to the storm_catalog one */
-				funcexpr->funcid = funcid;
 		}
 		else if (rte->rtekind == RTE_SUBQUERY) /* recurse for subqueries */
 				 ParseAnalyze_rtable_walk(rte->subquery->rtable);
+	}
+}
+
+static void
+ParseAnalyze_substitute_func(FuncExpr *funcexpr)
+{
+	StringInfoData 	buf;
+	initStringInfo(&buf);
+
+	if (get_func_namespace(funcexpr->funcid) == PG_CATALOG_NAMESPACE)
+	{
+		Oid funcid = InvalidOid;
+		const char *funcname = get_func_name(funcexpr->funcid);
+
+		/* Check if the funcname is in storm_catalog_remap_string */
+		appendStringInfoString(&buf, funcname);
+		appendStringInfoChar(&buf, ',');
+
+		elog(DEBUG2, "the constructed name is %s", buf.data);
+
+		/*
+		 * The unqualified function name should be satisfied from the
+		 * storm_catalog appropriately. Just provide a warning for now if
+		 * it is not..
+		 */
+		if (strstr(storm_catalog_remap_string, buf.data))
+		{
+			Oid *argtypes = NULL;
+			int nargs;
+
+			get_func_signature(funcexpr->funcid, &argtypes, &nargs);
+			funcid = get_funcid(funcname, buildoidvector(argtypes, nargs),
+					STORM_CATALOG_NAMESPACE);
+		}
+		else
+			return;
+
+		if (get_func_namespace(funcid) != STORM_CATALOG_NAMESPACE)
+			ereport(WARNING,
+					(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
+					 errmsg("Entry (%s) present in storm_catalog_remap_string "
+						 "but object not picked from STORM_CATALOG", funcname)));
+		else /* change the funcid to the storm_catalog one */
+			funcexpr->funcid = funcid;
 	}
 }
 #endif

@@ -118,7 +118,15 @@ static void ProcessUtilitySlow(Node *parsetree,
 				   bool	sentToRemote,
 #endif /* PGXC */
 				   char *completionTag);
+
+#ifdef PGXC
+static void ExecDropStmt(DropStmt *stmt,
+					const char *queryString,
+					bool sentToRemote,
+					bool isTopLevel);
+#else
 static void ExecDropStmt(DropStmt *stmt, bool isTopLevel);
+#endif
 
 
 /*
@@ -421,7 +429,6 @@ standard_ProcessUtility(Node *parsetree,
 			pgxc_lock_for_utility_stmt(parsetree);
 	}
 #endif
-+
 
 	check_xact_readonly(parsetree);
 
@@ -1242,7 +1249,11 @@ standard_ProcessUtility(Node *parsetree,
 #endif				
 									   completionTag);
 				else
+#ifdef PGXC
+					ExecDropStmt(stmt, queryString, sentToRemote, isTopLevel);
+#else
 					ExecDropStmt(stmt, isTopLevel);
+#endif	
 			}
 			break;
 
@@ -1546,7 +1557,6 @@ ProcessUtilitySlow(Node *parsetree,
 								PoolManagerSetCommand(POOL_CMD_TEMP, NULL);
 #endif
 #endif
-+
 
 							/* Create the table itself */
 							relOid = DefineRelation((CreateStmt *) stmt,
@@ -2221,7 +2231,11 @@ ProcessUtilitySlow(Node *parsetree,
 #endif
 
 			case T_DropStmt:
+#ifdef PGXC
+				ExecDropStmt((DropStmt *) parsetree, queryString, sentToRemote, isTopLevel);
+#else
 				ExecDropStmt((DropStmt *) parsetree, isTopLevel);
+#endif
 				break;
 
 			case T_RenameStmt:
@@ -2281,7 +2295,14 @@ ProcessUtilitySlow(Node *parsetree,
  * Dispatch function for DropStmt
  */
 static void
+#ifdef PGXC
+ExecDropStmt(DropStmt *stmt,
+		const char *queryString,
+		bool sentToRemote,
+		bool isTopLevel)
+#else
 ExecDropStmt(DropStmt *stmt, bool isTopLevel)
+#endif
 {
 	switch (stmt->removeType)
 	{
@@ -2302,7 +2323,7 @@ ExecDropStmt(DropStmt *stmt, bool isTopLevel)
 				RemoteQueryExecType exec_type = EXEC_ON_ALL_NODES;
 
 				/* Check restrictions on objects dropped */
-				DropStmtPreTreatment((DropStmt *) parsetree, queryString, sentToRemote,
+				DropStmtPreTreatment((DropStmt *) stmt, queryString, sentToRemote,
 						&is_temp, &exec_type);
 #endif
 				RemoveRelations(stmt);
@@ -2321,7 +2342,7 @@ ExecDropStmt(DropStmt *stmt, bool isTopLevel)
 				RemoteQueryExecType exec_type = EXEC_ON_ALL_NODES;
 
 				/* Check restrictions on objects dropped */
-				DropStmtPreTreatment((DropStmt *) parsetree, queryString, sentToRemote,
+				DropStmtPreTreatment((DropStmt *) stmt, queryString, sentToRemote,
 						&is_temp, &exec_type);
 #endif
 				RemoveObjects(stmt);

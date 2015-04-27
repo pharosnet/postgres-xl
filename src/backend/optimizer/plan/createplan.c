@@ -46,6 +46,7 @@
 #include "parser/parse_clause.h"
 #include "parser/parsetree.h"
 #ifdef PGXC
+#include "access/htup_details.h"
 #include "access/gtm.h"
 #include "parser/parse_coerce.h"
 #include "pgxc/pgxc.h"
@@ -1925,7 +1926,7 @@ create_remotescan_plan(PlannerInfo *root,
 	subplan = create_plan_recurse(root, best_path->subpath);
 
 	/* We don't want any excess columns in the remote tuples */
-	disuse_physical_tlist(subplan, best_path->subpath);
+	disuse_physical_tlist(root, subplan, best_path->subpath);
 
 	plan = make_remotesubplan(root, subplan,
 							  best_path->path.distribution,
@@ -1967,7 +1968,7 @@ find_push_down_plan_int(PlannerInfo *root, Plan *plan, bool force, Plan **parent
 	if (parent && IsA(plan, SubqueryScan))
 	{
 		Plan *subplan = ((SubqueryScan *)plan)->subplan;
-		Plan *remote_plan = find_push_down_plan_int(root, ((SubqueryScan *)plan)->subplan, force,
+		RemoteSubplan *remote_plan = find_push_down_plan_int(root, ((SubqueryScan *)plan)->subplan, force,
 				&((SubqueryScan *)plan)->subplan);
 
 		/*
@@ -1975,7 +1976,7 @@ find_push_down_plan_int(PlannerInfo *root, Plan *plan, bool force, Plan **parent
 		 * subquery plan, then we must also update the link stored in the
 		 * RelOptInfo corresponding to this subquery
 		 */
-		if ((remote_plan == subplan) && parent)
+		if ((((Plan *)remote_plan) == subplan) && parent)
 		{
 			Assert(root);
 			RelOptInfo *rel = find_base_rel(root, ((SubqueryScan *)plan)->scan.scanrelid);

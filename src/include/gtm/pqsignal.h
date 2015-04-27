@@ -40,8 +40,6 @@ int			pqsigsetmask(int mask);
 #endif
 #endif
 
-typedef void (*pqsigfunc) (int);
-
 extern void pqinitmask(void);
 
 extern pqsigfunc pqsignal(int signo, pqsigfunc func);

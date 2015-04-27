@@ -3817,7 +3817,7 @@ main(int argc, char *argv[])
 				break;
 #ifdef PGXC
 			case 12:
-				nodename = xstrdup(optarg);
+				nodename = pg_strdup(optarg);
 				break;
 #endif
 			default:

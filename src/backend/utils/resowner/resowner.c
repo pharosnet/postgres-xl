@@ -21,6 +21,9 @@
 #include "postgres.h"
 
 #include "access/hash.h"
+#ifdef PGXC
+#include "commands/prepare.h"
+#endif
 #include "storage/predicate.h"
 #include "storage/proc.h"
 #include "utils/memutils.h"
@@ -415,7 +418,7 @@ ResourceOwnerReleaseInternal(ResourceOwner owner,
 			char *stmt = owner->stmts + ((owner->nstmts - 1) * CNAME_MAXLEN);
 			if (isCommit)
 				PrintPreparedStmtLeakWarning(stmt);
-			DropPreparedStatement(stmt);
+			DropPreparedStatement(stmt, false);
 		}
 #endif
 

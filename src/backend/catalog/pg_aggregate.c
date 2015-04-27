@@ -297,7 +297,7 @@ AggregateCreate(const char *aggName,
 		 */
 		fnArgs[0] = aggCollectType;
 		fnArgs[1] = aggTransType;
-		collectfn = lookup_agg_function(aggcollectfnName, 2, fnArgs,
+		collectfn = lookup_agg_function(aggcollectfnName, 2, fnArgs, variadicArgType,
 										  &rettype);
 		if (rettype != aggCollectType)
 			ereport(ERROR,
@@ -316,7 +316,7 @@ AggregateCreate(const char *aggName,
 		 */
 		fnArgs[0] = aggTransType;
 		fnArgs[1] = aggTransType;
-		collectfn = lookup_agg_function(aggcollectfnName, 2, fnArgs,
+		collectfn = lookup_agg_function(aggcollectfnName, 2, fnArgs, variadicArgType,
 										  &rettype);
 		if (rettype != aggTransType)
 			ereport(ERROR,

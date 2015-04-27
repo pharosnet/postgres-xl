@@ -168,9 +168,9 @@ static const Oid object_classes[MAX_OCLASS] = {
 	ForeignServerRelationId,	/* OCLASS_FOREIGN_SERVER */
 	UserMappingRelationId,		/* OCLASS_USER_MAPPING */
 	DefaultAclRelationId,		/* OCLASS_DEFACL */
-	ExtensionRelationId			/* OCLASS_EXTENSION */
+	ExtensionRelationId,		/* OCLASS_EXTENSION */
 #ifdef PGXC
-	,PgxcClassRelationId		/* OCLASS_PGXCCLASS */
+	PgxcClassRelationId,		/* OCLASS_PGXCCLASS */
 #endif
 	EventTriggerRelationId		/* OCLASS_EVENT_TRIGGER */
 };

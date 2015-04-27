@@ -1352,7 +1352,7 @@ build_aggregate_fnexprs(Oid *agg_input_types,
 											 args,
 											 InvalidOid,
 											 agg_input_collation,
-											 COERCE_DONTCARE);
+											 COERCE_EXPLICIT_CALL);
 	}
 	else
 		*collectfnexpr = NULL;

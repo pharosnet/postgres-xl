@@ -480,7 +480,7 @@ create_tuple_desc(char *msg_body, size_t len)
 		msg_body += 2;
 
 		/* Get the OID type and mode type from typename */
-		parseTypeString(typname, &oidtypeid, NULL);
+		parseTypeString(typname, &oidtypeid, NULL, false);
 
 		TupleDescInitEntry(result, attnum, attname, oidtypeid, typmod, 0);
 	}
@@ -8001,7 +8001,7 @@ determine_param_types(Plan *plan,  struct find_params_context *context)
 			break;
 
 		case T_FunctionScan:
-			if (expression_tree_walker((Node *) ((FunctionScan *) plan)->funcexpr,
+			if (expression_tree_walker((Node *) ((FunctionScan *) plan)->functions,
 									   determine_param_types_walker,
 									   (void *) context))
 				return true;

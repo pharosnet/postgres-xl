@@ -69,6 +69,7 @@
 #include "access/tuptoaster.h"
 #include "executor/tuptable.h"
 #ifdef XCP
+#include "lib/stringinfo.h"
 #include "utils/memutils.h"
 #endif
 

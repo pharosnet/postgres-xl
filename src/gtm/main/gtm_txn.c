@@ -364,7 +364,7 @@ GTM_RemoveAllTransInfos(uint32 client_id, int backend_id)
 uint32
 GTMGetLastClientIdentifier(void)
 {
-	gtm_ListCell *cell, *prev;
+	gtm_ListCell *cell;
 	uint32 last_client_id = 0;
 
 	/*
@@ -392,7 +392,7 @@ GTMGetLastClientIdentifier(void)
 uint32
 GTMGetFirstClientIdentifier(void)
 {
-	gtm_ListCell *cell, *prev;
+	gtm_ListCell *cell;
 	uint32 first_client_id = UINT32_MAX;
 
 	/*

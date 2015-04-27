@@ -39,6 +39,7 @@
 #include "pgxc/nodemgr.h"
 #include "pgxc/execRemote.h"
 #include "catalog/pgxc_node.h"
+#include "utils/resowner_private.h"
 #endif
 
 /*

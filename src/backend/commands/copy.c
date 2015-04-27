@@ -834,7 +834,6 @@ DoCopy(const CopyStmt *stmt, const char *queryString, uint64 *processed)
 	bool		is_from = stmt->is_from;
 	bool		pipe = (stmt->filename == NULL);
 	Relation	rel;
-	uint64		processed;
 #ifdef XCP
 	int oldSeqRangeVal = SequenceRangeVal;
 #endif

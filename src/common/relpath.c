@@ -23,6 +23,9 @@
 #include "common/relpath.h"
 #include "storage/backendid.h"
 
+#ifdef PGXC
+#include "pgxc/pgxc.h"
+#endif
 
 /*
  * Lookup table of fork name by fork number.
