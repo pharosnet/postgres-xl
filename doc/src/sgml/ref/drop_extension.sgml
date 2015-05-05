@@ -4,6 +4,10 @@ PostgreSQL documentation
 -->
 
 <refentry id="SQL-DROPEXTENSION">
+ <indexterm zone="sql-dropextension">
+  <primary>DROP EXTENSION</primary>
+ </indexterm>
+
  <refmeta>
   <refentrytitle>DROP EXTENSION</refentrytitle>
   <manvolnum>7</manvolnum>
@@ -15,13 +19,9 @@ PostgreSQL documentation
   <refpurpose>remove an extension</refpurpose>
  </refnamediv>
 
- <indexterm zone="sql-dropextension">
-  <primary>DROP EXTENSION</primary>
- </indexterm>
-
  <refsynopsisdiv>
 <synopsis>
-DROP EXTENSION [ IF EXISTS ] <replaceable class="PARAMETER">extension_name</replaceable> [, ...] [ CASCADE | RESTRICT ]
+DROP EXTENSION [ IF EXISTS ] <replaceable class="PARAMETER">name</replaceable> [, ...] [ CASCADE | RESTRICT ]
 </synopsis>
  </refsynopsisdiv>
 
@@ -54,7 +54,7 @@ DROP EXTENSION [ IF EXISTS ] <replaceable class="PARAMETER">extension_name</repl
    </varlistentry>
 
    <varlistentry>
-    <term><replaceable class="PARAMETER">extension_name</replaceable></term>
+    <term><replaceable class="PARAMETER">name</replaceable></term>
     <listitem>
      <para>
       The name of an installed extension.

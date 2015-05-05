@@ -21,6 +21,7 @@
 #include "postgres.h"
 #include "miscadmin.h"
 #include "lib/stringinfo.h"
+#include "nodes/pg_list.h"
 #include "optimizer/planner.h"
 #include "pgxc/pgxcnode.h"
 #include "pgxc/postgresql_fdw.h"

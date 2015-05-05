@@ -9,7 +9,7 @@
  * into a lot of low-level code.
  *
  *
- * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/access/reloptions.h
@@ -20,6 +20,7 @@
 #define RELOPTIONS_H
 
 #include "access/htup.h"
+#include "access/tupdesc.h"
 #include "nodes/pg_list.h"
 
 /* types supported by reloptions */
@@ -196,7 +197,7 @@ typedef struct
  * "base" is a pointer to the reloptions structure, and "offset" is an integer
  * variable that must be initialized to sizeof(reloptions structure).  This
  * struct must have been allocated with enough space to hold any string option
- * present, including terminating \0 for every option.	SET_VARSIZE() must be
+ * present, including terminating \0 for every option.  SET_VARSIZE() must be
  * called on the struct with this offset as the second argument, after all the
  * string options have been processed.
  */

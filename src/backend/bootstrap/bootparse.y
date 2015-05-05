@@ -4,7 +4,7 @@
  * bootparse.y
  *	  yacc grammar for the "bootstrap" mode (BKI file format)
  *
- * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -27,6 +27,7 @@
 #include "bootstrap/bootstrap.h"
 #include "catalog/catalog.h"
 #include "catalog/heap.h"
+#include "catalog/namespace.h"
 #include "catalog/pg_am.h"
 #include "catalog/pg_attribute.h"
 #include "catalog/pg_authid.h"
@@ -248,7 +249,8 @@ Boot_CreateStmt:
 													  ONCOMMIT_NOOP,
 													  (Datum) 0,
 													  false,
-													  true);
+													  true,
+													  false);
 						elog(DEBUG4, "relation created with OID %u", id);
 					}
 					do_end();
@@ -280,18 +282,40 @@ Boot_InsertStmt:
 Boot_DeclareIndexStmt:
 		  XDECLARE INDEX boot_ident oidspec ON boot_ident USING boot_ident LPAREN boot_index_params RPAREN
 				{
+					IndexStmt *stmt = makeNode(IndexStmt);
+					Oid		relationId;
+
 					do_start();
 
-					DefineIndex(makeRangeVar(NULL, $6, -1),
-								$3,
+					stmt->idxname = $3;
+					stmt->relation = makeRangeVar(NULL, $6, -1);
+					stmt->accessMethod = $8;
+					stmt->tableSpace = NULL;
+					stmt->indexParams = $10;
+					stmt->options = NIL;
+					stmt->whereClause = NULL;
+					stmt->excludeOpNames = NIL;
+					stmt->idxcomment = NULL;
+					stmt->indexOid = InvalidOid;
+					stmt->oldNode = InvalidOid;
+					stmt->unique = false;
+					stmt->primary = false;
+					stmt->isconstraint = false;
+					stmt->deferrable = false;
+					stmt->initdeferred = false;
+					stmt->concurrent = false;
+
+					/* locks and races need not concern us in bootstrap mode */
+					relationId = RangeVarGetRelid(stmt->relation, NoLock,
+												  false);
+
+					DefineIndex(relationId,
+								stmt,
 								$4,
-								InvalidOid,
-								$8,
-								NULL,
-								$10,
-								NULL, NIL, NIL,
-								false, false, false, false, false,
-								false, false, true, false, false);
+								false,
+								false,
+								true, /* skip_build */
+								false);
 					do_end();
 				}
 		;
@@ -299,18 +323,40 @@ Boot_DeclareIndexStmt:
 Boot_DeclareUniqueIndexStmt:
 		  XDECLARE UNIQUE INDEX boot_ident oidspec ON boot_ident USING boot_ident LPAREN boot_index_params RPAREN
 				{
+					IndexStmt *stmt = makeNode(IndexStmt);
+					Oid		relationId;
+
 					do_start();
 
-					DefineIndex(makeRangeVar(NULL, $7, -1),
-								$4,
+					stmt->idxname = $4;
+					stmt->relation = makeRangeVar(NULL, $7, -1);
+					stmt->accessMethod = $9;
+					stmt->tableSpace = NULL;
+					stmt->indexParams = $11;
+					stmt->options = NIL;
+					stmt->whereClause = NULL;
+					stmt->excludeOpNames = NIL;
+					stmt->idxcomment = NULL;
+					stmt->indexOid = InvalidOid;
+					stmt->oldNode = InvalidOid;
+					stmt->unique = true;
+					stmt->primary = false;
+					stmt->isconstraint = false;
+					stmt->deferrable = false;
+					stmt->initdeferred = false;
+					stmt->concurrent = false;
+
+					/* locks and races need not concern us in bootstrap mode */
+					relationId = RangeVarGetRelid(stmt->relation, NoLock,
+												  false);
+
+					DefineIndex(relationId,
+								stmt,
 								$5,
-								InvalidOid,
-								$9,
-								NULL,
-								$11,
-								NULL, NIL, NIL,
-								true, false, false, false, false,
-								false, false, true, false, false);
+								false,
+								false,
+								true, /* skip_build */
+								false);
 					do_end();
 				}
 		;

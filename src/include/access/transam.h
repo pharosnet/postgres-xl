@@ -9,7 +9,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  * Portions Copyright (c) 2010-2012 Postgres-XC Development Group
  *
@@ -71,6 +71,11 @@
 	(AssertMacro(TransactionIdIsNormal(id1) && TransactionIdIsNormal(id2)), \
 	(int32) ((id1) - (id2)) < 0)
 
+/* compare two XIDs already known to be normal; this is a macro for speed */
+#define NormalTransactionIdFollows(id1, id2) \
+	(AssertMacro(TransactionIdIsNormal(id1) && TransactionIdIsNormal(id2)), \
+	(int32) ((id1) - (id2)) > 0)
+
 /* ----------
  *		Object ID (OID) zero is InvalidOid.
  *
@@ -81,7 +86,7 @@
  *		using the OID generator.  (We start the generator at 10000.)
  *
  *		OIDs beginning at 16384 are assigned from the OID generator
- *		during normal multiuser operation.	(We force the generator up to
+ *		during normal multiuser operation.  (We force the generator up to
  *		16384 as soon as we are in normal operation.)
  *
  * The choices of 10000 and 16384 are completely arbitrary, and can be moved
@@ -146,10 +151,6 @@ extern bool TransactionStartedDuringRecovery(void);
 
 /* in transam/varsup.c */
 extern PGDLLIMPORT VariableCache ShmemVariableCache;
-
-/* in transam/transam.c */
-extern const XLogRecPtr InvalidXLogRecPtr;
-
 
 /*
  * prototypes for functions in transam/transam.c

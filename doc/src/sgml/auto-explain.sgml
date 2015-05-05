@@ -24,7 +24,8 @@ LOAD 'auto_explain';
 </programlisting>
 
   (You must be superuser to do that.)  More typical usage is to preload
-  it into all sessions by including <literal>auto_explain</> in
+  it into some or all sessions by including <literal>auto_explain</> in
+  <xref linkend="guc-session-preload-libraries"> or
   <xref linkend="guc-shared-preload-libraries"> in
   <filename>postgresql.conf</>.  Then you can track unexpectedly slow queries
   no matter when they happen.  Of course there is a price in overhead for
@@ -45,10 +46,10 @@ LOAD 'auto_explain';
    <varlistentry>
     <term>
      <varname>auto_explain.log_min_duration</varname> (<type>integer</type>)
+     <indexterm>
+      <primary><varname>auto_explain.log_min_duration</> configuration parameter</primary>
+     </indexterm>
     </term>
-    <indexterm>
-     <primary><varname>auto_explain.log_min_duration</> configuration parameter</primary>
-    </indexterm>
     <listitem>
      <para>
       <varname>auto_explain.log_min_duration</varname> is the minimum statement
@@ -64,10 +65,10 @@ LOAD 'auto_explain';
    <varlistentry>
     <term>
      <varname>auto_explain.log_analyze</varname> (<type>boolean</type>)
+     <indexterm>
+      <primary><varname>auto_explain.log_analyze</> configuration parameter</primary>
+     </indexterm>
     </term>
-    <indexterm>
-     <primary><varname>auto_explain.log_analyze</> configuration parameter</primary>
-    </indexterm>
     <listitem>
      <para>
       <varname>auto_explain.log_analyze</varname> causes <command>EXPLAIN ANALYZE</>
@@ -88,10 +89,10 @@ LOAD 'auto_explain';
    <varlistentry>
     <term>
      <varname>auto_explain.log_verbose</varname> (<type>boolean</type>)
+     <indexterm>
+      <primary><varname>auto_explain.log_verbose</> configuration parameter</primary>
+     </indexterm>
     </term>
-    <indexterm>
-     <primary><varname>auto_explain.log_verbose</> configuration parameter</primary>
-    </indexterm>
     <listitem>
      <para>
       <varname>auto_explain.log_verbose</varname> causes <command>EXPLAIN VERBOSE</>
@@ -105,10 +106,10 @@ LOAD 'auto_explain';
    <varlistentry>
     <term>
      <varname>auto_explain.log_buffers</varname> (<type>boolean</type>)
+     <indexterm>
+      <primary><varname>auto_explain.log_buffers</> configuration parameter</primary>
+     </indexterm>
     </term>
-    <indexterm>
-     <primary><varname>auto_explain.log_buffers</> configuration parameter</primary>
-    </indexterm>
     <listitem>
      <para>
       <varname>auto_explain.log_buffers</varname> causes <command>EXPLAIN
@@ -123,11 +124,29 @@ LOAD 'auto_explain';
 
    <varlistentry>
     <term>
-     <varname>auto_explain.log_format</varname> (<type>enum</type>)
+     <varname>auto_explain.log_triggers</varname> (<type>boolean</type>)
+     <indexterm>
+      <primary><varname>auto_explain.log_triggers</> configuration parameter</primary>
+     </indexterm>
     </term>
-    <indexterm>
-     <primary><varname>auto_explain.log_format</> configuration parameter</primary>
-    </indexterm>
+    <listitem>
+     <para>
+      <varname>auto_explain.log_triggers</varname> causes trigger
+      execution statistics to be included when an execution plan is logged.
+      This parameter is off by default. Only superusers can change this
+      setting. This parameter has no effect unless
+      <varname>auto_explain.log_analyze</> parameter is set.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <varname>auto_explain.log_format</varname> (<type>enum</type>)
+     <indexterm>
+      <primary><varname>auto_explain.log_format</> configuration parameter</primary>
+     </indexterm>
+    </term>
     <listitem>
      <para>
       <varname>auto_explain.log_format</varname> selects the
@@ -141,11 +160,32 @@ LOAD 'auto_explain';
 
    <varlistentry>
     <term>
-     <varname>auto_explain.log_nested_statements</varname> (<type>boolean</type>)
+     <varname>auto_explain.log_timing</varname> (<type>boolean</type>)
+     <indexterm>
+      <primary><varname>auto_explain.log_timing</> configuration parameter</primary>
+     </indexterm>
     </term>
-    <indexterm>
-     <primary><varname>auto_explain.log_nested_statements</> configuration parameter</primary>
-    </indexterm>
+    <listitem>
+     <para>
+      <varname>auto_explain.log_timing</varname> causes <command>EXPLAIN
+      (ANALYZE, TIMING off)</> output, rather than just <command>EXPLAIN (ANALYZE)</>
+      output. The overhead of repeatedly reading the system clock can slow down the
+      query significantly on some systems, so it may be useful to set this
+      parameter to off when only actual row counts, and not exact times, are needed.
+      This parameter is only effective when <varname>auto_explain.log_analyze</varname>
+      is also enabled.  This parameter is on by default.
+      Only superusers can change this setting.
+     </para>
+    </listitem>
+   </varlistentry>
+   
+   <varlistentry>
+    <term>
+     <varname>auto_explain.log_nested_statements</varname> (<type>boolean</type>)
+     <indexterm>
+      <primary><varname>auto_explain.log_nested_statements</> configuration parameter</primary>
+     </indexterm>
+    </term>
     <listitem>
      <para>
       <varname>auto_explain.log_nested_statements</varname> causes nested
@@ -164,7 +204,7 @@ LOAD 'auto_explain';
 
 <programlisting>
 # postgresql.conf
-shared_preload_libraries = 'auto_explain'
+session_preload_libraries = 'auto_explain'
 
 auto_explain.log_min_duration = '3s'
 </programlisting>

@@ -8,7 +8,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -19,11 +19,14 @@
  */
 #include "postgres.h"
 
+#include "access/htup_details.h"
+#include "access/heapam.h"
 #include "access/xact.h"
 #include "catalog/catalog.h"
 #include "catalog/dependency.h"
 #include "catalog/indexing.h"
 #include "catalog/namespace.h"
+#include "catalog/objectaccess.h"
 #include "catalog/pg_namespace.h"
 #include "commands/dbcommands.h"
 #include "commands/schemacmds.h"
@@ -45,7 +48,7 @@ static void AlterSchemaOwner_internal(HeapTuple tup, Relation rel, Oid newOwnerI
 /*
  * CREATE SCHEMA
  */
-void
+Oid
 #ifdef PGXC
 CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString, bool sentToRemote)
 #else
@@ -77,7 +80,7 @@ CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString)
 	 * To create a schema, must have schema-create privilege on the current
 	 * database and must be able to become the target role (this does not
 	 * imply that the target role itself must have create-schema privilege).
-	 * The latter provision guards against "giveaway" attacks.	Note that a
+	 * The latter provision guards against "giveaway" attacks.  Note that a
 	 * superuser will always have both of these privileges a fortiori.
 	 */
 	aclresult = pg_database_aclcheck(MyDatabaseId, saved_uid, ACL_CREATE);
@@ -93,6 +96,23 @@ CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString)
 				(errcode(ERRCODE_RESERVED_NAME),
 				 errmsg("unacceptable schema name \"%s\"", schemaName),
 		   errdetail("The prefix \"pg_\" is reserved for system schemas.")));
+
+	/*
+	 * If if_not_exists was given and the schema already exists, bail out.
+	 * (Note: we needn't check this when not if_not_exists, because
+	 * NamespaceCreate will complain anyway.)  We could do this before making
+	 * the permissions checks, but since CREATE TABLE IF NOT EXISTS makes its
+	 * creation-permission check first, we do likewise.
+	 */
+	if (stmt->if_not_exists &&
+		SearchSysCacheExists1(NAMESPACENAME, PointerGetDatum(schemaName)))
+	{
+		ereport(NOTICE,
+				(errcode(ERRCODE_DUPLICATE_SCHEMA),
+				 errmsg("schema \"%s\" already exists, skipping",
+						schemaName)));
+		return InvalidOid;
+	}
 
 	/*
 	 * If the requested authorization is different from the current user,
@@ -125,7 +145,7 @@ CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString)
 	/*
 	 * Examine the list of commands embedded in the CREATE SCHEMA command, and
 	 * reorganize them into a sequentially executable order with no forward
-	 * references.	Note that the result is still a list of raw parsetrees ---
+	 * references.  Note that the result is still a list of raw parsetrees ---
 	 * we cannot, in general, run parse analysis on one statement until we
 	 * have actually executed the prior ones.
 	 */
@@ -159,8 +179,8 @@ CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString)
 		/* do this step */
 		ProcessUtility(stmt,
 					   queryString,
+					   PROCESS_UTILITY_SUBCOMMAND,
 					   NULL,
-					   false,	/* not top level */
 					   None_Receiver,
 #ifdef PGXC
 					   true,
@@ -175,6 +195,8 @@ CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString)
 
 	/* Reset current user and security context */
 	SetUserIdAndSecContext(saved_uid, save_sec_context);
+
+	return namespaceId;
 }
 
 /*
@@ -204,9 +226,10 @@ RemoveSchemaById(Oid schemaOid)
 /*
  * Rename schema
  */
-void
+Oid
 RenameSchema(const char *oldname, const char *newname)
 {
+	Oid			nspOid;
 	HeapTuple	tup;
 	Relation	rel;
 	AclResult	aclresult;
@@ -218,6 +241,8 @@ RenameSchema(const char *oldname, const char *newname)
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_SCHEMA),
 				 errmsg("schema \"%s\" does not exist", oldname)));
+
+	nspOid = HeapTupleGetOid(tup);
 
 	/* make sure the new name doesn't exist */
 	if (OidIsValid(get_namespace_oid(newname, true)))
@@ -247,6 +272,8 @@ RenameSchema(const char *oldname, const char *newname)
 	simple_heap_update(rel, &tup->t_self, tup);
 	CatalogUpdateIndexes(rel, tup);
 
+	InvokeObjectPostAlterHook(NamespaceRelationId, HeapTupleGetOid(tup), 0);
+
 #ifdef PGXC
 	if (IS_PGXC_COORDINATOR)
 	{
@@ -269,6 +296,8 @@ RenameSchema(const char *oldname, const char *newname)
 
 	heap_close(rel, NoLock);
 	heap_freetuple(tup);
+
+	return nspOid;
 }
 
 void
@@ -294,9 +323,10 @@ AlterSchemaOwner_oid(Oid oid, Oid newOwnerId)
 /*
  * Change schema owner
  */
-void
+Oid
 AlterSchemaOwner(const char *name, Oid newOwnerId)
 {
+	Oid			nspOid;
 	HeapTuple	tup;
 	Relation	rel;
 
@@ -308,11 +338,15 @@ AlterSchemaOwner(const char *name, Oid newOwnerId)
 				(errcode(ERRCODE_UNDEFINED_SCHEMA),
 				 errmsg("schema \"%s\" does not exist", name)));
 
+	nspOid = HeapTupleGetOid(tup);
+
 	AlterSchemaOwner_internal(tup, rel, newOwnerId);
 
 	ReleaseSysCache(tup);
 
 	heap_close(rel, RowExclusiveLock);
+
+	return nspOid;
 }
 
 static void
@@ -396,4 +430,6 @@ AlterSchemaOwner_internal(HeapTuple tup, Relation rel, Oid newOwnerId)
 								newOwnerId);
 	}
 
+	InvokeObjectPostAlterHook(NamespaceRelationId,
+							  HeapTupleGetOid(tup), 0);
 }

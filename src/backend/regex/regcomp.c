@@ -2,7 +2,7 @@
  * re_*comp and friends - compile REs
  * This file #includes several others (see the bottom).
  *
- * Copyright (c) 1998, 1999 Henry Spencer.	All rights reserved.
+ * Copyright (c) 1998, 1999 Henry Spencer.  All rights reserved.
  *
  * Development of this software was funded, in part, by Cray Research Inc.,
  * UUNET Communications Services Inc., Sun Microsystems Inc., and Scriptics
@@ -33,6 +33,8 @@
  */
 
 #include "regex/regguts.h"
+
+#include "miscadmin.h"			/* needed by rcancelrequested() */
 
 /*
  * forward declarations, up here so forward datatypes etc. are defined early
@@ -67,6 +69,7 @@ static long nfanode(struct vars *, struct subre *, FILE *);
 static int	newlacon(struct vars *, struct state *, struct state *, int);
 static void freelacons(struct subre *, int);
 static void rfree(regex_t *);
+static int	rcancelrequested(void);
 
 #ifdef REG_DEBUG
 static void dump(regex_t *, FILE *);
@@ -122,12 +125,15 @@ static void destroystate(struct nfa *, struct state *);
 static void newarc(struct nfa *, int, pcolor, struct state *, struct state *);
 static struct arc *allocarc(struct nfa *, struct state *);
 static void freearc(struct nfa *, struct arc *);
+static int	hasnonemptyout(struct state *);
+static int	nonemptyouts(struct state *);
+static int	nonemptyins(struct state *);
 static struct arc *findarc(struct state *, int, pcolor);
 static void cparc(struct nfa *, struct arc *, struct state *, struct state *);
 static void moveins(struct nfa *, struct state *, struct state *);
-static void copyins(struct nfa *, struct state *, struct state *);
+static void copyins(struct nfa *, struct state *, struct state *, int);
 static void moveouts(struct nfa *, struct state *, struct state *);
-static void copyouts(struct nfa *, struct state *, struct state *);
+static void copyouts(struct nfa *, struct state *, struct state *, int);
 static void cloneouts(struct nfa *, struct state *, struct state *, struct state *, int);
 static void delsub(struct nfa *, struct state *, struct state *);
 static void deltraverse(struct nfa *, struct state *, struct state *);
@@ -146,7 +152,8 @@ static int	push(struct nfa *, struct arc *);
 #define COMPATIBLE	3			/* compatible but not satisfied yet */
 static int	combine(struct arc *, struct arc *);
 static void fixempties(struct nfa *, FILE *);
-static int	unempty(struct nfa *, struct arc *);
+static struct state *emptyreachable(struct state *, struct state *);
+static void replaceempty(struct nfa *, struct state *, struct state *);
 static void cleanup(struct nfa *);
 static void markreachable(struct nfa *, struct state *, struct state *, struct state *);
 static void markcanreach(struct nfa *, struct state *, struct state *, struct state *);
@@ -162,7 +169,7 @@ static void dumparcs(struct state *, FILE *);
 static int	dumprarcs(struct arc *, struct state *, FILE *, int);
 static void dumparc(struct arc *, struct state *, FILE *);
 static void dumpcnfa(struct cnfa *, FILE *);
-static void dumpcstate(int, struct carc *, struct cnfa *, FILE *);
+static void dumpcstate(int, struct cnfa *, FILE *);
 #endif
 /* === regc_cvec.c === */
 static struct cvec *newcvec(int, int);
@@ -270,14 +277,18 @@ struct vars
 
 
 /* static function list */
-static struct fns functions = {
+static const struct fns functions = {
 	rfree,						/* regfree insides */
+	rcancelrequested			/* check for cancel request */
 };
 
 
 
 /*
  * pg_regcomp - compile regular expression
+ *
+ * Note: on failure, no resources remain allocated, so pg_regfree()
+ * need not be applied to re.
  */
 int
 pg_regcomp(regex_t *re,
@@ -553,7 +564,7 @@ makesearch(struct vars * v,
 	 * constraints, often knowing when you were in the pre state tells you
 	 * little; it's the next state(s) that are informative.  But some of them
 	 * may have other inarcs, i.e. it may be possible to make actual progress
-	 * and then return to one of them.	We must de-optimize such cases,
+	 * and then return to one of them.  We must de-optimize such cases,
 	 * splitting each such state into progress and no-progress states.
 	 */
 
@@ -580,7 +591,7 @@ makesearch(struct vars * v,
 	for (s = slist; s != NULL; s = s2)
 	{
 		s2 = newstate(nfa);
-		copyouts(nfa, s, s2);
+		copyouts(nfa, s, s2, 1);
 		for (a = s->ins; a != NULL; a = b)
 		{
 			b = a->inchain;
@@ -599,7 +610,7 @@ makesearch(struct vars * v,
  * parse - parse an RE
  *
  * This is actually just the top level, which parses a bunch of branches
- * tied together with '|'.	They appear in the tree as the left children
+ * tied together with '|'.  They appear in the tree as the left children
  * of a chain of '|' subres.
  */
 static struct subre *
@@ -709,6 +720,7 @@ parsebranch(struct vars * v,
 
 		/* NB, recursion in parseqatom() may swallow rest of branch */
 		parseqatom(v, stopper, type, lp, right, t);
+		NOERRN();
 	}
 
 	if (!seencontent)
@@ -1166,6 +1178,7 @@ parseqatom(struct vars * v,
 		EMPTYARC(s2, rp);
 		t->right = subre(v, '=', 0, s2, rp);
 	}
+	NOERR();
 	assert(SEE('|') || SEE(stopper) || SEE(EOS));
 	t->flags |= COMBINE(t->flags, t->right->flags);
 	top->flags |= COMBINE(top->flags, t->flags);
@@ -1339,7 +1352,7 @@ bracket(struct vars * v,
 /*
  * cbracket - handle complemented bracket expression
  * We do it by calling bracket() with dummy endpoints, and then complementing
- * the result.	The alternative would be to invoke rainbow(), and then delete
+ * the result.  The alternative would be to invoke rainbow(), and then delete
  * arcs as the b.e. is seen... but that gets messy.
  */
 static void
@@ -1870,15 +1883,34 @@ rfree(regex_t *re)
 	g = (struct guts *) re->re_guts;
 	re->re_guts = NULL;
 	re->re_fns = NULL;
-	g->magic = 0;
-	freecm(&g->cmap);
-	if (g->tree != NULL)
-		freesubre((struct vars *) NULL, g->tree);
-	if (g->lacons != NULL)
-		freelacons(g->lacons, g->nlacons);
-	if (!NULLCNFA(g->search))
-		freecnfa(&g->search);
-	FREE(g);
+	if (g != NULL)
+	{
+		g->magic = 0;
+		freecm(&g->cmap);
+		if (g->tree != NULL)
+			freesubre((struct vars *) NULL, g->tree);
+		if (g->lacons != NULL)
+			freelacons(g->lacons, g->nlacons);
+		if (!NULLCNFA(g->search))
+			freecnfa(&g->search);
+		FREE(g);
+	}
+}
+
+/*
+ * rcancelrequested - check for external request to cancel regex operation
+ *
+ * Return nonzero to fail the operation with error code REG_CANCEL,
+ * zero to keep going
+ *
+ * The current implementation is Postgres-specific.  If we ever get around
+ * to splitting the regex code out as a standalone library, there will need
+ * to be some API to let applications define a callback function for this.
+ */
+static int
+rcancelrequested(void)
+{
+	return InterruptPending && (QueryCancelPending || ProcDiePending);
 }
 
 #ifdef REG_DEBUG

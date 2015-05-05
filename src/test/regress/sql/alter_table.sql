@@ -178,7 +178,6 @@ CREATE VIEW tmp_view (unique1) AS SELECT unique1 FROM tenk1;
 ALTER TABLE tmp_view RENAME TO tmp_view_new;
 
 -- hack to ensure we get an indexscan here
-ANALYZE tenk1;
 set enable_seqscan to off;
 set enable_bitmapscan to off;
 -- 5 values, sorted 
@@ -218,7 +217,7 @@ ALTER TABLE ONLY constraint_rename_test RENAME CONSTRAINT con1 TO con1foo; -- fa
 ALTER TABLE constraint_rename_test RENAME CONSTRAINT con1 TO con1foo; -- ok
 \d constraint_rename_test
 \d constraint_rename_test2
-ALTER TABLE constraint_rename_test ADD CONSTRAINT con2 CHECK NO INHERIT (b > 0);
+ALTER TABLE constraint_rename_test ADD CONSTRAINT con2 CHECK (b > 0) NO INHERIT;
 ALTER TABLE ONLY constraint_rename_test RENAME CONSTRAINT con2 TO con2foo; -- ok
 ALTER TABLE constraint_rename_test RENAME CONSTRAINT con2foo TO con2bar; -- ok
 \d constraint_rename_test
@@ -500,14 +499,14 @@ drop table atacc1;
 create table atacc1 (test int);
 create table atacc2 (test2 int) inherits (atacc1);
 -- ok:
-alter table atacc1 add constraint foo check no inherit (test>0);
+alter table atacc1 add constraint foo check (test>0) no inherit;
 -- check constraint is not there on child
 insert into atacc2 (test) values (-3);
 -- check constraint is there on parent
 insert into atacc1 (test) values (-3);
 insert into atacc1 (test) values (3);
 -- fail, violating row:
-alter table atacc2 add constraint foo check no inherit (test>0);
+alter table atacc2 add constraint foo check (test>0) no inherit;
 drop table atacc2;
 drop table atacc1;
 
@@ -872,6 +871,15 @@ alter table atacc1 drop d;
 alter table atacc1 drop b;
 select * from atacc1;
 
+drop table atacc1;
+
+-- test constraint error reporting in presence of dropped columns
+create table atacc1 (id serial primary key, value int check (value < 10));
+insert into atacc1(value) values (100);
+alter table atacc1 drop column value;
+alter table atacc1 add column value int check (value < 10);
+insert into atacc1(value) values (100);
+insert into atacc1(id, value) values (null, 0);
 drop table atacc1;
 
 -- test inheritance
@@ -1239,6 +1247,13 @@ select reltoastrelid <> 0 as has_toast_table
 from pg_class
 where oid = 'test_storage'::regclass;
 
+-- ALTER TYPE with a check constraint and a child table (bug before Nov 2012)
+CREATE TABLE test_inh_check (a float check (a > 10.2));
+CREATE TABLE test_inh_check_child() INHERITS(test_inh_check);
+ALTER TABLE test_inh_check ALTER COLUMN a TYPE numeric;
+\d test_inh_check
+\d test_inh_check_child
+
 --
 -- lock levels
 --
@@ -1268,6 +1283,9 @@ and c.relname != 'my_locks'
 group by c.relname;
 
 create table alterlock (f1 int primary key, f2 text);
+insert into alterlock values (1, 'foo');
+create table alterlock2 (f3 int primary key, f1 int);
+insert into alterlock2 values (1, 1);
 
 begin; alter table alterlock alter column f2 set statistics 150;
 select * from my_locks order by 1;
@@ -1309,7 +1327,33 @@ begin; alter table alterlock alter column f2 set default 'x';
 select * from my_locks order by 1;
 rollback;
 
+begin;
+create trigger ttdummy
+	before delete or update on alterlock
+	for each row
+	execute procedure
+	ttdummy (1, 1);
+select * from my_locks order by 1;
+rollback;
+
+begin;
+select * from my_locks order by 1;
+alter table alterlock2 add foreign key (f1) references alterlock (f1);
+select * from my_locks order by 1;
+rollback;
+
+begin;
+alter table alterlock2
+add constraint alterlock2nv foreign key (f1) references alterlock (f1) NOT VALID;
+select * from my_locks order by 1;
+commit;
+begin;
+alter table alterlock2 validate constraint alterlock2nv;
+select * from my_locks order by 1;
+rollback;
+
 -- cleanup
+drop table alterlock2;
 drop table alterlock;
 drop view my_locks;
 drop type lockmodes;
@@ -1537,3 +1581,40 @@ ALTER TABLE IF EXISTS tt8 SET SCHEMA alter2;
 
 DROP TABLE alter2.tt8;
 DROP SCHEMA alter2;
+
+-- Check that we map relation oids to filenodes and back correctly.
+-- Only display bad mappings so the test output doesn't change all the
+-- time.
+SELECT
+    oid, mapped_oid, reltablespace, relfilenode, relname
+FROM pg_class,
+    pg_filenode_relation(reltablespace, pg_relation_filenode(oid)) AS mapped_oid
+WHERE relkind IN ('r', 'i', 'S', 't', 'm') AND mapped_oid IS DISTINCT FROM oid;
+
+-- Checks on creating and manipulation of user defined relations in
+-- pg_catalog.
+--
+-- XXX: It would be useful to add checks around trying to manipulate
+-- catalog tables, but that might have ugly consequences when run
+-- against an existing server with allow_system_table_mods = on.
+
+SHOW allow_system_table_mods;
+-- disallowed because of search_path issues with pg_dump
+CREATE TABLE pg_catalog.new_system_table();
+-- instead create in public first, move to catalog
+CREATE TABLE new_system_table(id serial primary key, othercol text);
+ALTER TABLE new_system_table SET SCHEMA pg_catalog;
+
+-- XXX: it's currently impossible to move relations out of pg_catalog
+ALTER TABLE new_system_table SET SCHEMA public;
+-- move back, will currently error out, already there
+ALTER TABLE new_system_table SET SCHEMA pg_catalog;
+ALTER TABLE new_system_table RENAME TO old_system_table;
+CREATE INDEX old_system_table__othercol ON old_system_table (othercol);
+INSERT INTO old_system_table(othercol) VALUES ('somedata'), ('otherdata');
+UPDATE old_system_table SET id = -id;
+DELETE FROM old_system_table WHERE othercol = 'somedata';
+TRUNCATE old_system_table;
+ALTER TABLE old_system_table DROP CONSTRAINT new_system_table_pkey;
+ALTER TABLE old_system_table DROP COLUMN othercol;
+DROP TABLE old_system_table;

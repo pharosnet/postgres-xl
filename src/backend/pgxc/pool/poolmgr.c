@@ -410,20 +410,53 @@ GetPoolManagerHandle(void)
 		return;
 #endif
 
-	/* Connect to the pooler */
-	fdsock = pool_connect(PoolerPort, UnixSocketDir);
-	if (fdsock < 0)
+#ifdef HAVE_UNIX_SOCKETS
+	if (Unix_socket_directories)
 	{
-		int			saved_errno = errno;
+		char	   *rawstring;
+		List	   *elemlist;
+		ListCell   *l;
+		int			success = 0;
 
-		ereport(ERROR,
-				(errcode(ERRCODE_CONNECTION_FAILURE),
-				 errmsg("failed to connect to pool manager: %m")));
-		errno = saved_errno;
-#ifndef XCP
-		return NULL;
-#endif
+		/* Need a modifiable copy of Unix_socket_directories */
+		rawstring = pstrdup(Unix_socket_directories);
+
+		/* Parse string into list of directories */
+		if (!SplitDirectoriesString(rawstring, ',', &elemlist))
+		{
+			/* syntax error in list */
+			ereport(FATAL,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("invalid list syntax in parameter \"%s\"",
+							"unix_socket_directories")));
+		}
+
+		foreach(l, elemlist)
+		{
+			char	   *socketdir = (char *) lfirst(l);
+			int			saved_errno;
+
+			/* Connect to the pooler */
+			fdsock = pool_connect(PoolerPort, socketdir);
+			if (fdsock < 0)
+			{
+				saved_errno = errno;
+				ereport(WARNING,
+						(errmsg("could not create Unix-domain socket in directory \"%s\"",
+								socketdir)));
+			}
+			else
+				break;
+		}
+
+		if (!success && elemlist != NIL)
+			ereport(ERROR,
+					(errmsg("failed to connect to pool manager: %m")));
+
+		list_free_deep(elemlist);
+		pfree(rawstring);
 	}
+#endif
 
 	/* Allocate handle */
 	/*
@@ -2706,20 +2739,68 @@ PoolerLoop(void)
 	StringInfoData 	input_message;
 #ifdef XCP
 	time_t			last_maintenance = (time_t) 0;
+	int				nfds;
+	fd_set			rfds;
 #endif
 
-	server_fd = pool_listen(PoolerPort, UnixSocketDir);
-	if (server_fd == -1)
+	FD_ZERO(&rfds);
+
+#ifdef HAVE_UNIX_SOCKETS
+	if (Unix_socket_directories)
 	{
-		/* log error */
-		return;
+		char	   *rawstring;
+		List	   *elemlist;
+		ListCell   *l;
+		int			success = 0;
+
+		/* Need a modifiable copy of Unix_socket_directories */
+		rawstring = pstrdup(Unix_socket_directories);
+
+		/* Parse string into list of directories */
+		if (!SplitDirectoriesString(rawstring, ',', &elemlist))
+		{
+			/* syntax error in list */
+			ereport(FATAL,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("invalid list syntax in parameter \"%s\"",
+							"unix_socket_directories")));
+		}
+
+		nfds = 0;
+		foreach(l, elemlist)
+		{
+			char	   *socketdir = (char *) lfirst(l);
+			int			saved_errno;
+
+			/* Connect to the pooler */
+			server_fd = pool_listen(PoolerPort, socketdir);
+			if (server_fd < 0)
+			{
+				saved_errno = errno;
+				ereport(WARNING,
+						(errmsg("could not create Unix-domain socket in directory \"%s\"",
+								socketdir)));
+			}
+			else
+			{
+				/* watch for incoming connections */
+				FD_SET(server_fd, &rfds);
+				nfds = Max(nfds, server_fd);
+			}
+		}
+
+		if (!success && elemlist != NIL)
+			ereport(ERROR,
+					(errmsg("failed to connect to pool manager: %m")));
+
+		list_free_deep(elemlist);
+		pfree(rawstring);
 	}
+#endif
 	initStringInfo(&input_message);
 
 	for (;;)
 	{
-		int			nfds;
-		fd_set		rfds;
 		int			retval;
 		int			i;
 
@@ -2729,12 +2810,6 @@ PoolerLoop(void)
 		 */
 		if (!PostmasterIsAlive())
 			exit(1);
-
-		/* watch for incoming connections */
-		FD_ZERO(&rfds);
-		FD_SET(server_fd, &rfds);
-
-		nfds = server_fd;
 
 		/* watch for incoming messages */
 		for (i = 0; i < agentCount; i++)

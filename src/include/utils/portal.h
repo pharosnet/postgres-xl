@@ -41,7 +41,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/utils/portal.h
@@ -53,6 +53,7 @@
 
 #include "datatype/timestamp.h"
 #include "executor/execdesc.h"
+#include "utils/plancache.h"
 #include "utils/resowner.h"
 
 /*
@@ -62,8 +63,8 @@
  * single result from the user's viewpoint.  However, the rule rewriter
  * may expand the single source query to zero or many actual queries.)
  *
- * PORTAL_ONE_SELECT: the portal contains one single SELECT query.	We run
- * the Executor incrementally as results are demanded.	This strategy also
+ * PORTAL_ONE_SELECT: the portal contains one single SELECT query.  We run
+ * the Executor incrementally as results are demanded.  This strategy also
  * supports holdable cursors (the Executor results can be dumped into a
  * tuplestore for access after transaction completion).
  *
@@ -77,7 +78,7 @@
  * all the auxiliary queries.)
  *
  * PORTAL_ONE_MOD_WITH: the portal contains one single SELECT query, but
- * it has data-modifying CTEs.	This is currently treated the same as the
+ * it has data-modifying CTEs.  This is currently treated the same as the
  * PORTAL_ONE_RETURNING case because of the possibility of needing to fire
  * triggers.  It may act more like PORTAL_ONE_SELECT in future.
  *
@@ -238,5 +239,6 @@ extern void addProducingPortal(Portal portal);
 extern void removeProducingPortal(Portal portal);
 extern bool portalIsProducing(Portal portal);
 #endif
+extern bool ThereAreNoReadyPortals(void);
 
 #endif   /* PORTAL_H */

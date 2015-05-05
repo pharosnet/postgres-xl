@@ -24,6 +24,7 @@
 
 #include "pgxc/pgxc.h"
 #include "nodes/nodes.h"
+#include "nodes/pg_list.h"
 #include "pgxc/poolmgr.h"
 #include "pgxc/locator.h"
 #include "pgxc/nodemgr.h"

@@ -71,7 +71,6 @@ static char *gtm_host = "localhost";
 static char bin_path[MAXPGPATH];
 static char backend_exec[MAXPGPATH];
 
-static void *pg_malloc(size_t size);
 static char *xstrdup(const char *s);
 static char **replace_token(char **lines,
 			  const char *token, const char *replacement);
@@ -103,26 +102,6 @@ static int	CreateRestrictedProcess(char *cmd, PROCESS_INFORMATION *processInfo);
 #define QUOTE_PATH	"\""
 #define DIR_SEP "\\"
 #endif
-
-/*
- * routines to check mem allocations and fail noisily.
- *
- * Note that we can't call exit_nicely() on a memory failure, as it calls
- * rmtree() which needs memory allocation. So we just exit with a bang.
- */
-static void *
-pg_malloc(size_t size)
-{
-	void	   *result;
-
-	result = malloc(size);
-	if (!result)
-	{
-		fprintf(stderr, _("%s: out of memory\n"), progname);
-		exit(1);
-	}
-	return result;
-}
 
 static char *
 xstrdup(const char *s)
@@ -624,13 +603,6 @@ check_ok(void)
 		printf(_("ok\n"));
 		fflush(stdout);
 	}
-}
-
-/* Hack to suppress a warning about %x from some versions of gcc */
-static inline size_t
-my_strftime(char *s, size_t max, const char *fmt, const struct tm * tm)
-{
-	return strftime(s, max, fmt, tm);
 }
 
 #ifdef WIN32

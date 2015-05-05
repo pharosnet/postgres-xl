@@ -7,7 +7,7 @@
  * detection and resolution algorithms.
  *
  *
- * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -51,7 +51,7 @@ typedef struct
 } WAIT_ORDER;
 
 /*
- * Information saved about each edge in a detected deadlock cycle.	This
+ * Information saved about each edge in a detected deadlock cycle.  This
  * is used to print a diagnostic message upon failure.
  *
  * Note: because we want to examine this info after releasing the lock
@@ -119,7 +119,7 @@ static PGPROC *blocking_autovacuum_proc = NULL;
  * InitDeadLockChecking -- initialize deadlock checker during backend startup
  *
  * This does per-backend initialization of the deadlock checker; primarily,
- * allocation of working memory for DeadLockCheck.	We do this per-backend
+ * allocation of working memory for DeadLockCheck.  We do this per-backend
  * since there's no percentage in making the kernel do copy-on-write
  * inheritance of workspace from the postmaster.  We want to allocate the
  * space at startup because (a) the deadlock checker might be invoked when
@@ -291,10 +291,10 @@ GetBlockingAutoVacuumPgproc(void)
  * DeadLockCheckRecurse -- recursively search for valid orderings
  *
  * curConstraints[] holds the current set of constraints being considered
- * by an outer level of recursion.	Add to this each possible solution
+ * by an outer level of recursion.  Add to this each possible solution
  * constraint for any cycle detected at this level.
  *
- * Returns TRUE if no solution exists.	Returns FALSE if a deadlock-free
+ * Returns TRUE if no solution exists.  Returns FALSE if a deadlock-free
  * state is attainable, in which case waitOrders[] shows the required
  * rearrangements of lock wait queues (if any).
  */
@@ -429,7 +429,7 @@ TestConfiguration(PGPROC *startProc)
  *
  * Since we need to be able to check hypothetical configurations that would
  * exist after wait queue rearrangement, the routine pays attention to the
- * table of hypothetical queue orders in waitOrders[].	These orders will
+ * table of hypothetical queue orders in waitOrders[].  These orders will
  * be believed in preference to the actual ordering seen in the locktable.
  */
 static bool
@@ -506,7 +506,7 @@ FindLockCycleRecurse(PGPROC *checkProc,
 	conflictMask = lockMethodTable->conflictTab[checkProc->waitLockMode];
 
 	/*
-	 * Scan for procs that already hold conflicting locks.	These are "hard"
+	 * Scan for procs that already hold conflicting locks.  These are "hard"
 	 * edges in the waits-for graph.
 	 */
 	procLocks = &(lock->procLocks);
@@ -527,25 +527,6 @@ FindLockCycleRecurse(PGPROC *checkProc,
 				if ((proclock->holdMask & LOCKBIT_ON(lm)) &&
 					(conflictMask & LOCKBIT_ON(lm)))
 				{
-					/*
-					 * Look for a blocking autovacuum. There can be more than
-					 * one in the deadlock cycle, in which case we just pick a
-					 * random one.	We stash the autovacuum worker's PGPROC so
-					 * that the caller can send a cancel signal to it, if
-					 * appropriate.
-					 *
-					 * Note we read vacuumFlags without any locking.  This is
-					 * OK only for checking the PROC_IS_AUTOVACUUM flag,
-					 * because that flag is set at process start and never
-					 * reset; there is logic elsewhere to avoid canceling an
-					 * autovacuum that is working for preventing Xid
-					 * wraparound problems (which needs to read a different
-					 * vacuumFlag bit), but we don't do that here to avoid
-					 * grabbing ProcArrayLock.
-					 */
-					if (pgxact->vacuumFlags & PROC_IS_AUTOVACUUM)
-						blocking_autovacuum_proc = proc;
-
 					/* This proc hard-blocks checkProc */
 					if (FindLockCycleRecurse(proc, depth + 1,
 											 softEdges, nSoftEdges))
@@ -559,7 +540,34 @@ FindLockCycleRecurse(PGPROC *checkProc,
 
 						return true;
 					}
-					/* If no deadlock, we're done looking at this proclock */
+
+					/*
+					 * No deadlock here, but see if this proc is an autovacuum
+					 * that is directly hard-blocking our own proc.  If so,
+					 * report it so that the caller can send a cancel signal
+					 * to it, if appropriate.  If there's more than one such
+					 * proc, it's indeterminate which one will be reported.
+					 *
+					 * We don't touch autovacuums that are indirectly blocking
+					 * us; it's up to the direct blockee to take action.  This
+					 * rule simplifies understanding the behavior and ensures
+					 * that an autovacuum won't be canceled with less than
+					 * deadlock_timeout grace period.
+					 *
+					 * Note we read vacuumFlags without any locking.  This is
+					 * OK only for checking the PROC_IS_AUTOVACUUM flag,
+					 * because that flag is set at process start and never
+					 * reset.  There is logic elsewhere to avoid canceling an
+					 * autovacuum that is working to prevent XID wraparound
+					 * problems (which needs to read a different vacuumFlag
+					 * bit), but we don't do that here to avoid grabbing
+					 * ProcArrayLock.
+					 */
+					if (checkProc == MyProc &&
+						pgxact->vacuumFlags & PROC_IS_AUTOVACUUM)
+						blocking_autovacuum_proc = proc;
+
+					/* We're done looking at this proclock */
 					break;
 				}
 			}
@@ -697,7 +705,7 @@ ExpandConstraints(EDGE *constraints,
 	nWaitOrders = 0;
 
 	/*
-	 * Scan constraint list backwards.	This is because the last-added
+	 * Scan constraint list backwards.  This is because the last-added
 	 * constraint is the only one that could fail, and so we want to test it
 	 * for inconsistency first.
 	 */
@@ -751,7 +759,7 @@ ExpandConstraints(EDGE *constraints,
  * The initial queue ordering is taken directly from the lock's wait queue.
  * The output is an array of PGPROC pointers, of length equal to the lock's
  * wait queue length (the caller is responsible for providing this space).
- * The partial order is specified by an array of EDGE structs.	Each EDGE
+ * The partial order is specified by an array of EDGE structs.  Each EDGE
  * is one that we need to reverse, therefore the "waiter" must appear before
  * the "blocker" in the output array.  The EDGE array may well contain
  * edges associated with other locks; these should be ignored.
@@ -821,7 +829,7 @@ TopoSort(LOCK *lock,
 		afterConstraints[k] = i + 1;
 	}
 	/*--------------------
-	 * Now scan the topoProcs array backwards.	At each step, output the
+	 * Now scan the topoProcs array backwards.  At each step, output the
 	 * last proc that has no remaining before-constraints, and decrease
 	 * the beforeConstraints count of each of the procs it was constrained
 	 * against.

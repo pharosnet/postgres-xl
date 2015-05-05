@@ -9,7 +9,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -37,6 +37,7 @@
 #include "access/xact.h"
 #include "commands/copy.h"
 #include "commands/createas.h"
+#include "commands/matview.h"
 #include "executor/functions.h"
 #ifdef XCP
 #include "executor/producerReceiver.h"
@@ -138,6 +139,9 @@ CreateDestReceiver(CommandDest dest)
 		case DestProducer:
 			return CreateProducerDestReceiver();
 #endif
+
+		case DestTransientRel:
+			return CreateTransientRelDestReceiver(InvalidOid);
 	}
 
 	/* should never get here */
@@ -171,6 +175,7 @@ EndCommand(const char *commandTag, CommandDest dest)
 		case DestCopyOut:
 		case DestSQLFunction:
 		case DestProducer:
+		case DestTransientRel:
 			break;
 	}
 }
@@ -213,6 +218,7 @@ NullCommand(CommandDest dest)
 		case DestCopyOut:
 		case DestSQLFunction:
 		case DestProducer:
+		case DestTransientRel:
 			break;
 	}
 }
@@ -257,6 +263,7 @@ ReadyForQuery(CommandDest dest)
 		case DestCopyOut:
 		case DestSQLFunction:
 		case DestProducer:
+		case DestTransientRel:
 			break;
 	}
 }

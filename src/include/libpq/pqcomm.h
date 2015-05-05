@@ -6,7 +6,7 @@
  * NOTE: for historical reasons, this does not correspond to pqcomm.c.
  * pqcomm.c's routines are declared in libpq.h.
  *
- * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/libpq/pqcomm.h
@@ -72,6 +72,19 @@ typedef struct
 				((sockdir) && *(sockdir) != '\0') ? (sockdir) : \
 				DEFAULT_PGSOCKET_DIR, \
 				(port))
+
+/*
+ * The maximum workable length of a socket path is what will fit into
+ * struct sockaddr_un.  This is usually only 100 or so bytes :-(.
+ *
+ * For consistency, always pass a MAXPGPATH-sized buffer to UNIXSOCK_PATH(),
+ * then complain if the resulting string is >= UNIXSOCK_PATH_BUFLEN bytes.
+ * (Because the standard API for getaddrinfo doesn't allow it to complain in
+ * a useful way when the socket pathname is too long, we have to test for
+ * this explicitly, instead of just letting the subroutine return an error.)
+ */
+#define UNIXSOCK_PATH_BUFLEN sizeof(((struct sockaddr_un *) NULL)->sun_path)
+
 
 /*
  * These manipulate the frontend/backend protocol version number.
@@ -140,7 +153,7 @@ extern bool Db_user_namespace;
 
 /*
  * In protocol 3.0 and later, the startup packet length is not fixed, but
- * we set an arbitrary limit on it anyway.	This is just to prevent simple
+ * we set an arbitrary limit on it anyway.  This is just to prevent simple
  * denial-of-service attacks via sending enough data to run the server
  * out of memory.
  */
@@ -151,7 +164,7 @@ extern bool Db_user_namespace;
 
 #define AUTH_REQ_OK			0	/* User is authenticated  */
 #define AUTH_REQ_KRB4		1	/* Kerberos V4. Not supported any more. */
-#define AUTH_REQ_KRB5		2	/* Kerberos V5 */
+#define AUTH_REQ_KRB5		2	/* Kerberos V5. Not supported any more. */
 #define AUTH_REQ_PASSWORD	3	/* Password */
 #define AUTH_REQ_CRYPT		4	/* crypt password. Not supported any more. */
 #define AUTH_REQ_MD5		5	/* md5 password */

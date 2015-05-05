@@ -289,10 +289,10 @@ start_gtm(void)
 	strncat(gtm_app_path, gtm_app, MAXPGPATH - len - 1);
 
 	if (log_file != NULL)
-		len = snprintf(cmd, MAXPGPATH - 1, SYSTEMQUOTE "\"%s\" %s%s -l %s &" SYSTEMQUOTE,
+		len = snprintf(cmd, MAXPGPATH - 1, "\"%s\" %s%s -l %s &" ,
 				 gtm_app_path, gtmdata_opt, gtm_opts, log_file);
 	else
-		len = snprintf(cmd, MAXPGPATH - 1, SYSTEMQUOTE "\"%s\" %s%s < \"%s\" 2>&1 &" SYSTEMQUOTE,
+		len = snprintf(cmd, MAXPGPATH - 1, "\"%s\" %s%s < \"%s\" 2>&1 &" ,
 				 gtm_app_path, gtmdata_opt, gtm_opts, DEVNULL);
 
 	if (len >= MAXPGPATH - 1)

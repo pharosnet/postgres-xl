@@ -3,7 +3,7 @@
  * regexp.c
  *	  Postgres' interface to the regular expression package.
  *
- * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -31,6 +31,7 @@
 
 #include "catalog/pg_type.h"
 #include "funcapi.h"
+#include "miscadmin.h"
 #include "regex/regex.h"
 #include "utils/array.h"
 #include "utils/builtins.h"
@@ -141,7 +142,7 @@ RE_compile_and_cache(text *text_re, int cflags, Oid collation)
 	char		errMsg[100];
 
 	/*
-	 * Look for a match among previously compiled REs.	Since the data
+	 * Look for a match among previously compiled REs.  Since the data
 	 * structure is self-organizing with most-used entries at the front, our
 	 * search strategy can just be to scan from the front.
 	 */
@@ -187,9 +188,17 @@ RE_compile_and_cache(text *text_re, int cflags, Oid collation)
 
 	if (regcomp_result != REG_OKAY)
 	{
-		/* re didn't compile */
+		/* re didn't compile (no need for pg_regfree, if so) */
+
+		/*
+		 * Here and in other places in this file, do CHECK_FOR_INTERRUPTS
+		 * before reporting a regex error.  This is so that if the regex
+		 * library aborts and returns REG_CANCEL, we don't print an error
+		 * message that implies the regex was invalid.
+		 */
+		CHECK_FOR_INTERRUPTS();
+
 		pg_regerror(regcomp_result, &re_temp.cre_re, errMsg, sizeof(errMsg));
-		/* XXX should we pg_regfree here? */
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_REGULAR_EXPRESSION),
 				 errmsg("invalid regular expression: %s", errMsg)));
@@ -269,6 +278,7 @@ RE_wchar_execute(regex_t *re, pg_wchar *data, int data_len,
 	if (regexec_result != REG_OKAY && regexec_result != REG_NOMATCH)
 	{
 		/* re failed??? */
+		CHECK_FOR_INTERRUPTS();
 		pg_regerror(regexec_result, re, errMsg, sizeof(errMsg));
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_REGULAR_EXPRESSION),
@@ -288,7 +298,7 @@ RE_wchar_execute(regex_t *re, pg_wchar *data, int data_len,
  *	dat_len --- the length of the data string
  *	nmatch, pmatch	--- optional return area for match details
  *
- * Data is given in the database encoding.	We internally
+ * Data is given in the database encoding.  We internally
  * convert to array of pg_wchar which is what Spencer's regex package wants.
  */
 static bool
@@ -958,14 +968,13 @@ setup_regexp_matches(text *orig_str, text *pattern, text *flags,
 			break;
 
 		/*
-		 * Advance search position.  Normally we start just after the end of
-		 * the previous match, but always advance at least one character (the
-		 * special case can occur if the pattern matches zero characters just
-		 * after the prior match or at the end of the string).
+		 * Advance search position.  Normally we start the next search at the
+		 * end of the previous match; but if the match was of zero length, we
+		 * have to advance by one character, or we'd just find the same match
+		 * again.
 		 */
-		if (start_search < pmatch[0].rm_eo)
-			start_search = pmatch[0].rm_eo;
-		else
+		start_search = prev_match_end;
+		if (pmatch[0].rm_so == pmatch[0].rm_eo)
 			start_search++;
 		if (start_search > wide_len)
 			break;
@@ -1169,4 +1178,70 @@ build_regexp_split_result(regexp_matches_ctx *splitctx)
 								   PointerGetDatum(splitctx->orig_str),
 								   Int32GetDatum(startpos + 1));
 	}
+}
+
+/*
+ * regexp_fixed_prefix - extract fixed prefix, if any, for a regexp
+ *
+ * The result is NULL if there is no fixed prefix, else a palloc'd string.
+ * If it is an exact match, not just a prefix, *exact is returned as TRUE.
+ */
+char *
+regexp_fixed_prefix(text *text_re, bool case_insensitive, Oid collation,
+					bool *exact)
+{
+	char	   *result;
+	regex_t    *re;
+	int			cflags;
+	int			re_result;
+	pg_wchar   *str;
+	size_t		slen;
+	size_t		maxlen;
+	char		errMsg[100];
+
+	*exact = false;				/* default result */
+
+	/* Compile RE */
+	cflags = REG_ADVANCED;
+	if (case_insensitive)
+		cflags |= REG_ICASE;
+
+	re = RE_compile_and_cache(text_re, cflags, collation);
+
+	/* Examine it to see if there's a fixed prefix */
+	re_result = pg_regprefix(re, &str, &slen);
+
+	switch (re_result)
+	{
+		case REG_NOMATCH:
+			return NULL;
+
+		case REG_PREFIX:
+			/* continue with wchar conversion */
+			break;
+
+		case REG_EXACT:
+			*exact = true;
+			/* continue with wchar conversion */
+			break;
+
+		default:
+			/* re failed??? */
+			CHECK_FOR_INTERRUPTS();
+			pg_regerror(re_result, re, errMsg, sizeof(errMsg));
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_REGULAR_EXPRESSION),
+					 errmsg("regular expression failed: %s", errMsg)));
+			break;
+	}
+
+	/* Convert pg_wchar result back to database encoding */
+	maxlen = pg_database_encoding_max_length() * slen + 1;
+	result = (char *) palloc(maxlen);
+	slen = pg_wchar2mb_with_len(str, result, slen);
+	Assert(slen < maxlen);
+
+	free(str);
+
+	return result;
 }

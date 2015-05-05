@@ -8,14 +8,11 @@
 
 #include "postgres_fe.h"
 
-#ifdef HAVE_GETOPT_H
-#include <getopt.h>
-#endif
 #include <limits.h>
 #include <locale.h>
+#include <time.h>
 
-extern int	optind;
-extern char *optarg;
+#include "pg_getopt.h"
 
 #include "private.h"
 #include "pgtz.h"
@@ -181,6 +178,8 @@ static int	max_year;
 static zic_t min_time;
 static int	min_year;
 static int	noise;
+static int	print_abbrevs;
+static zic_t print_cutoff;
 static const char *rfilename;
 static int	rlinenum;
 static const char *progname;
@@ -457,7 +456,7 @@ static void
 usage(FILE *stream, int status)
 {
 	(void) fprintf(stream, _("%s: usage is %s \
-[ --version ] [ --help ] [ -v ] [ -l localtime ] [ -p posixrules ] \\\n\
+[ --version ] [ --help ] [ -v ] [ -P ] [ -l localtime ] [ -p posixrules ] \\\n\
 \t[ -d directory ] [ -L leapseconds ] [ -y yearistype ] [ filename ... ]\n\
 \n\
 Report bugs to tz@elsie.nci.nih.gov.\n"),
@@ -482,7 +481,7 @@ main(int argc, char *argv[])
 	(void) umask(umask(S_IWGRP | S_IWOTH) | (S_IWGRP | S_IWOTH));
 #endif   /* !WIN32 */
 	progname = argv[0];
-	if (TYPE_BIT(zic_t) < 64)
+	if (TYPE_BIT(zic_t) <64)
 	{
 		(void) fprintf(stderr, "%s: %s\n", progname,
 					   _("wild compilation-time specification of zic_t"));
@@ -498,14 +497,14 @@ main(int argc, char *argv[])
 		{
 			usage(stdout, EXIT_SUCCESS);
 		}
-	while ((c = getopt(argc, argv, "d:l:p:L:vsy:")) != EOF && c != -1)
+	while ((c = getopt(argc, argv, "d:l:p:L:vPsy:")) != EOF && c != -1)
 		switch (c)
 		{
 			default:
 				usage(stderr, EXIT_FAILURE);
 			case 'd':
 				if (directory == NULL)
-					directory = optarg;
+					directory = strdup(optarg);
 				else
 				{
 					(void) fprintf(stderr,
@@ -516,7 +515,7 @@ main(int argc, char *argv[])
 				break;
 			case 'l':
 				if (lcltime == NULL)
-					lcltime = optarg;
+					lcltime = strdup(optarg);
 				else
 				{
 					(void) fprintf(stderr,
@@ -527,7 +526,7 @@ main(int argc, char *argv[])
 				break;
 			case 'p':
 				if (psxrules == NULL)
-					psxrules = optarg;
+					psxrules = strdup(optarg);
 				else
 				{
 					(void) fprintf(stderr,
@@ -538,7 +537,7 @@ main(int argc, char *argv[])
 				break;
 			case 'y':
 				if (yitcommand == NULL)
-					yitcommand = optarg;
+					yitcommand = strdup(optarg);
 				else
 				{
 					(void) fprintf(stderr,
@@ -549,7 +548,7 @@ main(int argc, char *argv[])
 				break;
 			case 'L':
 				if (leapsec == NULL)
-					leapsec = optarg;
+					leapsec = strdup(optarg);
 				else
 				{
 					(void) fprintf(stderr,
@@ -560,6 +559,10 @@ main(int argc, char *argv[])
 				break;
 			case 'v':
 				noise = TRUE;
+				break;
+			case 'P':
+				print_abbrevs = TRUE;
+				print_cutoff = time(NULL);
 				break;
 			case 's':
 				(void) printf("%s: -s ignored\n", progname);
@@ -1780,6 +1783,21 @@ writezone(const char *name, const char *string)
 				puttzcode(gmtoffs[i], fp);
 				(void) putc(isdsts[i], fp);
 				(void) putc((unsigned char) indmap[abbrinds[i]], fp);
+
+				/* Print current timezone abbreviations if requested */
+				if (print_abbrevs && pass == 2 &&
+					(ats[i] >= print_cutoff || i == typecnt - 1))
+				{
+					char	   *thisabbrev = &thischars[indmap[abbrinds[i]]];
+
+					/* filter out assorted junk entries */
+					if (strcmp(thisabbrev, GRANDPARENTED) != 0 &&
+						strcmp(thisabbrev, "zzz") != 0)
+						fprintf(stdout, "%s\t%ld%s\n",
+								thisabbrev,
+								gmtoffs[i],
+								isdsts[i] ? "\tD" : "");
+				}
 			}
 		if (thischarcnt != 0)
 			(void) fwrite((void *) thischars,

@@ -231,6 +231,10 @@ CREATE TABLE array_index_op_test (
 	t			text[]
 );
 
+CREATE TABLE testjsonb (
+       j jsonb
+);
+
 CREATE TABLE IF NOT EXISTS test_tsvector(
 	t text,
 	a tsvector

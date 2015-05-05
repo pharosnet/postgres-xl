@@ -9,7 +9,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -23,6 +23,7 @@
 
 #include <ctype.h>
 
+#include "access/htup_details.h"
 #include "access/xact.h"
 #include "catalog/pg_authid.h"
 #ifdef XCP
@@ -183,7 +184,7 @@ check_datestyle(char **newval, void **extra, GucSource source)
 	}
 
 	/*
-	 * Prepare the canonical string to return.	GUC wants it malloc'd.
+	 * Prepare the canonical string to return.  GUC wants it malloc'd.
 	 */
 	result = (char *) malloc(32);
 	if (!result)
@@ -250,38 +251,21 @@ assign_datestyle(const char *newval, void *extra)
  * TIMEZONE
  */
 
-typedef struct
-{
-	pg_tz	   *session_timezone;
-	int			CTimeZone;
-	bool		HasCTZSet;
-} timezone_extra;
-
 /*
  * check_timezone: GUC check_hook for timezone
  */
 bool
 check_timezone(char **newval, void **extra, GucSource source)
 {
-	timezone_extra myextra;
+	pg_tz	   *new_tz;
+	long		gmtoffset;
 	char	   *endptr;
 	double		hours;
-
-	/*
-	 * Initialize the "extra" struct that will be passed to assign_timezone.
-	 * We don't want to change any of the three global variables except as
-	 * specified by logic below.  To avoid leaking memory during failure
-	 * returns, we set up the struct contents in a local variable, and only
-	 * copy it to *extra at the end.
-	 */
-	myextra.session_timezone = session_timezone;
-	myextra.CTimeZone = CTimeZone;
-	myextra.HasCTZSet = HasCTZSet;
 
 	if (pg_strncasecmp(*newval, "interval", 8) == 0)
 	{
 		/*
-		 * Support INTERVAL 'foo'.	This is for SQL spec compliance, not
+		 * Support INTERVAL 'foo'.  This is for SQL spec compliance, not
 		 * because it has any actual real-world usefulness.
 		 */
 		const char *valueptr = *newval;
@@ -305,7 +289,7 @@ check_timezone(char **newval, void **extra, GucSource source)
 
 		/*
 		 * Try to parse it.  XXX an invalid interval format will result in
-		 * ereport(ERROR), which is not desirable for GUC.	We did what we
+		 * ereport(ERROR), which is not desirable for GUC.  We did what we
 		 * could to guard against this in flatten_set_variable_args, but a
 		 * string coming in from postgresql.conf might contain anything.
 		 */
@@ -330,11 +314,11 @@ check_timezone(char **newval, void **extra, GucSource source)
 
 		/* Here we change from SQL to Unix sign convention */
 #ifdef HAVE_INT64_TIMESTAMP
-		myextra.CTimeZone = -(interval->time / USECS_PER_SEC);
+		gmtoffset = -(interval->time / USECS_PER_SEC);
 #else
-		myextra.CTimeZone = -interval->time;
+		gmtoffset = -interval->time;
 #endif
-		myextra.HasCTZSet = true;
+		new_tz = pg_tzset_offset(gmtoffset);
 
 		pfree(interval);
 	}
@@ -347,16 +331,14 @@ check_timezone(char **newval, void **extra, GucSource source)
 		if (endptr != *newval && *endptr == '\0')
 		{
 			/* Here we change from SQL to Unix sign convention */
-			myextra.CTimeZone = -hours * SECS_PER_HOUR;
-			myextra.HasCTZSet = true;
+			gmtoffset = -hours * SECS_PER_HOUR;
+			new_tz = pg_tzset_offset(gmtoffset);
 		}
 		else
 		{
 			/*
 			 * Otherwise assume it is a timezone name, and try to load it.
 			 */
-			pg_tz	   *new_tz;
-
 			new_tz = pg_tzset(*newval);
 
 			if (!new_tz)
@@ -372,40 +354,16 @@ check_timezone(char **newval, void **extra, GucSource source)
 				GUC_check_errdetail("PostgreSQL does not support leap seconds.");
 				return false;
 			}
-
-			myextra.session_timezone = new_tz;
-			myextra.HasCTZSet = false;
 		}
-	}
-
-	/*
-	 * Prepare the canonical string to return.	GUC wants it malloc'd.
-	 *
-	 * Note: the result string should be something that we'd accept as input.
-	 * We use the numeric format for interval cases, because it's simpler to
-	 * reload.	In the named-timezone case, *newval is already OK and need not
-	 * be changed; it might not have the canonical casing, but that's taken
-	 * care of by show_timezone.
-	 */
-	if (myextra.HasCTZSet)
-	{
-		char	   *result = (char *) malloc(64);
-
-		if (!result)
-			return false;
-		snprintf(result, 64, "%.5f",
-				 (double) (-myextra.CTimeZone) / (double) SECS_PER_HOUR);
-		free(*newval);
-		*newval = result;
 	}
 
 	/*
 	 * Pass back data for assign_timezone to use
 	 */
-	*extra = malloc(sizeof(timezone_extra));
+	*extra = malloc(sizeof(pg_tz *));
 	if (!*extra)
 		return false;
-	memcpy(*extra, &myextra, sizeof(timezone_extra));
+	*((pg_tz **) *extra) = new_tz;
 
 	return true;
 }
@@ -416,43 +374,19 @@ check_timezone(char **newval, void **extra, GucSource source)
 void
 assign_timezone(const char *newval, void *extra)
 {
-	timezone_extra *myextra = (timezone_extra *) extra;
-
-	session_timezone = myextra->session_timezone;
-	CTimeZone = myextra->CTimeZone;
-	HasCTZSet = myextra->HasCTZSet;
+	session_timezone = *((pg_tz **) extra);
 }
 
 /*
  * show_timezone: GUC show_hook for timezone
- *
- * We wouldn't need this, except that historically interval values have been
- * shown without an INTERVAL prefix, so the display format isn't what would
- * be accepted as input.  Otherwise we could have check_timezone return the
- * preferred string to begin with.
  */
 const char *
 show_timezone(void)
 {
 	const char *tzn;
 
-	if (HasCTZSet)
-	{
-		Interval	interval;
-
-		interval.month = 0;
-		interval.day = 0;
-#ifdef HAVE_INT64_TIMESTAMP
-		interval.time = -(CTimeZone * USECS_PER_SEC);
-#else
-		interval.time = -CTimeZone;
-#endif
-
-		tzn = DatumGetCString(DirectFunctionCall1(interval_out,
-											  IntervalPGetDatum(&interval)));
-	}
-	else
-		tzn = pg_get_timezone_name(session_timezone);
+	/* Always show the zone's canonical name */
+	tzn = pg_get_timezone_name(session_timezone);
 
 	if (tzn != NULL)
 		return tzn;
@@ -502,7 +436,7 @@ check_log_timezone(char **newval, void **extra, GucSource source)
 	*extra = malloc(sizeof(pg_tz *));
 	if (!*extra)
 		return false;
-	memcpy(*extra, &new_tz, sizeof(pg_tz *));
+	*((pg_tz **) *extra) = new_tz;
 
 	return true;
 }
@@ -524,6 +458,7 @@ show_log_timezone(void)
 {
 	const char *tzn;
 
+	/* Always show the zone's canonical name */
 	tzn = pg_get_timezone_name(log_timezone);
 
 	if (tzn != NULL)
@@ -539,13 +474,18 @@ show_log_timezone(void)
  * We allow idempotent changes (r/w -> r/w and r/o -> r/o) at any time, and
  * we also always allow changes from read-write to read-only.  However,
  * read-only may be changed to read-write only when in a top-level transaction
- * that has not yet taken an initial snapshot.	Can't do it in a hot standby
+ * that has not yet taken an initial snapshot.  Can't do it in a hot standby
  * slave, either.
+ *
+ * If we are not in a transaction at all, just allow the change; it means
+ * nothing since XactReadOnly will be reset by the next StartTransaction().
+ * The IsTransactionState() test protects us against trying to check
+ * RecoveryInProgress() in contexts where shared memory is not accessible.
  */
 bool
 check_transaction_read_only(bool *newval, void **extra, GucSource source)
 {
-	if (*newval == false && XactReadOnly)
+	if (*newval == false && XactReadOnly && IsTransactionState())
 	{
 		/* Can't go to r/w mode inside a r/o transaction */
 		if (IsSubTransaction())
@@ -564,6 +504,7 @@ check_transaction_read_only(bool *newval, void **extra, GucSource source)
 		/* Can't go to r/w mode while recovery is still active */
 		if (RecoveryInProgress())
 		{
+			GUC_check_errcode(ERRCODE_FEATURE_NOT_SUPPORTED);
 			GUC_check_errmsg("cannot set transaction read-write mode during recovery");
 			return false;
 		}
@@ -577,6 +518,8 @@ check_transaction_read_only(bool *newval, void **extra, GucSource source)
  *
  * We allow idempotent changes at any time, but otherwise this can only be
  * changed in a toplevel transaction that has not yet taken a snapshot.
+ *
+ * As in check_transaction_read_only, allow it if not inside a transaction.
  */
 bool
 check_XactIsoLevel(char **newval, void **extra, GucSource source)
@@ -613,7 +556,7 @@ check_XactIsoLevel(char **newval, void **extra, GucSource source)
 	else
 		return false;
 
-	if (newXactIsoLevel != XactIsoLevel)
+	if (newXactIsoLevel != XactIsoLevel && IsTransactionState())
 	{
 		if (FirstSnapshotSet)
 		{
@@ -631,6 +574,7 @@ check_XactIsoLevel(char **newval, void **extra, GucSource source)
 		/* Can't go to serializable mode while recovery is still active */
 		if (newXactIsoLevel == XACT_SERIALIZABLE && RecoveryInProgress())
 		{
+			GUC_check_errcode(ERRCODE_FEATURE_NOT_SUPPORTED);
 			GUC_check_errmsg("cannot use serializable mode in a hot standby");
 			GUC_check_errhint("You can use REPEATABLE READ instead.");
 			return false;
@@ -705,7 +649,7 @@ check_transaction_deferrable(bool *newval, void **extra, GucSource source)
  *
  * We can't roll back the random sequence on error, and we don't want
  * config file reloads to affect it, so we only want interactive SET SEED
- * commands to set it.	We use the "extra" storage to ensure that rollbacks
+ * commands to set it.  We use the "extra" storage to ensure that rollbacks
  * don't try to do the operation again.
  */
 
@@ -1101,7 +1045,7 @@ const char *
 show_role(void)
 {
 	/*
-	 * Check whether SET ROLE is active; if not return "none".	This is a
+	 * Check whether SET ROLE is active; if not return "none".  This is a
 	 * kluge to deal with the fact that SET SESSION AUTHORIZATION logically
 	 * resets SET ROLE to NONE, but we cannot set the GUC role variable from
 	 * assign_session_authorization (because we haven't got enough info to

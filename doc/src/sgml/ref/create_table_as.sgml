@@ -4,6 +4,10 @@ PostgreSQL documentation
 -->
 
 <refentry id="SQL-CREATETABLEAS">
+ <indexterm zone="sql-createtableas">
+  <primary>CREATE TABLE AS</primary>
+ </indexterm>
+
  <refmeta>
   <refentrytitle>CREATE TABLE AS</refentrytitle>
   <manvolnum>7</manvolnum>
@@ -15,17 +19,13 @@ PostgreSQL documentation
   <refpurpose>define a new table from the results of a query</refpurpose>
  </refnamediv>
 
- <indexterm zone="sql-createtableas">
-  <primary>CREATE TABLE AS</primary>
- </indexterm>
-
  <refsynopsisdiv>
 <synopsis>
 CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } | UNLOGGED ] TABLE <replaceable>table_name</replaceable>
     [ (<replaceable>column_name</replaceable> [, ...] ) ]
     [ WITH ( <replaceable class="PARAMETER">storage_parameter</replaceable> [= <replaceable class="PARAMETER">value</replaceable>] [, ... ] ) | WITH OIDS | WITHOUT OIDS ]
     [ ON COMMIT { PRESERVE ROWS | DELETE ROWS | DROP } ]
-    [ TABLESPACE <replaceable class="PARAMETER">tablespace</replaceable> ]
+    [ TABLESPACE <replaceable class="PARAMETER">tablespace_name</replaceable> ]
     AS <replaceable>query</replaceable>
     [ WITH [ NO ] DATA ]
 </synopsis>
@@ -184,10 +184,10 @@ CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } | UNLOGGED ] TABLE <replaceable
    </varlistentry>
 
    <varlistentry>
-    <term><literal>TABLESPACE <replaceable class="PARAMETER">tablespace</replaceable></literal></term>
+    <term><literal>TABLESPACE <replaceable class="PARAMETER">tablespace_name</replaceable></literal></term>
     <listitem>
      <para>
-      The <replaceable class="PARAMETER">tablespace</replaceable> is the name
+      The <replaceable class="PARAMETER">tablespace_name</replaceable> is the name
       of the tablespace in which the new table is to be created.
       If not specified,
       <xref linkend="guc-default-tablespace"> is consulted, or
@@ -236,19 +236,11 @@ CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } | UNLOGGED ] TABLE <replaceable
   </para>
 
   <para>
-   Prior to <productname>PostgreSQL</productname> 8.0, <command>CREATE
-   TABLE AS</command> always included OIDs in the table it
-   created.  As of <productname>PostgreSQL</productname> 8.0,
-   the <command>CREATE TABLE AS</command> command allows the user to
+   The <command>CREATE TABLE AS</command> command allows the user to
    explicitly specify whether OIDs should be included. If the
    presence of OIDs is not explicitly specified,
    the <xref linkend="guc-default-with-oids"> configuration variable is
-   used.  As of <productname>PostgreSQL</productname> 8.1,
-   this variable is false by default, so the default behavior is not
-   identical to pre-8.0 releases.  Applications that
-   require OIDs in the table created by <command>CREATE TABLE
-   AS</command> should explicitly specify <literal>WITH (OIDS)</literal>
-   to ensure desired behavior.
+   used.
   </para>
  </refsect1>
 
@@ -340,6 +332,7 @@ CREATE TEMP TABLE films_recent WITH (OIDS) ON COMMIT DROP AS
   <title>See Also</title>
 
   <simplelist type="inline">
+   <member><xref linkend="sql-creatematerializedview"></member>
    <member><xref linkend="sql-createtable"></member>
    <member><xref linkend="sql-execute"></member>
    <member><xref linkend="sql-select"></member>

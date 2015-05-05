@@ -4,6 +4,10 @@ PostgreSQL documentation
 -->
 
 <refentry id="APP-DROPDB">
+ <indexterm zone="app-dropdb">
+  <primary>dropdb</primary>
+ </indexterm>
+
  <refmeta>
   <refentrytitle><application>dropdb</application></refentrytitle>
   <manvolnum>1</manvolnum>
@@ -14,10 +18,6 @@ PostgreSQL documentation
   <refname>dropdb</refname>
   <refpurpose>remove a <productname>PostgreSQL</productname> database</refpurpose>
  </refnamediv>
-
- <indexterm zone="app-dropdb">
-  <primary>dropdb</primary>
- </indexterm>
 
  <refsynopsisdiv>
   <cmdsynopsis>
@@ -87,16 +87,6 @@ PostgreSQL documentation
      </varlistentry>
 
      <varlistentry>
-      <term><option>--if-exists</></term>
-      <listitem>
-       <para>
-       Do not throw an error if the database does not exist. A notice is issued
-       in this case.
-       </para>
-      </listitem>
-     </varlistentry>
-
-     <varlistentry>
        <term><option>-V</></term>
        <term><option>--version</></term>
        <listitem>
@@ -104,6 +94,16 @@ PostgreSQL documentation
        Print the <application>dropdb</application> version and exit.
        </para>
        </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--if-exists</></term>
+      <listitem>
+       <para>
+       Do not throw an error if the database does not exist. A notice is issued
+       in this case.
+       </para>
+      </listitem>
      </varlistentry>
 
      <varlistentry>

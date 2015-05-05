@@ -4,7 +4,7 @@
  *	  XML data type support.
  *
  *
- * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/backend/utils/adt/xml.c
@@ -19,7 +19,7 @@
  * fail.  For one thing, this avoids having to manage variant catalog
  * installations.  But it also has nice effects such as that you can
  * dump a database containing XML type data even if the server is not
- * linked with libxml.	Thus, make sure xml_out() works even if nothing
+ * linked with libxml.  Thus, make sure xml_out() works even if nothing
  * else does.
  */
 
@@ -48,14 +48,26 @@
 #ifdef USE_LIBXML
 #include <libxml/chvalid.h>
 #include <libxml/parser.h>
+#include <libxml/parserInternals.h>
 #include <libxml/tree.h>
 #include <libxml/uri.h>
 #include <libxml/xmlerror.h>
+#include <libxml/xmlversion.h>
 #include <libxml/xmlwriter.h>
 #include <libxml/xpath.h>
 #include <libxml/xpathInternals.h>
+
+/*
+ * We used to check for xmlStructuredErrorContext via a configure test; but
+ * that doesn't work on Windows, so instead use this grottier method of
+ * testing the library version number.
+ */
+#if LIBXML_VERSION >= 20704
+#define HAVE_XMLSTRUCTUREDERRORCONTEXT 1
+#endif
 #endif   /* USE_LIBXML */
 
+#include "access/htup_details.h"
 #include "catalog/namespace.h"
 #include "catalog/pg_type.h"
 #include "commands/dbcommands.h"
@@ -99,8 +111,12 @@ struct PgXmlErrorContext
 	/* previous libxml error handling state (saved by pg_xml_init) */
 	xmlStructuredErrorFunc saved_errfunc;
 	void	   *saved_errcxt;
+	/* previous libxml entity handler (saved by pg_xml_init) */
+	xmlExternalEntityLoader saved_entityfunc;
 };
 
+static xmlParserInputPtr xmlPgEntityLoader(const char *URL, const char *ID,
+				  xmlParserCtxtPtr ctxt);
 static void xml_errorHandler(void *data, xmlErrorPtr error);
 static void xml_ereport_by_code(int level, int sqlcode,
 					const char *msg, int errcode);
@@ -270,7 +286,7 @@ xml_out(PG_FUNCTION_ARGS)
 	xmltype    *x = PG_GETARG_XML_P(0);
 
 	/*
-	 * xml_out removes the encoding property in all cases.	This is because we
+	 * xml_out removes the encoding property in all cases.  This is because we
 	 * cannot control from here whether the datum will be converted to a
 	 * different client encoding, so we'd do more harm than good by including
 	 * it.
@@ -329,10 +345,7 @@ xml_recv(PG_FUNCTION_ARGS)
 	xmlFreeDoc(doc);
 
 	/* Now that we know what we're dealing with, convert to server encoding */
-	newstr = (char *) pg_do_encoding_conversion((unsigned char *) str,
-												nbytes,
-												encoding,
-												GetDatabaseEncoding());
+	newstr = pg_any_to_server(str, nbytes, encoding);
 
 	if (newstr != str)
 	{
@@ -426,9 +439,9 @@ xmlcomment(PG_FUNCTION_ARGS)
 				 errmsg("invalid XML comment")));
 
 	initStringInfo(&buf);
-	appendStringInfo(&buf, "<!--");
+	appendStringInfoString(&buf, "<!--");
 	appendStringInfoText(&buf, arg);
-	appendStringInfo(&buf, "-->");
+	appendStringInfoString(&buf, "-->");
 
 	PG_RETURN_XML_P(stringinfo_to_xmltype(&buf));
 #else
@@ -441,7 +454,7 @@ xmlcomment(PG_FUNCTION_ARGS)
 
 /*
  * TODO: xmlconcat needs to merge the notations and unparsed entities
- * of the argument values.	Not very important in practice, though.
+ * of the argument values.  Not very important in practice, though.
  */
 xmltype *
 xmlconcat(List *args)
@@ -576,7 +589,7 @@ xmlelement(XmlExprState *xmlExpr, ExprContext *econtext)
 
 	/*
 	 * We first evaluate all the arguments, then start up libxml and create
-	 * the result.	This avoids issues if one of the arguments involves a call
+	 * the result.  This avoids issues if one of the arguments involves a call
 	 * to some other function or subsystem that wants to use libxml on its own
 	 * terms.
 	 */
@@ -913,7 +926,7 @@ pg_xml_init_library(void)
  * pg_xml_init --- set up for use of libxml and register an error handler
  *
  * This should be called by each function that is about to use libxml
- * facilities and requires error handling.	It initializes libxml with
+ * facilities and requires error handling.  It initializes libxml with
  * pg_xml_init_library() and establishes our libxml error handler.
  *
  * strictness determines which errors are reported and which are ignored.
@@ -959,13 +972,13 @@ pg_xml_init(PgXmlStrictness strictness)
 
 	/*
 	 * Verify that xmlSetStructuredErrorFunc set the context variable we
-	 * expected it to.	If not, the error context pointer we just saved is not
+	 * expected it to.  If not, the error context pointer we just saved is not
 	 * the correct thing to restore, and since that leaves us without a way to
 	 * restore the context in pg_xml_done, we must fail.
 	 *
 	 * The only known situation in which this test fails is if we compile with
 	 * headers from a libxml2 that doesn't track the structured error context
-	 * separately (<= 2.7.3), but at runtime use a version that does, or vice
+	 * separately (< 2.7.4), but at runtime use a version that does, or vice
 	 * versa.  The libxml2 authors did not treat that change as constituting
 	 * an ABI break, so the LIBXML_TEST_VERSION test in pg_xml_init_library
 	 * fails to protect us from this.
@@ -984,6 +997,13 @@ pg_xml_init(PgXmlStrictness strictness)
 				 errhint("This probably indicates that the version of libxml2"
 						 " being used is not compatible with the libxml2"
 						 " header files that PostgreSQL was built with.")));
+
+	/*
+	 * Also, install an entity loader to prevent unwanted fetches of external
+	 * files and URLs.
+	 */
+	errcxt->saved_entityfunc = xmlGetExternalEntityLoader();
+	xmlSetExternalEntityLoader(xmlPgEntityLoader);
 
 	return errcxt;
 }
@@ -1027,8 +1047,9 @@ pg_xml_done(PgXmlErrorContext *errcxt, bool isError)
 	if (cur_errcxt != (void *) errcxt)
 		elog(WARNING, "libxml error handling state is out of sync with xml.c");
 
-	/* Restore the saved handler */
+	/* Restore the saved handlers */
 	xmlSetStructuredErrorFunc(errcxt->saved_errcxt, errcxt->saved_errfunc);
+	xmlSetExternalEntityLoader(errcxt->saved_entityfunc);
 
 	/*
 	 * Mark the struct as invalid, just in case somebody somehow manages to
@@ -1108,7 +1129,7 @@ parse_xml_decl(const xmlChar *str, size_t *lenp,
 	int			utf8len;
 
 	/*
-	 * Only initialize libxml.	We don't need error handling here, but we do
+	 * Only initialize libxml.  We don't need error handling here, but we do
 	 * need to make sure libxml is initialized before calling any of its
 	 * functions.  Note that this is safe (and a no-op) if caller has already
 	 * done pg_xml_init().
@@ -1251,7 +1272,7 @@ finished:
 
 /*
  * Write an XML declaration.  On output, we adjust the XML declaration
- * as follows.	(These rules are the moral equivalent of the clause
+ * as follows.  (These rules are the moral equivalent of the clause
  * "Serialization of an XML value" in the SQL standard.)
  *
  * We try to avoid generating an XML declaration if possible.  This is
@@ -1473,6 +1494,25 @@ xml_pstrdup(const char *string)
 
 
 /*
+ * xmlPgEntityLoader --- entity loader callback function
+ *
+ * Silently prevent any external entity URL from being loaded.  We don't want
+ * to throw an error, so instead make the entity appear to expand to an empty
+ * string.
+ *
+ * We would prefer to allow loading entities that exist in the system's
+ * global XML catalog; but the available libxml2 APIs make that a complex
+ * and fragile task.  For now, just shut down all external access.
+ */
+static xmlParserInputPtr
+xmlPgEntityLoader(const char *URL, const char *ID,
+				  xmlParserCtxtPtr ctxt)
+{
+	return xmlNewStringInputStream(ctxt, (const xmlChar *) "");
+}
+
+
+/*
  * xml_ereport --- report an XML-related error
  *
  * The "msg" is the SQL-level message; some can be adopted from the SQL/XML
@@ -1566,7 +1606,15 @@ xml_errorHandler(void *data, xmlErrorPtr error)
 		case XML_FROM_NONE:
 		case XML_FROM_MEMORY:
 		case XML_FROM_IO:
-			/* Accept error regardless of the parsing purpose */
+
+			/*
+			 * Suppress warnings about undeclared entities.  We need to do
+			 * this to avoid problems due to not loading DTD definitions.
+			 */
+			if (error->code == XML_WAR_UNDECLARED_ENTITY)
+				return;
+
+			/* Otherwise, accept error regardless of the parsing purpose */
 			break;
 
 		default:
@@ -1617,8 +1665,8 @@ xml_errorHandler(void *data, xmlErrorPtr error)
 	chopStringInfoNewlines(errorBuf);
 
 	/*
-	 * Legacy error handling mode.	err_occurred is never set, we just add the
-	 * message to err_buf.	This mode exists because the xml2 contrib module
+	 * Legacy error handling mode.  err_occurred is never set, we just add the
+	 * message to err_buf.  This mode exists because the xml2 contrib module
 	 * uses our error-handling infrastructure, but we don't want to change its
 	 * behaviour since it's deprecated anyway.  This is also why we don't
 	 * distinguish between notices, warnings and errors here --- the old-style
@@ -1742,10 +1790,8 @@ sqlchar_to_unicode(char *s)
 	char	   *utf8string;
 	pg_wchar	ret[2];			/* need space for trailing zero */
 
-	utf8string = (char *) pg_do_encoding_conversion((unsigned char *) s,
-													pg_mblen(s),
-													GetDatabaseEncoding(),
-													PG_UTF8);
+	/* note we're not assuming s is null-terminated */
+	utf8string = pg_server_to_any(s, pg_mblen(s), PG_UTF8);
 
 	pg_encoding_mb2wchar_with_len(PG_UTF8, utf8string, ret,
 								  pg_encoding_mblen(PG_UTF8, utf8string));
@@ -1801,19 +1847,19 @@ map_sql_identifier_to_xml_name(char *ident, bool fully_escaped,
 	for (p = ident; *p; p += pg_mblen(p))
 	{
 		if (*p == ':' && (p == ident || fully_escaped))
-			appendStringInfo(&buf, "_x003A_");
+			appendStringInfoString(&buf, "_x003A_");
 		else if (*p == '_' && *(p + 1) == 'x')
-			appendStringInfo(&buf, "_x005F_");
+			appendStringInfoString(&buf, "_x005F_");
 		else if (fully_escaped && p == ident &&
 				 pg_strncasecmp(p, "xml", 3) == 0)
 		{
 			if (*p == 'x')
-				appendStringInfo(&buf, "_x0078_");
+				appendStringInfoString(&buf, "_x0078_");
 			else
-				appendStringInfo(&buf, "_x0058_");
+				appendStringInfoString(&buf, "_x0058_");
 		}
 		else if (escape_period && *p == '.')
-			appendStringInfo(&buf, "_x002E_");
+			appendStringInfoString(&buf, "_x002E_");
 		else
 		{
 			pg_wchar	u = sqlchar_to_unicode(p);
@@ -1841,19 +1887,15 @@ map_sql_identifier_to_xml_name(char *ident, bool fully_escaped,
 static char *
 unicode_to_sqlchar(pg_wchar c)
 {
-	unsigned char utf8string[5];	/* need room for trailing zero */
+	char		utf8string[8];	/* need room for trailing zero */
 	char	   *result;
 
 	memset(utf8string, 0, sizeof(utf8string));
-	unicode_to_utf8(c, utf8string);
+	unicode_to_utf8(c, (unsigned char *) utf8string);
 
-	result = (char *) pg_do_encoding_conversion(utf8string,
-												pg_encoding_mblen(PG_UTF8,
-														(char *) utf8string),
-												PG_UTF8,
-												GetDatabaseEncoding());
-	/* if pg_do_encoding_conversion didn't strdup, we must */
-	if (result == (char *) utf8string)
+	result = pg_any_to_server(utf8string, strlen(utf8string), PG_UTF8);
+	/* if pg_any_to_server didn't strdup, we must */
+	if (result == utf8string)
 		result = pstrdup(result);
 	return result;
 }
@@ -1897,8 +1939,8 @@ map_xml_name_to_sql_identifier(char *name)
  *
  * When xml_escape_strings is true, then certain characters in string
  * values are replaced by entity references (&lt; etc.), as specified
- * in SQL/XML:2008 section 9.8 GR 9) a) iii).	This is normally what is
- * wanted.	The false case is mainly useful when the resulting value
+ * in SQL/XML:2008 section 9.8 GR 9) a) iii).   This is normally what is
+ * wanted.  The false case is mainly useful when the resulting value
  * is used with xmlTextWriterWriteAttribute() to write out an
  * attribute, because that function does the escaping itself.
  */
@@ -1950,6 +1992,12 @@ map_sql_value_to_xml_value(Datum value, Oid type, bool xml_escape_strings)
 		Oid			typeOut;
 		bool		isvarlena;
 		char	   *str;
+
+		/*
+		 * Flatten domains; the special-case treatments below should apply to,
+		 * eg, domains over boolean not just boolean.
+		 */
+		type = getBaseType(type);
 
 		/*
 		 * Special XSD formatting for some data types
@@ -2173,13 +2221,13 @@ _SPI_strdup(const char *s)
  *
  * There are two kinds of mappings: Mapping SQL data (table contents)
  * to XML documents, and mapping SQL structure (the "schema") to XML
- * Schema.	And there are functions that do both at the same time.
+ * Schema.  And there are functions that do both at the same time.
  *
  * Then you can map a database, a schema, or a table, each in both
  * ways.  This breaks down recursively: Mapping a database invokes
  * mapping schemas, which invokes mapping tables, which invokes
  * mapping rows, which invokes mapping columns, although you can't
- * call the last two from the outside.	Because of this, there are a
+ * call the last two from the outside.  Because of this, there are a
  * number of xyz_internal() functions which are to be called both from
  * the function manager wrapper and from some upper layer in a
  * recursive call.
@@ -2188,7 +2236,7 @@ _SPI_strdup(const char *s)
  * nulls, tableforest, and targetns mean.
  *
  * Some style guidelines for XML output: Use double quotes for quoting
- * XML attributes.	Indent XML elements by two spaces, but remember
+ * XML attributes.  Indent XML elements by two spaces, but remember
  * that a lot of code is called recursively at different levels, so
  * it's better not to indent rather than create output that indents
  * and outdents weirdly.  Add newlines to make the output look nice.
@@ -2235,7 +2283,7 @@ schema_get_xml_visible_tables(Oid nspid)
 	StringInfoData query;
 
 	initStringInfo(&query);
-	appendStringInfo(&query, "SELECT oid FROM pg_catalog.pg_class WHERE relnamespace = %u AND relkind IN ('r', 'v') AND pg_catalog.has_table_privilege (oid, 'SELECT') ORDER BY relname;", nspid);
+	appendStringInfo(&query, "SELECT oid FROM pg_catalog.pg_class WHERE relnamespace = %u AND relkind IN ('r', 'm', 'v') AND pg_catalog.has_table_privilege (oid, 'SELECT') ORDER BY relname;", nspid);
 
 	return query_to_oid_list(query.data);
 }
@@ -2261,7 +2309,7 @@ static List *
 database_get_xml_visible_tables(void)
 {
 	/* At the moment there is no order required here. */
-	return query_to_oid_list("SELECT oid FROM pg_catalog.pg_class WHERE relkind IN ('r', 'v') AND pg_catalog.has_table_privilege (pg_class.oid, 'SELECT') AND relnamespace IN (" XML_VISIBLE_SCHEMAS ");");
+	return query_to_oid_list("SELECT oid FROM pg_catalog.pg_class WHERE relkind IN ('r', 'm', 'v') AND pg_catalog.has_table_privilege (pg_class.oid, 'SELECT') AND relnamespace IN (" XML_VISIBLE_SCHEMAS ");");
 }
 
 
@@ -2352,12 +2400,12 @@ cursor_to_xml(PG_FUNCTION_ARGS)
  * Write the start tag of the root element of a data mapping.
  *
  * top_level means that this is the very top level of the eventual
- * output.	For example, when the user calls table_to_xml, then a call
+ * output.  For example, when the user calls table_to_xml, then a call
  * with a table name to this function is the top level.  When the user
  * calls database_to_xml, then a call with a schema name to this
  * function is not the top level.  If top_level is false, then the XML
  * namespace declarations are omitted, because they supposedly already
- * appeared earlier in the output.	Repeating them is not wrong, but
+ * appeared earlier in the output.  Repeating them is not wrong, but
  * it looks ugly.
  */
 static void
@@ -2381,9 +2429,9 @@ xmldata_root_element_start(StringInfo result, const char *eltname,
 		if (strlen(targetns) > 0)
 			appendStringInfo(result, " xsi:schemaLocation=\"%s #\"", targetns);
 		else
-			appendStringInfo(result, " xsi:noNamespaceSchemaLocation=\"#\"");
+			appendStringInfoString(result, " xsi:noNamespaceSchemaLocation=\"#\"");
 	}
-	appendStringInfo(result, ">\n\n");
+	appendStringInfoString(result, ">\n");
 }
 
 
@@ -2417,8 +2465,11 @@ query_to_xml_internal(const char *query, char *tablename,
 				 errmsg("invalid query")));
 
 	if (!tableforest)
+	{
 		xmldata_root_element_start(result, xmltn, xmlschema,
 								   targetns, top_level);
+		appendStringInfoString(result, "\n");
+	}
 
 	if (xmlschema)
 		appendStringInfo(result, "%s\n\n", xmlschema);
@@ -2581,6 +2632,7 @@ schema_to_xml_internal(Oid nspid, const char *xmlschema, bool nulls,
 	result = makeStringInfo();
 
 	xmldata_root_element_start(result, xmlsn, xmlschema, targetns, top_level);
+	appendStringInfoString(result, "\n");
 
 	if (xmlschema)
 		appendStringInfo(result, "%s\n\n", xmlschema);
@@ -2624,7 +2676,7 @@ schema_to_xml(PG_FUNCTION_ARGS)
 	Oid			nspid;
 
 	schemaname = NameStr(*name);
-	nspid = LookupExplicitNamespace(schemaname);
+	nspid = LookupExplicitNamespace(schemaname, false);
 
 	PG_RETURN_XML_P(stringinfo_to_xmltype(schema_to_xml_internal(nspid, NULL,
 									   nulls, tableforest, targetns, true)));
@@ -2670,7 +2722,7 @@ schema_to_xmlschema_internal(const char *schemaname, bool nulls,
 
 	result = makeStringInfo();
 
-	nspid = LookupExplicitNamespace(schemaname);
+	nspid = LookupExplicitNamespace(schemaname, false);
 
 	xsd_schema_element_start(result, targetns);
 
@@ -2728,7 +2780,7 @@ schema_to_xml_and_xmlschema(PG_FUNCTION_ARGS)
 	StringInfo	xmlschema;
 
 	schemaname = NameStr(*name);
-	nspid = LookupExplicitNamespace(schemaname);
+	nspid = LookupExplicitNamespace(schemaname, false);
 
 	xmlschema = schema_to_xmlschema_internal(schemaname, nulls,
 											 tableforest, targetns);
@@ -2758,6 +2810,7 @@ database_to_xml_internal(const char *xmlschema, bool nulls,
 	result = makeStringInfo();
 
 	xmldata_root_element_start(result, xmlcn, xmlschema, targetns, true);
+	appendStringInfoString(result, "\n");
 
 	if (xmlschema)
 		appendStringInfo(result, "%s\n\n", xmlschema);
@@ -2883,8 +2936,8 @@ map_multipart_sql_identifier_to_xml_name(char *a, char *b, char *c, char *d)
 	initStringInfo(&result);
 
 	if (a)
-		appendStringInfo(&result, "%s",
-						 map_sql_identifier_to_xml_name(a, true, true));
+		appendStringInfoString(&result,
+							   map_sql_identifier_to_xml_name(a, true, true));
 	if (b)
 		appendStringInfo(&result, ".%s",
 						 map_sql_identifier_to_xml_name(b, true, true));
@@ -3150,71 +3203,71 @@ map_sql_type_to_xml_name(Oid typeoid, int typmod)
 	{
 		case BPCHAROID:
 			if (typmod == -1)
-				appendStringInfo(&result, "CHAR");
+				appendStringInfoString(&result, "CHAR");
 			else
 				appendStringInfo(&result, "CHAR_%d", typmod - VARHDRSZ);
 			break;
 		case VARCHAROID:
 			if (typmod == -1)
-				appendStringInfo(&result, "VARCHAR");
+				appendStringInfoString(&result, "VARCHAR");
 			else
 				appendStringInfo(&result, "VARCHAR_%d", typmod - VARHDRSZ);
 			break;
 		case NUMERICOID:
 			if (typmod == -1)
-				appendStringInfo(&result, "NUMERIC");
+				appendStringInfoString(&result, "NUMERIC");
 			else
 				appendStringInfo(&result, "NUMERIC_%d_%d",
 								 ((typmod - VARHDRSZ) >> 16) & 0xffff,
 								 (typmod - VARHDRSZ) & 0xffff);
 			break;
 		case INT4OID:
-			appendStringInfo(&result, "INTEGER");
+			appendStringInfoString(&result, "INTEGER");
 			break;
 		case INT2OID:
-			appendStringInfo(&result, "SMALLINT");
+			appendStringInfoString(&result, "SMALLINT");
 			break;
 		case INT8OID:
-			appendStringInfo(&result, "BIGINT");
+			appendStringInfoString(&result, "BIGINT");
 			break;
 		case FLOAT4OID:
-			appendStringInfo(&result, "REAL");
+			appendStringInfoString(&result, "REAL");
 			break;
 		case FLOAT8OID:
-			appendStringInfo(&result, "DOUBLE");
+			appendStringInfoString(&result, "DOUBLE");
 			break;
 		case BOOLOID:
-			appendStringInfo(&result, "BOOLEAN");
+			appendStringInfoString(&result, "BOOLEAN");
 			break;
 		case TIMEOID:
 			if (typmod == -1)
-				appendStringInfo(&result, "TIME");
+				appendStringInfoString(&result, "TIME");
 			else
 				appendStringInfo(&result, "TIME_%d", typmod);
 			break;
 		case TIMETZOID:
 			if (typmod == -1)
-				appendStringInfo(&result, "TIME_WTZ");
+				appendStringInfoString(&result, "TIME_WTZ");
 			else
 				appendStringInfo(&result, "TIME_WTZ_%d", typmod);
 			break;
 		case TIMESTAMPOID:
 			if (typmod == -1)
-				appendStringInfo(&result, "TIMESTAMP");
+				appendStringInfoString(&result, "TIMESTAMP");
 			else
 				appendStringInfo(&result, "TIMESTAMP_%d", typmod);
 			break;
 		case TIMESTAMPTZOID:
 			if (typmod == -1)
-				appendStringInfo(&result, "TIMESTAMP_WTZ");
+				appendStringInfoString(&result, "TIMESTAMP_WTZ");
 			else
 				appendStringInfo(&result, "TIMESTAMP_WTZ_%d", typmod);
 			break;
 		case DATEOID:
-			appendStringInfo(&result, "DATE");
+			appendStringInfoString(&result, "DATE");
 			break;
 		case XMLOID:
-			appendStringInfo(&result, "XML");
+			appendStringInfoString(&result, "XML");
 			break;
 		default:
 			{
@@ -3295,7 +3348,7 @@ map_sql_typecoll_to_xmlschema_types(List *tupdesc_list)
  * SQL/XML:2008 sections 9.5 and 9.6.
  *
  * (The distinction between 9.5 and 9.6 is basically that 9.6 adds
- * a name attribute, which this function does.	The name-less version
+ * a name attribute, which this function does.  The name-less version
  * 9.5 doesn't appear to be required anywhere.)
  */
 static const char *
@@ -3308,12 +3361,12 @@ map_sql_type_to_xmlschema_type(Oid typeoid, int typmod)
 
 	if (typeoid == XMLOID)
 	{
-		appendStringInfo(&result,
-						 "<xsd:complexType mixed=\"true\">\n"
-						 "  <xsd:sequence>\n"
-						 "    <xsd:any name=\"element\" minOccurs=\"0\" maxOccurs=\"unbounded\" processContents=\"skip\"/>\n"
-						 "  </xsd:sequence>\n"
-						 "</xsd:complexType>\n");
+		appendStringInfoString(&result,
+							   "<xsd:complexType mixed=\"true\">\n"
+							   "  <xsd:sequence>\n"
+							   "    <xsd:any name=\"element\" minOccurs=\"0\" maxOccurs=\"unbounded\" processContents=\"skip\"/>\n"
+							   "  </xsd:sequence>\n"
+							   "</xsd:complexType>\n");
 	}
 	else
 	{
@@ -3331,8 +3384,7 @@ map_sql_type_to_xmlschema_type(Oid typeoid, int typmod)
 					appendStringInfo(&result,
 									 "    <xsd:maxLength value=\"%d\"/>\n",
 									 typmod - VARHDRSZ);
-				appendStringInfo(&result,
-								 "  </xsd:restriction>\n");
+				appendStringInfoString(&result, "  </xsd:restriction>\n");
 				break;
 
 			case BYTEAOID:
@@ -3382,18 +3434,18 @@ map_sql_type_to_xmlschema_type(Oid typeoid, int typmod)
 				break;
 
 			case FLOAT4OID:
-				appendStringInfo(&result,
+				appendStringInfoString(&result,
 				"  <xsd:restriction base=\"xsd:float\"></xsd:restriction>\n");
 				break;
 
 			case FLOAT8OID:
-				appendStringInfo(&result,
-								 "  <xsd:restriction base=\"xsd:double\"></xsd:restriction>\n");
+				appendStringInfoString(&result,
+									   "  <xsd:restriction base=\"xsd:double\"></xsd:restriction>\n");
 				break;
 
 			case BOOLOID:
-				appendStringInfo(&result,
-								 "  <xsd:restriction base=\"xsd:boolean\"></xsd:restriction>\n");
+				appendStringInfoString(&result,
+									   "  <xsd:restriction base=\"xsd:boolean\"></xsd:restriction>\n");
 				break;
 
 			case TIMEOID:
@@ -3443,10 +3495,10 @@ map_sql_type_to_xmlschema_type(Oid typeoid, int typmod)
 				}
 
 			case DATEOID:
-				appendStringInfo(&result,
-								 "  <xsd:restriction base=\"xsd:date\">\n"
-								 "    <xsd:pattern value=\"\\p{Nd}{4}-\\p{Nd}{2}-\\p{Nd}{2}\"/>\n"
-								 "  </xsd:restriction>\n");
+				appendStringInfoString(&result,
+									"  <xsd:restriction base=\"xsd:date\">\n"
+									   "    <xsd:pattern value=\"\\p{Nd}{4}-\\p{Nd}{2}-\\p{Nd}{2}\"/>\n"
+									   "  </xsd:restriction>\n");
 				break;
 
 			default:
@@ -3463,8 +3515,7 @@ map_sql_type_to_xmlschema_type(Oid typeoid, int typmod)
 				}
 				break;
 		}
-		appendStringInfo(&result,
-						 "</xsd:simpleType>\n");
+		appendStringInfoString(&result, "</xsd:simpleType>\n");
 	}
 
 	return result.data;
@@ -3473,7 +3524,7 @@ map_sql_type_to_xmlschema_type(Oid typeoid, int typmod)
 
 /*
  * Map an SQL row to an XML element, taking the row from the active
- * SPI cursor.	See also SQL/XML:2008 section 9.10.
+ * SPI cursor.  See also SQL/XML:2008 section 9.10.
  */
 static void
 SPI_sql_row_to_xmlelement(int rownum, StringInfo result, char *tablename,

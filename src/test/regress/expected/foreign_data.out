@@ -583,9 +583,6 @@ LINE 1: CREATE FOREIGN TABLE ft1 ();
                                    ^
 CREATE FOREIGN TABLE ft1 () SERVER no_server;                   -- ERROR
 ERROR:  server "no_server" does not exist
-CREATE FOREIGN TABLE ft1 (c1 serial) SERVER sc;                 -- ERROR
-NOTICE:  CREATE FOREIGN TABLE will create implicit sequence "ft1_c1_seq" for serial column "ft1.c1"
-ERROR:  default values on foreign tables are not supported
 CREATE FOREIGN TABLE ft1 () SERVER sc WITH OIDS;                -- ERROR
 ERROR:  syntax error at or near "WITH OIDS"
 LINE 1: CREATE FOREIGN TABLE ft1 () SERVER sc WITH OIDS;
@@ -601,6 +598,15 @@ ERROR:  relation "ft1" does not exist
 COMMENT ON COLUMN ft1.c1 IS 'ft1.c1';
 ERROR:  relation "ft1" does not exist
 \d+ ft1
+                                      Foreign table "public.ft1"
+ Column |  Type   | Modifiers |          FDW Options           | Storage  | Stats target | Description 
+--------+---------+-----------+--------------------------------+----------+--------------+-------------
+ c1     | integer | not null  | ("param 1" 'val1')             | plain    |              | ft1.c1
+ c2     | text    |           | (param2 'val2', param3 'val3') | extended |              | 
+ c3     | date    |           |                                | plain    |              | 
+Server: s0
+FDW Options: (delimiter ',', quote '"', "be quoted" 'value')
+
 \det+
       List of foreign tables
  Schema | Table | Server | Options 
@@ -627,9 +633,7 @@ ERROR:  relation "ft1" does not exist
 COMMENT ON COLUMN ft1.c1 IS NULL;
 ERROR:  relation "ft1" does not exist
 ALTER FOREIGN TABLE ft1 ADD COLUMN c4 integer;
-ERROR:  relation "ft1" does not exist
-ALTER FOREIGN TABLE ft1 ADD COLUMN c5 integer DEFAULT 0;        -- ERROR
-ERROR:  relation "ft1" does not exist
+ALTER FOREIGN TABLE ft1 ADD COLUMN c5 integer DEFAULT 0;
 ALTER FOREIGN TABLE ft1 ADD COLUMN c6 integer;
 ERROR:  relation "ft1" does not exist
 ALTER FOREIGN TABLE ft1 ADD COLUMN c7 integer NOT NULL;
@@ -637,13 +641,9 @@ ERROR:  relation "ft1" does not exist
 ALTER FOREIGN TABLE ft1 ADD COLUMN c8 integer;
 ERROR:  relation "ft1" does not exist
 ALTER FOREIGN TABLE ft1 ADD COLUMN c9 integer;
-ERROR:  relation "ft1" does not exist
-ALTER FOREIGN TABLE ft1 ADD COLUMN c10 integer;
-ERROR:  relation "ft1" does not exist
-ALTER FOREIGN TABLE ft1 ALTER COLUMN c4 SET DEFAULT 0;          -- ERROR
-ERROR:  relation "ft1" does not exist
-ALTER FOREIGN TABLE ft1 ALTER COLUMN c5 DROP DEFAULT;           -- ERROR
-ERROR:  relation "ft1" does not exist
+ALTER FOREIGN TABLE ft1 ADD COLUMN c10 integer OPTIONS (p1 'v1');
+ALTER FOREIGN TABLE ft1 ALTER COLUMN c4 SET DEFAULT 0;
+ALTER FOREIGN TABLE ft1 ALTER COLUMN c5 DROP DEFAULT;
 ALTER FOREIGN TABLE ft1 ALTER COLUMN c6 SET NOT NULL;
 ERROR:  relation "ft1" does not exist
 ALTER FOREIGN TABLE ft1 ALTER COLUMN c7 DROP NOT NULL;
@@ -653,7 +653,31 @@ ERROR:  relation "ft1" does not exist
 ALTER FOREIGN TABLE ft1 ALTER COLUMN c8 TYPE char(10);
 ERROR:  relation "ft1" does not exist
 ALTER FOREIGN TABLE ft1 ALTER COLUMN c8 SET DATA TYPE text;
-ERROR:  relation "ft1" does not exist
+ALTER FOREIGN TABLE ft1 ALTER COLUMN xmin OPTIONS (ADD p1 'v1'); -- ERROR
+ERROR:  cannot alter system column "xmin"
+ALTER FOREIGN TABLE ft1 ALTER COLUMN c7 OPTIONS (ADD p1 'v1', ADD p2 'v2'),
+                        ALTER COLUMN c8 OPTIONS (ADD p1 'v1', ADD p2 'v2');
+ALTER FOREIGN TABLE ft1 ALTER COLUMN c8 OPTIONS (SET p2 'V2', DROP p1);
+ALTER FOREIGN TABLE ft1 ALTER COLUMN c1 SET STATISTICS 10000;
+ALTER FOREIGN TABLE ft1 ALTER COLUMN c1 SET (n_distinct = 100);
+ALTER FOREIGN TABLE ft1 ALTER COLUMN c8 SET STATISTICS -1;
+\d+ ft1
+                                      Foreign table "public.ft1"
+ Column |  Type   | Modifiers |          FDW Options           | Storage  | Stats target | Description 
+--------+---------+-----------+--------------------------------+----------+--------------+-------------
+ c1     | integer | not null  | ("param 1" 'val1')             | plain    | 10000        | 
+ c2     | text    |           | (param2 'val2', param3 'val3') | extended |              | 
+ c3     | date    |           |                                | plain    |              | 
+ c4     | integer | default 0 |                                | plain    |              | 
+ c5     | integer |           |                                | plain    |              | 
+ c6     | integer | not null  |                                | plain    |              | 
+ c7     | integer |           | (p1 'v1', p2 'v2')             | plain    |              | 
+ c8     | text    |           | (p2 'V2')                      | extended |              | 
+ c9     | integer |           |                                | plain    |              | 
+ c10    | integer |           | (p1 'v1')                      | plain    |              | 
+Server: s0
+FDW Options: (delimiter ',', quote '"', "be quoted" 'value')
+
 -- can't change the column type if it's used elsewhere
 CREATE TABLE use_ft1_column_type (x ft1);
 ERROR:  type "ft1" does not exist
@@ -664,7 +688,9 @@ ERROR:  relation "ft1" does not exist
 DROP TABLE use_ft1_column_type;
 ERROR:  table "use_ft1_column_type" does not exist
 ALTER FOREIGN TABLE ft1 ADD CONSTRAINT ft1_c9_check CHECK (c9 < 0); -- ERROR
-ERROR:  relation "ft1" does not exist
+ERROR:  constraints are not supported on foreign tables
+LINE 1: ALTER FOREIGN TABLE ft1 ADD CONSTRAINT ft1_c9_check CHECK (c...
+                                    ^
 ALTER FOREIGN TABLE ft1 DROP CONSTRAINT no_const;               -- ERROR
 ERROR:  relation "ft1" does not exist
 ALTER FOREIGN TABLE ft1 DROP CONSTRAINT IF EXISTS no_const;
@@ -692,6 +718,65 @@ ERROR:  relation "foreign_schema.ft1" does not exist
 ALTER FOREIGN TABLE foreign_schema.ft1 RENAME TO foreign_table_1;
 ERROR:  relation "foreign_schema.ft1" does not exist
 \d foreign_schema.foreign_table_1
+             Foreign table "foreign_schema.foreign_table_1"
+      Column      |  Type   | Modifiers |          FDW Options           
+------------------+---------+-----------+--------------------------------
+ foreign_column_1 | integer | not null  | ("param 1" 'val1')
+ c2               | text    |           | (param2 'val2', param3 'val3')
+ c3               | date    |           | 
+ c4               | integer | default 0 | 
+ c5               | integer |           | 
+ c6               | integer | not null  | 
+ c7               | integer |           | (p1 'v1', p2 'v2')
+ c8               | text    |           | (p2 'V2')
+ c10              | integer |           | (p1 'v1')
+Server: s0
+FDW Options: (quote '~', "be quoted" 'value', escape '@')
+
+-- alter noexisting table
+ALTER FOREIGN TABLE IF EXISTS doesnt_exist_ft1 ADD COLUMN c4 integer;
+NOTICE:  relation "doesnt_exist_ft1" does not exist, skipping
+ALTER FOREIGN TABLE IF EXISTS doesnt_exist_ft1 ADD COLUMN c6 integer;
+NOTICE:  relation "doesnt_exist_ft1" does not exist, skipping
+ALTER FOREIGN TABLE IF EXISTS doesnt_exist_ft1 ADD COLUMN c7 integer NOT NULL;
+NOTICE:  relation "doesnt_exist_ft1" does not exist, skipping
+ALTER FOREIGN TABLE IF EXISTS doesnt_exist_ft1 ADD COLUMN c8 integer;
+NOTICE:  relation "doesnt_exist_ft1" does not exist, skipping
+ALTER FOREIGN TABLE IF EXISTS doesnt_exist_ft1 ADD COLUMN c9 integer;
+NOTICE:  relation "doesnt_exist_ft1" does not exist, skipping
+ALTER FOREIGN TABLE IF EXISTS doesnt_exist_ft1 ADD COLUMN c10 integer OPTIONS (p1 'v1');
+NOTICE:  relation "doesnt_exist_ft1" does not exist, skipping
+ALTER FOREIGN TABLE IF EXISTS doesnt_exist_ft1 ALTER COLUMN c6 SET NOT NULL;
+NOTICE:  relation "doesnt_exist_ft1" does not exist, skipping
+ALTER FOREIGN TABLE IF EXISTS doesnt_exist_ft1 ALTER COLUMN c7 DROP NOT NULL;
+NOTICE:  relation "doesnt_exist_ft1" does not exist, skipping
+ALTER FOREIGN TABLE IF EXISTS doesnt_exist_ft1 ALTER COLUMN c8 TYPE char(10);
+NOTICE:  relation "doesnt_exist_ft1" does not exist, skipping
+ALTER FOREIGN TABLE IF EXISTS doesnt_exist_ft1 ALTER COLUMN c8 SET DATA TYPE text;
+NOTICE:  relation "doesnt_exist_ft1" does not exist, skipping
+ALTER FOREIGN TABLE IF EXISTS doesnt_exist_ft1 ALTER COLUMN c7 OPTIONS (ADD p1 'v1', ADD p2 'v2'),
+                        ALTER COLUMN c8 OPTIONS (ADD p1 'v1', ADD p2 'v2');
+NOTICE:  relation "doesnt_exist_ft1" does not exist, skipping
+ALTER FOREIGN TABLE IF EXISTS doesnt_exist_ft1 ALTER COLUMN c8 OPTIONS (SET p2 'V2', DROP p1);
+NOTICE:  relation "doesnt_exist_ft1" does not exist, skipping
+ALTER FOREIGN TABLE IF EXISTS doesnt_exist_ft1 DROP CONSTRAINT IF EXISTS no_const;
+NOTICE:  relation "doesnt_exist_ft1" does not exist, skipping
+ALTER FOREIGN TABLE IF EXISTS doesnt_exist_ft1 DROP CONSTRAINT ft1_c1_check;
+NOTICE:  relation "doesnt_exist_ft1" does not exist, skipping
+ALTER FOREIGN TABLE IF EXISTS doesnt_exist_ft1 OWNER TO regress_test_role;
+NOTICE:  relation "doesnt_exist_ft1" does not exist, skipping
+ALTER FOREIGN TABLE IF EXISTS doesnt_exist_ft1 OPTIONS (DROP delimiter, SET quote '~', ADD escape '@');
+NOTICE:  relation "doesnt_exist_ft1" does not exist, skipping
+ALTER FOREIGN TABLE IF EXISTS doesnt_exist_ft1 DROP COLUMN IF EXISTS no_column;
+NOTICE:  relation "doesnt_exist_ft1" does not exist, skipping
+ALTER FOREIGN TABLE IF EXISTS doesnt_exist_ft1 DROP COLUMN c9;
+NOTICE:  relation "doesnt_exist_ft1" does not exist, skipping
+ALTER FOREIGN TABLE IF EXISTS doesnt_exist_ft1 SET SCHEMA foreign_schema;
+NOTICE:  relation "doesnt_exist_ft1" does not exist, skipping
+ALTER FOREIGN TABLE IF EXISTS doesnt_exist_ft1 RENAME c1 TO foreign_column_1;
+NOTICE:  relation "doesnt_exist_ft1" does not exist, skipping
+ALTER FOREIGN TABLE IF EXISTS doesnt_exist_ft1 RENAME TO foreign_table_1;
+NOTICE:  relation "doesnt_exist_ft1" does not exist, skipping
 -- Information schema
 SELECT * FROM information_schema.foreign_data_wrappers ORDER BY 1, 2;
  foreign_data_wrapper_catalog | foreign_data_wrapper_name | authorization_identifier | library_name | foreign_data_wrapper_language 
@@ -959,6 +1044,43 @@ DETAIL:  The feature is not currently supported
 DROP SERVER s9 CASCADE;                                         -- ERROR
 ERROR:  server "s9" does not exist
 RESET ROLE;
+-- Triggers
+CREATE FUNCTION dummy_trigger() RETURNS TRIGGER AS $$
+  BEGIN
+    RETURN NULL;
+  END
+$$ language plpgsql;
+CREATE TRIGGER trigtest_before_stmt BEFORE INSERT OR UPDATE OR DELETE
+ON foreign_schema.foreign_table_1
+FOR EACH STATEMENT
+EXECUTE PROCEDURE dummy_trigger();
+CREATE TRIGGER trigtest_after_stmt AFTER INSERT OR UPDATE OR DELETE
+ON foreign_schema.foreign_table_1
+FOR EACH STATEMENT
+EXECUTE PROCEDURE dummy_trigger();
+CREATE TRIGGER trigtest_before_row BEFORE INSERT OR UPDATE OR DELETE
+ON foreign_schema.foreign_table_1
+FOR EACH ROW
+EXECUTE PROCEDURE dummy_trigger();
+CREATE TRIGGER trigtest_after_row AFTER INSERT OR UPDATE OR DELETE
+ON foreign_schema.foreign_table_1
+FOR EACH ROW
+EXECUTE PROCEDURE dummy_trigger();
+CREATE CONSTRAINT TRIGGER trigtest_constraint AFTER INSERT OR UPDATE OR DELETE
+ON foreign_schema.foreign_table_1
+FOR EACH ROW
+EXECUTE PROCEDURE dummy_trigger();
+ERROR:  "foreign_table_1" is a foreign table
+DETAIL:  Foreign tables cannot have constraint triggers.
+ALTER FOREIGN TABLE foreign_schema.foreign_table_1
+	DISABLE TRIGGER trigtest_before_stmt;
+ALTER FOREIGN TABLE foreign_schema.foreign_table_1
+	ENABLE TRIGGER trigtest_before_stmt;
+DROP TRIGGER trigtest_before_stmt ON foreign_schema.foreign_table_1;
+DROP TRIGGER trigtest_before_row ON foreign_schema.foreign_table_1;
+DROP TRIGGER trigtest_after_stmt ON foreign_schema.foreign_table_1;
+DROP TRIGGER trigtest_after_row ON foreign_schema.foreign_table_1;
+DROP FUNCTION dummy_trigger();
 -- DROP FOREIGN TABLE
 DROP FOREIGN TABLE no_table;                                    -- ERROR
 ERROR:  foreign table "no_table" does not exist

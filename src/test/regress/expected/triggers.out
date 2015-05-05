@@ -468,8 +468,6 @@ ERROR:  current transaction is aborted, commands ignored until end of transactio
 rollback;
 -- Test enable/disable triggers
 create table trigtest (i serial primary key);
-NOTICE:  CREATE TABLE will create implicit sequence "trigtest_i_seq" for serial column "trigtest.i"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "trigtest_pkey" for table "trigtest"
 -- test that disabling RI triggers works
 create table trigtest2 (i int references trigtest(i) on delete cascade);
 create function trigtest() returns trigger as $$
@@ -924,6 +922,24 @@ ERROR:  relation "main_view" does not exist
 DROP TRIGGER instead_of_delete_trig ON main_view;
 ERROR:  relation "main_view" does not exist
 \d+ main_view
+               View "public.main_view"
+ Column |  Type   | Modifiers | Storage | Description 
+--------+---------+-----------+---------+-------------
+ a      | integer |           | plain   | 
+ b      | integer |           | plain   | 
+View definition:
+ SELECT main_table.a,
+    main_table.b
+   FROM main_table;
+Triggers:
+    after_del_stmt_trig AFTER DELETE ON main_view FOR EACH STATEMENT EXECUTE PROCEDURE view_trigger('after_view_del_stmt')
+    after_ins_stmt_trig AFTER INSERT ON main_view FOR EACH STATEMENT EXECUTE PROCEDURE view_trigger('after_view_ins_stmt')
+    after_upd_stmt_trig AFTER UPDATE ON main_view FOR EACH STATEMENT EXECUTE PROCEDURE view_trigger('after_view_upd_stmt')
+    before_del_stmt_trig BEFORE DELETE ON main_view FOR EACH STATEMENT EXECUTE PROCEDURE view_trigger('before_view_del_stmt')
+    before_ins_stmt_trig BEFORE INSERT ON main_view FOR EACH STATEMENT EXECUTE PROCEDURE view_trigger('before_view_ins_stmt')
+    before_upd_stmt_trig BEFORE UPDATE ON main_view FOR EACH STATEMENT EXECUTE PROCEDURE view_trigger('before_view_upd_stmt')
+    instead_of_update_trig INSTEAD OF UPDATE ON main_view FOR EACH ROW EXECUTE PROCEDURE view_trigger('instead_of_upd')
+
 DROP VIEW main_view;
 ERROR:  view "main_view" does not exist
 --
@@ -934,8 +950,6 @@ CREATE TABLE country_table (
     country_name    text unique not null,
     continent        text not null
 );
-NOTICE:  CREATE TABLE will create implicit sequence "country_table_country_id_seq" for serial column "country_table.country_id"
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "country_table_pkey" for table "country_table"
 ERROR:  Unique index of partitioned table must contain the hash/modulo distribution column.
 INSERT INTO country_table (country_name, continent)
     VALUES ('Japan', 'Asia'),
@@ -951,7 +965,6 @@ CREATE TABLE city_table (
     population    bigint,
     country_id    int references country_table
 );
-NOTICE:  CREATE TABLE will create implicit sequence "city_table_city_id_seq" for serial column "city_table.city_id"
 ERROR:  relation "country_table" does not exist
 CREATE VIEW city_view AS
     SELECT city_id, city_name, population, country_name, continent
@@ -1185,4 +1198,311 @@ LINE 1: SELECT * FROM city_view;
 DROP TABLE city_table CASCADE;
 ERROR:  table "city_table" does not exist
 DROP TABLE country_table;
-ERROR:  table "country_table" does not exist
+-- Test pg_trigger_depth()
+create table depth_a (id int not null primary key);
+create table depth_b (id int not null primary key);
+create table depth_c (id int not null primary key);
+create function depth_a_tf() returns trigger
+  language plpgsql as $$
+begin
+  raise notice '%: depth = %', tg_name, pg_trigger_depth();
+  insert into depth_b values (new.id);
+  raise notice '%: depth = %', tg_name, pg_trigger_depth();
+  return new;
+end;
+$$;
+create trigger depth_a_tr before insert on depth_a
+  for each row execute procedure depth_a_tf();
+create function depth_b_tf() returns trigger
+  language plpgsql as $$
+begin
+  raise notice '%: depth = %', tg_name, pg_trigger_depth();
+  begin
+    execute 'insert into depth_c values (' || new.id::text || ')';
+  exception
+    when sqlstate 'U9999' then
+      raise notice 'SQLSTATE = U9999: depth = %', pg_trigger_depth();
+  end;
+  raise notice '%: depth = %', tg_name, pg_trigger_depth();
+  if new.id = 1 then
+    execute 'insert into depth_c values (' || new.id::text || ')';
+  end if;
+  return new;
+end;
+$$;
+create trigger depth_b_tr before insert on depth_b
+  for each row execute procedure depth_b_tf();
+create function depth_c_tf() returns trigger
+  language plpgsql as $$
+begin
+  raise notice '%: depth = %', tg_name, pg_trigger_depth();
+  if new.id = 1 then
+    raise exception sqlstate 'U9999';
+  end if;
+  raise notice '%: depth = %', tg_name, pg_trigger_depth();
+  return new;
+end;
+$$;
+create trigger depth_c_tr before insert on depth_c
+  for each row execute procedure depth_c_tf();
+select pg_trigger_depth();
+ pg_trigger_depth 
+------------------
+                0
+(1 row)
+
+insert into depth_a values (1);
+NOTICE:  depth_a_tr: depth = 1
+NOTICE:  depth_b_tr: depth = 2
+CONTEXT:  SQL statement "insert into depth_b values (new.id)"
+PL/pgSQL function depth_a_tf() line 4 at SQL statement
+NOTICE:  depth_c_tr: depth = 3
+CONTEXT:  SQL statement "insert into depth_c values (1)"
+PL/pgSQL function depth_b_tf() line 5 at EXECUTE statement
+SQL statement "insert into depth_b values (new.id)"
+PL/pgSQL function depth_a_tf() line 4 at SQL statement
+NOTICE:  SQLSTATE = U9999: depth = 2
+CONTEXT:  SQL statement "insert into depth_b values (new.id)"
+PL/pgSQL function depth_a_tf() line 4 at SQL statement
+NOTICE:  depth_b_tr: depth = 2
+CONTEXT:  SQL statement "insert into depth_b values (new.id)"
+PL/pgSQL function depth_a_tf() line 4 at SQL statement
+NOTICE:  depth_c_tr: depth = 3
+CONTEXT:  SQL statement "insert into depth_c values (1)"
+PL/pgSQL function depth_b_tf() line 12 at EXECUTE statement
+SQL statement "insert into depth_b values (new.id)"
+PL/pgSQL function depth_a_tf() line 4 at SQL statement
+ERROR:  U9999
+CONTEXT:  SQL statement "insert into depth_c values (1)"
+PL/pgSQL function depth_b_tf() line 12 at EXECUTE statement
+SQL statement "insert into depth_b values (new.id)"
+PL/pgSQL function depth_a_tf() line 4 at SQL statement
+select pg_trigger_depth();
+ pg_trigger_depth 
+------------------
+                0
+(1 row)
+
+insert into depth_a values (2);
+NOTICE:  depth_a_tr: depth = 1
+NOTICE:  depth_b_tr: depth = 2
+CONTEXT:  SQL statement "insert into depth_b values (new.id)"
+PL/pgSQL function depth_a_tf() line 4 at SQL statement
+NOTICE:  depth_c_tr: depth = 3
+CONTEXT:  SQL statement "insert into depth_c values (2)"
+PL/pgSQL function depth_b_tf() line 5 at EXECUTE statement
+SQL statement "insert into depth_b values (new.id)"
+PL/pgSQL function depth_a_tf() line 4 at SQL statement
+NOTICE:  depth_c_tr: depth = 3
+CONTEXT:  SQL statement "insert into depth_c values (2)"
+PL/pgSQL function depth_b_tf() line 5 at EXECUTE statement
+SQL statement "insert into depth_b values (new.id)"
+PL/pgSQL function depth_a_tf() line 4 at SQL statement
+NOTICE:  depth_b_tr: depth = 2
+CONTEXT:  SQL statement "insert into depth_b values (new.id)"
+PL/pgSQL function depth_a_tf() line 4 at SQL statement
+NOTICE:  depth_a_tr: depth = 1
+select pg_trigger_depth();
+ pg_trigger_depth 
+------------------
+                0
+(1 row)
+
+drop table depth_a, depth_b, depth_c;
+drop function depth_a_tf();
+drop function depth_b_tf();
+drop function depth_c_tf();
+--
+-- Test updates to rows during firing of BEFORE ROW triggers.
+-- As of 9.2, such cases should be rejected (see bug #6123).
+--
+create temp table parent (
+    aid int not null primary key,
+    val1 text,
+    val2 text,
+    val3 text,
+    val4 text,
+    bcnt int not null default 0);
+create temp table child (
+    bid int not null primary key,
+    aid int not null,
+    val1 text);
+create function parent_upd_func()
+  returns trigger language plpgsql as
+$$
+begin
+  if old.val1 <> new.val1 then
+    new.val2 = new.val1;
+    delete from child where child.aid = new.aid and child.val1 = new.val1;
+  end if;
+  return new;
+end;
+$$;
+create trigger parent_upd_trig before update on parent
+  for each row execute procedure parent_upd_func();
+create function parent_del_func()
+  returns trigger language plpgsql as
+$$
+begin
+  delete from child where aid = old.aid;
+  return old;
+end;
+$$;
+create trigger parent_del_trig before delete on parent
+  for each row execute procedure parent_del_func();
+create function child_ins_func()
+  returns trigger language plpgsql as
+$$
+begin
+  update parent set bcnt = bcnt + 1 where aid = new.aid;
+  return new;
+end;
+$$;
+create trigger child_ins_trig after insert on child
+  for each row execute procedure child_ins_func();
+create function child_del_func()
+  returns trigger language plpgsql as
+$$
+begin
+  update parent set bcnt = bcnt - 1 where aid = old.aid;
+  return old;
+end;
+$$;
+create trigger child_del_trig after delete on child
+  for each row execute procedure child_del_func();
+insert into parent values (1, 'a', 'a', 'a', 'a', 0);
+insert into child values (10, 1, 'b');
+select * from parent; select * from child;
+ aid | val1 | val2 | val3 | val4 | bcnt 
+-----+------+------+------+------+------
+   1 | a    | a    | a    | a    |    1
+(1 row)
+
+ bid | aid | val1 
+-----+-----+------
+  10 |   1 | b
+(1 row)
+
+update parent set val1 = 'b' where aid = 1; -- should fail
+ERROR:  tuple to be updated was already modified by an operation triggered by the current command
+HINT:  Consider using an AFTER trigger instead of a BEFORE trigger to propagate changes to other rows.
+select * from parent; select * from child;
+ aid | val1 | val2 | val3 | val4 | bcnt 
+-----+------+------+------+------+------
+   1 | a    | a    | a    | a    |    1
+(1 row)
+
+ bid | aid | val1 
+-----+-----+------
+  10 |   1 | b
+(1 row)
+
+delete from parent where aid = 1; -- should fail
+ERROR:  tuple to be updated was already modified by an operation triggered by the current command
+HINT:  Consider using an AFTER trigger instead of a BEFORE trigger to propagate changes to other rows.
+select * from parent; select * from child;
+ aid | val1 | val2 | val3 | val4 | bcnt 
+-----+------+------+------+------+------
+   1 | a    | a    | a    | a    |    1
+(1 row)
+
+ bid | aid | val1 
+-----+-----+------
+  10 |   1 | b
+(1 row)
+
+-- replace the trigger function with one that restarts the deletion after
+-- having modified a child
+create or replace function parent_del_func()
+  returns trigger language plpgsql as
+$$
+begin
+  delete from child where aid = old.aid;
+  if found then
+    delete from parent where aid = old.aid;
+    return null; -- cancel outer deletion
+  end if;
+  return old;
+end;
+$$;
+delete from parent where aid = 1;
+select * from parent; select * from child;
+ aid | val1 | val2 | val3 | val4 | bcnt 
+-----+------+------+------+------+------
+(0 rows)
+
+ bid | aid | val1 
+-----+-----+------
+(0 rows)
+
+drop table parent, child;
+drop function parent_upd_func();
+drop function parent_del_func();
+drop function child_ins_func();
+drop function child_del_func();
+-- similar case, but with a self-referencing FK so that parent and child
+-- rows can be affected by a single operation
+create temp table self_ref_trigger (
+    id int primary key,
+    parent int references self_ref_trigger,
+    data text,
+    nchildren int not null default 0
+);
+create function self_ref_trigger_ins_func()
+  returns trigger language plpgsql as
+$$
+begin
+  if new.parent is not null then
+    update self_ref_trigger set nchildren = nchildren + 1
+      where id = new.parent;
+  end if;
+  return new;
+end;
+$$;
+create trigger self_ref_trigger_ins_trig before insert on self_ref_trigger
+  for each row execute procedure self_ref_trigger_ins_func();
+create function self_ref_trigger_del_func()
+  returns trigger language plpgsql as
+$$
+begin
+  if old.parent is not null then
+    update self_ref_trigger set nchildren = nchildren - 1
+      where id = old.parent;
+  end if;
+  return old;
+end;
+$$;
+create trigger self_ref_trigger_del_trig before delete on self_ref_trigger
+  for each row execute procedure self_ref_trigger_del_func();
+insert into self_ref_trigger values (1, null, 'root');
+insert into self_ref_trigger values (2, 1, 'root child A');
+insert into self_ref_trigger values (3, 1, 'root child B');
+insert into self_ref_trigger values (4, 2, 'grandchild 1');
+insert into self_ref_trigger values (5, 3, 'grandchild 2');
+update self_ref_trigger set data = 'root!' where id = 1;
+select * from self_ref_trigger;
+ id | parent |     data     | nchildren 
+----+--------+--------------+-----------
+  2 |      1 | root child A |         1
+  4 |      2 | grandchild 1 |         0
+  3 |      1 | root child B |         1
+  5 |      3 | grandchild 2 |         0
+  1 |        | root!        |         2
+(5 rows)
+
+delete from self_ref_trigger;
+ERROR:  tuple to be updated was already modified by an operation triggered by the current command
+HINT:  Consider using an AFTER trigger instead of a BEFORE trigger to propagate changes to other rows.
+select * from self_ref_trigger;
+ id | parent |     data     | nchildren 
+----+--------+--------------+-----------
+  2 |      1 | root child A |         1
+  4 |      2 | grandchild 1 |         0
+  3 |      1 | root child B |         1
+  5 |      3 | grandchild 2 |         0
+  1 |        | root!        |         2
+(5 rows)
+
+drop table self_ref_trigger;
+drop function self_ref_trigger_ins_func();
+drop function self_ref_trigger_del_func();

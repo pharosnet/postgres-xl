@@ -3,7 +3,7 @@
  * path.c
  *	  portable path handling routines
  *
- * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -13,7 +13,11 @@
  *-------------------------------------------------------------------------
  */
 
-#include "c.h"
+#ifndef FRONTEND
+#include "postgres.h"
+#else
+#include "postgres_fe.h"
+#endif
 
 #include <ctype.h>
 #include <sys/stat.h>
@@ -49,7 +53,7 @@ static void trim_trailing_separator(char *path);
 /*
  * skip_drive
  *
- * On Windows, a path may begin with "C:" or "//network/".	Advance over
+ * On Windows, a path may begin with "C:" or "//network/".  Advance over
  * this and point to the effective start of the path.
  */
 #ifdef WIN32
@@ -170,6 +174,8 @@ make_native_path(char *filename)
 /*
  * join_path_components - join two path components, inserting a slash
  *
+ * We omit the slash if either given component is empty.
+ *
  * ret_path is the output area (must be of size MAXPGPATH)
  *
  * ret_path can be the same as head, but not the same as tail.
@@ -182,38 +188,22 @@ join_path_components(char *ret_path,
 		strlcpy(ret_path, head, MAXPGPATH);
 
 	/*
-	 * Remove any leading "." and ".." in the tail component, adjusting head
-	 * as needed.
+	 * Remove any leading "." in the tail component.
+	 *
+	 * Note: we used to try to remove ".." as well, but that's tricky to get
+	 * right; now we just leave it to be done by canonicalize_path() later.
 	 */
-	for (;;)
-	{
-		if (tail[0] == '.' && IS_DIR_SEP(tail[1]))
-		{
-			tail += 2;
-		}
-		else if (tail[0] == '.' && tail[1] == '\0')
-		{
-			tail += 1;
-			break;
-		}
-		else if (tail[0] == '.' && tail[1] == '.' && IS_DIR_SEP(tail[2]))
-		{
-			trim_directory(ret_path);
-			tail += 3;
-		}
-		else if (tail[0] == '.' && tail[1] == '.' && tail[2] == '\0')
-		{
-			trim_directory(ret_path);
-			tail += 2;
-			break;
-		}
-		else
-			break;
-	}
+	while (tail[0] == '.' && IS_DIR_SEP(tail[1]))
+		tail += 2;
+
 	if (*tail)
+	{
+		/* only separate with slash if head wasn't empty */
 		snprintf(ret_path + strlen(ret_path), MAXPGPATH - strlen(ret_path),
-		/* only add slash if there is something already in head */
-				 "%s%s", head[0] ? "/" : "", tail);
+				 "%s%s",
+				 (*(skip_drive(head)) != '\0') ? "/" : "",
+				 tail);
+	}
 }
 
 
@@ -287,7 +277,7 @@ canonicalize_path(char *path)
 	 * Remove any trailing uses of "." and process ".." ourselves
 	 *
 	 * Note that "/../.." should reduce to just "/", while "../.." has to be
-	 * kept as-is.	In the latter case we put back mistakenly trimmed ".."
+	 * kept as-is.  In the latter case we put back mistakenly trimmed ".."
 	 * components below.  Also note that we want a Windows drive spec to be
 	 * visible to trim_directory(), but it's not part of the logic that's
 	 * looking at the name components; hence distinction between path and
@@ -566,6 +556,114 @@ no_match:
 
 
 /*
+ * make_absolute_path
+ *
+ * If the given pathname isn't already absolute, make it so, interpreting
+ * it relative to the current working directory.
+ *
+ * Also canonicalizes the path.  The result is always a malloc'd copy.
+ *
+ * In backend, failure cases result in ereport(ERROR); in frontend,
+ * we write a complaint on stderr and return NULL.
+ *
+ * Note: interpretation of relative-path arguments during postmaster startup
+ * should happen before doing ChangeToDataDir(), else the user will probably
+ * not like the results.
+ */
+char *
+make_absolute_path(const char *path)
+{
+	char	   *new;
+
+	/* Returning null for null input is convenient for some callers */
+	if (path == NULL)
+		return NULL;
+
+	if (!is_absolute_path(path))
+	{
+		char	   *buf;
+		size_t		buflen;
+
+		buflen = MAXPGPATH;
+		for (;;)
+		{
+			buf = malloc(buflen);
+			if (!buf)
+			{
+#ifndef FRONTEND
+				ereport(ERROR,
+						(errcode(ERRCODE_OUT_OF_MEMORY),
+						 errmsg("out of memory")));
+#else
+				fprintf(stderr, _("out of memory\n"));
+				return NULL;
+#endif
+			}
+
+			if (getcwd(buf, buflen))
+				break;
+			else if (errno == ERANGE)
+			{
+				free(buf);
+				buflen *= 2;
+				continue;
+			}
+			else
+			{
+				int			save_errno = errno;
+
+				free(buf);
+				errno = save_errno;
+#ifndef FRONTEND
+				elog(ERROR, "could not get current working directory: %m");
+#else
+				fprintf(stderr, _("could not get current working directory: %s\n"),
+						strerror(errno));
+				return NULL;
+#endif
+			}
+		}
+
+		new = malloc(strlen(buf) + strlen(path) + 2);
+		if (!new)
+		{
+			free(buf);
+#ifndef FRONTEND
+			ereport(ERROR,
+					(errcode(ERRCODE_OUT_OF_MEMORY),
+					 errmsg("out of memory")));
+#else
+			fprintf(stderr, _("out of memory\n"));
+			return NULL;
+#endif
+		}
+		sprintf(new, "%s/%s", buf, path);
+		free(buf);
+	}
+	else
+	{
+		new = strdup(path);
+		if (!new)
+		{
+#ifndef FRONTEND
+			ereport(ERROR,
+					(errcode(ERRCODE_OUT_OF_MEMORY),
+					 errmsg("out of memory")));
+#else
+			fprintf(stderr, _("out of memory\n"));
+			return NULL;
+#endif
+		}
+	}
+
+	/* Make sure punctuation is canonical, too */
+	canonicalize_path(new);
+
+	return new;
+}
+
+
+/*
  *	get_share_path
  */
 void
@@ -705,6 +803,15 @@ get_home_path(char *ret_path)
  *
  * Modify the given string in-place to name the parent directory of the
  * named file.
+ *
+ * If the input is just a file name with no directory part, the result is
+ * an empty string, not ".".  This is appropriate when the next step is
+ * join_path_components(), but might need special handling otherwise.
+ *
+ * Caution: this will not produce desirable results if the string ends
+ * with "..".  For most callers this is not a problem since the string
+ * is already known to name a regular file.  If in doubt, apply
+ * canonicalize_path() first.
  */
 void
 get_parent_directory(char *path)
