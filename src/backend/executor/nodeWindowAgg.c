@@ -2258,10 +2258,10 @@ initialize_peragg(WindowAggState *winstate, WindowFunc *wfunc,
 							invtransfn_oid,
 							finalfn_oid,
 							&transfnexpr,
+							&invtransfnexpr,
 #ifdef XCP
 							&collectfnexpr,
 #endif
-							&invtransfnexpr,
 							&finalfnexpr);
 
 	/* set up infrastructure for calling the transfn(s) and finalfn */

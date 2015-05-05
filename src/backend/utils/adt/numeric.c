@@ -2548,6 +2548,223 @@ makeNumericAggState(FunctionCallInfo fcinfo, bool calcSumX2)
 }
 
 /*
+ * numeric_agg_state_in() -
+ *
+ *	Input function for numeric_agg_state data type
+ */
+Datum
+numeric_agg_state_in(PG_FUNCTION_ARGS)
+{
+	char	   *str = pstrdup(PG_GETARG_CSTRING(0));
+	NumericAggState *state;
+	char *token;
+
+	state = (NumericAggState *) palloc0(sizeof (NumericAggState));
+	init_var(&state->sumX);
+
+	token = strtok(str, ":");
+	state->calcSumX2 = (*token == 't');
+
+	token = strtok(NULL, ":");
+	state->N = DatumGetInt64(DirectFunctionCall1(int8in,CStringGetDatum(token)));
+
+	token = strtok(NULL, ":");
+	set_var_from_str(token, token, &state->sumX);
+
+	token = strtok(NULL, ":");
+	if (state->calcSumX2)
+	{
+		init_var(&state->sumX2);
+		set_var_from_str(token, token, &state->sumX2);
+	}
+
+	token = strtok(NULL, ":");
+	state->maxScale = DatumGetInt32(DirectFunctionCall1(int4in,CStringGetDatum(token)));
+
+	token = strtok(NULL, ":");
+	state->maxScaleCount = DatumGetInt64(DirectFunctionCall1(int8in,CStringGetDatum(token)));
+
+	token = strtok(NULL, ":");
+	state->NaNcount  = DatumGetInt64(DirectFunctionCall1(int8in,CStringGetDatum(token)));
+
+	PG_RETURN_POINTER(state);
+}
+
+/*
+ * numeric_agg_state_out() -
+ *
+ *	Output function for numeric_agg_state data type
+ */
+Datum
+numeric_agg_state_out(PG_FUNCTION_ARGS)
+{
+	NumericAggState *state = (NumericAggState *) PG_GETARG_POINTER(0);
+	char *sumX_str, *sumX2_str, *N_str,
+		 *maxScale_str, *maxScaleCount_str,
+		 *NaNcount_str;
+	char *result;
+	int	 len;
+
+	sumX_str = get_str_from_var(&state->sumX);
+	if (state->calcSumX2)
+		sumX2_str = get_str_from_var(&state->sumX2);
+	else
+		sumX2_str = "0";
+
+	N_str = DatumGetCString(DirectFunctionCall1(int8out,
+				Int64GetDatum(state->N)));
+	maxScaleCount_str = DatumGetCString(DirectFunctionCall1(int8out,
+				Int64GetDatum(state->maxScaleCount)));
+	NaNcount_str = DatumGetCString(DirectFunctionCall1(int8out,
+				Int64GetDatum(state->NaNcount)));
+	maxScale_str = DatumGetCString(DirectFunctionCall1(int4out,
+				Int32GetDatum(state->maxScale)));
+	
+	len = 1 + strlen(N_str) + strlen(sumX_str) + strlen(sumX2_str) +
+		strlen(maxScale_str) + strlen(maxScaleCount_str) +
+		strlen(NaNcount_str) + 7;
+
+	result = (char *) palloc0(len);
+
+	snprintf(result, len, "%c:%s:%s:%s:%s:%s:%s",
+			state->calcSumX2 ? 't' : 'f',
+			N_str, sumX_str, sumX2_str,
+			maxScale_str, maxScaleCount_str, NaNcount_str);
+
+	pfree(N_str);
+	pfree(sumX_str);
+	if (state->calcSumX2)
+		pfree(sumX2_str);
+	pfree(maxScale_str);
+	pfree(maxScaleCount_str);
+	pfree(NaNcount_str);
+
+	PG_RETURN_CSTRING(result);
+}
+
+/*
+ * numeric_agg_state_recv - converts binary format to numeric_agg_state
+ */
+Datum
+numeric_agg_state_recv(PG_FUNCTION_ARGS)
+{
+	StringInfo	buf = (StringInfo) PG_GETARG_POINTER(0);
+	NumericAggState *state;
+	int len;
+	int	i;
+
+	state = (NumericAggState *) palloc0(sizeof (NumericAggState));
+
+	state->calcSumX2 = pq_getmsgbyte(buf);
+	state->N = pq_getmsgint(buf, sizeof (int64));
+
+	len = (uint16) pq_getmsgint(buf, sizeof(uint16));
+	if (len < 0 || len > NUMERIC_MAX_PRECISION + NUMERIC_MAX_RESULT_SCALE)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_BINARY_REPRESENTATION),
+				 errmsg("invalid length in external \"numeric\" value")));
+
+	alloc_var(&state->sumX, len);
+
+	state->sumX.weight = (int16) pq_getmsgint(buf, sizeof(int16));
+	state->sumX.sign = (uint16) pq_getmsgint(buf, sizeof(uint16));
+	if (!(state->sumX.sign == NUMERIC_POS ||
+		  state->sumX.sign == NUMERIC_NEG ||
+		  state->sumX.sign == NUMERIC_NAN))
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_BINARY_REPRESENTATION),
+				 errmsg("invalid sign in external \"numeric\" value")));
+
+	state->sumX.dscale = (uint16) pq_getmsgint(buf, sizeof(uint16));
+	for (i = 0; i < len; i++)
+	{
+		NumericDigit d = pq_getmsgint(buf, sizeof(NumericDigit));
+
+		if (d < 0 || d >= NBASE)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_BINARY_REPRESENTATION),
+					 errmsg("invalid digit in external \"numeric\" value")));
+		state->sumX.digits[i] = d;
+	}
+
+	if (state->calcSumX2)
+	{
+		len = (uint16) pq_getmsgint(buf, sizeof(uint16));
+		if (len < 0 || len > NUMERIC_MAX_PRECISION + NUMERIC_MAX_RESULT_SCALE)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_BINARY_REPRESENTATION),
+					 errmsg("invalid length in external \"numeric\" value")));
+
+		alloc_var(&state->sumX2, len);
+
+		state->sumX2.weight = (int16) pq_getmsgint(buf, sizeof(int16));
+		state->sumX2.sign = (uint16) pq_getmsgint(buf, sizeof(uint16));
+		if (!(state->sumX2.sign == NUMERIC_POS ||
+					state->sumX2.sign == NUMERIC_NEG ||
+					state->sumX2.sign == NUMERIC_NAN))
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_BINARY_REPRESENTATION),
+					 errmsg("invalid sign in external \"numeric\" value")));
+
+		state->sumX2.dscale = (uint16) pq_getmsgint(buf, sizeof(uint16));
+		for (i = 0; i < len; i++)
+		{
+			NumericDigit d = pq_getmsgint(buf, sizeof(NumericDigit));
+
+			if (d < 0 || d >= NBASE)
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_BINARY_REPRESENTATION),
+						 errmsg("invalid digit in external \"numeric\" value")));
+			state->sumX2.digits[i] = d;
+		}
+	}
+	state->maxScale = pq_getmsgint(buf, sizeof (int));
+	state->maxScaleCount = pq_getmsgint(buf, sizeof (int64));
+	state->NaNcount = pq_getmsgint(buf, sizeof (int64));
+
+	PG_RETURN_POINTER(state);
+}
+
+/*
+ * numeric_agg_state_send - converts numeric_agg_state to binary format
+ */
+Datum
+numeric_agg_state_send(PG_FUNCTION_ARGS)
+{
+	NumericAggState *state = (NumericAggState *) PG_GETARG_POINTER(0);
+	StringInfoData buf;
+	int i;
+
+	pq_begintypsend(&buf);
+
+	pq_sendbyte(&buf, state->calcSumX2);
+	pq_sendint(&buf, state->N, sizeof (int64));
+
+	pq_sendint(&buf, state->sumX.ndigits, sizeof(int16));
+	pq_sendint(&buf, state->sumX.weight, sizeof(int16));
+	pq_sendint(&buf, state->sumX.sign, sizeof(int16));
+	pq_sendint(&buf, state->sumX.dscale, sizeof(int16));
+	for (i = 0; i < state->sumX.ndigits; i++)
+		pq_sendint(&buf, state->sumX.digits[i], sizeof(NumericDigit));
+
+	if (state->calcSumX2)
+	{
+		pq_sendint(&buf, state->sumX2.ndigits, sizeof(int16));
+		pq_sendint(&buf, state->sumX2.weight, sizeof(int16));
+		pq_sendint(&buf, state->sumX2.sign, sizeof(int16));
+		pq_sendint(&buf, state->sumX2.dscale, sizeof(int16));
+		for (i = 0; i < state->sumX2.ndigits; i++)
+			pq_sendint(&buf, state->sumX2.digits[i], sizeof(NumericDigit));
+	}
+
+	pq_sendint(&buf, state->maxScale, sizeof (int));
+	pq_sendint(&buf, state->maxScaleCount, sizeof (int64));
+	pq_sendint(&buf, state->NaNcount, sizeof (int64));
+
+	PG_RETURN_BYTEA_P(pq_endtypsend(&buf));
+}
+
+/*
  * Accumulate a new input value for numeric aggregate functions.
  */
 static void
@@ -6635,80 +6852,51 @@ strip_var(NumericVar *var)
 Datum
 numeric_collect(PG_FUNCTION_ARGS)
 {
-	ArrayType  *collectarray = PG_GETARG_ARRAYTYPE_P(0);
-	ArrayType  *transarray = PG_GETARG_ARRAYTYPE_P(1);
-	Datum	   *collectdatums;
-	Datum	   *transdatums;
-	int			ndatums;
-	Datum		N,
-				sumX,
-				sumX2;
+	NumericAggState *collectstate;
+	NumericAggState *transstate;
+	MemoryContext agg_context;
+	MemoryContext old_context;
 
-	/* We assume the input is array of numeric */
-	deconstruct_array(collectarray,
-					  NUMERICOID, -1, false, 'i',
-					  &collectdatums, NULL, &ndatums);
-	if (ndatums != 3)
-		elog(ERROR, "expected 3-element numeric array");
-	N = collectdatums[0];
-	sumX = collectdatums[1];
-	sumX2 = collectdatums[2];
+	if (!AggCheckCallContext(fcinfo, &agg_context))
+		elog(ERROR, "aggregate function called in non-aggregate context");
 
-	/* We assume the input is array of numeric */
-	deconstruct_array(transarray,
-					  NUMERICOID, -1, false, 'i',
-					  &transdatums, NULL, &ndatums);
-	if (ndatums != 3)
-		elog(ERROR, "expected 3-element numeric array");
+	old_context = MemoryContextSwitchTo(agg_context);
 
-	N = DirectFunctionCall2(numeric_add, N, transdatums[0]);
-	sumX = DirectFunctionCall2(numeric_add, sumX, transdatums[1]);
-	sumX2 = DirectFunctionCall2(numeric_add, sumX2, transdatums[2]);
+	collectstate = PG_ARGISNULL(0) ? NULL : (NumericAggState *) PG_GETARG_POINTER(0);
 
-	collectdatums[0] = N;
-	collectdatums[1] = sumX;
-	collectdatums[2] = sumX2;
+	if (collectstate == NULL)
+	{
+		collectstate = (NumericAggState *) palloc0(sizeof (NumericAggState));
+		init_var(&collectstate->sumX);
+		init_var(&collectstate->sumX2);
+	}
 
-	PG_RETURN_ARRAYTYPE_P(construct_array(collectdatums, 3,
-							 NUMERICOID, -1, false, 'i'));
+	transstate = PG_ARGISNULL(1) ? NULL : (NumericAggState *) PG_GETARG_POINTER(1);
+
+	if (transstate == NULL)
+		PG_RETURN_POINTER(collectstate);
+
+	Assert(collectstate->calcSumX2 == transstate->calcSumX2);
+
+	collectstate->N += transstate->N;
+	add_var(&collectstate->sumX, &transstate->sumX, &collectstate->sumX);
+	if (collectstate->calcSumX2)
+		add_var(&collectstate->sumX2, &transstate->sumX2, &collectstate->sumX2);
+	collectstate->NaNcount += transstate->NaNcount;
+
+	if (collectstate->maxScale < transstate->maxScale)
+	{
+		collectstate->maxScale = transstate->maxScale;
+		collectstate->maxScaleCount = transstate->maxScaleCount;
+	}
+	else if (collectstate->maxScale == transstate->maxScale)
+		collectstate->maxScaleCount += transstate->maxScaleCount;
+
+	MemoryContextSwitchTo(old_context);
+		
+	PG_RETURN_POINTER(collectstate);
 }
 
-Datum
-numeric_avg_collect(PG_FUNCTION_ARGS)
-{
-	ArrayType  *collectarray = PG_GETARG_ARRAYTYPE_P(0);
-	ArrayType  *transarray = PG_GETARG_ARRAYTYPE_P(1);
-	Datum	   *collectdatums;
-	Datum	   *transdatums;
-	int			ndatums;
-	Datum		N,
-				sumX;
-
-	/* We assume the input is array of numeric */
-	deconstruct_array(collectarray,
-					  NUMERICOID, -1, false, 'i',
-					  &collectdatums, NULL, &ndatums);
-	if (ndatums != 2)
-		elog(ERROR, "expected 2-element numeric array");
-	N = collectdatums[0];
-	sumX = collectdatums[1];
-
-	/* We assume the input is array of numeric */
-	deconstruct_array(transarray,
-					  NUMERICOID, -1, false, 'i',
-					  &transdatums, NULL, &ndatums);
-	if (ndatums != 2)
-		elog(ERROR, "expected 2-element numeric array");
-
-	N = DirectFunctionCall2(numeric_add, N, transdatums[0]);
-	sumX = DirectFunctionCall2(numeric_add, sumX, transdatums[1]);
-
-	collectdatums[0] = N;
-	collectdatums[1] = sumX;
-
-	PG_RETURN_ARRAYTYPE_P(construct_array(collectdatums, 2,
-							 NUMERICOID, -1, false, 'i'));
-}
 
 Datum
 int8_avg_collect(PG_FUNCTION_ARGS)

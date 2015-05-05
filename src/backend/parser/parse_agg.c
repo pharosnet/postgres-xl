@@ -1256,10 +1256,10 @@ build_aggregate_fnexprs(Oid *agg_input_types,
 						Oid invtransfn_oid,
 						Oid finalfn_oid,
 						Expr **transfnexpr,
+						Expr **invtransfnexpr,
 #ifdef XCP
 						Expr **collectfnexpr,
 #endif
-						Expr **invtransfnexpr,
 						Expr **finalfnexpr)
 {
 	Param	   *argp;

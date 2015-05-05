@@ -2518,9 +2518,7 @@ DESCR("aggregate transition function");
 #ifdef PGXC
 DATA(insert OID = 6000 (  float8_collect			PGNSP PGUID 12 1 0 0 0 f f f f t f i 2 0 1022 "1022 1022" _null_ _null_ _null_ _null_ float8_collect _null_ _null_ _null_ ));
 DESCR("aggregate collection function");
-DATA(insert OID = 6001 (  numeric_avg_collect		PGNSP PGUID 12 1 0 0 0 f f f f t f i 2 0 1231 "1231 1231" _null_ _null_ _null_ _null_ numeric_avg_collect _null_ _null_ _null_ ));
-DESCR("aggregate collection function");
-DATA(insert OID = 6002 (  numeric_collect			PGNSP PGUID 12 1 0 0 0 f f f f t f i 2 0 1231 "1231 1231" _null_ _null_ _null_ _null_ numeric_collect _null_ _null_ _null_ ));
+DATA(insert OID = 6002 (  numeric_collect			PGNSP PGUID 12 1 0 0 0 f f f f t f i 2 0 6013 "6013 6013" _null_ _null_ _null_ _null_ numeric_collect _null_ _null_ _null_ ));
 DESCR("aggregate collection function");
 DATA(insert OID = 6003 (  interval_collect			PGNSP PGUID 12 1 0 0 0 f f f f t f i 2 0 1187 "1187 1187" _null_ _null_ _null_ _null_ interval_collect _null_ _null_ _null_ ));
 DESCR("aggregate transition function");
@@ -5071,6 +5069,14 @@ DESCR("lock the cluster for taking backup");
 DATA(insert OID = 6012 ( stormdb_promote_standby	PGNSP PGUID 12 1 0 0 0 f f f f t f v 0 0 2278 "" _null_ _null_ _null_ _null_ stormdb_promote_standby _null_ _null_ _null_ ));
 DESCR("touch trigger file on a standby machine to end replication");
 #endif
+DATA(insert OID = 6014 ( numeric_agg_state_in				PGNSP PGUID 12 1 0 0 0 f f f f t f i 3 0 1700 "6013" _null_ _null_ _null_ _null_ numeric_agg_state_in _null_ _null_ _null_ ));
+DESCR("I/O");
+DATA(insert OID = 6015 ( numeric_agg_state_out			PGNSP PGUID 12 1 0 0 0 f f f f t f i 1 0 6013 "1700" _null_ _null_ _null_ _null_ numeric_agg_state_out _null_ _null_ _null_ ));
+DESCR("I/O");
+DATA(insert OID = 6016 (  numeric_agg_state_recv		   PGNSP PGUID 12 1 0 0 0 f f f f t f i 3 0 6013 "2281" _null_ _null_ _null_ _null_ numeric_agg_state_recv _null_ _null_ _null_ ));
+DESCR("I/O");
+DATA(insert OID = 6017 (  numeric_agg_state_send		   PGNSP PGUID 12 1 0 0 0 f f f f t f i 1 0 17 "6013" _null_ _null_ _null_ _null_ numeric_agg_state_send _null_ _null_ _null_ ));
+DESCR("I/O");
 #endif
 
 /*
