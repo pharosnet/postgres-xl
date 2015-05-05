@@ -2080,6 +2080,7 @@ SetRemoteSubplan(CachedPlanSource *plansource, const char *plan_string)
 		plan->is_saved = false;
 	}
 	plan->is_valid = true;
+	plan->is_oneshot = false;
 
 	plansource->gplan = plan;
 

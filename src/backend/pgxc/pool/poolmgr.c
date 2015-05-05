@@ -243,6 +243,8 @@ PoolManagerInit()
 											   ALLOCSET_DEFAULT_INITSIZE,
 											   ALLOCSET_DEFAULT_MAXSIZE);
 
+	ForgetLockFiles();	
+
 	/*
 	 * If possible, make this process a group leader, so that the postmaster
 	 * can signal any child processes too.	(pool manager probably never has any
@@ -446,7 +448,10 @@ GetPoolManagerHandle(void)
 								socketdir)));
 			}
 			else
+			{
+				success++;
 				break;
+			}
 		}
 
 		if (!success && elemlist != NIL)
@@ -2739,11 +2744,7 @@ PoolerLoop(void)
 	StringInfoData 	input_message;
 #ifdef XCP
 	time_t			last_maintenance = (time_t) 0;
-	int				nfds;
-	fd_set			rfds;
 #endif
-
-	FD_ZERO(&rfds);
 
 #ifdef HAVE_UNIX_SOCKETS
 	if (Unix_socket_directories)
@@ -2766,7 +2767,6 @@ PoolerLoop(void)
 							"unix_socket_directories")));
 		}
 
-		nfds = 0;
 		foreach(l, elemlist)
 		{
 			char	   *socketdir = (char *) lfirst(l);
@@ -2778,20 +2778,18 @@ PoolerLoop(void)
 			{
 				saved_errno = errno;
 				ereport(WARNING,
-						(errmsg("could not create Unix-domain socket in directory \"%s\"",
-								socketdir)));
+						(errmsg("could not create Unix-domain socket in directory \"%s\", errno %d, server_fd %d",
+								socketdir, saved_errno, server_fd)));
 			}
 			else
 			{
-				/* watch for incoming connections */
-				FD_SET(server_fd, &rfds);
-				nfds = Max(nfds, server_fd);
+				success++;
 			}
 		}
 
 		if (!success && elemlist != NIL)
 			ereport(ERROR,
-					(errmsg("failed to connect to pool manager: %m")));
+					(errmsg("failed to start listening on Unix-domain socket for pooler: %m")));
 
 		list_free_deep(elemlist);
 		pfree(rawstring);
@@ -2801,6 +2799,8 @@ PoolerLoop(void)
 
 	for (;;)
 	{
+		int			nfds;
+		fd_set		rfds;
 		int			retval;
 		int			i;
 
@@ -2810,6 +2810,12 @@ PoolerLoop(void)
 		 */
 		if (!PostmasterIsAlive())
 			exit(1);
+
+		/* watch for incoming connections */
+		FD_ZERO(&rfds);
+		FD_SET(server_fd, &rfds);
+
+		nfds = server_fd;
 
 		/* watch for incoming messages */
 		for (i = 0; i < agentCount; i++)

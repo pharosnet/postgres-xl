@@ -1008,6 +1008,12 @@ CreateLockFile(const char *filename, bool amPostmaster,
 	lock_files = lappend(lock_files, pstrdup(filename));
 }
 
+void
+ForgetLockFiles()
+{
+	lock_files = NIL;
+}
+
 /*
  * Create the data directory lockfile.
  *

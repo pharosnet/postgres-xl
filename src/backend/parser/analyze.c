@@ -2959,6 +2959,10 @@ ParseAnalyze_callback(ParseState *pstate, Query *query)
 {
 	if (prev_ParseAnalyze_callback)
 		prev_ParseAnalyze_callback(pstate, query);
+
+	if (query && query->commandType == CMD_UTILITY)
+		return;
+	
 	ParseAnalyze_rtable_walk(query->rtable);
 }
 

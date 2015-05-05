@@ -1453,7 +1453,7 @@ GetSnapshotData(Snapshot snapshot)
 	 * !!TODO We don't seem to fully support Hot Standby. So why should we even
 	 * exempt RecoveryInProgress()?
 	 */
-	if (!RecoveryInProgress() && (IsPostmasterEnvironment || !useLocalXid))
+	if (IsPostmasterEnvironment && !useLocalXid)
 		elog(ERROR, "Was unable to obtain a snapshot from GTM.");
 #else
 #endif
@@ -3070,6 +3070,10 @@ GetSnapshotDataFromGTM(Snapshot snapshot)
 	else
 	{
 		RecentGlobalXmin = gtm_snapshot->sn_recent_global_xmin;
+		/*
+		 * XXX Is it ok to set RecentGlobalDataXmin same as RecentGlobalXmin ?
+		 */
+		RecentGlobalDataXmin = RecentGlobalXmin;
 		SetGlobalSnapshotData(gtm_snapshot->sn_xmin, gtm_snapshot->sn_xmax,
 				gtm_snapshot->sn_xcnt, gtm_snapshot->sn_xip, SNAPSHOT_DIRECT);
 		GetSnapshotFromGlobalSnapshot(snapshot);
@@ -3217,6 +3221,11 @@ GetSnapshotFromGlobalSnapshot(Snapshot snapshot)
 				}
 			}
 		}
+
+		/*
+		 * XXX Is it ok to set RecentGlobalDataXmin same as RecentGlobalXmin ?
+		 */
+		RecentGlobalDataXmin = RecentGlobalXmin;
 
 		if (!TransactionIdIsValid(MyPgXact->xmin))
 			MyPgXact->xmin = snapshot->xmin;

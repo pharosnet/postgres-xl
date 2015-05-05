@@ -2010,7 +2010,9 @@ _readModifyTable(void)
 	READ_NODE_FIELD(resultRelations);
 	READ_INT_FIELD(resultRelIndex);
 	READ_NODE_FIELD(plans);
+	READ_NODE_FIELD(withCheckOptionLists);
 	READ_NODE_FIELD(returningLists);
+	READ_NODE_FIELD(fdwPrivLists);
 	READ_NODE_FIELD(rowMarks);
 	READ_INT_FIELD(epqParam);
 
