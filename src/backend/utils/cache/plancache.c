@@ -629,6 +629,23 @@ RevalidateCachedQuery(CachedPlanSource *plansource)
 		return NIL;
 	}
 
+#ifdef XCP
+	/*
+	 * In the raw_parse_tree is not available, there is no way the plan can be
+	 * revalidated and there must not be any need to do so. Trust the existing
+	 * plan
+	 *
+	 * XXX We should rather check this as an assertion, but currently
+	 * RemoteSubplan gets invalidated because of search_path changes as temp
+	 * namespace gets added in subsequent revalidation.
+	 */
+	if (plansource->raw_parse_tree == NIL)
+	{
+		Assert(plansource->is_valid);
+		return NIL;
+	}
+#endif
+
 	/*
 	 * If the query is currently valid, we should have a saved search_path ---
 	 * check to see if that matches the current environment.  If not, we want
