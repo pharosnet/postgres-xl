@@ -2011,6 +2011,13 @@ ExecInitAgg(Agg *node, EState *estate, int eflags)
 		{
 			peraggstate->transfn_oid = transfn_oid = collectfn_oid;
 			peraggstate->collectfn_oid = collectfn_oid = InvalidOid;
+			
+			/*
+			 * Tuples should only be filtered on the datanodes when coordinator
+			 * is doing collection and finalisation
+			 */			
+			aggref->aggfilter = NULL;
+			aggrefstate->aggfilter = NULL;
 		}
 #else
 		/*

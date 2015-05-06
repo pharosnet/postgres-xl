@@ -1326,6 +1326,33 @@ rewriteTargetListUD(Query *parsetree, RangeTblEntry *target_rte,
 	}
 #endif
 
+#ifdef PGXC
+	/*
+	 * If relation is non-replicated, we need also to identify the Datanode
+	 * from where tuple is fetched.
+	 */
+	if (IS_PGXC_COORDINATOR &&
+		!IsConnFromCoord() &&
+		!IsLocatorReplicated(GetRelationLocType(RelationGetRelid(target_relation))))
+	{
+		var = makeVar(parsetree->resultRelation,
+					  XC_NodeIdAttributeNumber,
+					  INT4OID,
+					  -1,
+					  InvalidOid,
+					  0);
+
+		attrname = "xc_node_id";
+
+		tle = makeTargetEntry((Expr *) var,
+							  list_length(parsetree->targetList) + 1,
+							  pstrdup(attrname),
+							  true);
+
+		parsetree->targetList = lappend(parsetree->targetList, tle);
+	}
+#endif
+
 	if (target_relation->rd_rel->relkind == RELKIND_RELATION ||
 		target_relation->rd_rel->relkind == RELKIND_MATVIEW)
 	{
@@ -1398,32 +1425,6 @@ rewriteTargetListUD(Query *parsetree, RangeTblEntry *target_rte,
 		parsetree->targetList = lappend(parsetree->targetList, tle);
 	}
 
-#ifdef PGXC
-	/*
-	 * If relation is non-replicated, we need also to identify the Datanode
-	 * from where tuple is fetched.
-	 */
-	if (IS_PGXC_COORDINATOR &&
-		!IsConnFromCoord() &&
-		!IsLocatorReplicated(GetRelationLocType(RelationGetRelid(target_relation))))
-	{
-		var = makeVar(parsetree->resultRelation,
-					  XC_NodeIdAttributeNumber,
-					  INT4OID,
-					  -1,
-					  InvalidOid,
-					  0);
-
-		attrname = "xc_node_id";
-
-		tle = makeTargetEntry((Expr *) var,
-							  list_length(parsetree->targetList) + 1,
-							  pstrdup(attrname),
-							  true);
-
-		parsetree->targetList = lappend(parsetree->targetList, tle);
-	}
-#endif
 }
 
 
