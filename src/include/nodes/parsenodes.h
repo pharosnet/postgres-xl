@@ -1592,6 +1592,8 @@ typedef struct CreateStmt
 	char	   *tablespacename; /* table space to use, or NULL */
 	bool		if_not_exists;	/* just do nothing if it already exists? */
 #ifdef PGXC
+	ObjectType		relkind;		/* kind of relation to create */
+	bool			islocal;		/* create only on the current node */
 	DistributeBy *distributeby; 	/* distribution to use, or NULL */
 	PGXCSubCluster *subcluster;		/* subcluster of table */
 #endif
@@ -2701,6 +2703,9 @@ typedef struct CreateTableAsStmt
 	Node	   *query;			/* the query (see comments above) */
 	IntoClause *into;			/* destination table */
 	ObjectType	relkind;		/* OBJECT_TABLE or OBJECT_MATVIEW */
+#ifdef PGXC
+	bool		islocal;		/* local table */
+#endif	
 	bool		is_select_into; /* it was written as SELECT INTO */
 } CreateTableAsStmt;
 

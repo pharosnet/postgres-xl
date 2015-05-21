@@ -1489,6 +1489,7 @@ ProcessUtilitySlow(Node *parsetree,
 					Oid			relOid;
 #ifdef PGXC
 					bool		is_temp = false;
+					bool		is_local = ((CreateStmt *) parsetree)->islocal;
 #endif
 
 					/* Run parse analysis ... */
@@ -1501,7 +1502,7 @@ ProcessUtilitySlow(Node *parsetree,
 					 * it should explicitly specify distribution.
 					 */
 					stmts = transformCreateStmt((CreateStmt *) parsetree,
-							queryString, !sentToRemote);
+							queryString, !is_local && !sentToRemote);
 #else
 					stmts = transformCreateStmt((CreateStmt *) parsetree,
 												queryString);
@@ -1566,7 +1567,9 @@ ProcessUtilitySlow(Node *parsetree,
 					 */
 					if (!sentToRemote)
 #ifdef XCP
-						stmts = AddRemoteQueryNode(stmts, queryString, is_temp ? EXEC_ON_DATANODES : EXEC_ON_ALL_NODES);
+						stmts = AddRemoteQueryNode(stmts, queryString, is_local
+								? EXEC_ON_NONE
+								: (is_temp ? EXEC_ON_DATANODES : EXEC_ON_ALL_NODES));
 #else
 					stmts = AddRemoteQueryNode(stmts, queryString, EXEC_ON_ALL_NODES, is_temp);
 #endif
@@ -2133,11 +2136,35 @@ ProcessUtilitySlow(Node *parsetree,
 			case T_CreateTableAsStmt:
 				ExecCreateTableAs((CreateTableAsStmt *) parsetree,
 								  queryString, params, completionTag);
+#ifdef PGXC
+				if ((IS_PGXC_COORDINATOR) && !IsConnFromCoord())
+				{
+					CreateTableAsStmt *stmt = (CreateTableAsStmt *) parsetree;
+
+					/*
+					 * CTAS for normal tables should have been rewritten as a
+					 * CREATE TABLE + SELECT INTO
+					 */
+					Assert(stmt->relkind == OBJECT_MATVIEW);
+					if (stmt->into->rel->relpersistence != RELPERSISTENCE_TEMP)
+							ExecUtilityStmtOnNodes(queryString, NULL,
+									sentToRemote, false, EXEC_ON_COORDS, false);
+				}
+#endif
 				break;
 
 			case T_RefreshMatViewStmt:
 				ExecRefreshMatView((RefreshMatViewStmt *) parsetree,
 								   queryString, params, completionTag);
+#ifdef PGXC
+				if ((IS_PGXC_COORDINATOR) && !IsConnFromCoord())
+				{
+					RefreshMatViewStmt *stmt = (RefreshMatViewStmt *) parsetree;
+					if (stmt->relation->relpersistence != RELPERSISTENCE_TEMP)
+							ExecUtilityStmtOnNodes(queryString, NULL,
+									sentToRemote, false, EXEC_ON_COORDS, false);
+				}
+#endif
 				break;
 
 			case T_CreateTrigStmt:
@@ -4061,6 +4088,7 @@ ExecUtilityFindNodes(ObjectType object_type,
 			 */
 		case OBJECT_RULE:
 		case OBJECT_VIEW:
+		case OBJECT_MATVIEW:
 			/* Check if object is a temporary view */
 			if ((*is_temp = IsTempTable(object_id)))
 				exec_type = EXEC_ON_NONE;
@@ -4070,10 +4098,31 @@ ExecUtilityFindNodes(ObjectType object_type,
 
 		case OBJECT_INDEX:
 			/* Check if given index uses temporary tables */
-			if ((*is_temp = IsTempTable(object_id)))
-				exec_type = EXEC_ON_DATANODES;
-			else
-				exec_type = EXEC_ON_ALL_NODES;
+			{
+				Relation	rel;
+				bool		is_matview;
+
+				rel = relation_open(object_id, NoLock);
+				
+				*is_temp = (rel->rd_rel->relpersistence == RELPERSISTENCE_TEMP);
+				is_matview = (rel->rd_rel->relkind == RELKIND_MATVIEW);
+				
+				relation_close(rel, NoLock);
+
+				exec_type = EXEC_ON_NONE;
+				if (*is_temp)
+				{
+					if (!is_matview)
+						exec_type = EXEC_ON_DATANODES;
+				}
+				else
+				{
+					if (!is_matview)
+						exec_type = EXEC_ON_ALL_NODES;
+					else
+						exec_type = EXEC_ON_COORDS;
+				}
+			}
 			break;
 
 		default:
@@ -4107,17 +4156,30 @@ ExecUtilityFindNodesRelkind(Oid relid, bool *is_temp)
 #endif
 		case RELKIND_RELATION:
 #ifdef XCP
-			if ((*is_temp = IsTempTable(relid)))
-				exec_type = EXEC_ON_DATANODES;
-			else
-				exec_type = EXEC_ON_ALL_NODES;
+				if (*is_temp = IsTempTable(relid))
+				{
+					if (IsLocalTempTable(relid))
+						exec_type = EXEC_ON_NONE;
+					else
+						exec_type = EXEC_ON_DATANODES;
+				}
+				else
+					exec_type = EXEC_ON_ALL_NODES;
 #else
-			*is_temp = IsTempTable(relid);
-			exec_type = EXEC_ON_ALL_NODES;
+				*is_temp = IsTempTable(relid);
+				exec_type = EXEC_ON_ALL_NODES;
 #endif
 			break;
 
 		case RELKIND_VIEW:
+			if ((*is_temp = IsTempTable(relid)))
+				exec_type = EXEC_ON_NONE;
+			else
+				exec_type = EXEC_ON_COORDS;
+			break;
+
+		case RELKIND_MATVIEW:
+			/* Check if object is a temporary view */
 			if ((*is_temp = IsTempTable(relid)))
 				exec_type = EXEC_ON_NONE;
 			else
@@ -4343,6 +4405,7 @@ DropStmtPreTreatment(DropStmt *stmt, const char *queryString, bool sentToRemote,
 		case OBJECT_SEQUENCE:
 		case OBJECT_VIEW:
 		case OBJECT_INDEX:
+		case OBJECT_MATVIEW:
 			{
 				/*
 				 * Check the list of objects going to be dropped.

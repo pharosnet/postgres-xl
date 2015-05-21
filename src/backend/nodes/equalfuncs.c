@@ -1129,6 +1129,8 @@ _equalCreateStmt(const CreateStmt *a, const CreateStmt *b)
 	COMPARE_STRING_FIELD(tablespacename);
 	COMPARE_SCALAR_FIELD(if_not_exists);
 #ifdef PGXC
+	COMPARE_SCALAR_FIELD(islocal);
+	COMPARE_SCALAR_FIELD(relkind);
 	COMPARE_NODE_FIELD(distributeby);
 	COMPARE_NODE_FIELD(subcluster);
 #endif
@@ -1553,6 +1555,9 @@ _equalCreateTableAsStmt(const CreateTableAsStmt *a, const CreateTableAsStmt *b)
 	COMPARE_NODE_FIELD(into);
 	COMPARE_SCALAR_FIELD(relkind);
 	COMPARE_SCALAR_FIELD(is_select_into);
+#ifdef PGXC
+	COMPARE_SCALAR_FIELD(islocal);
+#endif
 
 	return true;
 }

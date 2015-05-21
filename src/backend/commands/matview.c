@@ -25,9 +25,15 @@
 #include "commands/matview.h"
 #include "commands/tablecmds.h"
 #include "commands/tablespace.h"
+#ifdef PGXC
+#include "commands/vacuum.h"
+#endif
 #include "executor/executor.h"
 #include "executor/spi.h"
 #include "miscadmin.h"
+#ifdef PGXC
+#include "nodes/makefuncs.h"
+#endif
 #include "parser/parse_relation.h"
 #include "rewrite/rewriteHandler.h"
 #include "storage/lmgr.h"
@@ -554,11 +560,29 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 	if (SPI_connect() != SPI_OK_CONNECT)
 		elog(ERROR, "SPI_connect failed");
 
+#ifndef PGXC	
 	/* Analyze the temp table with the new contents. */
 	appendStringInfo(&querybuf, "ANALYZE %s", tempname);
 	if (SPI_exec(querybuf.data, 0) != SPI_OK_UTILITY)
 		elog(ERROR, "SPI_exec failed: %s", querybuf.data);
-
+#else
+	{
+		/*
+		 * Don't want to send down the ANALYZE on the remote nodes because the
+		 * temporary table was not created there to start with. We could have
+		 * invented a special option for ANALYZE to only run locally. But we
+		 * could instead just cook up a VacuumStmt and call vacuum (with
+		 * VACOPT_ANALYZE option of course) directly
+		 */
+		VacuumStmt *stmt = makeNode(VacuumStmt);
+		RangeVar *rv = makeRangeVar(
+				get_namespace_name(RelationGetNamespace(tempRel)),
+				RelationGetRelationName(tempRel), -1);
+		stmt->relation = rv;
+		stmt->options = VACOPT_ANALYZE;
+		vacuum(stmt, InvalidOid, true, NULL, false, true);
+	}
+#endif
 	/*
 	 * We need to ensure that there are not duplicate rows without NULLs in
 	 * the new data set before we can count on the "diff" results.  Check for
@@ -589,8 +613,22 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 
 	/* Start building the query for creating the diff table. */
 	resetStringInfo(&querybuf);
+
+#ifdef PGXC
+	/*
+	 * In Postgres-XL we use LOCAL TEMP table to define a table that gets
+	 * created only on the coordinator. In this case, we need the local table
+	 * only 
+	 *
+	 * XXX Are we breaking SQL standard compatibility?
+	 */ 
+#endif	
 	appendStringInfo(&querybuf,
+#ifdef PGXC
+					"CREATE LOCAL TEMP TABLE %s AS "
+#else					 
 					 "CREATE TEMP TABLE %s AS "
+#endif					 
 					 "SELECT mv.ctid AS tid, newdata "
 					 "FROM %s mv FULL JOIN %s newdata ON (",
 					 diffname, matviewname, tempname);
@@ -678,7 +716,11 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid)
 						   "ORDER BY tid");
 
 	/* Create the temporary "diff" table. */
+#ifdef PGXC	
+	if (SPI_exec(querybuf.data, 0) != SPI_OK_INSERT)
+#else		
 	if (SPI_exec(querybuf.data, 0) != SPI_OK_UTILITY)
+#endif		
 		elog(ERROR, "SPI_exec failed: %s", querybuf.data);
 
 	/*

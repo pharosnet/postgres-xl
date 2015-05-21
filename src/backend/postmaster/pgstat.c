@@ -1892,9 +1892,6 @@ pgstat_update_heap_dead_tuples(Relation rel, int delta)
 void
 pgstat_count_remote_insert(Relation rel, int n)
 {
-	/* Should be only applied to distributed table */
-	Assert(rel->rd_locator_info);
-
 	/* For now use the same counters as for heap insert */
 	pgstat_count_heap_insert(rel, n);
 }
@@ -1907,9 +1904,6 @@ void
 pgstat_count_remote_update(Relation rel, int n)
 {
 	PgStat_TableStatus *pgstat_info = rel->pgstat_info;
-
-	/* Should be only applied to distributed table */
-	Assert(rel->rd_locator_info);
 
 	if (pgstat_info != NULL)
 	{

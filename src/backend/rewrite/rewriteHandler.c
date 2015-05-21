@@ -3702,11 +3702,16 @@ QueryRewriteCTAS(Query *parsetree)
 
 	/* Get the target table */
 	stmt = (CreateTableAsStmt *) parsetree->utilityStmt;
+
+	if (stmt->relkind == OBJECT_MATVIEW)
+		return list_make1(parsetree);
+
 	relation = stmt->into->rel;
 
 	/* Start building a CreateStmt for creating the target table */
 	create_stmt = makeNode(CreateStmt);
 	create_stmt->relation = relation;
+	create_stmt->islocal = stmt->islocal;
 	into = stmt->into;
 
 	/* Obtain the target list of new table */

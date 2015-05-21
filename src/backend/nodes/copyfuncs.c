@@ -2998,6 +2998,8 @@ CopyCreateStmtFields(const CreateStmt *from, CreateStmt *newnode)
 	COPY_STRING_FIELD(tablespacename);
 	COPY_SCALAR_FIELD(if_not_exists);
 #ifdef PGXC
+	COPY_SCALAR_FIELD(islocal);
+	COPY_SCALAR_FIELD(relkind);
 	COPY_NODE_FIELD(distributeby);
 	COPY_NODE_FIELD(subcluster);
 #endif
@@ -3506,6 +3508,9 @@ _copyCreateTableAsStmt(const CreateTableAsStmt *from)
 	COPY_NODE_FIELD(into);
 	COPY_SCALAR_FIELD(relkind);
 	COPY_SCALAR_FIELD(is_select_into);
+#ifdef PGXC	
+	COPY_SCALAR_FIELD(islocal);
+#endif
 
 	return newnode;
 }

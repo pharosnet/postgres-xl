@@ -161,6 +161,10 @@ DESCR("");
 #define		  RELPERSISTENCE_UNLOGGED	'u'		/* unlogged permanent table */
 #define		  RELPERSISTENCE_TEMP		't'		/* temporary table */
 
+#ifdef PGXC
+#define		  RELPERSISTENCE_LOCAL_TEMP	'l'	/* local temp table */
+#endif
+
 /* default selection for replica identity (primary key or nothing) */
 #define		  REPLICA_IDENTITY_DEFAULT	'd'
 /* no replica identity is logged for this relation */

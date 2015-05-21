@@ -504,6 +504,14 @@ typedef struct StdRdOptions
 	 !(relation)->rd_islocaltemp)
 #endif
 
+#ifdef XCP
+/*
+ * RELATION_IS_COORDINATOR_LOCAL
+ * 	Test for a coordinator only relation such as LOCAL TEMP table or a MATVIEW
+ */
+#define RELATION_IS_COORDINATOR_LOCAL(relation) \
+	((RELATION_IS_LOCAL(relation) && !RelationGetLocInfo(relation)))
+#endif
 
 /*
  * RelationIsScannable

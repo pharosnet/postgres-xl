@@ -5796,16 +5796,12 @@ get_utility_query_def(Query *query, deparse_context *context)
 		bool		istemp = (relation->relpersistence == RELPERSISTENCE_TEMP);
 		bool		isunlogged = (relation->relpersistence == RELPERSISTENCE_UNLOGGED);
 
-		if (istemp && relation->schemaname)
-			ereport(ERROR,
-					(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
-					 errmsg("temporary tables cannot specify a schema name")));
-
-		appendStringInfo(buf, "CREATE %s %s TABLE ",
+		appendStringInfo(buf, "CREATE %s %s %s TABLE ",
+				stmt->islocal ? "LOCAL" : "",
 				istemp ? "TEMP" : "",
 				isunlogged ? "UNLOGGED" : "");
 
-		if (relation->schemaname && relation->schemaname[0])
+		if (!istemp && relation->schemaname && relation->schemaname[0])
 			appendStringInfo(buf, "%s.", relation->schemaname);
 		appendStringInfo(buf, "%s", relation->relname);
 

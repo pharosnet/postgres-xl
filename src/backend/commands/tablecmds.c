@@ -11854,6 +11854,18 @@ IsTempTable(Oid relid)
 	return res;
 }
 
+bool
+IsLocalTempTable(Oid relid)
+{
+	Relation	rel;
+	bool		res;
+	rel = relation_open(relid, NoLock);
+	res = (rel->rd_rel->relpersistence == RELPERSISTENCE_TEMP &&
+			rel->rd_locator_info == NULL);
+	relation_close(rel, NoLock);
+	return res;
+}
+
 /*
  * IsIndexUsingTemp
  *
