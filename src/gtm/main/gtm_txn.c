@@ -318,7 +318,7 @@ GTM_RemoveAllTransInfos(uint32 client_id, int backend_id)
 			(gtm_txninfo->gti_state != GTM_TXN_PREPARED) &&
 			(gtm_txninfo->gti_state != GTM_TXN_PREPARE_IN_PROGRESS) &&
 			(GTM_CLIENT_ID_EQ(gtm_txninfo->gti_client_id, client_id)) &&
-			((gtm_txninfo->gti_backend_id == backend_id) || (backend_id == -1)))
+			((gtm_txninfo->gti_proxy_client_id == backend_id) || (backend_id == -1)))
 		{
 			/* remove the entry */
 			GTMTransactions.gt_open_transactions = gtm_list_delete_cell(GTMTransactions.gt_open_transactions, cell, prev);
@@ -331,7 +331,7 @@ GTM_RemoveAllTransInfos(uint32 client_id, int backend_id)
 
 			elog(DEBUG1, "GTM_RemoveAllTransInfos: removing transaction id %u, %u:%u %d:%d",
 					gtm_txninfo->gti_gxid, gtm_txninfo->gti_client_id,
-					client_id, gtm_txninfo->gti_backend_id, backend_id);
+					client_id, gtm_txninfo->gti_proxy_client_id, backend_id);
 			/*
 			 * Now mark the transaction as aborted and mark the structure as not-in-use
 			 */
@@ -846,7 +846,7 @@ init_GTM_TransactionInfo(GTM_TransactionInfo *gtm_txninfo,
 	 * irrespective of whether the remote client is a GTM proxy or a PG
 	 * backend.
 	 *
-	 * gti_backend_id: is the identifier assigned by the GTM proxy to its
+	 * gti_proxy_client_id: is the identifier assigned by the GTM proxy to its
 	 * client. Proxy sends us this identifier and we track it in the list of
 	 * open transactions. If a backend disconnects from the proxy, it sends us
 	 * a MSG_BACKEND_DISCONNECT message, along with the backend identifier. As
@@ -854,7 +854,7 @@ init_GTM_TransactionInfo(GTM_TransactionInfo *gtm_txninfo,
 	 * the backend.
 	 */ 
 	gtm_txninfo->gti_client_id = client_id;
-	gtm_txninfo->gti_backend_id = connid;
+	gtm_txninfo->gti_proxy_client_id = connid;
 }
 
 

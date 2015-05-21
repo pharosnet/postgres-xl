@@ -184,7 +184,7 @@ gtm_get_transactioninfo_size(GTM_TransactionInfo *data)
 	len += sizeof(GlobalTransactionId);		/* gti_xmin */
 	len += sizeof(GTM_IsolationLevel);		/* gti_isolevel */
 	len += sizeof(bool);				/* gti_readonly */
-	len += sizeof(GTMProxy_ConnID);			/* gti_backend_id */
+	len += sizeof(GTMProxy_ConnID);			/* gti_proxy_client_id */
 	len += sizeof(uint32);				/* gti_nodestring length */
 	if (data->nodestring != NULL)
 		len += strlen(data->nodestring);
@@ -268,8 +268,8 @@ gtm_serialize_transactioninfo(GTM_TransactionInfo *data, char *buf, size_t bufle
 	memcpy(buf + len, &(data->gti_readonly), sizeof(bool));
 	len += sizeof(bool);
 
-	/* GTM_TransactionInfo.gti_backend_id */
-	memcpy(buf + len, &(data->gti_backend_id), sizeof(GTMProxy_ConnID));
+	/* GTM_TransactionInfo.gti_proxy_client_id */
+	memcpy(buf + len, &(data->gti_proxy_client_id), sizeof(GTMProxy_ConnID));
 	len += sizeof(GTMProxy_ConnID);
 
 	/* GTM_TransactionInfo.nodestring */
@@ -394,8 +394,8 @@ gtm_deserialize_transactioninfo(GTM_TransactionInfo *data, const char *buf, size
 	memcpy(&(data->gti_readonly), buf + len, sizeof(bool));
 	len += sizeof(bool);
 
-	/* GTM_TransactionInfo.gti_backend_id */
-	memcpy(&(data->gti_backend_id), buf + len, sizeof(GTMProxy_ConnID));
+	/* GTM_TransactionInfo.gti_proxy_client_id */
+	memcpy(&(data->gti_proxy_client_id), buf + len, sizeof(GTMProxy_ConnID));
 	len += sizeof(GTMProxy_ConnID);
 
 	/* GTM_TransactionInfo.gti_nodestring */

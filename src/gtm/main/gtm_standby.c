@@ -147,7 +147,7 @@ gtm_standby_restore_gxid(void)
 		GTMTransactions.gt_transactions_array[handle].gti_xmin = txn.gt_transactions_array[i].gti_xmin;
 		GTMTransactions.gt_transactions_array[handle].gti_isolevel = txn.gt_transactions_array[i].gti_isolevel;
 		GTMTransactions.gt_transactions_array[handle].gti_readonly = txn.gt_transactions_array[i].gti_readonly;
-		GTMTransactions.gt_transactions_array[handle].gti_backend_id = txn.gt_transactions_array[i].gti_backend_id;
+		GTMTransactions.gt_transactions_array[handle].gti_proxy_client_id = txn.gt_transactions_array[i].gti_proxy_client_id;
 
 		if (txn.gt_transactions_array[i].nodestring == NULL )
 			GTMTransactions.gt_transactions_array[handle].nodestring = NULL;

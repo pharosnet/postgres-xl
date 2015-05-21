@@ -44,7 +44,7 @@ dump_transactioninfo_elog(GTM_TransactionInfo *txn)
 	elog(LOG, "gti_xmin: %d", txn->gti_xmin);
 	elog(LOG, "gti_isolevel: %d", txn->gti_isolevel);
 	elog(LOG, "gti_readonly: %d", txn->gti_readonly);
-	elog(LOG, "gti_backend_id: %d", txn->gti_backend_id);
+	elog(LOG, "gti_proxy_client_id: %d", txn->gti_proxy_client_id);
 	elog(LOG, "gti_nodestring: %s", txn->nodestring);
 	elog(LOG, "gti_gid: %s", txn->gti_gid);
 

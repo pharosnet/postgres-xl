@@ -78,7 +78,7 @@ build_dummy_gtm_transactioninfo()
   data = (GTM_TransactionInfo *)malloc( sizeof(GTM_TransactionInfo) );
 
   data->gti_handle = 3;
-  data->gti_backend_id = 13;
+  data->gti_proxy_client_id = 13;
   data->gti_datanodecount = 0;
   data->gti_datanodes = NULL;
   data->gti_coordcount = 0;
@@ -144,7 +144,7 @@ test_transactioninfo_1(void)
   printf("deserialized.\n");
 
   _ASSERT(data2->gti_handle==3);
-  _ASSERT(data2->gti_backend_id==13);
+  _ASSERT(data2->gti_proxy_client_id==13);
   _ASSERT(data2->gti_datanodecount==3);
   _ASSERT(data2->gti_coordcount==5);
   _ASSERT(data2->gti_current_snapshot.sn_xmin==128);
@@ -221,9 +221,9 @@ test_transactions_1(void)
   printf("gt_lastslot=%d\n",
 	 data2->gt_lastslot);
 
-  printf("gti_handle=%d, gti_backend_id=%d\n", 
+  printf("gti_handle=%d, gti_proxy_client_id=%d\n", 
 	 data2->gt_transactions_array[0].gti_handle,
-	 data2->gt_transactions_array[0].gti_backend_id);
+	 data2->gt_transactions_array[0].gti_proxy_client_id);
 
   TEARDOWN();
 

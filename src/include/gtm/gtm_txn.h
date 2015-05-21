@@ -120,7 +120,7 @@ typedef struct GTM_TransactionInfo
 	GlobalTransactionId		gti_xmin;
 	GTM_IsolationLevel		gti_isolevel;
 	bool					gti_readonly;
-	GTMProxy_ConnID			gti_backend_id;
+	GTMProxy_ConnID			gti_proxy_client_id;
 	char					*nodestring; /* List of nodes prepared */
 	char					*gti_gid;
 
