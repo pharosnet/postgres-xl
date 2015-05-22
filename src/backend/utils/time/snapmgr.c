@@ -639,7 +639,7 @@ GetActiveSnapshot(void)
 	 * Check if topmost snapshot is null or not,
 	 * if it is, a new one will be taken from GTM.
 	 */
-	if (!ActiveSnapshot && IS_PGXC_COORDINATOR && !IsConnFromCoord())
+	if (!ActiveSnapshot && IS_PGXC_LOCAL_COORDINATOR)
 		return NULL;
 #endif
 	Assert(ActiveSnapshot != NULL);

@@ -312,8 +312,7 @@ DefineSequence(CreateSeqStmt *seq)
 	 * Remote Coordinator is in charge of creating sequence in GTM.
 	 * If sequence is temporary, it is not necessary to create it on GTM.
 	 */
-	if (IS_PGXC_COORDINATOR &&
-		!IsConnFromCoord() &&
+	if (IS_PGXC_LOCAL_COORDINATOR &&
 		(seq->sequence->relpersistence == RELPERSISTENCE_PERMANENT ||
 		 seq->sequence->relpersistence == RELPERSISTENCE_UNLOGGED))
 	{
@@ -601,9 +600,7 @@ AlterSequence(AlterSeqStmt *stmt)
 	 * Remote Coordinator is in charge of create sequence in GTM
 	 * If sequence is temporary, no need to go through GTM.
 	 */
-	if (IS_PGXC_COORDINATOR &&
-		!IsConnFromCoord() &&
-		seqrel->rd_backend != MyBackendId)
+	if (IS_PGXC_LOCAL_COORDINATOR && seqrel->rd_backend != MyBackendId)
 	{
 		char *seqname = GetGlobalSeqName(seqrel, NULL, NULL);
 

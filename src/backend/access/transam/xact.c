@@ -840,7 +840,7 @@ GetCurrentCommandId(bool used)
 		isCommandIdReceived = false;
 		currentCommandId = GetReceivedCommandId();
 	}
-	else if (IS_PGXC_COORDINATOR && !IsConnFromCoord())
+	else if (IS_PGXC_LOCAL_COORDINATOR)
 	{
 		/*
 		 * If command id reported by remote node is greater that the current
@@ -2237,7 +2237,7 @@ CommitTransaction(void)
 	 * until we are done with finishing the transaction
 	 */
 	s->topGlobalTransansactionId = s->transactionId;
-	if (IS_PGXC_COORDINATOR && !IsConnFromCoord())
+	if (IS_PGXC_LOCAL_COORDINATOR)
 	{
 		XactLocalNodePrepared = false;
 		if (savePrepareGID)
@@ -2392,7 +2392,7 @@ CommitTransaction(void)
 #ifdef XCP
 	if (IS_PGXC_DATANODE || !IsConnFromCoord())
 #else
-	if (IS_PGXC_COORDINATOR && !IsConnFromCoord())
+	if (IS_PGXC_LOCAL_COORDINATOR)
 #endif
 	{
 		/*
@@ -2519,7 +2519,7 @@ CommitTransaction(void)
 	if (cluster_ex_lock_held)
 	{
 		elog(DEBUG2, "PAUSE CLUSTER still held at commit");
-		/*if (IS_PGXC_COORDINATOR && !IsConnFromCoord())
+		/*if (IS_PGXC_LOCAL_COORDINATOR)
 			RequestClusterPause(false, NULL);*/
 	}
 #endif
@@ -2590,7 +2590,7 @@ CommitTransaction(void)
 	 * For remote nodes, enforce the command ID sending flag to false to avoid
 	 * sending any command ID by default as now transaction is done.
 	 */
-	if (IS_PGXC_COORDINATOR && !IsConnFromCoord())
+	if (IS_PGXC_LOCAL_COORDINATOR)
 		SetReceivedCommandId(FirstCommandId);
 	else
 		SetSendCommandId(false);
@@ -2626,7 +2626,7 @@ AtEOXact_GlobalTxn(bool commit)
 {
 	TransactionState s = CurrentTransactionState;
 
-	if (IS_PGXC_COORDINATOR && !IsConnFromCoord())
+	if (IS_PGXC_LOCAL_COORDINATOR)
 	{
 		if (commit)
 		{
@@ -2735,7 +2735,7 @@ PrepareTransaction(void)
 
 #ifdef PGXC
 #ifndef XCP
-	if (IS_PGXC_COORDINATOR && !IsConnFromCoord())
+	if (IS_PGXC_LOCAL_COORDINATOR)
 	{
 		if (savePrepareGID)
 			pfree(savePrepareGID);
@@ -3044,7 +3044,7 @@ PrepareTransaction(void)
 	 * channels. So we want to keep receiving signals to avoid infinite
 	 * blocking. But this must be checked for correctness
 	 */
-	if (IS_PGXC_COORDINATOR && !IsConnFromCoord())
+	if (IS_PGXC_LOCAL_COORDINATOR)
 	{
 #ifdef XCP
 		PostPrepare_Remote(savePrepareGID, isImplicit);
@@ -3063,7 +3063,7 @@ PrepareTransaction(void)
 	 * For remote nodes, enforce the command ID sending flag to false to avoid
 	 * sending any command ID by default as now transaction is done.
 	 */
-	if (IS_PGXC_COORDINATOR && !IsConnFromCoord())
+	if (IS_PGXC_LOCAL_COORDINATOR)
 		SetReceivedCommandId(FirstCommandId);
 	else
 		SetSendCommandId(false);
@@ -3108,7 +3108,7 @@ AbortTransaction(void)
 	else
 		s->topGlobalTransansactionId = InvalidTransactionId;
 
-	if (IS_PGXC_COORDINATOR && !IsConnFromCoord())
+	if (IS_PGXC_LOCAL_COORDINATOR)
 	{
 		/*
 		 * Callback on GTM if necessary, this needs to be done before HOLD_INTERRUPTS
@@ -3317,7 +3317,7 @@ CleanupTransaction(void)
 	 * For remote nodes, enforce the command ID sending flag to false to avoid
 	 * sending any command ID by default as now transaction is done.
 	 */
-	if (IS_PGXC_COORDINATOR && !IsConnFromCoord())
+	if (IS_PGXC_LOCAL_COORDINATOR)
 		SetReceivedCommandId(FirstCommandId);
 	else
 		SetSendCommandId(false);
@@ -4167,7 +4167,7 @@ BeginTransactionBlock(void)
 	 * from a Coordinator. This may not be always the case depending on the queries being
 	 * run and how command Ids are generated on remote nodes.
 	 */
-	if (IS_PGXC_COORDINATOR && !IsConnFromCoord())
+	if (IS_PGXC_LOCAL_COORDINATOR)
 		SetSendCommandId(true);
 #endif
 }

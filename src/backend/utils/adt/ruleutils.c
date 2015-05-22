@@ -5474,7 +5474,7 @@ get_insert_query_def(Query *query, deparse_context *context)
 	 * In the case of "INSERT ... DEFAULT VALUES" analyzed in pgxc planner,
 	 * return the sql statement directly if the table has no default values.
 	 */
-	if (IS_PGXC_COORDINATOR && !IsConnFromCoord() && !query->targetList)
+	if (IS_PGXC_LOCAL_COORDINATOR && !query->targetList)
 	{
 		appendStringInfo(buf, "%s", query->sql_statement);
 		return;
@@ -5514,7 +5514,7 @@ get_insert_query_def(Query *query, deparse_context *context)
 	 * sql_statement is rewritten and assigned in RewriteQuery.
 	 * Just return it here.
 	 */
-	if (IS_PGXC_COORDINATOR && !IsConnFromCoord() && values_rte != NULL)
+	if (IS_PGXC_LOCAL_COORDINATOR && values_rte != NULL)
 	{
 		appendStringInfo(buf, "%s", query->sql_statement);
 		return;

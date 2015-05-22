@@ -64,7 +64,7 @@ static int64 pgxc_exec_sizefunc(Oid relOid, char *funcname, char *extra_arg);
  * locator info, that means it is a Coordinator-only table.
  */
 #define COLLECT_FROM_DATANODES(relid) \
-	(IS_PGXC_COORDINATOR && !IsConnFromCoord() && \
+	(IS_PGXC_LOCAL_COORDINATOR && \
 	(GetRelationLocInfo((relid)) != NULL))
 #endif
 
@@ -175,7 +175,7 @@ pg_database_size_oid(PG_FUNCTION_ARGS)
 	int64		size;
 
 #ifdef PGXC
-	if (IS_PGXC_COORDINATOR && !IsConnFromCoord())
+	if (IS_PGXC_LOCAL_COORDINATOR)
 		PG_RETURN_DATUM(pgxc_database_size(dbOid));
 #endif
 
@@ -195,7 +195,7 @@ pg_database_size_name(PG_FUNCTION_ARGS)
 	int64		size;
 
 #ifdef PGXC
-	if (IS_PGXC_COORDINATOR && !IsConnFromCoord())
+	if (IS_PGXC_LOCAL_COORDINATOR)
 		PG_RETURN_DATUM(pgxc_database_size(dbOid));
 #endif
 
@@ -294,7 +294,7 @@ pg_tablespace_size_oid(PG_FUNCTION_ARGS)
 	int64		size;
 
 #ifdef PGXC
-	if (IS_PGXC_COORDINATOR && !IsConnFromCoord())
+	if (IS_PGXC_LOCAL_COORDINATOR)
 		PG_RETURN_DATUM(pgxc_tablespace_size(tblspcOid));
 #endif
 
@@ -314,7 +314,7 @@ pg_tablespace_size_name(PG_FUNCTION_ARGS)
 	int64		size;
 
 #ifdef PGXC
-	if (IS_PGXC_COORDINATOR && !IsConnFromCoord())
+	if (IS_PGXC_LOCAL_COORDINATOR)
 		PG_RETURN_DATUM(pgxc_tablespace_size(tblspcOid));
 #endif
 

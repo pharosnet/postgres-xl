@@ -51,6 +51,12 @@ extern Datum xc_lockForBackupKey2;
 
 #define IS_PGXC_COORDINATOR isPGXCCoordinator
 #define IS_PGXC_DATANODE isPGXCDataNode
+
+#define IS_PGXC_LOCAL_COORDINATOR	\
+	(IS_PGXC_COORDINATOR && !IsConnFromCoord())
+#define IS_PGXC_REMOTE_COORDINATOR	\
+	(IS_PGXC_COORDINATOR && IsConnFromCoord())
+
 #ifdef XCP
 #define PGXC_PARENT_NODE parentPGXCNode
 #endif

@@ -518,7 +518,7 @@ init_execution_state(List *queryTree_list,
 							  CreateCommandTag(stmt))));
 
 #ifdef PGXC
-			if (IS_PGXC_COORDINATOR && !IsConnFromCoord())
+			if (IS_PGXC_LOCAL_COORDINATOR)
 			{
 				if (queryTree->commandType != CMD_UTILITY)
 				{

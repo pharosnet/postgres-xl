@@ -827,7 +827,7 @@ pgxc_make_modifytable(PlannerInfo *root, Plan *topplan)
 	 * table plan on the top. We should send queries to the remote nodes only
 	 * when there is something to modify.
 	 */
-	if (IS_PGXC_COORDINATOR && !IsConnFromCoord())
+	if (IS_PGXC_LOCAL_COORDINATOR)
 		topplan = create_remotedml_plan(root, topplan, mt->operation);
 
 	return topplan;
@@ -2540,7 +2540,7 @@ AddRemoteQueryNode(List *stmts, const char *queryString, RemoteQueryExecType rem
 		return result;
 
 	/* Only a remote Coordinator is allowed to send a query to backend nodes */
-	if (IS_PGXC_COORDINATOR && !IsConnFromCoord())
+	if (IS_PGXC_LOCAL_COORDINATOR)
 	{
 		RemoteQuery *step = makeNode(RemoteQuery);
 		step->combine_type = COMBINE_TYPE_SAME;

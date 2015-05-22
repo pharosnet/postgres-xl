@@ -935,7 +935,7 @@ fmgr_sql_validator(PG_FUNCTION_ARGS)
 #ifdef PGXC
 #ifndef XCP
 				/* Check if the list of queries contains temporary objects */
-				if (IS_PGXC_COORDINATOR && !IsConnFromCoord())
+				if (IS_PGXC_LOCAL_COORDINATOR)
 				{
 					if (pgxc_query_contains_utility(querytree_sublist))
 						ereport(ERROR,

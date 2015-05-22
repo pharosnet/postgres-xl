@@ -618,7 +618,7 @@ transformInsertStmt(ParseState *pstate, InsertStmt *stmt)
 		 * the parent, set flag to send command ID communication to remote
 		 * nodes in order to maintain global data visibility.
 		 */
-		if (IS_PGXC_COORDINATOR && !IsConnFromCoord())
+		if (IS_PGXC_LOCAL_COORDINATOR)
 		{
 			target_rte = rt_fetch(qry->resultRelation, pstate->p_rtable);
 			if (is_relation_child(target_rte, selectQuery->rtable))

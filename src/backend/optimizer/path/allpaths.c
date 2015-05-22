@@ -397,8 +397,7 @@ set_plain_rel_pathlist(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte)
 	 * the remote query path unless it is a pg_catalog table
 	 * or a sequence relation.
 	 */
-	if (IS_PGXC_COORDINATOR &&
-		!IsConnFromCoord() &&
+	if (IS_PGXC_LOCAL_COORDINATOR &&
 		get_rel_namespace(rte->relid) != PG_CATALOG_NAMESPACE &&
 		get_rel_relkind(rte->relid) != RELKIND_SEQUENCE &&
 		!root->parse->is_local)

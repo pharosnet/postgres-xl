@@ -2652,8 +2652,7 @@ RenameRelationInternal(Oid myrelid, const char *newrelname, bool is_internal)
 
 #ifdef PGXC
 	/* Operation with GTM can only be done with a Remote Coordinator */
-	if (IS_PGXC_COORDINATOR &&
-		!IsConnFromCoord() &&
+	if (IS_PGXC_LOCAL_COORDINATOR &&
 		(targetrelation->rd_rel->reltype == OBJECT_SEQUENCE ||
 		 targetrelation->rd_rel->relkind == RELKIND_SEQUENCE) &&
 		!IsTempSequence(myrelid)) /* It is possible to rename a sequence with ALTER TABLE */
@@ -3122,7 +3121,7 @@ ATController(Relation rel, List *cmds, bool recurse, LOCKMODE lockmode)
 
 #ifdef PGXC
 	/* Only check that on local Coordinator */
-	if (IS_PGXC_COORDINATOR && !IsConnFromCoord())
+	if (IS_PGXC_LOCAL_COORDINATOR)
 	{
 		ListCell   *ltab;
 
@@ -3772,8 +3771,7 @@ ATRewriteTables(List **wqueue, LOCKMODE lockmode)
 		/* Forbid table rewrite operations with online data redistribution */
 		if (tab->rewrite &&
 			list_length(tab->subcmds[AT_PASS_DISTRIB]) > 0 &&
-			IS_PGXC_COORDINATOR &&
-			!IsConnFromCoord())
+			IS_PGXC_LOCAL_COORDINATOR)
 			ereport(ERROR,
 					(errcode(ERRCODE_STATEMENT_TOO_COMPLEX),
 					 errmsg("Incompatible operation with data redistribution")));
@@ -7262,7 +7260,7 @@ validateForeignKeyConstraint(char *conname,
 	 * check constraint on the datanodes and at all on just one coordinator
 	 * if we ever support coordinator only relations
 	 */
-	if (IS_PGXC_COORDINATOR && IsConnFromCoord())
+	if (IS_PGXC_REMOTE_COORDINATOR)
 		return;
 #endif
 
@@ -11199,8 +11197,7 @@ AlterTableNamespaceInternal(Relation rel, Oid oldNspOid, Oid nspOid,
 
 #ifdef PGXC
 	/* Rename also sequence on GTM for a sequence */
-	if (IS_PGXC_COORDINATOR &&
-		!IsConnFromCoord() &&
+	if (IS_PGXC_LOCAL_COORDINATOR &&
 		rel->rd_rel->relkind == RELKIND_SEQUENCE &&
 		!IsTempSequence(RelationGetRelid(rel)))
 	{
@@ -11404,8 +11401,7 @@ AlterSeqNamespaces(Relation classRel, Relation rel,
 
 #ifdef PGXC
 		/* Change also this sequence name on GTM */
-		if (IS_PGXC_COORDINATOR &&
-			!IsConnFromCoord() &&
+		if (IS_PGXC_LOCAL_COORDINATOR &&
 			!IsTempSequence(RelationGetRelid(seqRel)))
 		{
 			char *seqname = GetGlobalSeqName(seqRel, NULL, NULL);

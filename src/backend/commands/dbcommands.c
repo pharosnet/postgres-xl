@@ -950,7 +950,7 @@ dropdb(const char *dbname, bool missing_ok)
 	
 #ifdef PGXC
 	/* Drop sequences on gtm that are on the database dropped. */
-	if (IS_PGXC_COORDINATOR && !IsConnFromCoord())
+	if (IS_PGXC_LOCAL_COORDINATOR)
 		if (DropSequenceGTM((char *)dbname, GTM_SEQ_DB_NAME))
 			elog(ERROR, "Deletion of sequences on database %s not completed", dbname);
 #endif
@@ -1502,7 +1502,7 @@ AlterDatabase(AlterDatabaseStmt *stmt, bool isTopLevel)
 		/* this case isn't allowed within a transaction block */
 #ifdef PGXC
 		/* ... but we allow it on remote nodes */
-		if (IS_PGXC_COORDINATOR && !IsConnFromCoord())
+		if (IS_PGXC_LOCAL_COORDINATOR)
 #endif
 			PreventTransactionChain(isTopLevel, "ALTER DATABASE SET TABLESPACE");
 

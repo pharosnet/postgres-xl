@@ -450,8 +450,7 @@ estimate_rel_size(Relation rel, int32 *attr_widths,
 			 * Override the estimates only for remote tables (currently
 			 * identified by non-NULL rd_locator_info)
 			 */
-			if (IS_PGXC_COORDINATOR && !IsConnFromCoord() &&
-				rel->rd_locator_info)
+			if (IS_PGXC_LOCAL_COORDINATOR && rel->rd_locator_info)
 			{
 				*pages   = 10;
 				*tuples  = 10;

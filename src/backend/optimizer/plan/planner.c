@@ -163,7 +163,7 @@ planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 		 * A Coordinator receiving a query from another Coordinator
 		 * is not allowed to go into PGXC planner.
 		 */
-		if (IS_PGXC_COORDINATOR && !IsConnFromCoord())
+		if (IS_PGXC_LOCAL_COORDINATOR)
 			result = pgxc_planner(parse, cursorOptions, boundParams);
 		else
 #endif /* XCP */
@@ -184,7 +184,7 @@ standard_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 			   *lr;
 
 #ifdef XCP
-	if (IS_PGXC_COORDINATOR && !IsConnFromCoord() && parse->utilityStmt &&
+	if (IS_PGXC_LOCAL_COORDINATOR && parse->utilityStmt &&
 			IsA(parse->utilityStmt, RemoteQuery))
 		return pgxc_direct_planner(parse, cursorOptions, boundParams);
 #endif
@@ -1830,7 +1830,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 				 * reduce the number drastically. Hence, try pushing GROUP BY
 				 * clauses and aggregates to the datanode, thus saving bandwidth.
 				 */
-				if (IS_PGXC_COORDINATOR && !IsConnFromCoord())
+				if (IS_PGXC_LOCAL_COORDINATOR)
 					result_plan = create_remoteagg_plan(root, result_plan);
 #endif /* XCP */
 #endif /* PGXC */
@@ -1950,7 +1950,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 			 * reduce the number drastically. Hence, try pushing GROUP BY
 			 * clauses and aggregates to the Datanode, thus saving bandwidth.
 			 */
-			if (IS_PGXC_COORDINATOR && !IsConnFromCoord())
+			if (IS_PGXC_LOCAL_COORDINATOR)
 				result_plan = create_remotegrouping_plan(root, result_plan);
 #endif /* XCP */
 #endif /* PGXC */

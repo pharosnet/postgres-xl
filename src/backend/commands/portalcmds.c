@@ -85,7 +85,7 @@ PerformCursorOpen(PlannedStmt *stmt, ParamListInfo params,
 	/*
 	 * Consume the command id of the command creating the cursor
 	 */
-	if (IS_PGXC_COORDINATOR&& !IsConnFromCoord())
+	if (IS_PGXC_LOCAL_COORDINATOR)
 		GetCurrentCommandId(true);
 #endif
 

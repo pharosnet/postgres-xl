@@ -6508,7 +6508,7 @@ PreCommit_Remote(char *prepareGID, char *nodestring, bool preparedLocalNode)
 	 * table finally aborts - remote connections are not holding temporary
 	 * objects in this case.
 	 */
-	if (IS_PGXC_COORDINATOR && !IsConnFromCoord() && MyXactAccessedTempRel)
+	if (IS_PGXC_LOCAL_COORDINATOR && MyXactAccessedTempRel)
 		temp_object_included = true;
 
 
@@ -6718,7 +6718,7 @@ PreAbort_Remote(void)
 
 	pfree_pgxc_all_handles(all_handles);
 #else
-	if (IS_PGXC_COORDINATOR && !IsConnFromCoord())
+	if (IS_PGXC_LOCAL_COORDINATOR)
 	{
 		cancel_query();
 		clear_all_data();
@@ -6807,7 +6807,7 @@ PrePrepare_Remote(char *prepareGID, bool localNode, bool implicit)
 	nodestring = pgxc_node_remote_prepare(prepareGID,
 												!implicit || localNode);
 
-	if (!implicit && IS_PGXC_COORDINATOR && !IsConnFromCoord())
+	if (!implicit && IS_PGXC_LOCAL_COORDINATOR)
 		/* Save the node list and gid on GTM. */
 		StartPreparedTranGTM(GetTopGlobalTransactionId(), prepareGID,
 							 nodestring);

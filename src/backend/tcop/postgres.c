@@ -773,7 +773,7 @@ pg_analyze_and_rewrite(Node *parsetree, const char *query_string,
 
 #ifdef PGXC
 #ifndef XCP
-	if (IS_PGXC_COORDINATOR && !IsConnFromCoord())
+	if (IS_PGXC_LOCAL_COORDINATOR)
 	{
 		ListCell   *lc;
 
@@ -1062,8 +1062,7 @@ exec_simple_query(const char *query_string)
 	parsetree_list = pg_parse_query(query_string);
 
 #ifdef XCP
-	if (IS_PGXC_COORDINATOR && !IsConnFromCoord() &&
-			list_length(parsetree_list) > 1)
+	if (IS_PGXC_LOCAL_COORDINATOR && list_length(parsetree_list) > 1)
 	{
 		/*
 		 * There is a bug in old code, if one query contains multiple utility
@@ -1558,7 +1557,7 @@ exec_parse_message(const char *query_string,	/* string to execute */
 		querytree_list = pg_rewrite_query(query);
 #ifdef PGXC
 #ifndef XCP
-		if (IS_PGXC_COORDINATOR && !IsConnFromCoord())
+		if (IS_PGXC_LOCAL_COORDINATOR)
 		{
 			ListCell   *lc;
 

@@ -2073,7 +2073,7 @@ AddRemoteQueryNode(List *stmts, const char *queryString, RemoteQueryExecType rem
 		return result;
 
 	/* Only a remote Coordinator is allowed to send a query to backend nodes */
-	if (IS_PGXC_COORDINATOR && !IsConnFromCoord())
+	if (IS_PGXC_LOCAL_COORDINATOR)
 	{
 		RemoteQuery *step = makeNode(RemoteQuery);
 		step->combine_type = COMBINE_TYPE_SAME;
@@ -2140,7 +2140,7 @@ AddRemoteQueryNode(List *stmts, const char *queryString, RemoteQueryExecType rem
 
 	/* Only a remote Coordinator is allowed to send a query to backend nodes */
 	if (remoteExecType == EXEC_ON_CURRENT ||
-			(IS_PGXC_COORDINATOR && !IsConnFromCoord()))
+			(IS_PGXC_LOCAL_COORDINATOR))
 	{
 		RemoteQuery *step = makeNode(RemoteQuery);
 		step->combine_type = COMBINE_TYPE_SAME;

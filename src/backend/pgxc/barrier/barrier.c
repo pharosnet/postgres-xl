@@ -54,7 +54,7 @@ ProcessCreateBarrierPrepare(const char *id)
 {
 	StringInfoData buf;
 
-	if (!IS_PGXC_COORDINATOR || !IsConnFromCoord())
+	if (!IS_PGXC_REMOTE_COORDINATOR)
 		ereport(ERROR,
 				(errcode(ERRCODE_INTERNAL_ERROR),
 				 errmsg("The CREATE BARRIER PREPARE message is expected to "
@@ -82,7 +82,7 @@ ProcessCreateBarrierEnd(const char *id)
 {
 	StringInfoData buf;
 
-	if (!IS_PGXC_COORDINATOR || !IsConnFromCoord())
+	if (!IS_PGXC_REMOTE_COORDINATOR)
 		ereport(ERROR,
 				(errcode(ERRCODE_INTERNAL_ERROR),
 				 errmsg("The CREATE BARRIER END message is expected to "

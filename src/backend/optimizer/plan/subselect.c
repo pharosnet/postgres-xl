@@ -517,7 +517,7 @@ make_subplan(PlannerInfo *root, Query *orig_subquery, SubLinkType subLinkType,
 						   subLinkType, testexpr, true, isTopQual);
 #ifdef PGXC
 	/* This is not necessary for a PGXC Coordinator, we just need one plan */
-	if (IS_PGXC_COORDINATOR && !IsConnFromCoord())
+	if (IS_PGXC_LOCAL_COORDINATOR)
 		return result;
 #endif
 
