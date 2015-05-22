@@ -5107,6 +5107,7 @@ AtEOXact_GUC(bool isCommit, int nestLevel)
 			bool		restorePrior = false;
 			bool		restoreMasked = false;
 			bool		changed;
+			const char		*newvalStr = NULL;
 
 			/*
 			 * In this next bit, if we don't set either restorePrior or
@@ -5319,6 +5320,13 @@ AtEOXact_GUC(bool isCommit, int nestLevel)
 				/* And restore source information */
 				gconf->source = newsource;
 				gconf->scontext = newscontext;
+			}
+
+			if (changed)
+			{
+				newvalStr = GetConfigOptionByName(gconf->name, NULL);
+				if (newvalStr)
+					PGXCNodeSetParam((stack->state == GUC_LOCAL), gconf->name, newvalStr);
 			}
 
 			/* Finish popping the state stack */
