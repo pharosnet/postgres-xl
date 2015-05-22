@@ -7256,6 +7256,16 @@ validateForeignKeyConstraint(char *conname,
 	ereport(DEBUG1,
 			(errmsg("validating foreign key constraint \"%s\"", conname)));
 
+#ifdef XCP
+	/*
+	 * No need to do the same thing on the other coordinator. Its enough to
+	 * check constraint on the datanodes and at all on just one coordinator
+	 * if we ever support coordinator only relations
+	 */
+	if (IS_PGXC_COORDINATOR && IsConnFromCoord())
+		return;
+#endif
+
 	/*
 	 * Build a trigger call structure; we'll need it either way.
 	 */
