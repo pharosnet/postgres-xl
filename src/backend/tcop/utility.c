@@ -1029,6 +1029,11 @@ standard_ProcessUtility(Node *parsetree,
 			break;
 
 		case T_CreateEventTrigStmt:
+#ifdef XCP
+			ereport(ERROR,			
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("EVENT TRIGGER not yet supported in Postgres-XL")));
+#endif			
 			/* no event triggers on event triggers */
 			CreateEventTrigger((CreateEventTrigStmt *) parsetree);
 			break;
