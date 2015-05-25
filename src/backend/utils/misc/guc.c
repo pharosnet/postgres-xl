@@ -5325,6 +5325,11 @@ AtEOXact_GUC(bool isCommit, int nestLevel)
 			if (changed)
 			{
 				newvalStr = GetConfigOptionByName(gconf->name, NULL);
+				/*
+				 * Quote value if it is including memory or time units
+				 */
+				if (newvalStr && (gconf->flags & (GUC_UNIT_MEMORY | GUC_UNIT_TIME)))
+					newvalStr = quote_identifier(newvalStr);
 				if (newvalStr)
 					PGXCNodeSetParam((stack->state == GUC_LOCAL), gconf->name, newvalStr);
 			}
