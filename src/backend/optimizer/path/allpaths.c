@@ -1313,7 +1313,7 @@ set_subquery_pathlist(PlannerInfo *root, RelOptInfo *rel,
 	}
 	else
 		distribution = subroot->distribution;
-	add_path(rel, create_subqueryscan_path(root, rel, pathkeys, NULL,
+	add_path(rel, create_subqueryscan_path(root, rel, pathkeys, required_outer,
 			 distribution));
 
 	/* 
