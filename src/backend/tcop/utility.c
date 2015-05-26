@@ -2036,7 +2036,8 @@ ProcessUtilitySlow(Node *parsetree,
 				 * inside a transaction block.
 				 */
 				if (IS_PGXC_LOCAL_COORDINATOR)
-					ExecUtilityStmtOnNodes(queryString, NULL, sentToRemote, false, EXEC_ON_ALL_NODES, false);
+					ExecUtilityStmtOnNodes(queryString, NULL, sentToRemote,
+							true, EXEC_ON_ALL_NODES, false);
 #endif
 				break;
 
