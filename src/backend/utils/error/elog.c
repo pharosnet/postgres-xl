@@ -2497,6 +2497,34 @@ log_line_prefix(StringInfo buf, ErrorData *edata)
 				else
 					appendStringInfoString(buf, unpack_sql_state(edata->sqlerrcode));
 				break;
+#ifdef XCP
+			case 'C':
+				if (MyProc != NULL)
+				{
+					if (padding != 0)
+						appendStringInfo(buf, "%*u", padding, MyProc->coordId);
+					else
+						appendStringInfo(buf, "%u", MyProc->coordId);
+				}
+				else if (padding != 0)
+					appendStringInfoSpaces(buf,
+										   padding > 0 ? padding : -padding);
+				break;
+
+			case 'R':
+				if (MyProc != NULL)
+				{
+					if (padding != 0)
+						appendStringInfo(buf, "%*u", padding, MyProc->coordPid);
+					else
+						appendStringInfo(buf, "%u", MyProc->coordPid);
+				}
+				else if (padding != 0)
+					appendStringInfoSpaces(buf,
+										   padding > 0 ? padding : -padding);
+				break;
+
+#endif				
 			default:
 				/* format error - ignore it */
 				break;
