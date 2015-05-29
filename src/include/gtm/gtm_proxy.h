@@ -148,16 +148,12 @@ typedef union GTMProxy_CommandData
 
 	struct
 	{
-		bool			isgxid;
 		GlobalTransactionId	gxid;
-		GTM_TransactionHandle	handle;
 	} cd_rc;
 
 	struct
 	{
-		bool			isgxid;
 		GlobalTransactionId	gxid;
-		GTM_TransactionHandle	handle;
 	} cd_snap;
 
 	struct

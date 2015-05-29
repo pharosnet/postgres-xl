@@ -219,7 +219,7 @@ int
 commit_transaction_multi(GTM_Conn *conn, int txn_count, GlobalTransactionId *gxid,
 						 int *txn_count_out, int *status_out);
 int
-bkup_commit_transaction_multi(GTM_Conn *conn, int txn_count, GTM_TransactionHandle *txn);
+bkup_commit_transaction_multi(GTM_Conn *conn, int txn_count, GlobalTransactionId *gxid);
 int
 abort_transaction_multi(GTM_Conn *conn, int txn_count, GlobalTransactionId *gxid,
 			int *txn_count_out, int *status_out);

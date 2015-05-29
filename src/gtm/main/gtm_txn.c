@@ -1757,31 +1757,16 @@ ProcessCommitTransactionCommand(Port *myport, StringInfo message, bool is_backup
 	StringInfoData buf;
 	GTM_TransactionHandle txn;
 	GlobalTransactionId gxid;
-	int isgxid = 0;
 	MemoryContext oldContext;
 	int status = STATUS_OK;
+	const char *data = pq_getmsgbytes(message, sizeof (gxid));
 
-	isgxid = pq_getmsgbyte(message);
-
-	if (isgxid)
-	{
-		const char *data = pq_getmsgbytes(message, sizeof (gxid));
-		if (data == NULL)
-			ereport(ERROR,
-					(EPROTO,
-					 errmsg("Message does not contain valid GXID")));
-		memcpy(&gxid, data, sizeof (gxid));
-		txn = GTM_GXIDToHandle(gxid);
-	}
-	else
-	{
-		const char *data = pq_getmsgbytes(message, sizeof (txn));
-		if (data == NULL)
-			ereport(ERROR,
-					(EPROTO,
-					 errmsg("Message does not contain valid Transaction Handle")));
-		memcpy(&txn, data, sizeof (txn));
-	}
+	if (data == NULL)
+		ereport(ERROR,
+				(EPROTO,
+				 errmsg("Message does not contain valid GXID")));
+	memcpy(&gxid, data, sizeof (gxid));
+	txn = GTM_GXIDToHandle(gxid);
 
 	pq_getmsgend(message);
 
@@ -1862,33 +1847,18 @@ ProcessCommitPreparedTransactionCommand(Port *myport, StringInfo message, bool i
 	GlobalTransactionId gxid[txn_count];
 	MemoryContext oldContext;
 	int status[txn_count];
-	int isgxid[txn_count];
 	int ii;
 
 	for (ii = 0; ii < txn_count; ii++)
 	{
-		isgxid[ii] = pq_getmsgbyte(message);
-		if (isgxid[ii])
-		{
-			const char *data = pq_getmsgbytes(message, sizeof (gxid[ii]));
-			if (data == NULL)
-				ereport(ERROR,
-						(EPROTO,
-						 errmsg("Message does not contain valid GXID")));
-			memcpy(&gxid[ii], data, sizeof (gxid[ii]));
-			txn[ii] = GTM_GXIDToHandle(gxid[ii]);
-			elog(DEBUG1, "ProcessCommitTransactionCommandMulti: gxid(%u), handle(%u)", gxid[ii], txn[ii]);
-		}
-		else
-		{
-			const char *data = pq_getmsgbytes(message, sizeof (txn[ii]));
-			if (data == NULL)
-				ereport(ERROR,
-						(EPROTO,
-						 errmsg("Message does not contain valid Transaction Handle")));
-			memcpy(&txn[ii], data, sizeof (txn[ii]));
-			elog(DEBUG1, "ProcessCommitTransactionCommandMulti: handle(%u)", txn[ii]);
-		}
+		const char *data = pq_getmsgbytes(message, sizeof (gxid[ii]));
+		if (data == NULL)
+			ereport(ERROR,
+					(EPROTO,
+					 errmsg("Message does not contain valid GXID")));
+		memcpy(&gxid[ii], data, sizeof (gxid[ii]));
+		txn[ii] = GTM_GXIDToHandle(gxid[ii]);
+		elog(DEBUG1, "ProcessCommitTransactionCommandMulti: gxid(%u), handle(%u)", gxid[ii], txn[ii]);
 	}
 
 	pq_getmsgend(message);
@@ -2154,31 +2124,16 @@ ProcessRollbackTransactionCommand(Port *myport, StringInfo message, bool is_back
 	StringInfoData buf;
 	GTM_TransactionHandle txn;
 	GlobalTransactionId gxid;
-	int isgxid = 0;
 	MemoryContext oldContext;
 	int status = STATUS_OK;
+	const char *data = pq_getmsgbytes(message, sizeof (gxid));
 
-	isgxid = pq_getmsgbyte(message);
-
-	if (isgxid)
-	{
-		const char *data = pq_getmsgbytes(message, sizeof (gxid));
-		if (data == NULL)
-			ereport(ERROR,
-					(EPROTO,
-					 errmsg("Message does not contain valid GXID")));
-		memcpy(&gxid, data, sizeof (gxid));
-		txn = GTM_GXIDToHandle(gxid);
-	}
-	else
-	{
-		const char *data = pq_getmsgbytes(message, sizeof (txn));
-		if (data == NULL)
-			ereport(ERROR,
-					(EPROTO,
-					 errmsg("Message does not contain valid Transaction Handle")));
-		memcpy(&txn, data, sizeof (txn));
-	}
+	if (data == NULL)
+		ereport(ERROR,
+				(EPROTO,
+				 errmsg("Message does not contain valid GXID")));
+	memcpy(&gxid, data, sizeof (gxid));
+	txn = GTM_GXIDToHandle(gxid);
 
 	pq_getmsgend(message);
 
@@ -2252,7 +2207,6 @@ ProcessCommitTransactionCommandMulti(Port *myport, StringInfo message, bool is_b
 	StringInfoData buf;
 	GTM_TransactionHandle txn[GTM_MAX_GLOBAL_TRANSACTIONS];
 	GlobalTransactionId gxid[GTM_MAX_GLOBAL_TRANSACTIONS];
-	int isgxid[GTM_MAX_GLOBAL_TRANSACTIONS];
 	MemoryContext oldContext;
 	int status[GTM_MAX_GLOBAL_TRANSACTIONS];
 	int txn_count;
@@ -2262,28 +2216,14 @@ ProcessCommitTransactionCommandMulti(Port *myport, StringInfo message, bool is_b
 
 	for (ii = 0; ii < txn_count; ii++)
 	{
-		isgxid[ii] = pq_getmsgbyte(message);
-		if (isgxid[ii])
-		{
-			const char *data = pq_getmsgbytes(message, sizeof (gxid[ii]));
-			if (data == NULL)
-				ereport(ERROR,
-						(EPROTO,
-						 errmsg("Message does not contain valid GXID")));
-			memcpy(&gxid[ii], data, sizeof (gxid[ii]));
-			txn[ii] = GTM_GXIDToHandle(gxid[ii]);
-			elog(DEBUG1, "ProcessCommitTransactionCommandMulti: gxid(%u), handle(%u)", gxid[ii], txn[ii]);
-		}
-		else
-		{
-			const char *data = pq_getmsgbytes(message, sizeof (txn[ii]));
-			if (data == NULL)
-				ereport(ERROR,
-						(EPROTO,
-						 errmsg("Message does not contain valid Transaction Handle")));
-			memcpy(&txn[ii], data, sizeof (txn[ii]));
-			elog(DEBUG1, "ProcessCommitTransactionCommandMulti: handle(%u)", txn[ii]);
-		}
+		const char *data = pq_getmsgbytes(message, sizeof (gxid[ii]));
+		if (data == NULL)
+			ereport(ERROR,
+					(EPROTO,
+					 errmsg("Message does not contain valid GXID")));
+		memcpy(&gxid[ii], data, sizeof (gxid[ii]));
+		txn[ii] = GTM_GXIDToHandle(gxid[ii]);
+		elog(DEBUG1, "ProcessCommitTransactionCommandMulti: gxid(%u), handle(%u)", gxid[ii], txn[ii]);
 	}
 
 	pq_getmsgend(message);
@@ -2310,7 +2250,9 @@ ProcessCommitTransactionCommandMulti(Port *myport, StringInfo message, bool is_b
 				 GetMyThreadInfo->thr_conn->standby);
 
 		retry:
-			_rc = bkup_commit_transaction_multi(GetMyThreadInfo->thr_conn->standby, txn_count, txn);
+			_rc =
+				bkup_commit_transaction_multi(GetMyThreadInfo->thr_conn->standby,
+						txn_count, gxid);
 
 			if (gtm_standby_check_communication_error(&count, oldconn))
 				goto retry;
@@ -2355,7 +2297,6 @@ ProcessRollbackTransactionCommandMulti(Port *myport, StringInfo message, bool is
 	StringInfoData buf;
 	GTM_TransactionHandle txn[GTM_MAX_GLOBAL_TRANSACTIONS];
 	GlobalTransactionId gxid[GTM_MAX_GLOBAL_TRANSACTIONS];
-	int isgxid[GTM_MAX_GLOBAL_TRANSACTIONS];
 	MemoryContext oldContext;
 	int status[GTM_MAX_GLOBAL_TRANSACTIONS];
 	int txn_count;
@@ -2365,28 +2306,14 @@ ProcessRollbackTransactionCommandMulti(Port *myport, StringInfo message, bool is
 
 	for (ii = 0; ii < txn_count; ii++)
 	{
-		isgxid[ii] = pq_getmsgbyte(message);
-		if (isgxid[ii])
-		{
-			const char *data = pq_getmsgbytes(message, sizeof (gxid[ii]));
-			if (data == NULL)
-				ereport(ERROR,
-						(EPROTO,
-						 errmsg("Message does not contain valid GXID")));
-			memcpy(&gxid[ii], data, sizeof (gxid[ii]));
-			txn[ii] = GTM_GXIDToHandle(gxid[ii]);
-			elog(DEBUG1, "ProcessRollbackTransactionCommandMulti: gxid(%u), handle(%u)", gxid[ii], txn[ii]);
-		}
-		else
-		{
-			const char *data = pq_getmsgbytes(message, sizeof (txn[ii]));
-			if (data == NULL)
-				ereport(ERROR,
-						(EPROTO,
-						 errmsg("Message does not contain valid Transaction Handle")));
-			memcpy(&txn[ii], data, sizeof (txn[ii]));
-			elog(DEBUG1, "ProcessRollbackTransactionCommandMulti: handle(%u)", txn[ii]);
-		}
+		const char *data = pq_getmsgbytes(message, sizeof (gxid[ii]));
+		if (data == NULL)
+			ereport(ERROR,
+					(EPROTO,
+					 errmsg("Message does not contain valid GXID")));
+		memcpy(&gxid[ii], data, sizeof (gxid[ii]));
+		txn[ii] = GTM_GXIDToHandle(gxid[ii]);
+		elog(DEBUG1, "ProcessRollbackTransactionCommandMulti: gxid(%u), handle(%u)", gxid[ii], txn[ii]);
 	}
 
 	pq_getmsgend(message);
@@ -2460,33 +2387,18 @@ ProcessStartPreparedTransactionCommand(Port *myport, StringInfo message, bool is
 	StringInfoData buf;
 	GTM_TransactionHandle txn;
 	GlobalTransactionId gxid;
-	int isgxid = 0;
 	GTM_StrLen gidlen, nodelen;
 	char nodestring[1024];
 	MemoryContext oldContext;
 	char gid[1024];
+	const char *data = pq_getmsgbytes(message, sizeof (gxid));
 
-	isgxid = pq_getmsgbyte(message);
-
-	if (isgxid)
-	{
-		const char *data = pq_getmsgbytes(message, sizeof (gxid));
-		if (data == NULL)
-			ereport(ERROR,
-					(EPROTO,
-					 errmsg("Message does not contain valid GXID")));
-		memcpy(&gxid, data, sizeof (gxid));
-		txn = GTM_GXIDToHandle(gxid);
-	}
-	else
-	{
-		const char *data = pq_getmsgbytes(message, sizeof (txn));
-		if (data == NULL)
-			ereport(ERROR,
-					(EPROTO,
-					 errmsg("Message does not contain valid Transaction Handle")));
-		memcpy(&txn, data, sizeof (txn));
-	}
+	if (data == NULL)
+		ereport(ERROR,
+				(EPROTO,
+				 errmsg("Message does not contain valid GXID")));
+	memcpy(&gxid, data, sizeof (gxid));
+	txn = GTM_GXIDToHandle(gxid);
 
 	/* get GID */
 	gidlen = pq_getmsgint(message, sizeof (GTM_StrLen));
@@ -2574,30 +2486,15 @@ ProcessPrepareTransactionCommand(Port *myport, StringInfo message, bool is_backu
 	StringInfoData buf;
 	GTM_TransactionHandle txn;
 	GlobalTransactionId gxid;
-	int isgxid = 0;
 	MemoryContext oldContext;
+	const char *data = pq_getmsgbytes(message, sizeof (gxid));
 
-	isgxid = pq_getmsgbyte(message);
-
-	if (isgxid)
-	{
-		const char *data = pq_getmsgbytes(message, sizeof (gxid));
-		if (data == NULL)
-			ereport(ERROR,
-					(EPROTO,
-					 errmsg("Message does not contain valid GXID")));
-		memcpy(&gxid, data, sizeof (gxid));
-		txn = GTM_GXIDToHandle(gxid);
-	}
-	else
-	{
-		const char *data = pq_getmsgbytes(message, sizeof (txn));
-		if (data == NULL)
-			ereport(ERROR,
-					(EPROTO,
-					 errmsg("Message does not contain valid Transaction Handle")));
-		memcpy(&txn, data, sizeof (txn));
-	}
+	if (data == NULL)
+		ereport(ERROR,
+				(EPROTO,
+				 errmsg("Message does not contain valid GXID")));
+	memcpy(&gxid, data, sizeof (gxid));
+	txn = GTM_GXIDToHandle(gxid);
 
 	pq_getmsgend(message);
 

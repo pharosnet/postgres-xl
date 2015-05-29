@@ -2264,8 +2264,6 @@ ProcessTransactionCommand(GTMProxy_ConnectionInfo *conninfo, GTM_Conn *gtm_conn,
 
 		case MSG_TXN_COMMIT:
 		case MSG_TXN_ROLLBACK:
-			cmd_data.cd_rc.isgxid = pq_getmsgbyte(message);
-			if (cmd_data.cd_rc.isgxid)
 			{
 				const char *data = pq_getmsgbytes(message,
 						sizeof (GlobalTransactionId));
@@ -2274,16 +2272,6 @@ ProcessTransactionCommand(GTMProxy_ConnectionInfo *conninfo, GTM_Conn *gtm_conn,
 							(EPROTO,
 							 errmsg("Message does not contain valid GXID")));
 				memcpy(&cmd_data.cd_rc.gxid, data, sizeof (GlobalTransactionId));
-			}
-			else
-			{
-				const char *data = pq_getmsgbytes(message,
-						sizeof (GTM_TransactionHandle));
-				if (data == NULL)
-					ereport(ERROR,
-							(EPROTO,
-							 errmsg("Message does not contain valid Transaction Handle")));
-				memcpy(&cmd_data.cd_rc.handle, data, sizeof (GTM_TransactionHandle));
 			}
 			pq_getmsgend(message);
 			GTMProxy_CommandPending(conninfo, mtype, cmd_data);
@@ -2322,8 +2310,6 @@ ProcessSnapshotCommand(GTMProxy_ConnectionInfo *conninfo, GTM_Conn *gtm_conn,
 				GTMProxy_ProxyCommand(conninfo, gtm_conn, mtype, message);
 			else
 			{
-				cmd_data.cd_snap.isgxid = pq_getmsgbyte(message);
-				if (cmd_data.cd_snap.isgxid)
 				{
 					const char *data = pq_getmsgbytes(message,
 							sizeof (GlobalTransactionId));
@@ -2332,16 +2318,6 @@ ProcessSnapshotCommand(GTMProxy_ConnectionInfo *conninfo, GTM_Conn *gtm_conn,
 								(EPROTO,
 								 errmsg("Message does not contain valid GXID")));
 					memcpy(&cmd_data.cd_snap.gxid, data, sizeof (GlobalTransactionId));
-				}
-				else
-				{
-					const char *data = pq_getmsgbytes(message,
-							sizeof (GTM_TransactionHandle));
-					if (data == NULL)
-						ereport(ERROR,
-								(EPROTO,
-								 errmsg("Message does not contain valid Transaction Handle")));
-					memcpy(&cmd_data.cd_snap.handle, data, sizeof (GTM_TransactionHandle));
 				}
 				pq_getmsgend(message);
 				GTMProxy_CommandPending(conninfo, mtype, cmd_data);
@@ -2733,18 +2709,9 @@ GTMProxy_ProcessPendingCommands(GTMProxy_ThreadInfo *thrinfo)
 					cmdinfo = (GTMProxy_CommandInfo *)gtm_lfirst(elem);
 					Assert(cmdinfo->ci_mtype == ii);
 					cmdinfo->ci_res_index = res_index++;
-					if (cmdinfo->ci_data.cd_rc.isgxid)
 					{
-						if (gtmpqPutc(true, gtm_conn) ||
-							gtmpqPutnchar((char *)&cmdinfo->ci_data.cd_rc.gxid,
+						if (gtmpqPutnchar((char *)&cmdinfo->ci_data.cd_rc.gxid,
 								sizeof (GlobalTransactionId), gtm_conn))
-							elog(ERROR, "Error sending data");
-					}
-					else
-					{
-						if (gtmpqPutc(false, gtm_conn) ||
-							gtmpqPutnchar((char *)&cmdinfo->ci_data.cd_rc.handle,
-								sizeof (GTM_TransactionHandle), gtm_conn))
 							elog(ERROR, "Error sending data");
 					}
 				}
@@ -2775,18 +2742,9 @@ GTMProxy_ProcessPendingCommands(GTMProxy_ThreadInfo *thrinfo)
 					cmdinfo = (GTMProxy_CommandInfo *)gtm_lfirst(elem);
 					Assert(cmdinfo->ci_mtype == ii);
 					cmdinfo->ci_res_index = res_index++;
-					if (cmdinfo->ci_data.cd_rc.isgxid)
 					{
-						if (gtmpqPutc(true, gtm_conn) ||
-							gtmpqPutnchar((char *)&cmdinfo->ci_data.cd_rc.gxid,
+						if (gtmpqPutnchar((char *)&cmdinfo->ci_data.cd_rc.gxid,
 								sizeof (GlobalTransactionId), gtm_conn))
-							elog(ERROR, "Error sending data");
-					}
-					else
-					{
-						if (gtmpqPutc(false, gtm_conn) ||
-							gtmpqPutnchar((char *)&cmdinfo->ci_data.cd_rc.handle,
-								sizeof (GTM_TransactionHandle), gtm_conn))
 							elog(ERROR, "Error sending data");
 					}
 				}
@@ -2816,18 +2774,9 @@ GTMProxy_ProcessPendingCommands(GTMProxy_ThreadInfo *thrinfo)
 					cmdinfo = (GTMProxy_CommandInfo *)gtm_lfirst(elem);
 					Assert(cmdinfo->ci_mtype == ii);
 					cmdinfo->ci_res_index = res_index++;
-					if (cmdinfo->ci_data.cd_rc.isgxid)
 					{
-						if (gtmpqPutc(true, gtm_conn) ||
-							gtmpqPutnchar((char *)&cmdinfo->ci_data.cd_rc.gxid,
+						if (gtmpqPutnchar((char *)&cmdinfo->ci_data.cd_rc.gxid,
 								sizeof (GlobalTransactionId), gtm_conn))
-							elog(ERROR, "Error sending data");
-					}
-					else
-					{
-						if (gtmpqPutc(false, gtm_conn) ||
-							gtmpqPutnchar((char *)&cmdinfo->ci_data.cd_rc.handle,
-								sizeof (GTM_TransactionHandle), gtm_conn))
 							elog(ERROR, "Error sending data");
 					}
 				}

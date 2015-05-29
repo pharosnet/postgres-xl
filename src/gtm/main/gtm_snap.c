@@ -279,11 +279,11 @@ ProcessGetSnapshotCommand(Port *myport, StringInfo message, bool get_gxid)
 	StringInfoData buf;
 	GTM_TransactionHandle txn;
 	GlobalTransactionId gxid;
-	int isgxid = 0;
 	GTM_Snapshot snapshot;
 	MemoryContext oldContext;
 	int status;
 	int txn_count = 1;
+	const char *data = NULL;
 
 	/*
 	 * Here we consume a byte which is a boolean to determine if snapshot can
@@ -292,35 +292,19 @@ ProcessGetSnapshotCommand(Port *myport, StringInfo message, bool get_gxid)
 	 */
 	pq_getmsgbyte(message);
 
-	isgxid = pq_getmsgbyte(message);
+	data = pq_getmsgbytes(message, sizeof (gxid));
+	if (data == NULL)
+		ereport(ERROR,
+				(EPROTO,
+				 errmsg("Message does not contain valid GXID")));
+	memcpy(&gxid, data, sizeof(gxid));
+	elog(INFO, "Received transaction ID %d for snapshot obtention", gxid);
+	txn = GTM_GXIDToHandle(gxid);
 
-	if (isgxid)
-	{
-		const char *data = NULL;
-		Assert(!get_gxid);
-		data = pq_getmsgbytes(message, sizeof (gxid));
-		if (data == NULL)
-			ereport(ERROR,
-					(EPROTO,
-					 errmsg("Message does not contain valid GXID")));
-		memcpy(&gxid, data, sizeof(gxid));
-		elog(INFO, "Received transaction ID %d for snapshot obtention", gxid);
-		txn = GTM_GXIDToHandle(gxid);
-	}
-	else
-	{
-		const char *data = pq_getmsgbytes(message, sizeof (txn));
-		if (data == NULL)
-			ereport(ERROR,
-					(EPROTO,
-					 errmsg("Message does not contain valid Transaction Handle")));
-		memcpy(&txn, data, sizeof (txn));
-	}
 	pq_getmsgend(message);
 
 	if (get_gxid)
 	{
-		Assert(!isgxid);
 		gxid = GTM_GetGlobalTransactionId(txn);
 		if (gxid == InvalidGlobalTransactionId)
 			ereport(ERROR,
@@ -374,7 +358,6 @@ ProcessGetSnapshotCommandMulti(Port *myport, StringInfo message)
 	StringInfoData buf;
 	GTM_TransactionHandle txn[GTM_MAX_GLOBAL_TRANSACTIONS];
 	GlobalTransactionId gxid[GTM_MAX_GLOBAL_TRANSACTIONS];
-	int isgxid[GTM_MAX_GLOBAL_TRANSACTIONS];
 	GTM_Snapshot snapshot;
 	MemoryContext oldContext;
 	int txn_count;
@@ -385,26 +368,13 @@ ProcessGetSnapshotCommandMulti(Port *myport, StringInfo message)
 
 	for (ii = 0; ii < txn_count; ii++)
 	{
-		isgxid[ii] = pq_getmsgbyte(message);
-		if (isgxid[ii])
-		{
-			const char *data = pq_getmsgbytes(message, sizeof (gxid[ii]));
-			if (data == NULL)
-				ereport(ERROR,
-						(EPROTO,
-						 errmsg("Message does not contain valid GXID")));
-			memcpy(&gxid[ii], data, sizeof (gxid[ii]));
-			txn[ii] = GTM_GXIDToHandle(gxid[ii]);
-		}
-		else
-		{
-			const char *data = pq_getmsgbytes(message, sizeof (txn[ii]));
-			if (data == NULL)
-				ereport(ERROR,
-						(EPROTO,
-						 errmsg("Message does not contain valid Transaction Handle")));
-			memcpy(&txn[ii], data, sizeof (txn[ii]));
-		}
+		const char *data = pq_getmsgbytes(message, sizeof (gxid[ii]));
+		if (data == NULL)
+			ereport(ERROR,
+					(EPROTO,
+					 errmsg("Message does not contain valid GXID")));
+		memcpy(&gxid[ii], data, sizeof (gxid[ii]));
+		txn[ii] = GTM_GXIDToHandle(gxid[ii]);
 	}
 
 	pq_getmsgend(message);

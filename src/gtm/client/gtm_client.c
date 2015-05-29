@@ -619,7 +619,6 @@ commit_transaction_internal(GTM_Conn *conn, GlobalTransactionId gxid, bool is_ba
 	 /* Start the message. */
 	if (gtmpqPutMsgStart('C', true, conn) ||
 		gtmpqPutInt(is_backup ? MSG_BKUP_TXN_COMMIT : MSG_TXN_COMMIT, sizeof (GTM_MessageType), conn) ||
-		gtmpqPutc(true, conn) ||
 		gtmpqPutnchar((char *)&gxid, sizeof (GlobalTransactionId), conn))
 		goto send_failed;
 
@@ -679,9 +678,7 @@ commit_prepared_transaction_internal(GTM_Conn *conn, GlobalTransactionId gxid, G
 	/* Start the message */
 	if (gtmpqPutMsgStart('C', true, conn) ||
 		gtmpqPutInt(is_backup ? MSG_BKUP_TXN_COMMIT_PREPARED : MSG_TXN_COMMIT_PREPARED, sizeof (GTM_MessageType), conn) ||
-		gtmpqPutc(true, conn) ||
 		gtmpqPutnchar((char *)&gxid, sizeof (GlobalTransactionId), conn) ||
-		gtmpqPutc(true, conn) ||
 		gtmpqPutnchar((char *)&prepared_gxid, sizeof (GlobalTransactionId), conn))
 		goto send_failed;
 
@@ -741,7 +738,6 @@ abort_transaction_internal(GTM_Conn *conn, GlobalTransactionId gxid, bool is_bac
 	 /* Start the message. */
 	if (gtmpqPutMsgStart('C', true, conn) ||
 		gtmpqPutInt(is_backup ? MSG_BKUP_TXN_ROLLBACK : MSG_TXN_ROLLBACK, sizeof (GTM_MessageType), conn) ||
-		gtmpqPutc(true, conn) ||
 		gtmpqPutnchar((char *)&gxid, sizeof (GlobalTransactionId), conn))
 		goto send_failed;
 
@@ -809,7 +805,6 @@ start_prepared_transaction_internal(GTM_Conn *conn, GlobalTransactionId gxid, ch
 	 /* Start the message. */
 	if (gtmpqPutMsgStart('C', true, conn) ||
 		gtmpqPutInt(is_backup ? MSG_BKUP_TXN_START_PREPARED : MSG_TXN_START_PREPARED, sizeof (GTM_MessageType), conn) ||
-		gtmpqPutc(true, conn) ||
 		gtmpqPutnchar((char *)&gxid, sizeof (GlobalTransactionId), conn) ||
 		/* Send also GID for an explicit prepared transaction */
 		gtmpqPutInt(strlen(gid), sizeof (GTM_StrLen), conn) ||
@@ -873,7 +868,6 @@ prepare_transaction_internal(GTM_Conn *conn, GlobalTransactionId gxid, bool is_b
 	 /* Start the message. */
 	if (gtmpqPutMsgStart('C', true, conn) ||
 		gtmpqPutInt(is_backup ? MSG_BKUP_TXN_PREPARE : MSG_TXN_PREPARE, sizeof (GTM_MessageType), conn) ||
-		gtmpqPutc(true, conn) ||
 		gtmpqPutnchar((char *)&gxid, sizeof (GlobalTransactionId), conn))
 		goto send_failed;
 
@@ -979,7 +973,6 @@ get_snapshot(GTM_Conn *conn, GlobalTransactionId gxid, bool canbe_grouped)
 	if (gtmpqPutMsgStart('C', true, conn) ||
 		gtmpqPutInt(MSG_SNAPSHOT_GET, sizeof (GTM_MessageType), conn) ||
 		gtmpqPutc(canbe_grouped, conn) ||
-		gtmpqPutc(true, conn) ||
 		gtmpqPutnchar((char *)&gxid, sizeof (GlobalTransactionId), conn))
 		goto send_failed;
 
@@ -2030,7 +2023,7 @@ send_failed:
 }
 
 int
-bkup_commit_transaction_multi(GTM_Conn *conn, int txn_count, GTM_TransactionHandle *txn)
+bkup_commit_transaction_multi(GTM_Conn *conn, int txn_count, GlobalTransactionId *gxid)
 {
 	int ii;
 
@@ -2044,8 +2037,8 @@ bkup_commit_transaction_multi(GTM_Conn *conn, int txn_count, GTM_TransactionHand
 	for (ii = 0; ii < txn_count; ii++)
 	{
 		if (gtmpqPutc(false, conn) ||
-		    gtmpqPutnchar((char *)&txn[ii],
-				  sizeof (GTM_TransactionHandle), conn))
+		    gtmpqPutnchar((char *)&gxid[ii],
+				  sizeof (GlobalTransactionId), conn))
 			  goto send_failed;
 	}
 
@@ -2082,8 +2075,7 @@ commit_transaction_multi(GTM_Conn *conn, int txn_count, GlobalTransactionId *gxi
 
 	for (i = 0; i < txn_count; i++)
 	{
-		if (gtmpqPutc(true, conn) ||
-		    gtmpqPutnchar((char *)&gxid[i],
+		if (gtmpqPutnchar((char *)&gxid[i],
 				  sizeof (GlobalTransactionId), conn))
 			  goto send_failed;
 	}
@@ -2153,8 +2145,7 @@ abort_transaction_multi_internal(GTM_Conn *conn, int txn_count, GlobalTransactio
 
 	for (i = 0; i < txn_count; i++)
 	{
-		if (gtmpqPutc(true, conn) ||
-		    gtmpqPutnchar((char *)&gxid[i],
+		if (gtmpqPutnchar((char *)&gxid[i],
 				  sizeof (GlobalTransactionId), conn))
 			  goto send_failed;
 	}
@@ -2214,8 +2205,7 @@ snapshot_get_multi(GTM_Conn *conn, int txn_count, GlobalTransactionId *gxid,
 
 	for (i = 0; i < txn_count; i++)
 	{
-		if (gtmpqPutc(true, conn) ||
-		    gtmpqPutnchar((char *)&gxid[i],
+		if (gtmpqPutnchar((char *)&gxid[i],
 				  sizeof (GlobalTransactionId), conn))
 			  goto send_failed;
 	}
