@@ -1733,7 +1733,7 @@ init(bool is_no_vacuum)
 		if (use_branch)
 			snprintf(buffer, sizeof(buffer), "create%s table %s(%s)%s %s",
 					 unlogged_tables ? " unlogged" : "",
-					 ddl->table, ddl->cols, opts, ddl->distribute_by);
+					 ddl->table, cols, opts, ddl->distribute_by);
 		else
 #endif
 		snprintf(buffer, sizeof(buffer), "create%s table %s(%s)%s",
