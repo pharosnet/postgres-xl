@@ -187,11 +187,9 @@ GTM_TransactionHandle GTM_GIDToHandle(char *gid);
 
 /* Transaction Control */
 void GTM_InitTxnManager(void);
-GTM_TransactionHandle GTM_BeginTransaction(char *coord_name,
-										   GTM_IsolationLevel isolevel,
+GTM_TransactionHandle GTM_BeginTransaction(GTM_IsolationLevel isolevel,
 										   bool readonly);
-int GTM_BeginTransactionMulti(char *coord_name,
-										   GTM_IsolationLevel isolevel[],
+int GTM_BeginTransactionMulti(GTM_IsolationLevel isolevel[],
 										   bool readonly[],
 										   GTMProxy_ConnID connid[],
 										   int txn_count,
@@ -227,8 +225,7 @@ void GTM_FreeCachedTransInfo(void);
 
 void ProcessBeginTransactionCommand(Port *myport, StringInfo message);
 void ProcessBkupBeginTransactionCommand(Port *myport, StringInfo message);
-void GTM_BkupBeginTransactionMulti(char *coord_name,
-								   GTM_TransactionHandle *txn,
+void GTM_BkupBeginTransactionMulti(GTM_TransactionHandle *txn,
 								   GTM_IsolationLevel *isolevel,
 								   bool *readonly,
 								   uint32 *client_id,
@@ -256,8 +253,7 @@ void ProcessRollbackTransactionCommandMulti(Port *myport, StringInfo message, bo
 
 void GTM_SaveTxnInfo(FILE *ctlf);
 void GTM_RestoreTxnInfo(FILE *ctlf, GlobalTransactionId next_gxid);
-void GTM_BkupBeginTransaction(char *coord_name,
-							  GTM_TransactionHandle txn,
+void GTM_BkupBeginTransaction(GTM_TransactionHandle txn,
 							  GTM_IsolationLevel isolevel,
 							  bool readonly,
 							  uint32 client_id);

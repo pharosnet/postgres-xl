@@ -40,7 +40,6 @@ extern bool Backup_synchronously;
 static XidStatus GlobalTransactionIdGetStatus(GlobalTransactionId transactionId);
 static bool GTM_SetDoVacuum(GTM_TransactionHandle handle);
 static void init_GTM_TransactionInfo(GTM_TransactionInfo *gtm_txninfo,
-									 char *coord_name,
 									 GTM_TransactionHandle txn,
 									 GTM_IsolationLevel isolevel,
 									 uint32 client_id,
@@ -719,8 +718,7 @@ SetNextGlobalTransactionId(GlobalTransactionId gxid)
 
 /* Transaction Control */
 int
-GTM_BeginTransactionMulti(char *coord_name,
-					 GTM_IsolationLevel isolevel[],
+GTM_BeginTransactionMulti(GTM_IsolationLevel isolevel[],
 					 bool readonly[],
 					 GTMProxy_ConnID connid[],
 					 int txn_count,
@@ -774,7 +772,7 @@ GTM_BeginTransactionMulti(char *coord_name,
 			}
 		}
 
-		init_GTM_TransactionInfo(gtm_txninfo[kk], coord_name, ii, isolevel[kk],
+		init_GTM_TransactionInfo(gtm_txninfo[kk], ii, isolevel[kk],
 				GetMyThreadInfo->thr_client_id, connid[kk], readonly[kk]);
 
 		GTMTransactions.gt_lastslot = ii;
@@ -799,20 +797,18 @@ GTM_BeginTransactionMulti(char *coord_name,
 
 /* Transaction Control */
 GTM_TransactionHandle
-GTM_BeginTransaction(char *coord_name,
-					 GTM_IsolationLevel isolevel,
+GTM_BeginTransaction(GTM_IsolationLevel isolevel,
 					 bool readonly)
 {
 	GTM_TransactionHandle txn;
 	GTMProxy_ConnID connid = -1;
 
-	GTM_BeginTransactionMulti(coord_name, &isolevel, &readonly, &connid, 1, &txn);
+	GTM_BeginTransactionMulti(&isolevel, &readonly, &connid, 1, &txn);
 	return txn;
 }
 
 static void
 init_GTM_TransactionInfo(GTM_TransactionInfo *gtm_txninfo,
-						 char *coord_name,
 						 GTM_TransactionHandle txn,
 						 GTM_IsolationLevel isolevel,
 						 uint32 client_id,
@@ -882,8 +878,7 @@ clean_GTM_TransactionInfo(GTM_TransactionInfo *gtm_txninfo)
 
 
 void
-GTM_BkupBeginTransactionMulti(char *coord_name,
-							  GTM_TransactionHandle *txn,
+GTM_BkupBeginTransactionMulti(GTM_TransactionHandle *txn,
 							  GTM_IsolationLevel *isolevel,
 							  bool *readonly,
 							  uint32 *client_id,
@@ -912,7 +907,7 @@ GTM_BkupBeginTransactionMulti(char *coord_name,
 
 		elog(DEBUG1, "GTM_BkupBeginTransactionMulti: handle(%u)", txn[kk]);
 
-		init_GTM_TransactionInfo(gtm_txninfo, coord_name, txn[kk],
+		init_GTM_TransactionInfo(gtm_txninfo, txn[kk],
 				isolevel[kk], client_id[kk], connid[kk], readonly[kk]);
 		GTMTransactions.gt_lastslot = txn[kk];
 		GTMTransactions.gt_open_transactions = gtm_lappend(GTMTransactions.gt_open_transactions, gtm_txninfo);
@@ -923,15 +918,14 @@ GTM_BkupBeginTransactionMulti(char *coord_name,
 }
 
 void
-GTM_BkupBeginTransaction(char *coord_name,
-						 GTM_TransactionHandle txn,
+GTM_BkupBeginTransaction(GTM_TransactionHandle txn,
 						 GTM_IsolationLevel isolevel,
 						 bool readonly,
 						 uint32 client_id)
 {
 	GTMProxy_ConnID connid = -1;
 
-	GTM_BkupBeginTransactionMulti(coord_name, &txn, &isolevel, &readonly,
+	GTM_BkupBeginTransactionMulti(&txn, &isolevel, &readonly,
 			&client_id, &connid, 1);
 }
 /*
@@ -1193,10 +1187,8 @@ ProcessBeginTransactionCommand(Port *myport, StringInfo message)
 
 	/*
 	 * Start a new transaction
-	 *
-	 * XXX Port should contain Coordinator name - replace "" with that
 	 */
-	txn = GTM_BeginTransaction("", txn_isolation_level, txn_read_only);
+	txn = GTM_BeginTransaction(txn_isolation_level, txn_read_only);
 	if (txn == InvalidTransactionHandle)
 		ereport(ERROR,
 				(EINVAL,
@@ -1262,7 +1254,7 @@ ProcessBkupBeginTransactionCommand(Port *myport, StringInfo message)
 
 	oldContext = MemoryContextSwitchTo(TopMemoryContext);
 
-	GTM_BkupBeginTransaction("", txn, txn_isolation_level, txn_read_only,
+	GTM_BkupBeginTransaction(txn, txn_isolation_level, txn_read_only,
 			client_id);
 
 	MemoryContextSwitchTo(oldContext);
@@ -1292,10 +1284,8 @@ ProcessBeginTransactionGetGXIDCommand(Port *myport, StringInfo message)
 
 	/*
 	 * Start a new transaction
-	 *
-	 * XXX Port should contain Coordinator name - replace "" with that
 	 */
-	txn = GTM_BeginTransaction("", txn_isolation_level, txn_read_only);
+	txn = GTM_BeginTransaction(txn_isolation_level, txn_read_only);
 	if (txn == InvalidTransactionHandle)
 		ereport(ERROR,
 				(EINVAL,
@@ -1360,8 +1350,7 @@ retry:
 }
 
 static void
-GTM_BkupBeginTransactionGetGXIDMulti(char *coord_name,
-									 GTM_TransactionHandle *txn,
+GTM_BkupBeginTransactionGetGXIDMulti(GTM_TransactionHandle *txn,
 									 GlobalTransactionId *gxid,
 									 GTM_IsolationLevel *isolevel,
 									 bool *readonly,
@@ -1393,7 +1382,7 @@ GTM_BkupBeginTransactionGetGXIDMulti(char *coord_name,
 			MemoryContextSwitchTo(oldContext);
 			return;
 		}
-		init_GTM_TransactionInfo(gtm_txninfo, coord_name, txn[ii],
+		init_GTM_TransactionInfo(gtm_txninfo, txn[ii],
 				isolevel[ii], client_id[ii], connid[ii], readonly[ii]);
 		GTMTransactions.gt_lastslot = txn[ii];
 		gtm_txninfo->gti_gxid = gxid[ii];
@@ -1438,8 +1427,7 @@ GTM_BkupBeginTransactionGetGXIDMulti(char *coord_name,
 }
 
 static void
-GTM_BkupBeginTransactionGetGXID(char *coord_name,
-								GTM_TransactionHandle txn,
+GTM_BkupBeginTransactionGetGXID(GTM_TransactionHandle txn,
 								GlobalTransactionId gxid,
 								GTM_IsolationLevel isolevel,
 								bool readonly,
@@ -1447,7 +1435,7 @@ GTM_BkupBeginTransactionGetGXID(char *coord_name,
 {
 	GTMProxy_ConnID connid = -1;
 
-	GTM_BkupBeginTransactionGetGXIDMulti(coord_name, &txn, &gxid, &isolevel,
+	GTM_BkupBeginTransactionGetGXIDMulti(&txn, &gxid, &isolevel,
 			&readonly, &client_id, &connid, 1);
 }
 
@@ -1472,7 +1460,7 @@ ProcessBkupBeginTransactionGetGXIDCommand(Port *myport, StringInfo message)
 	memcpy(&timestamp, pq_getmsgbytes(message, sizeof(GTM_Timestamp)), sizeof(GTM_Timestamp));
 	pq_getmsgend(message);
 
-	GTM_BkupBeginTransactionGetGXID("", txn, gxid, txn_isolation_level,
+	GTM_BkupBeginTransactionGetGXID(txn, gxid, txn_isolation_level,
 			txn_read_only, txn_client_id);
 }
 
@@ -1493,7 +1481,7 @@ ProcessBkupBeginTransactionGetGXIDAutovacuumCommand(Port *myport, StringInfo mes
 	txn_client_id = pq_getmsgint(message, sizeof (uint32));
 	pq_getmsgend(message);
 
-	GTM_BkupBeginTransactionGetGXID("", txn, gxid, txn_isolation_level,
+	GTM_BkupBeginTransactionGetGXID(txn, gxid, txn_isolation_level,
 			false, txn_client_id);
 	GTM_SetDoVacuum(txn);
 }
@@ -1520,10 +1508,8 @@ ProcessBeginTransactionGetGXIDAutovacuumCommand(Port *myport, StringInfo message
 
 	/*
 	 * Start a new transaction
-	 *
-	 * XXX Port should contain Coordinator name - replace "" with that
 	 */
-	txn = GTM_BeginTransaction("", txn_isolation_level, txn_read_only);
+	txn = GTM_BeginTransaction(txn_isolation_level, txn_read_only);
 	if (txn == InvalidTransactionHandle)
 		ereport(ERROR,
 				(EINVAL,
@@ -1629,7 +1615,7 @@ ProcessBeginTransactionGetGXIDCommandMulti(Port *myport, StringInfo message)
 	 *
 	 * XXX Port should contain Coordinator name - replace NULL with that
 	 */
-	count = GTM_BeginTransactionMulti(NULL, txn_isolation_level, txn_read_only, txn_connid,
+	count = GTM_BeginTransactionMulti(txn_isolation_level, txn_read_only, txn_connid,
 									  txn_count, txn);
 	if (count != txn_count)
 		ereport(ERROR,
@@ -1736,7 +1722,7 @@ ProcessBkupBeginTransactionGetGXIDCommandMulti(Port *myport, StringInfo message)
 		txn_connid[ii] = pq_getmsgint(message, sizeof(GTMProxy_ConnID));
 	}
 
-	GTM_BkupBeginTransactionGetGXIDMulti("", txn, gxid, txn_isolation_level,
+	GTM_BkupBeginTransactionGetGXIDMulti(txn, gxid, txn_isolation_level,
 			txn_read_only, txn_client_id, txn_connid, txn_count);
 
 }
@@ -1960,7 +1946,7 @@ ProcessGetGIDDataTransactionCommand(Port *myport, StringInfo message)
 				 errmsg("Failed to get GID Data for prepared transaction")));
 
 	/* First get the GXID for the new transaction */
-	txn = GTM_BeginTransaction("", txn_isolation_level, txn_read_only);
+	txn = GTM_BeginTransaction(txn_isolation_level, txn_read_only);
 	if (txn == InvalidTransactionHandle)
 		ereport(ERROR,
 			(EINVAL,
