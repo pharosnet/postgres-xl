@@ -822,7 +822,6 @@ init_GTM_TransactionInfo(GTM_TransactionInfo *gtm_txninfo,
 	gtm_txninfo->gti_gxid = InvalidGlobalTransactionId;
 	gtm_txninfo->gti_xmin = InvalidGlobalTransactionId;
 	gtm_txninfo->gti_state = GTM_TXN_STARTING;
-	gtm_txninfo->gti_coordname = (coord_name ? pstrdup(coord_name) : NULL);
 
 	gtm_txninfo->gti_isolevel = isolevel;
 	gtm_txninfo->gti_readonly = readonly;
@@ -869,11 +868,6 @@ clean_GTM_TransactionInfo(GTM_TransactionInfo *gtm_txninfo)
 	gtm_txninfo->gti_in_use = false;
 	gtm_txninfo->gti_snapshot_set = false;
 
-	if (gtm_txninfo->gti_coordname)
-	{
-		pfree(gtm_txninfo->gti_coordname);
-		gtm_txninfo->gti_coordname = NULL;
-	}
 	if (gtm_txninfo->gti_gid)
 	{
 		pfree(gtm_txninfo->gti_gid);

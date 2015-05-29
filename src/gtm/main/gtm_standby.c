@@ -143,7 +143,6 @@ gtm_standby_restore_gxid(void)
 		GTMTransactions.gt_transactions_array[handle].gti_in_use = txn.gt_transactions_array[i].gti_in_use;
 		GTMTransactions.gt_transactions_array[handle].gti_gxid = txn.gt_transactions_array[i].gti_gxid;
 		GTMTransactions.gt_transactions_array[handle].gti_state = txn.gt_transactions_array[i].gti_state;
-		GTMTransactions.gt_transactions_array[handle].gti_coordname = txn.gt_transactions_array[i].gti_coordname;
 		GTMTransactions.gt_transactions_array[handle].gti_xmin = txn.gt_transactions_array[i].gti_xmin;
 		GTMTransactions.gt_transactions_array[handle].gti_isolevel = txn.gt_transactions_array[i].gti_isolevel;
 		GTMTransactions.gt_transactions_array[handle].gti_readonly = txn.gt_transactions_array[i].gti_readonly;

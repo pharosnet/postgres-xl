@@ -178,9 +178,6 @@ gtm_get_transactioninfo_size(GTM_TransactionInfo *data)
 	len += sizeof(bool);				/* gti_in_use */
 	len += sizeof(GlobalTransactionId);		/* gti_gxid */
 	len += sizeof(GTM_TransactionStates);		/* gti_state */
-	len += sizeof(uint32);				/* used to store length of gti_coordname*/
-	if (data->gti_coordname != NULL)
-		len += strlen(data->gti_coordname);	/* gti_coordname */
 	len += sizeof(GlobalTransactionId);		/* gti_xmin */
 	len += sizeof(GTM_IsolationLevel);		/* gti_isolevel */
 	len += sizeof(bool);				/* gti_readonly */
@@ -239,22 +236,6 @@ gtm_serialize_transactioninfo(GTM_TransactionInfo *data, char *buf, size_t bufle
 	/* GTM_TransactionInfo.gti_state */
 	memcpy(buf + len, &(data->gti_state), sizeof(GTM_TransactionStates));
 	len += sizeof(GTM_TransactionStates);
-
-	/* GTM_TransactionInfo.gti_coordname */
-	if (data->gti_coordname != NULL)
-	{
-		namelen = (uint32)strlen(data->gti_coordname);
-		memcpy(buf + len, &namelen, sizeof(uint32));
-		len += sizeof(uint32);
-		memcpy(buf + len, data->gti_coordname, namelen);
-		len += namelen;
-	}
-	else
-	{
-		namelen = 0;
-		memcpy(buf + len, &namelen, sizeof(uint32));
-		len += sizeof(uint32);
-	}
 
 	/* GTM_TransactionInfo.gti_xmin */
 	memcpy(buf + len, &(data->gti_xmin), sizeof(GlobalTransactionId));
@@ -364,23 +345,6 @@ gtm_deserialize_transactioninfo(GTM_TransactionInfo *data, const char *buf, size
 	/* GTM_TransactionInfo.gti_state */
 	memcpy(&(data->gti_state), buf + len, sizeof(GTM_TransactionStates));
 	len += sizeof(GTM_TransactionStates);
-
-	/* GTM_TransactionInfo.gti_coordname */
-	{
-		uint32 ll;
-
-		memcpy(&ll, buf+len, sizeof(uint32));
-		len += sizeof(uint32);
-		if (ll > 0)
-		{
-			data->gti_coordname = genAllocTop(sizeof(ll+1));	/* Should be allocated at TopMostContext */
-			memcpy(data->gti_coordname, buf+len, ll);
-			data->gti_coordname[ll] = 0;
-			len += ll;
-		}
-		else
-			data->gti_coordname = NULL;
-	}
 
 	/* GTM_TransactionInfo.gti_xmin */
 	memcpy(&(data->gti_xmin), buf + len, sizeof(GlobalTransactionId));

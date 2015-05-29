@@ -40,7 +40,6 @@ dump_transactioninfo_elog(GTM_TransactionInfo *txn)
 	elog(LOG, "gti_in_use: %d", txn->gti_in_use);
 	elog(LOG, "gti_gxid: %d", txn->gti_gxid);
 	elog(LOG, "gti_state: %d", txn->gti_state);
-	elog(LOG, "gti_coordname: %s", txn->gti_coordname);
 	elog(LOG, "gti_xmin: %d", txn->gti_xmin);
 	elog(LOG, "gti_isolevel: %d", txn->gti_isolevel);
 	elog(LOG, "gti_readonly: %d", txn->gti_readonly);

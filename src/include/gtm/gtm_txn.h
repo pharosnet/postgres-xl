@@ -116,7 +116,6 @@ typedef struct GTM_TransactionInfo
 	bool					gti_in_use;
 	GlobalTransactionId		gti_gxid;
 	GTM_TransactionStates	gti_state;
-	char					*gti_coordname;
 	GlobalTransactionId		gti_xmin;
 	GTM_IsolationLevel		gti_isolevel;
 	bool					gti_readonly;
