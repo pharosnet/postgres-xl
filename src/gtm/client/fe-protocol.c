@@ -763,7 +763,7 @@ gtmpqParseSuccess(GTM_Conn *conn, GTM_Result *result)
 				{
 					result->gr_status = GTM_RESULT_ERROR;
 					printfGTMPQExpBuffer(&conn->errorMessage, "buffer size not large enough for node list data");
-			result->gr_status = GTM_RESULT_ERROR;
+					result->gr_status = GTM_RESULT_ERROR;
 				}
 
 				if (gtmpqGetnchar((char *)&buf, size, conn))

@@ -971,8 +971,7 @@ get_snapshot(GTM_Conn *conn, GlobalTransactionId gxid, bool canbe_grouped)
 
 	 /* Start the message. */
 	if (gtmpqPutMsgStart('C', true, conn) ||
-		gtmpqPutInt(MSG_SNAPSHOT_GET, sizeof (GTM_MessageType), conn) ||
-		gtmpqPutc(canbe_grouped, conn) ||
+		gtmpqPutInt(canbe_grouped ? MSG_SNAPSHOT_GET_MULTI : MSG_SNAPSHOT_GET, sizeof (GTM_MessageType), conn) ||
 		gtmpqPutnchar((char *)&gxid, sizeof (GlobalTransactionId), conn))
 		goto send_failed;
 

@@ -3061,7 +3061,7 @@ GetSnapshotDataFromGTM(Snapshot snapshot)
 	GTM_Snapshot gtm_snapshot;
 	bool canbe_grouped = (!FirstSnapshotSet) || (!IsolationUsesXactSnapshot());
 
-	gtm_snapshot = GetSnapshotGTM(GetCurrentTransactionId(), canbe_grouped);
+	gtm_snapshot = GetSnapshotGTM(GetCurrentTransactionIdIfAny(), canbe_grouped);
 	
 	if (!gtm_snapshot)
 		ereport(ERROR,

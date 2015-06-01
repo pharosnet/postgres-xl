@@ -155,6 +155,9 @@ GTM_GXIDToHandle(GlobalTransactionId gxid)
 	gtm_ListCell *elem = NULL;
    	GTM_TransactionInfo *gtm_txninfo = NULL;
 
+	if (!GlobalTransactionIdIsValid(gxid))
+		return InvalidTransactionHandle;
+
 	GTM_RWLockAcquire(&GTMTransactions.gt_TransArrayLock, GTM_LOCKMODE_READ);
 
 	gtm_foreach(elem, GTMTransactions.gt_open_transactions)

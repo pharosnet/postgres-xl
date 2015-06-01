@@ -873,6 +873,7 @@ typedef NameData *Name;
 #define STATUS_EOF				(-2)
 #define STATUS_FOUND			(1)
 #define STATUS_WAITING			(2)
+#define STATUS_NOT_FOUND		(3)
 
 
 /*

@@ -23,6 +23,7 @@
 #include "gtm/libpq-int.h"
 #include "gtm/pqformat.h"
 
+static GTM_SnapshotData localSnapshot;
 /*
  * Get snapshot for the given transactions. If this is the first call in the
  * transaction, a fresh snapshot is taken and returned back. For a serializable
@@ -71,25 +72,29 @@ GTM_GetTransactionSnapshot(GTM_TransactionHandle handle[], int txn_count, int *s
 
 	for (ii = 0; ii < txn_count; ii++)
 	{
-		mygtm_txninfo = GTM_HandleToTransactionInfo(handle[ii]);
+		/*
+		 * Even if the request does not contain a valid GXID, we still send
+		 * down a snapshot, but mark the status field acoordingly
+		 */
+		if (handle[ii] != InvalidTransactionHandle)
+			mygtm_txninfo = GTM_HandleToTransactionInfo(handle[ii]);
+		else
+			status[ii] = STATUS_NOT_FOUND;
 
 		/*
 		 * If the transaction does not exist, just mark the status field with
 		 * a STATUS_ERROR code
 		 */
-		if (mygtm_txninfo == NULL)
-			status[ii] = STATUS_ERROR;
-		else if (snapshot == NULL)
+		if ((mygtm_txninfo != NULL) && (snapshot == NULL))
 			snapshot = &mygtm_txninfo->gti_current_snapshot;
 	}
 
 	/*
-	 * If no valid transaction exists in the array, send an error message back.
-	 * Otherwise, we should still get the snapshot and send it back. The
-	 * invalid transaction ids are marked separately in the status array.
+	 * If no valid transaction exists in the array, we record the snapshot in a
+	 * local strucure and still send it out to the caller
 	 */
 	if (snapshot == NULL)
-		return NULL;
+		snapshot = &localSnapshot;
 
 	Assert(snapshot != NULL);
 
@@ -198,7 +203,7 @@ GTM_GetTransactionSnapshot(GTM_TransactionHandle handle[], int txn_count, int *s
 		 * We have already gone through all the transaction handles above and
 		 * marked the invalid handles with STATUS_ERROR
 		 */
-		if (status[ii] == STATUS_ERROR)
+		if ((status[ii] == STATUS_ERROR) || (status[ii] == STATUS_NOT_FOUND))
 			continue;
 
 		mygtm_txninfo = GTM_HandleToTransactionInfo(handle[ii]);
@@ -284,13 +289,6 @@ ProcessGetSnapshotCommand(Port *myport, StringInfo message, bool get_gxid)
 	int status;
 	int txn_count = 1;
 	const char *data = NULL;
-
-	/*
-	 * Here we consume a byte which is a boolean to determine if snapshot can
-	 * be grouped or not. This is used only by GTM-Proxy and it is useless for GTM
-	 * so consume data.
-	 */
-	pq_getmsgbyte(message);
 
 	data = pq_getmsgbytes(message, sizeof (gxid));
 	if (data == NULL)
