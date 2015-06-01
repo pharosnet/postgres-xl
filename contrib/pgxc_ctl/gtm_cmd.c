@@ -894,6 +894,7 @@ cmd_t *prepare_initGtmProxy(char *nodeName)
 	int idx;
 	FILE *f;
 	char timestamp[MAXTOKEN+1];
+	char **fileList = NULL;
 
 	if ((idx = gtmProxyIdx(nodeName)) < 0)
 	{
@@ -924,15 +925,24 @@ cmd_t *prepare_initGtmProxy(char *nodeName)
 			"#===========================\n"
 			"# Added at initialization, %s\n"
 			"nodename = '%s'\n"
-			"listen_addresses = '*'\n"
+			"listen_addresses = '*'\n",
+			timeStampString(timestamp, MAXTOKEN),
+			aval(VAR_gtmProxyNames)[idx]);
+
+	if (!is_none(sval(VAR_gtmPxyExtraConfig)))
+		AddMember(fileList, sval(VAR_gtmPxyExtraConfig));
+	if (!is_none(sval(VAR_gtmPxySpecificExtraConfig)))
+		AddMember(fileList, sval(VAR_gtmPxySpecificExtraConfig));
+	appendFiles(f, fileList);
+	CleanArray(fileList);
+
+	fprintf(f,
 			"port = %s\n"
 			"gtm_host = '%s'\n"
 			"gtm_port = %s\n"
 			"worker_threads = 1\n"
 			"gtm_connect_retry_interval = 1\n"
 			"# End of addition\n",
-			timeStampString(timestamp, MAXTOKEN),
-			aval(VAR_gtmProxyNames)[idx],
 			aval(VAR_gtmProxyPorts)[idx],
 			sval(VAR_gtmMasterServer),
 			sval(VAR_gtmMasterPort));
