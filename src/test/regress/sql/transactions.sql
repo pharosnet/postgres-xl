@@ -315,6 +315,47 @@ update xacttest set a = max_xacttest() + 10 where a > 0;
 select * from xacttest order by a, b;
 rollback;
 
+-- test case for relations which are created and accessed in the same
+-- transaction, especially when the queries require datanode-to-datanode
+-- connections. In the past we had failed to use the correct snapshot in such
+-- cases 
+
+begin;
+
+create table a_snap (
+     code char not null,
+     constraint a_snap_pk primary key (code)
+);
+create table b_snap (
+     a char not null,
+     num integer not null,
+     constraint b_snap_pk primary key (a, num)
+);
+create table c_snap (
+     name char not null,
+     a char,
+     constraint c_snap_pk primary key (name)
+);
+
+insert into a_snap (code) values ('p');
+insert into a_snap (code) values ('q');
+insert into b_snap (a, num) values ('p', 1);
+insert into b_snap (a, num) values ('p', 2);
+insert into c_snap (name, a) values ('A', 'p');
+insert into c_snap (name, a) values ('B', 'q');
+insert into c_snap (name, a) values ('C', null);
+
+select c_snap.name, ss.code, ss.b_cnt, ss.const
+from c_snap left join
+  (select a_snap.code, coalesce(b_grp.cnt, 0) as b_cnt, -1 as const
+   from a_snap left join
+     (select count(1) as cnt, b_snap.a from b_snap group by b_snap.a) as b_grp
+     on a_snap.code = b_grp.a
+  ) as ss
+  on (c_snap.a = ss.code)
+order by c_snap.name;
+
+rollback;
 
 -- test case for problems with dropping an open relation during abort
 BEGIN;

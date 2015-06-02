@@ -559,6 +559,13 @@ retry:
 		MyFirstBackendId = firstBackend;
 	}
 
+	/*
+	 * Also invalidate any catalog snapshot which may become stale since this
+	 * session may join some open transaction which may have done catalog
+	 * changes that are not reflected in the current catalog snapshot
+	 */
+	InvalidateCatalogSnapshot();
+
 	if (reset)
 	{
 		/*
