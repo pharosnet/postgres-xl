@@ -1,7 +1,7 @@
 /*
  * psql - the PostgreSQL interactive terminal
  *
- * Copyright (c) 2000-2014, PostgreSQL Global Development Group
+ * Copyright (c) 2000-2015, PostgreSQL Global Development Group
  *
  * src/bin/psql/settings.h
  */
@@ -27,10 +27,16 @@
 #define DEFAULT_PROMPT2 "%/%R%# "
 #define DEFAULT_PROMPT3 ">> "
 
+/*
+ * Note: these enums should generally be chosen so that zero corresponds
+ * to the default behavior.
+ */
+
 typedef enum
 {
 	PSQL_ECHO_NONE,
 	PSQL_ECHO_QUERIES,
+	PSQL_ECHO_ERRORS,
 	PSQL_ECHO_ALL
 } PSQL_ECHO;
 
@@ -47,6 +53,14 @@ typedef enum
 	PSQL_ERROR_ROLLBACK_INTERACTIVE,
 	PSQL_ERROR_ROLLBACK_ON
 } PSQL_ERROR_ROLLBACK;
+
+typedef enum
+{
+	PSQL_COMP_CASE_PRESERVE_UPPER,
+	PSQL_COMP_CASE_PRESERVE_LOWER,
+	PSQL_COMP_CASE_UPPER,
+	PSQL_COMP_CASE_LOWER
+} PSQL_COMP_CASE;
 
 typedef enum
 {
@@ -87,6 +101,7 @@ typedef struct _psqlSettings
 	const char *progname;		/* in case you renamed psql */
 	char	   *inputfile;		/* file being currently processed, if any */
 	uint64		lineno;			/* also for error reporting */
+	uint64		stmt_lineno;	/* line number inside the current statement */
 
 	bool		timing;			/* enable timing of all queries */
 
@@ -108,6 +123,7 @@ typedef struct _psqlSettings
 	PSQL_ECHO	echo;
 	PSQL_ECHO_HIDDEN echo_hidden;
 	PSQL_ERROR_ROLLBACK on_error_rollback;
+	PSQL_COMP_CASE comp_case;
 	HistControl histcontrol;
 	const char *prompt1;
 	const char *prompt2;

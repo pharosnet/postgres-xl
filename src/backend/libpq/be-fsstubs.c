@@ -3,7 +3,7 @@
  * be-fsstubs.c
  *	  Builtin functions for open/close/read/write operations on large objects
  *
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -1072,10 +1072,10 @@ lo_get_fragment(PG_FUNCTION_ARGS)
 }
 
 /*
- * Create LO with initial contents
+ * Create LO with initial contents given by a bytea argument
  */
 Datum
-lo_create_bytea(PG_FUNCTION_ARGS)
+lo_from_bytea(PG_FUNCTION_ARGS)
 {
 	Oid			loOid = PG_GETARG_OID(0);
 	bytea	   *str = PG_GETARG_BYTEA_PP(1);

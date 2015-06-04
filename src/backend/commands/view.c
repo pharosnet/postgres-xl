@@ -8,7 +8,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -60,7 +60,7 @@ validateWithCheckOption(char *value)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				 errmsg("invalid value for \"check_option\" option"),
-				 errdetail("Valid values are \"local\", and \"cascaded\".")));
+				 errdetail("Valid values are \"local\" and \"cascaded\".")));
 	}
 }
 
@@ -73,7 +73,7 @@ validateWithCheckOption(char *value)
  * work harder.
  *---------------------------------------------------------------------
  */
-static Oid
+static ObjectAddress
 DefineVirtualRelation(RangeVar *relation, List *tlist, bool replace,
 					  List *options)
 {
@@ -151,6 +151,7 @@ DefineVirtualRelation(RangeVar *relation, List *tlist, bool replace,
 		TupleDesc	descriptor;
 		List	   *atcmds = NIL;
 		AlterTableCmd *atcmd;
+		ObjectAddress address;
 
 		/* Relation is already locked, but we must build a relcache entry. */
 		rel = relation_open(viewOid, NoLock);
@@ -216,16 +217,18 @@ DefineVirtualRelation(RangeVar *relation, List *tlist, bool replace,
 		/* OK, let's do it. */
 		AlterTableInternal(viewOid, atcmds, true);
 
+		ObjectAddressSet(address, RelationRelationId, viewOid);
+
 		/*
 		 * Seems okay, so return the OID of the pre-existing view.
 		 */
 		relation_close(rel, NoLock);	/* keep the lock! */
 
-		return viewOid;
+		return address;
 	}
 	else
 	{
-		Oid			relid;
+		ObjectAddress address;
 
 		/*
 		 * now set the parameters for keys/inheritance etc. All of these are
@@ -245,9 +248,9 @@ DefineVirtualRelation(RangeVar *relation, List *tlist, bool replace,
 		 * existing view, so we don't need more code to complain if "replace"
 		 * is false).
 		 */
-		relid = DefineRelation(createStmt, RELKIND_VIEW, InvalidOid);
-		Assert(relid != InvalidOid);
-		return relid;
+		address = DefineRelation(createStmt, RELKIND_VIEW, InvalidOid, NULL);
+		Assert(address.objectId != InvalidOid);
+		return address;
 	}
 }
 
@@ -350,6 +353,7 @@ UpdateRangeTableOfViewParse(Oid viewOid, Query *viewParse)
 	List	   *new_rt;
 	RangeTblEntry *rt_entry1,
 			   *rt_entry2;
+	ParseState *pstate;
 
 	/*
 	 * Make a copy of the given parsetree.  It's not so much that we don't
@@ -361,6 +365,9 @@ UpdateRangeTableOfViewParse(Oid viewOid, Query *viewParse)
 	 */
 	viewParse = (Query *) copyObject(viewParse);
 
+	/* Create a dummy ParseState for addRangeTableEntryForRelation */
+	pstate = make_parsestate(NULL);
+
 	/* need to open the rel for addRangeTableEntryForRelation */
 	viewRel = relation_open(viewOid, AccessShareLock);
 
@@ -368,10 +375,10 @@ UpdateRangeTableOfViewParse(Oid viewOid, Query *viewParse)
 	 * Create the 2 new range table entries and form the new range table...
 	 * OLD first, then NEW....
 	 */
-	rt_entry1 = addRangeTableEntryForRelation(NULL, viewRel,
+	rt_entry1 = addRangeTableEntryForRelation(pstate, viewRel,
 											  makeAlias("old", NIL),
 											  false, false);
-	rt_entry2 = addRangeTableEntryForRelation(NULL, viewRel,
+	rt_entry2 = addRangeTableEntryForRelation(pstate, viewRel,
 											  makeAlias("new", NIL),
 											  false, false);
 	/* Must override addRangeTableEntry's default access-check flags */
@@ -396,14 +403,14 @@ UpdateRangeTableOfViewParse(Oid viewOid, Query *viewParse)
  * DefineView
  *		Execute a CREATE VIEW command.
  */
-Oid
+ObjectAddress
 DefineView(ViewStmt *stmt, const char *queryString)
 {
 	Query	   *viewParse;
-	Oid			viewOid;
 	RangeVar   *view;
 	ListCell   *cell;
 	bool		check_option;
+	ObjectAddress address;
 
 	/*
 	 * Run parse analysis to convert the raw parse tree to a Query.  Note this
@@ -479,7 +486,7 @@ DefineView(ViewStmt *stmt, const char *queryString)
 		if (view_updatable_error)
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					 errmsg("WITH CHECK OPTION is supported only on auto-updatable views"),
+					 errmsg("WITH CHECK OPTION is supported only on automatically updatable views"),
 					 errhint("%s", view_updatable_error)));
 	}
 
@@ -557,7 +564,7 @@ DefineView(ViewStmt *stmt, const char *queryString)
 	 * NOTE: if it already exists and replace is false, the xact will be
 	 * aborted.
 	 */
-	viewOid = DefineVirtualRelation(view, viewParse->targetList,
+	address = DefineVirtualRelation(view, viewParse->targetList,
 									stmt->replace, stmt->options);
 
 	/*
@@ -567,9 +574,9 @@ DefineView(ViewStmt *stmt, const char *queryString)
 	 */
 	CommandCounterIncrement();
 
-	StoreViewQuery(viewOid, viewParse, stmt->replace);
+	StoreViewQuery(address.objectId, viewParse, stmt->replace);
 
-	return viewOid;
+	return address;
 }
 
 /*

@@ -5,7 +5,7 @@
  *	  along with the relation's initial contents.
  *
  *
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/catalog/pg_operator.h
@@ -23,6 +23,7 @@
 #define PG_OPERATOR_H
 
 #include "catalog/genbki.h"
+#include "catalog/objectaddress.h"
 #include "nodes/pg_list.h"
 
 /* ----------------
@@ -1016,6 +1017,8 @@ DATA(insert OID = 1521 (  "#"	  PGNSP PGUID l f f  0		604   23	  0    0 poly_npo
 DESCR("number of points");
 DATA(insert OID = 1522 (  "<->"   PGNSP PGUID b f f  600	718  701	  0    0 dist_pc - - ));
 DESCR("distance between");
+DATA(insert OID = 3276 (  "<->"	  PGNSP PGUID b f f	 600	604	 701	  0	   0 dist_ppoly - - ));
+DESCR("distance between");
 DATA(insert OID = 1523 (  "<->"   PGNSP PGUID b f f  718	604  701	  0    0 dist_cpoly - - ));
 DESCR("distance between");
 
@@ -1142,18 +1145,19 @@ DATA(insert OID = 1206 (  ">="	   PGNSP PGUID b f f 869 869	 16 1204 1203 networ
 DESCR("greater than or equal");
 DATA(insert OID = 931  (  "<<"	   PGNSP PGUID b f f 869 869	 16 933		0 network_sub networksel networkjoinsel ));
 DESCR("is subnet");
-#define OID_INET_SUB_OP				  931
+#define OID_INET_SUB_OP			931
 DATA(insert OID = 932  (  "<<="    PGNSP PGUID b f f 869 869	 16 934		0 network_subeq networksel networkjoinsel ));
 DESCR("is subnet or equal");
-#define OID_INET_SUBEQ_OP				932
+#define OID_INET_SUBEQ_OP		932
 DATA(insert OID = 933  (  ">>"	   PGNSP PGUID b f f 869 869	 16 931		0 network_sup networksel networkjoinsel ));
 DESCR("is supernet");
-#define OID_INET_SUP_OP				  933
+#define OID_INET_SUP_OP			933
 DATA(insert OID = 934  (  ">>="    PGNSP PGUID b f f 869 869	 16 932		0 network_supeq networksel networkjoinsel ));
 DESCR("is supernet or equal");
-#define OID_INET_SUPEQ_OP				934
+#define OID_INET_SUPEQ_OP		934
 DATA(insert OID = 3552	(  "&&"    PGNSP PGUID b f f 869 869	 16 3552	0 network_overlap networksel networkjoinsel ));
 DESCR("overlaps (is subnet or supernet)");
+#define OID_INET_OVERLAP_OP		3552
 
 DATA(insert OID = 2634 (  "~"	   PGNSP PGUID l f f	  0 869 869 0 0 inetnot - - ));
 DESCR("bitwise not");
@@ -1720,10 +1724,10 @@ DESCR("less than or equal");
 #define OID_RANGE_LESS_EQUAL_OP 3885
 DATA(insert OID = 3886 (  ">="	   PGNSP PGUID b f f 3831 3831 16 3885 3884 range_ge rangesel scalargtjoinsel ));
 DESCR("greater than or equal");
-#define OID_RANGE_GREATER_OP 3886
+#define OID_RANGE_GREATER_EQUAL_OP 3886
 DATA(insert OID = 3887 (  ">"	   PGNSP PGUID b f f 3831 3831 16 3884 3885 range_gt rangesel scalargtjoinsel ));
 DESCR("greater than");
-#define OID_RANGE_GREATER_EQUAL_OP 3887
+#define OID_RANGE_GREATER_OP 3887
 DATA(insert OID = 3888 (  "&&"	   PGNSP PGUID b f f 3831 3831 16 3888 0 range_overlaps rangesel areajoinsel ));
 DESCR("overlaps");
 #define OID_RANGE_OVERLAP_OP 3888
@@ -1767,9 +1771,9 @@ DATA(insert OID = 3964 (  "->"	   PGNSP PGUID b f f 114 23 114 0 0 json_array_el
 DESCR("get json array element");
 DATA(insert OID = 3965 (  "->>"    PGNSP PGUID b f f 114 23 25 0 0 json_array_element_text - - ));
 DESCR("get json array element as text");
-DATA(insert OID = 3966 (  "#>"	   PGNSP PGUID b f f 114 1009 114 0 0 json_extract_path_op - - ));
+DATA(insert OID = 3966 (  "#>"	   PGNSP PGUID b f f 114 1009 114 0 0 json_extract_path - - ));
 DESCR("get value from json with path elements");
-DATA(insert OID = 3967 (  "#>>"    PGNSP PGUID b f f 114 1009 25 0 0 json_extract_path_text_op - - ));
+DATA(insert OID = 3967 (  "#>>"    PGNSP PGUID b f f 114 1009 25 0 0 json_extract_path_text - - ));
 DESCR("get value from json as text with path elements");
 DATA(insert OID = 3211 (  "->"	   PGNSP PGUID b f f 3802 25 3802 0 0 jsonb_object_field - - ));
 DESCR("get jsonb object field");
@@ -1779,9 +1783,9 @@ DATA(insert OID = 3212 (  "->"	   PGNSP PGUID b f f 3802 23 3802 0 0 jsonb_array
 DESCR("get jsonb array element");
 DATA(insert OID = 3481 (  "->>"    PGNSP PGUID b f f 3802 23 25 0 0 jsonb_array_element_text - - ));
 DESCR("get jsonb array element as text");
-DATA(insert OID = 3213 (  "#>"	   PGNSP PGUID b f f 3802 1009 3802 0 0 jsonb_extract_path_op - - ));
+DATA(insert OID = 3213 (  "#>"	   PGNSP PGUID b f f 3802 1009 3802 0 0 jsonb_extract_path - - ));
 DESCR("get value from jsonb with path elements");
-DATA(insert OID = 3206 (  "#>>"    PGNSP PGUID b f f 3802 1009 25 0 0 jsonb_extract_path_text_op - - ));
+DATA(insert OID = 3206 (  "#>>"    PGNSP PGUID b f f 3802 1009 25 0 0 jsonb_extract_path_text - - ));
 DESCR("get value from jsonb as text with path elements");
 DATA(insert OID = 3240 (  "="	 PGNSP PGUID b t t 3802 3802  16 3240 3241 jsonb_eq eqsel eqjoinsel ));
 DESCR("equal");
@@ -1792,11 +1796,10 @@ DESCR("less than");
 DATA(insert OID = 3243 (  ">"		PGNSP PGUID b f f 3802 3802 16 3242 3244 jsonb_gt scalargtsel scalargtjoinsel ));
 DESCR("greater than");
 DATA(insert OID = 3244 (  "<="	PGNSP PGUID b f f 3802 3802 16 3245 3243 jsonb_le scalarltsel scalarltjoinsel ));
-DESCR("less than or equal to");
+DESCR("less than or equal");
 DATA(insert OID = 3245 (  ">="	PGNSP PGUID b f f 3802 3802 16 3244 3242 jsonb_ge scalargtsel scalargtjoinsel ));
-DESCR("greater than or equal to");
-/* No commutator? */
-DATA(insert OID = 3246 (  "@>"	   PGNSP PGUID b f f 3802 3802 16 0 3250 jsonb_contains contsel contjoinsel ));
+DESCR("greater than or equal");
+DATA(insert OID = 3246 (  "@>"	   PGNSP PGUID b f f 3802 3802 16 3250 0 jsonb_contains contsel contjoinsel ));
 DESCR("contains");
 DATA(insert OID = 3247 (  "?"	   PGNSP PGUID b f f 3802 25 16 0 0 jsonb_exists contsel contjoinsel ));
 DESCR("exists");
@@ -1804,13 +1807,13 @@ DATA(insert OID = 3248 (  "?|"	   PGNSP PGUID b f f 3802 1009 16 0 0 jsonb_exist
 DESCR("exists any");
 DATA(insert OID = 3249 (  "?&"	   PGNSP PGUID b f f 3802 1009 16 0 0 jsonb_exists_all contsel contjoinsel ));
 DESCR("exists all");
-DATA(insert OID = 3250 (  "<@"	   PGNSP PGUID b f f 3802 3802 16 0 3246 jsonb_contained contsel contjoinsel ));
-DESCR("contained");
+DATA(insert OID = 3250 (  "<@"	   PGNSP PGUID b f f 3802 3802 16 3246 0 jsonb_contained contsel contjoinsel ));
+DESCR("is contained by");
 
 /*
  * function prototypes
  */
-extern Oid OperatorCreate(const char *operatorName,
+extern ObjectAddress OperatorCreate(const char *operatorName,
 			   Oid operatorNamespace,
 			   Oid leftTypeId,
 			   Oid rightTypeId,

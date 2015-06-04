@@ -93,7 +93,6 @@ PLy_spi_prepare(PyObject *self, PyObject *args)
 			HeapTuple	typeTup;
 			Oid			typeId;
 			int32		typmod;
-			Form_pg_type typeStruct;
 
 			optr = PySequence_GetItem(list, i);
 			if (PyString_Check(optr))
@@ -129,13 +128,7 @@ PLy_spi_prepare(PyObject *self, PyObject *args)
 			optr = NULL;
 
 			plan->types[i] = typeId;
-			typeStruct = (Form_pg_type) GETSTRUCT(typeTup);
-			if (typeStruct->typtype != TYPTYPE_COMPOSITE)
-				PLy_output_datum_func(&plan->args[i], typeTup);
-			else
-				ereport(ERROR,
-						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				   errmsg("plpy.prepare does not support composite types")));
+			PLy_output_datum_func(&plan->args[i], typeTup);
 			ReleaseSysCache(typeTup);
 		}
 

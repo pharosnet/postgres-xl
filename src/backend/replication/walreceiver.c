@@ -33,7 +33,7 @@
  * specific parts are in the libpqwalreceiver module. It's loaded
  * dynamically to avoid linking the server with libpq.
  *
- * Portions Copyright (c) 2010-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 2010-2015, PostgreSQL Global Development Group
  *
  *
  * IDENTIFICATION
@@ -255,17 +255,6 @@ WalReceiverMain(void)
 	on_shmem_exit(WalRcvDie, 0);
 
 	OwnLatch(&walrcv->latch);
-
-	/*
-	 * If possible, make this process a group leader, so that the postmaster
-	 * can signal any child processes too.  (walreceiver probably never has
-	 * any child processes, but for consistency we make all postmaster child
-	 * processes do this.)
-	 */
-#ifdef HAVE_SETSID
-	if (setsid() < 0)
-		elog(FATAL, "setsid() failed: %m");
-#endif
 
 	/* Properly accept or ignore signals the postmaster might send us */
 	pqsignal(SIGHUP, WalRcvSigHupHandler);		/* set flag to read config
@@ -1202,15 +1191,26 @@ ProcessWalSndrMessage(XLogRecPtr walEnd, TimestampTz sendTime)
 	{
 		char	   *sendtime;
 		char	   *receipttime;
+		int			applyDelay;
 
 		/* Copy because timestamptz_to_str returns a static buffer */
 		sendtime = pstrdup(timestamptz_to_str(sendTime));
 		receipttime = pstrdup(timestamptz_to_str(lastMsgReceiptTime));
-		elog(DEBUG2, "sendtime %s receipttime %s replication apply delay %d ms transfer latency %d ms",
-			 sendtime,
-			 receipttime,
-			 GetReplicationApplyDelay(),
-			 GetReplicationTransferLatency());
+		applyDelay = GetReplicationApplyDelay();
+
+		/* apply delay is not available */
+		if (applyDelay == -1)
+			elog(DEBUG2, "sendtime %s receipttime %s replication apply delay (N/A) transfer latency %d ms",
+				 sendtime,
+				 receipttime,
+				 GetReplicationTransferLatency());
+		else
+			elog(DEBUG2, "sendtime %s receipttime %s replication apply delay %d ms transfer latency %d ms",
+				 sendtime,
+				 receipttime,
+				 applyDelay,
+				 GetReplicationTransferLatency());
+
 		pfree(sendtime);
 		pfree(receipttime);
 	}

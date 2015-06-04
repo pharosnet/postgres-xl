@@ -42,7 +42,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -58,6 +58,7 @@
 #include "catalog/namespace.h"
 #include "executor/executor.h"
 #include "executor/spi.h"
+#include "miscadmin.h"
 #include "nodes/nodeFuncs.h"
 #include "optimizer/cost.h"
 #include "optimizer/planmain.h"
@@ -70,6 +71,7 @@
 #include "utils/inval.h"
 #include "utils/memutils.h"
 #include "utils/resowner_private.h"
+#include "utils/rls.h"
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"
 #ifdef PGXC
@@ -157,7 +159,7 @@ InitPlanCache(void)
  * Once constructed, the cached plan can be made longer-lived, if needed,
  * by calling SaveCachedPlan.
  *
- * raw_parse_tree: output of raw_parser()
+ * raw_parse_tree: output of raw_parser(), or NULL if empty query
  * query_string: original query text
  * commandTag: compile-time-constant tag for query, or NULL if empty query
  */
@@ -172,6 +174,8 @@ CreateCachedPlan(Node *raw_parse_tree,
 	CachedPlanSource *plansource;
 	MemoryContext source_context;
 	MemoryContext oldcxt;
+	Oid user_id;
+	int security_context;
 
 	Assert(query_string != NULL);		/* required as of 8.4 */
 
@@ -193,6 +197,8 @@ CreateCachedPlan(Node *raw_parse_tree,
 	 * Most fields are just left empty for the moment.
 	 */
 	oldcxt = MemoryContextSwitchTo(source_context);
+
+	GetUserIdAndSecContext(&user_id, &security_context);
 
 	plansource = (CachedPlanSource *) palloc0(sizeof(CachedPlanSource));
 	plansource->magic = CACHEDPLANSOURCE_MAGIC;
@@ -226,6 +232,11 @@ CreateCachedPlan(Node *raw_parse_tree,
 	plansource->generic_cost = -1;
 	plansource->total_custom_cost = 0;
 	plansource->num_custom_plans = 0;
+	plansource->hasRowSecurity = false;
+	plansource->rowSecurityDisabled
+		= (security_context & SECURITY_ROW_LEVEL_DISABLED) != 0;
+	plansource->row_security_env = row_security;
+	plansource->planUserId = InvalidOid;
 
 	MemoryContextSwitchTo(oldcxt);
 
@@ -246,7 +257,7 @@ CreateCachedPlan(Node *raw_parse_tree,
  * invalidation, so plan use must be completed in the current transaction,
  * and DDL that might invalidate the querytree_list must be avoided as well.
  *
- * raw_parse_tree: output of raw_parser()
+ * raw_parse_tree: output of raw_parser(), or NULL if empty query
  * query_string: original query text
  * commandTag: compile-time-constant tag for query, or NULL if empty query
  */
@@ -396,7 +407,8 @@ CompleteCachedPlan(CachedPlanSource *plansource,
 		 */
 		extract_query_dependencies((Node *) querytree_list,
 								   &plansource->relationOids,
-								   &plansource->invalItems);
+								   &plansource->invalItems,
+								   &plansource->hasRowSecurity);
 
 		/*
 		 * Also save the current search_path in the query_context.  (This
@@ -647,6 +659,17 @@ RevalidateCachedQuery(CachedPlanSource *plansource)
 #endif
 
 	/*
+	 * If this is a new cached plan, then set the user id it was planned by
+	 * and under what row security settings; these are needed to determine
+	 * plan invalidation when RLS is involved.
+	 */
+	if (!OidIsValid(plansource->planUserId))
+	{
+		plansource->planUserId = GetUserId();
+		plansource->row_security_env = row_security;
+	}
+
+	/*
 	 * If the query is currently valid, we should have a saved search_path ---
 	 * check to see if that matches the current environment.  If not, we want
 	 * to force replan.
@@ -662,6 +685,23 @@ RevalidateCachedQuery(CachedPlanSource *plansource)
 				plansource->gplan->is_valid = false;
 		}
 	}
+
+	/*
+	 * Check if row security is enabled for this query and things have changed
+	 * such that we need to invalidate this plan and rebuild it.  Note that if
+	 * row security was explicitly disabled (eg: this is a FK check plan) then
+	 * we don't invalidate due to RLS.
+	 *
+	 * Otherwise, if the plan has a possible RLS dependency, force a replan if
+	 * either the role under which the plan was planned or the row_security
+	 * setting has been changed.
+	 */
+	if (plansource->is_valid
+		&& !plansource->rowSecurityDisabled
+		&& plansource->hasRowSecurity
+		&& (plansource->planUserId != GetUserId()
+			|| plansource->row_security_env != row_security))
+		plansource->is_valid = false;
 
 	/*
 	 * If the query is currently valid, acquire locks on the referenced
@@ -740,7 +780,9 @@ RevalidateCachedQuery(CachedPlanSource *plansource)
 	 * the cache.
 	 */
 	rawtree = copyObject(plansource->raw_parse_tree);
-	if (plansource->parserSetup != NULL)
+	if (rawtree == NULL)
+		tlist = NIL;
+	else if (plansource->parserSetup != NULL)
 		tlist = pg_analyze_and_rewrite_params(rawtree,
 											  plansource->query_string,
 											  plansource->parserSetup,
@@ -804,7 +846,8 @@ RevalidateCachedQuery(CachedPlanSource *plansource)
 	 */
 	extract_query_dependencies((Node *) qlist,
 							   &plansource->relationOids,
-							   &plansource->invalItems);
+							   &plansource->invalItems,
+							   &plansource->hasRowSecurity);
 
 	/*
 	 * Also save the current search_path in the query_context.  (This should
@@ -968,6 +1011,7 @@ BuildCachedPlan(CachedPlanSource *plansource, List *qlist,
 	 */
 	snapshot_set = false;
 	if (!ActiveSnapshotSet() &&
+		plansource->raw_parse_tree &&
 		analyze_requires_snapshot(plansource->raw_parse_tree))
 	{
 		PushActiveSnapshot(GetTransactionSnapshot());

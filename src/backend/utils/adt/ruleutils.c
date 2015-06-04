@@ -9,7 +9,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -20,6 +20,7 @@
  */
 #include "postgres.h"
 
+#include <ctype.h>
 #include <unistd.h>
 #include <fcntl.h>
 
@@ -74,6 +75,7 @@
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
+#include "utils/ruleutils.h"
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"
 #include "utils/tqual.h"
@@ -2592,7 +2594,43 @@ deparse_context_for_remotequery(Alias *aliasname, Oid relid)
 #endif
 
 /*
- * deparse_context_for_planstate	- Build deparse context for a plan
+ * deparse_context_for_plan_rtable - Build deparse context for a plan's rtable
+ *
+ * When deparsing an expression in a Plan tree, we use the plan's rangetable
+ * to resolve names of simple Vars.  The initialization of column names for
+ * this is rather expensive if the rangetable is large, and it'll be the same
+ * for every expression in the Plan tree; so we do it just once and re-use
+ * the result of this function for each expression.  (Note that the result
+ * is not usable until set_deparse_context_planstate() is applied to it.)
+ *
+ * In addition to the plan's rangetable list, pass the per-RTE alias names
+ * assigned by a previous call to select_rtable_names_for_explain.
+ */
+List *
+deparse_context_for_plan_rtable(List *rtable, List *rtable_names)
+{
+	deparse_namespace *dpns;
+
+	dpns = (deparse_namespace *) palloc0(sizeof(deparse_namespace));
+
+	/* Initialize fields that stay the same across the whole plan tree */
+	dpns->rtable = rtable;
+	dpns->rtable_names = rtable_names;
+	dpns->ctes = NIL;
+
+	/*
+	 * Set up column name aliases.  We will get rather bogus results for join
+	 * RTEs, but that doesn't matter because plan trees don't contain any join
+	 * alias Vars.
+	 */
+	set_simple_column_names(dpns);
+
+	/* Return a one-deep namespace stack */
+	return list_make1(dpns);
+}
+
+/*
+ * set_deparse_context_planstate	- Specify Plan node containing expression
  *
  * When deparsing an expression in a Plan tree, we might have to resolve
  * OUTER_VAR, INNER_VAR, or INDEX_VAR references.  To do this, the caller must
@@ -2605,46 +2643,35 @@ deparse_context_for_remotequery(Alias *aliasname, Oid relid)
  * fields, which won't contain INDEX_VAR Vars.)
  *
  * Note: planstate really ought to be declared as "PlanState *", but we use
- * "Node *" to avoid having to include execnodes.h in builtins.h.
+ * "Node *" to avoid having to include execnodes.h in ruleutils.h.
  *
  * The ancestors list is a list of the PlanState's parent PlanStates, the
  * most-closely-nested first.  This is needed to resolve PARAM_EXEC Params.
  * Note we assume that all the PlanStates share the same rtable.
  *
- * The plan's rangetable list must also be passed, along with the per-RTE
- * alias names assigned by a previous call to select_rtable_names_for_explain.
- * (We use the rangetable to resolve simple Vars, but the plan inputs are
- * necessary for Vars with special varnos.)
+ * Once this function has been called, deparse_expression() can be called on
+ * subsidiary expression(s) of the specified PlanState node.  To deparse
+ * expressions of a different Plan node in the same Plan tree, re-call this
+ * function to identify the new parent Plan node.
+ *
+ * The result is the same List passed in; this is a notational convenience.
  */
 List *
-deparse_context_for_planstate(Node *planstate, List *ancestors,
-							  List *rtable, List *rtable_names)
+set_deparse_context_planstate(List *dpcontext,
+							  Node *planstate, List *ancestors)
 {
 	deparse_namespace *dpns;
 
-	dpns = (deparse_namespace *) palloc0(sizeof(deparse_namespace));
 
-	/* Initialize fields that stay the same across the whole plan tree */
-	dpns->rtable = rtable;
-	dpns->rtable_names = rtable_names;
-	dpns->ctes = NIL;
-#ifdef PGXC
-	dpns->remotequery = false;
-#endif
-
-	/*
-	 * Set up column name aliases.  We will get rather bogus results for join
-	 * RTEs, but that doesn't matter because plan trees don't contain any join
-	 * alias Vars.
-	 */
-	set_simple_column_names(dpns);
+	/* Should always have one-entry namespace list for Plan deparsing */
+	Assert(list_length(dpcontext) == 1);
+	dpns = (deparse_namespace *) linitial(dpcontext);
 
 	/* Set our attention on the specific plan node passed in */
 	set_deparse_planstate(dpns, (PlanState *) planstate);
 	dpns->ancestors = ancestors;
 
-	/* Return a one-deep namespace stack */
-	return list_make1(dpns);
+	return dpcontext;
 }
 
 /*
@@ -3262,7 +3289,16 @@ set_relation_column_names(deparse_namespace *dpns, RangeTblEntry *rte,
 		i = 0;
 		foreach(lc, rte->eref->colnames)
 		{
-			real_colnames[i] = strVal(lfirst(lc));
+			/*
+			 * If the column name shown in eref is an empty string, then it's
+			 * a column that was dropped at the time of parsing the query, so
+			 * treat it as dropped.
+			 */
+			char	   *cname = strVal(lfirst(lc));
+
+			if (cname[0] == '\0')
+				cname = NULL;
+			real_colnames[i] = cname;
 			i++;
 		}
 	}
@@ -4775,6 +4811,11 @@ get_select_query_def(Query *query, deparse_context *context,
 
 			switch (rc->strength)
 			{
+				case LCS_NONE:
+					/* we intentionally throw an error for LCS_NONE */
+					elog(ERROR, "unrecognized LockClauseStrength %d",
+						 (int) rc->strength);
+					break;
 				case LCS_FORKEYSHARE:
 					appendContextKeyword(context, " FOR KEY SHARE",
 									 -PRETTYINDENT_STD, PRETTYINDENT_STD, 0);
@@ -4796,8 +4837,10 @@ get_select_query_def(Query *query, deparse_context *context,
 			appendStringInfo(buf, " OF %s",
 							 quote_identifier(get_rtable_name(rc->rti,
 															  context)));
-			if (rc->noWait)
+			if (rc->waitPolicy == LockWaitError)
 				appendStringInfoString(buf, " NOWAIT");
+			else if (rc->waitPolicy == LockWaitSkip)
+				appendStringInfoString(buf, " SKIP LOCKED");
 		}
 	}
 
@@ -4818,10 +4861,7 @@ get_simple_values_rte(Query *query)
 	/*
 	 * We want to return TRUE even if the Query also contains OLD or NEW rule
 	 * RTEs.  So the idea is to scan the rtable and see if there is only one
-	 * inFromCl RTE that is a VALUES RTE.  We don't look at the targetlist at
-	 * all.  This is okay because parser/analyze.c will never generate a
-	 * "bare" VALUES RTE --- they only appear inside auto-generated
-	 * sub-queries with very restricted structure.
+	 * inFromCl RTE that is a VALUES RTE.
 	 */
 	foreach(lc, query->rtable)
 	{
@@ -4838,6 +4878,33 @@ get_simple_values_rte(Query *query)
 		else
 			return NULL;		/* something else -> not simple VALUES */
 	}
+
+	/*
+	 * We don't need to check the targetlist in any great detail, because
+	 * parser/analyze.c will never generate a "bare" VALUES RTE --- they only
+	 * appear inside auto-generated sub-queries with very restricted
+	 * structure.  However, DefineView might have modified the tlist by
+	 * injecting new column aliases; so compare tlist resnames against the
+	 * RTE's names to detect that.
+	 */
+	if (result)
+	{
+		ListCell   *lcn;
+
+		if (list_length(query->targetList) != list_length(result->eref->colnames))
+			return NULL;		/* this probably cannot happen */
+		forboth(lc, query->targetList, lcn, result->eref->colnames)
+		{
+			TargetEntry *tle = (TargetEntry *) lfirst(lc);
+			char	   *cname = strVal(lfirst(lcn));
+
+			if (tle->resjunk)
+				return NULL;	/* this probably cannot happen */
+			if (tle->resname == NULL || strcmp(tle->resname, cname) != 0)
+				return NULL;	/* column name has been changed */
+		}
+	}
+
 	return result;
 }
 
@@ -5634,8 +5701,12 @@ static void
 get_update_query_def(Query *query, deparse_context *context)
 {
 	StringInfo	buf = context->buf;
-	char	   *sep;
 	RangeTblEntry *rte;
+	List	   *ma_sublinks;
+	ListCell   *next_ma_cell;
+	SubLink    *cur_ma_sublink;
+	int			remaining_ma_columns;
+	const char *sep;
 	ListCell   *l;
 
 	/* Insert the WITH clause if given */
@@ -5659,6 +5730,34 @@ get_update_query_def(Query *query, deparse_context *context)
 						 quote_identifier(rte->alias->aliasname));
 	appendStringInfoString(buf, " SET ");
 
+	/*
+	 * Prepare to deal with MULTIEXPR assignments: collect the source SubLinks
+	 * into a list.  We expect them to appear, in ID order, in resjunk tlist
+	 * entries.
+	 */
+	ma_sublinks = NIL;
+	if (query->hasSubLinks)		/* else there can't be any */
+	{
+		foreach(l, query->targetList)
+		{
+			TargetEntry *tle = (TargetEntry *) lfirst(l);
+
+			if (tle->resjunk && IsA(tle->expr, SubLink))
+			{
+				SubLink    *sl = (SubLink *) tle->expr;
+
+				if (sl->subLinkType == MULTIEXPR_SUBLINK)
+				{
+					ma_sublinks = lappend(ma_sublinks, sl);
+					Assert(sl->subLinkId == list_length(ma_sublinks));
+				}
+			}
+		}
+	}
+	next_ma_cell = list_head(ma_sublinks);
+	cur_ma_sublink = NULL;
+	remaining_ma_columns = 0;
+
 	/* Add the comma separated list of 'attname = value' */
 	sep = "";
 	foreach(l, query->targetList)
@@ -5669,8 +5768,56 @@ get_update_query_def(Query *query, deparse_context *context)
 		if (tle->resjunk)
 			continue;			/* ignore junk entries */
 
+		/* Emit separator (OK whether we're in multiassignment or not) */
 		appendStringInfoString(buf, sep);
 		sep = ", ";
+
+		/*
+		 * Check to see if we're starting a multiassignment group: if so,
+		 * output a left paren.
+		 */
+		if (next_ma_cell != NULL && cur_ma_sublink == NULL)
+		{
+			/*
+			 * We must dig down into the expr to see if it's a PARAM_MULTIEXPR
+			 * Param.  That could be buried under FieldStores and ArrayRefs
+			 * (cf processIndirection()), and underneath those there could be
+			 * an implicit type coercion.
+			 */
+			expr = (Node *) tle->expr;
+			while (expr)
+			{
+				if (IsA(expr, FieldStore))
+				{
+					FieldStore *fstore = (FieldStore *) expr;
+
+					expr = (Node *) linitial(fstore->newvals);
+				}
+				else if (IsA(expr, ArrayRef))
+				{
+					ArrayRef   *aref = (ArrayRef *) expr;
+
+					if (aref->refassgnexpr == NULL)
+						break;
+					expr = (Node *) aref->refassgnexpr;
+				}
+				else
+					break;
+			}
+			expr = strip_implicit_coercions(expr);
+
+			if (expr && IsA(expr, Param) &&
+				((Param *) expr)->paramkind == PARAM_MULTIEXPR)
+			{
+				cur_ma_sublink = (SubLink *) lfirst(next_ma_cell);
+				next_ma_cell = lnext(next_ma_cell);
+				remaining_ma_columns = count_nonjunk_tlist_entries(
+						  ((Query *) cur_ma_sublink->subselect)->targetList);
+				Assert(((Param *) expr)->paramid ==
+					   ((cur_ma_sublink->subLinkId << 16) | 1));
+				appendStringInfoChar(buf, '(');
+			}
+		}
 
 		/*
 		 * Put out name of target column; look in the catalogs, not at
@@ -5685,6 +5832,20 @@ get_update_query_def(Query *query, deparse_context *context)
 		 * off the top-level nodes representing the indirection assignments.
 		 */
 		expr = processIndirection((Node *) tle->expr, context, true);
+
+		/*
+		 * If we're in a multiassignment, skip printing anything more, unless
+		 * this is the last column; in which case, what we print should be the
+		 * sublink, not the Param.
+		 */
+		if (cur_ma_sublink != NULL)
+		{
+			if (--remaining_ma_columns > 0)
+				continue;		/* not the last column of multiassignment */
+			appendStringInfoChar(buf, ')');
+			expr = (Node *) cur_ma_sublink;
+			cur_ma_sublink = NULL;
+		}
 
 		appendStringInfoString(buf, " = ");
 
@@ -8478,6 +8639,13 @@ get_coercion_expr(Node *arg, deparse_context *context,
 	 * right above it.  Avoid generating redundant output. However, beware of
 	 * suppressing casts when the user actually wrote something like
 	 * 'foo'::text::char(3).
+	 *
+	 * Note: it might seem that we are missing the possibility of needing to
+	 * print a COLLATE clause for such a Const.  However, a Const could only
+	 * have nondefault collation in a post-constant-folding tree, in which the
+	 * length coercion would have been folded too.  See also the special
+	 * handling of CollateExpr in coerce_to_target_type(): any collation
+	 * marking will be above the coercion node, not below it.
 	 */
 	if (arg && IsA(arg, Const) &&
 		((Const *) arg)->consttype == resulttype &&
@@ -8508,8 +8676,9 @@ get_coercion_expr(Node *arg, deparse_context *context,
  * the right type by default.
  *
  * If the Const's collation isn't default for its type, show that too.
- * This can only happen in trees that have been through constant-folding.
- * We assume we don't need to do this when showtype is -1.
+ * We mustn't do this when showtype is -1 (since that means the caller will
+ * print "::typename", and we can't put a COLLATE clause in between).  It's
+ * caller's responsibility that collation isn't missed in such cases.
  * ----------
  */
 static void
@@ -8519,8 +8688,7 @@ get_const_expr(Const *constval, deparse_context *context, int showtype)
 	Oid			typoutput;
 	bool		typIsVarlena;
 	char	   *extval;
-	bool		isfloat = false;
-	bool		needlabel;
+	bool		needlabel = false;
 
 	if (constval->constisnull)
 	{
@@ -8546,40 +8714,42 @@ get_const_expr(Const *constval, deparse_context *context, int showtype)
 
 	switch (constval->consttype)
 	{
-		case INT2OID:
 		case INT4OID:
-		case INT8OID:
-		case OIDOID:
-		case FLOAT4OID:
-		case FLOAT8OID:
-		case NUMERICOID:
+
+			/*
+			 * INT4 can be printed without any decoration, unless it is
+			 * negative; in that case print it as '-nnn'::integer to ensure
+			 * that the output will re-parse as a constant, not as a constant
+			 * plus operator.  In most cases we could get away with printing
+			 * (-nnn) instead, because of the way that gram.y handles negative
+			 * literals; but that doesn't work for INT_MIN, and it doesn't
+			 * seem that much prettier anyway.
+			 */
+			if (extval[0] != '-')
+				appendStringInfoString(buf, extval);
+			else
 			{
-				/*
-				 * These types are printed without quotes unless they contain
-				 * values that aren't accepted by the scanner unquoted (e.g.,
-				 * 'NaN').  Note that strtod() and friends might accept NaN,
-				 * so we can't use that to test.
-				 *
-				 * In reality we only need to defend against infinity and NaN,
-				 * so we need not get too crazy about pattern matching here.
-				 *
-				 * There is a special-case gotcha: if the constant is signed,
-				 * we need to parenthesize it, else the parser might see a
-				 * leading plus/minus as binding less tightly than adjacent
-				 * operators --- particularly, the cast that we might attach
-				 * below.
-				 */
-				if (strspn(extval, "0123456789+-eE.") == strlen(extval))
-				{
-					if (extval[0] == '+' || extval[0] == '-')
-						appendStringInfo(buf, "(%s)", extval);
-					else
-						appendStringInfoString(buf, extval);
-					if (strcspn(extval, "eE.") != strlen(extval))
-						isfloat = true; /* it looks like a float */
-				}
-				else
-					appendStringInfo(buf, "'%s'", extval);
+				appendStringInfo(buf, "'%s'", extval);
+				needlabel = true;		/* we must attach a cast */
+			}
+			break;
+
+		case NUMERICOID:
+
+			/*
+			 * NUMERIC can be printed without quotes if it looks like a float
+			 * constant (not an integer, and not Infinity or NaN) and doesn't
+			 * have a leading sign (for the same reason as for INT4).
+			 */
+			if (isdigit((unsigned char) extval[0]) &&
+				strcspn(extval, "eE.") != strlen(extval))
+			{
+				appendStringInfoString(buf, extval);
+			}
+			else
+			{
+				appendStringInfo(buf, "'%s'", extval);
+				needlabel = true;		/* we must attach a cast */
 			}
 			break;
 
@@ -8615,18 +8785,21 @@ get_const_expr(Const *constval, deparse_context *context, int showtype)
 	switch (constval->consttype)
 	{
 		case BOOLOID:
-		case INT4OID:
 		case UNKNOWNOID:
 			/* These types can be left unlabeled */
 			needlabel = false;
 			break;
+		case INT4OID:
+			/* We determined above whether a label is needed */
+			break;
 		case NUMERICOID:
 
 			/*
-			 * Float-looking constants will be typed as numeric, but if
-			 * there's a specific typmod we need to show it.
+			 * Float-looking constants will be typed as numeric, which we
+			 * checked above; but if there's a nondefault typmod we need to
+			 * show it.
 			 */
-			needlabel = !isfloat || (constval->consttypmod >= 0);
+			needlabel |= (constval->consttypmod >= 0);
 			break;
 		default:
 			needlabel = true;
@@ -8786,6 +8959,7 @@ get_sublink_expr(SubLink *sublink, deparse_context *context)
 			break;
 
 		case EXPR_SUBLINK:
+		case MULTIEXPR_SUBLINK:
 		case ARRAY_SUBLINK:
 			need_paren = false;
 			break;
@@ -9046,7 +9220,9 @@ get_from_clause_item(Node *jtnode, Query *query, deparse_context *context)
 				break;
 			case RTE_VALUES:
 				/* Values list RTE */
+				appendStringInfoChar(buf, '(');
 				get_values_def(rte->values_lists, context);
+				appendStringInfoChar(buf, ')');
 				break;
 			case RTE_CTE:
 				appendStringInfoString(buf, quote_identifier(rte->ctename));
@@ -9102,6 +9278,11 @@ get_from_clause_item(Node *jtnode, Query *query, deparse_context *context)
 			 * FigureColname rules for things that aren't simple functions.
 			 * Note we'd need to force it anyway for the columndef list case.
 			 */
+			printalias = true;
+		}
+		else if (rte->rtekind == RTE_VALUES)
+		{
+			/* Alias is syntactically required for VALUES */
 			printalias = true;
 		}
 		else if (rte->rtekind == RTE_CTE)

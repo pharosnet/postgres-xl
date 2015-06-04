@@ -19,10 +19,12 @@
  *
  *-------------------------------------------------------------------------
  */
+#include "postgres_fe.h"
 
+#include "parallel.h"
+#include "pg_backup_archiver.h"
 #include "pg_backup_db.h"
 #include "pg_backup_utils.h"
-#include "parallel.h"
 
 #include <ctype.h>
 #include <fcntl.h>
@@ -107,6 +109,65 @@ static void mark_create_done(ArchiveHandle *AH, TocEntry *te);
 static void inhibit_data_for_failed_table(ArchiveHandle *AH, TocEntry *te);
 
 /*
+ * Allocate a new DumpOptions block containing all default values.
+ */
+DumpOptions *
+NewDumpOptions(void)
+{
+	DumpOptions *opts = (DumpOptions *) pg_malloc(sizeof(DumpOptions));
+
+	InitDumpOptions(opts);
+	return opts;
+}
+
+/*
+ * Initialize a DumpOptions struct to all default values
+ */
+void
+InitDumpOptions(DumpOptions *opts)
+{
+	memset(opts, 0, sizeof(DumpOptions));
+	/* set any fields that shouldn't default to zeroes */
+	opts->include_everything = true;
+	opts->dumpSections = DUMP_UNSECTIONED;
+}
+
+/*
+ * Create a freshly allocated DumpOptions with options equivalent to those
+ * found in the given RestoreOptions.
+ */
+DumpOptions *
+dumpOptionsFromRestoreOptions(RestoreOptions *ropt)
+{
+	DumpOptions *dopt = NewDumpOptions();
+
+	/* this is the inverse of what's at the end of pg_dump.c's main() */
+	dopt->outputClean = ropt->dropSchema;
+	dopt->dataOnly = ropt->dataOnly;
+	dopt->schemaOnly = ropt->schemaOnly;
+	dopt->if_exists = ropt->if_exists;
+	dopt->column_inserts = ropt->column_inserts;
+	dopt->dumpSections = ropt->dumpSections;
+	dopt->aclsSkip = ropt->aclsSkip;
+	dopt->outputSuperuser = ropt->superuser;
+	dopt->outputCreateDB = ropt->createDB;
+	dopt->outputNoOwner = ropt->noOwner;
+	dopt->outputNoTablespaces = ropt->noTablespace;
+	dopt->disable_triggers = ropt->disable_triggers;
+	dopt->use_setsessauth = ropt->use_setsessauth;
+
+	dopt->disable_dollar_quoting = ropt->disable_dollar_quoting;
+	dopt->dump_inserts = ropt->dump_inserts;
+	dopt->no_security_labels = ropt->no_security_labels;
+	dopt->lockWaitTimeout = ropt->lockWaitTimeout;
+	dopt->include_everything = ropt->include_everything;
+	dopt->enable_row_security = ropt->enable_row_security;
+
+	return dopt;
+}
+
+
+/*
  *	Wrapper functions.
  *
  *	The objective it to make writing new formats and dumpers as simple
@@ -120,7 +181,7 @@ static void inhibit_data_for_failed_table(ArchiveHandle *AH, TocEntry *te);
  * setup doesn't need to know anything much, so it's defined here.
  */
 static void
-setupRestoreWorker(Archive *AHX, RestoreOptions *ropt)
+setupRestoreWorker(Archive *AHX, DumpOptions *dopt, RestoreOptions *ropt)
 {
 	ArchiveHandle *AH = (ArchiveHandle *) AHX;
 
@@ -152,12 +213,12 @@ OpenArchive(const char *FileSpec, const ArchiveFormat fmt)
 
 /* Public */
 void
-CloseArchive(Archive *AHX)
+CloseArchive(Archive *AHX, DumpOptions *dopt)
 {
 	int			res = 0;
 	ArchiveHandle *AH = (ArchiveHandle *) AHX;
 
-	(*AH->ClosePtr) (AH);
+	(*AH->ClosePtr) (AH, dopt);
 
 	/* Close the output */
 	if (AH->gzOut)
@@ -353,21 +414,22 @@ RestoreArchive(Archive *AHX)
 
 	ahprintf(AH, "--\n-- PostgreSQL database dump\n--\n\n");
 
+	if (AH->archiveRemoteVersion)
+		ahprintf(AH, "-- Dumped from database version %s\n",
+				 AH->archiveRemoteVersion);
+	if (AH->archiveDumpVersion)
+		ahprintf(AH, "-- Dumped by pg_dump version %s\n",
+				 AH->archiveDumpVersion);
+
+	ahprintf(AH, "\n");
+
 	if (AH->public.verbose)
-	{
-		if (AH->archiveRemoteVersion)
-			ahprintf(AH, "-- Dumped from database version %s\n",
-					 AH->archiveRemoteVersion);
-		if (AH->archiveDumpVersion)
-			ahprintf(AH, "-- Dumped by pg_dump version %s\n",
-					 AH->archiveDumpVersion);
 		dumpTimestamp(AH, "Started on", AH->createDate);
-	}
 
 	if (ropt->single_txn)
 	{
 		if (AH->connection)
-			StartTransaction(AH);
+			StartTransaction(AHX);
 		else
 			ahprintf(AH, "BEGIN;\n\n");
 	}
@@ -428,60 +490,75 @@ RestoreArchive(Archive *AHX)
 					}
 					else
 					{
-						char		buffer[40];
-						char	   *mark;
-						char	   *dropStmt = pg_strdup(te->dropStmt);
-						char	   *dropStmtPtr = dropStmt;
-						PQExpBuffer ftStmt = createPQExpBuffer();
-
 						/*
-						 * Need to inject IF EXISTS clause after ALTER TABLE
-						 * part in ALTER TABLE .. DROP statement
+						 * Inject an appropriate spelling of "if exists".  For
+						 * large objects, we have a separate routine that
+						 * knows how to do it, without depending on
+						 * te->dropStmt; use that.  For other objects we need
+						 * to parse the command.
+						 *
 						 */
-						if (strncmp(dropStmt, "ALTER TABLE", 11) == 0)
+						if (strncmp(te->desc, "BLOB", 4) == 0)
 						{
-							appendPQExpBuffer(ftStmt,
-											  "ALTER TABLE IF EXISTS");
-							dropStmt = dropStmt + 11;
+							DropBlobIfExists(AH, te->catalogId.oid);
 						}
-
-						/*
-						 * ALTER TABLE..ALTER COLUMN..DROP DEFAULT does not
-						 * support the IF EXISTS clause, and therefore we
-						 * simply emit the original command for such objects.
-						 * For other objects, we need to extract the first
-						 * part of the DROP which includes the object type.
-						 * Most of the time this matches te->desc, so search
-						 * for that; however for the different kinds of
-						 * CONSTRAINTs, we know to search for hardcoded "DROP
-						 * CONSTRAINT" instead.
-						 */
-						if (strcmp(te->desc, "DEFAULT") == 0)
-							appendPQExpBuffer(ftStmt, "%s", dropStmt);
 						else
 						{
-							if (strcmp(te->desc, "CONSTRAINT") == 0 ||
-								strcmp(te->desc, "CHECK CONSTRAINT") == 0 ||
-								strcmp(te->desc, "FK CONSTRAINT") == 0)
-								strcpy(buffer, "DROP CONSTRAINT");
+							char		buffer[40];
+							char	   *mark;
+							char	   *dropStmt = pg_strdup(te->dropStmt);
+							char	   *dropStmtPtr = dropStmt;
+							PQExpBuffer ftStmt = createPQExpBuffer();
+
+							/*
+							 * Need to inject IF EXISTS clause after ALTER
+							 * TABLE part in ALTER TABLE .. DROP statement
+							 */
+							if (strncmp(dropStmt, "ALTER TABLE", 11) == 0)
+							{
+								appendPQExpBuffer(ftStmt,
+												  "ALTER TABLE IF EXISTS");
+								dropStmt = dropStmt + 11;
+							}
+
+							/*
+							 * ALTER TABLE..ALTER COLUMN..DROP DEFAULT does
+							 * not support the IF EXISTS clause, and therefore
+							 * we simply emit the original command for such
+							 * objects. For other objects, we need to extract
+							 * the first part of the DROP which includes the
+							 * object type. Most of the time this matches
+							 * te->desc, so search for that; however for the
+							 * different kinds of CONSTRAINTs, we know to
+							 * search for hardcoded "DROP CONSTRAINT" instead.
+							 */
+							if (strcmp(te->desc, "DEFAULT") == 0)
+								appendPQExpBuffer(ftStmt, "%s", dropStmt);
 							else
-								snprintf(buffer, sizeof(buffer), "DROP %s",
-										 te->desc);
+							{
+								if (strcmp(te->desc, "CONSTRAINT") == 0 ||
+								 strcmp(te->desc, "CHECK CONSTRAINT") == 0 ||
+									strcmp(te->desc, "FK CONSTRAINT") == 0)
+									strcpy(buffer, "DROP CONSTRAINT");
+								else
+									snprintf(buffer, sizeof(buffer), "DROP %s",
+											 te->desc);
 
-							mark = strstr(dropStmt, buffer);
-							Assert(mark != NULL);
+								mark = strstr(dropStmt, buffer);
+								Assert(mark != NULL);
 
-							*mark = '\0';
-							appendPQExpBuffer(ftStmt, "%s%s IF EXISTS%s",
-											  dropStmt, buffer,
-											  mark + strlen(buffer));
+								*mark = '\0';
+								appendPQExpBuffer(ftStmt, "%s%s IF EXISTS%s",
+												  dropStmt, buffer,
+												  mark + strlen(buffer));
+							}
+
+							ahprintf(AH, "%s", ftStmt->data);
+
+							destroyPQExpBuffer(ftStmt);
+
+							pg_free(dropStmtPtr);
 						}
-
-						ahprintf(AH, "%s", ftStmt->data);
-
-						destroyPQExpBuffer(ftStmt);
-
-						pg_free(dropStmtPtr);
 					}
 				}
 			}
@@ -521,7 +598,7 @@ RestoreArchive(Archive *AHX)
 		Assert(AH->connection == NULL);
 
 		/* ParallelBackupStart() will actually fork the processes */
-		pstate = ParallelBackupStart(AH, ropt);
+		pstate = ParallelBackupStart(AH, NULL, ropt);
 		restore_toc_entries_parallel(AH, pstate, &pending_list);
 		ParallelBackupEnd(AH, pstate);
 
@@ -545,8 +622,13 @@ RestoreArchive(Archive *AHX)
 		/* Both schema and data objects might now have ownership/ACLs */
 		if ((te->reqs & (REQ_SCHEMA | REQ_DATA)) != 0)
 		{
-			ahlog(AH, 1, "setting owner and privileges for %s %s\n",
-				  te->desc, te->tag);
+			/* Show namespace if available */
+			if (te->namespace)
+				ahlog(AH, 1, "setting owner and privileges for %s \"%s\".\"%s\"\n",
+					  te->desc, te->namespace, te->tag);
+			else
+				ahlog(AH, 1, "setting owner and privileges for %s \"%s\"\n",
+					  te->desc, te->tag);
 			_printTocEntry(AH, te, ropt, false, true);
 		}
 	}
@@ -554,7 +636,7 @@ RestoreArchive(Archive *AHX)
 	if (ropt->single_txn)
 	{
 		if (AH->connection)
-			CommitTransaction(AH);
+			CommitTransaction(AHX);
 		else
 			ahprintf(AH, "COMMIT;\n\n");
 	}
@@ -620,7 +702,13 @@ restore_toc_entry(ArchiveHandle *AH, TocEntry *te,
 
 	if ((reqs & REQ_SCHEMA) != 0)		/* We want the schema */
 	{
-		ahlog(AH, 1, "creating %s %s\n", te->desc, te->tag);
+		/* Show namespace if available */
+		if (te->namespace)
+			ahlog(AH, 1, "creating %s \"%s\".\"%s\"\n",
+				  te->desc, te->namespace, te->tag);
+		else
+			ahlog(AH, 1, "creating %s \"%s\"\n", te->desc, te->tag);
+
 
 		_printTocEntry(AH, te, ropt, false, false);
 		defnDumped = true;
@@ -696,7 +784,13 @@ restore_toc_entry(ArchiveHandle *AH, TocEntry *te,
 
 					_selectOutputSchema(AH, "pg_catalog");
 
+					/* Send BLOB COMMENTS data to ExecuteSimpleCommands() */
+					if (strcmp(te->desc, "BLOB COMMENTS") == 0)
+						AH->outputKind = OUTPUT_OTHERDATA;
+
 					(*AH->PrintTocDataPtr) (AH, te, ropt);
+
+					AH->outputKind = OUTPUT_SQLCMDS;
 				}
 				else
 				{
@@ -706,8 +800,8 @@ restore_toc_entry(ArchiveHandle *AH, TocEntry *te,
 					_becomeOwner(AH, te);
 					_selectOutputSchema(AH, te->namespace);
 
-					ahlog(AH, 1, "processing data for table \"%s\"\n",
-						  te->tag);
+					ahlog(AH, 1, "processing data for table \"%s\".\"%s\"\n",
+						  te->namespace, te->tag);
 
 					/*
 					 * In parallel restore, if we created the table earlier in
@@ -723,7 +817,7 @@ restore_toc_entry(ArchiveHandle *AH, TocEntry *te,
 						 * Parallel restore is always talking directly to a
 						 * server, so no need to see if we should issue BEGIN.
 						 */
-						StartTransaction(AH);
+						StartTransaction(&AH->public);
 
 						/*
 						 * If the server version is >= 8.4, make sure we issue
@@ -754,12 +848,12 @@ restore_toc_entry(ArchiveHandle *AH, TocEntry *te,
 					 */
 					if (AH->outputKind == OUTPUT_COPYDATA &&
 						RestoringToDB(AH))
-						EndDBCopyMode(AH, te);
+						EndDBCopyMode(&AH->public, te->tag);
 					AH->outputKind = OUTPUT_SQLCMDS;
 
 					/* close out the transaction started above */
 					if (is_parallel && te->created)
-						CommitTransaction(AH);
+						CommitTransaction(&AH->public);
 
 					_enableTriggersIfNecessary(AH, te, ropt);
 				}
@@ -946,12 +1040,17 @@ PrintTOCSummary(Archive *AHX, RestoreOptions *ropt)
 	teSection	curSection;
 	OutputContext sav;
 	const char *fmtName;
+	char		stamp_str[64];
 
 	sav = SaveOutput(AH);
 	if (ropt->filename)
 		SetOutput(AH, ropt->filename, 0 /* no compression */ );
 
-	ahprintf(AH, ";\n; Archive created at %s", ctime(&AH->createDate));
+	if (strftime(stamp_str, sizeof(stamp_str), PGDUMP_STRFTIME_FMT,
+				 localtime(&AH->createDate)) == 0)
+		strcpy(stamp_str, "[unknown]");
+
+	ahprintf(AH, ";\n; Archive created at %s\n", stamp_str);
 	ahprintf(AH, ";     dbname: %s\n;     TOC Entries: %d\n;     Compression: %d\n",
 			 AH->archdbname, AH->tocCount, AH->compression);
 
@@ -1052,7 +1151,7 @@ StartRestoreBlobs(ArchiveHandle *AH)
 	if (!AH->ropt->single_txn)
 	{
 		if (AH->connection)
-			StartTransaction(AH);
+			StartTransaction(&AH->public);
 		else
 			ahprintf(AH, "BEGIN;\n\n");
 	}
@@ -1069,7 +1168,7 @@ EndRestoreBlobs(ArchiveHandle *AH)
 	if (!AH->ropt->single_txn)
 	{
 		if (AH->connection)
-			CommitTransaction(AH);
+			CommitTransaction(&AH->public);
 		else
 			ahprintf(AH, "COMMIT;\n\n");
 	}
@@ -1526,7 +1625,7 @@ ahwrite(const void *ptr, size_t size, size_t nmemb, ArchiveHandle *AH)
 		 * connected then send it to the DB.
 		 */
 		if (RestoringToDB(AH))
-			bytes_written = ExecuteSqlCommandBuf(AH, (const char *) ptr, size * nmemb);
+			bytes_written = ExecuteSqlCommandBuf(&AH->public, (const char *) ptr, size * nmemb);
 		else
 			bytes_written = fwrite(ptr, size, nmemb, AH->OF) * size;
 	}
@@ -1954,7 +2053,7 @@ _discoverArchiveFormat(ArchiveHandle *AH)
 	}
 
 	/* Save it, just in case we need it later */
-	strncpy(&AH->lookahead[0], sig, 5);
+	memcpy(&AH->lookahead[0], sig, 5);
 	AH->lookaheadLen = 5;
 
 	if (strncmp(sig, "PGDMP", 5) == 0)
@@ -2193,7 +2292,7 @@ _allocAH(const char *FileSpec, const ArchiveFormat fmt,
 }
 
 void
-WriteDataChunks(ArchiveHandle *AH, ParallelState *pstate)
+WriteDataChunks(ArchiveHandle *AH, DumpOptions *dopt, ParallelState *pstate)
 {
 	TocEntry   *te;
 
@@ -2216,13 +2315,13 @@ WriteDataChunks(ArchiveHandle *AH, ParallelState *pstate)
 			DispatchJobForTocEntry(AH, pstate, te, ACT_DUMP);
 		}
 		else
-			WriteDataChunksForTocEntry(AH, te);
+			WriteDataChunksForTocEntry(AH, dopt, te);
 	}
 	EnsureWorkersFinished(AH, pstate);
 }
 
 void
-WriteDataChunksForTocEntry(ArchiveHandle *AH, TocEntry *te)
+WriteDataChunksForTocEntry(ArchiveHandle *AH, DumpOptions *dopt, TocEntry *te)
 {
 	StartDataPtr startPtr;
 	EndDataPtr	endPtr;
@@ -2246,7 +2345,7 @@ WriteDataChunksForTocEntry(ArchiveHandle *AH, TocEntry *te)
 	/*
 	 * The user-provided DataDumper routine needs to call AH->WriteData
 	 */
-	(*te->dataDumper) ((Archive *) AH, te->dataDumperArg);
+	(*te->dataDumper) ((Archive *) AH, dopt, te->dataDumperArg);
 
 	if (endPtr != NULL)
 		(*endPtr) (AH, te);
@@ -2693,6 +2792,12 @@ _doSetFixedOutputState(ArchiveHandle *AH)
 	ahprintf(AH, "SET client_min_messages = warning;\n");
 	if (!AH->public.std_strings)
 		ahprintf(AH, "SET escape_string_warning = off;\n");
+
+	/* Adjust row-security state */
+	if (AH->ropt && AH->ropt->enable_row_security)
+		ahprintf(AH, "SET row_security = on;\n");
+	else
+		ahprintf(AH, "SET row_security = off;\n");
 
 	ahprintf(AH, "\n");
 }
@@ -3221,6 +3326,8 @@ _printTocEntry(ArchiveHandle *AH, TocEntry *te, RestoreOptions *ropt, bool isDat
 				 strcmp(te->desc, "INDEX") == 0 ||
 				 strcmp(te->desc, "RULE") == 0 ||
 				 strcmp(te->desc, "TRIGGER") == 0 ||
+				 strcmp(te->desc, "ROW SECURITY") == 0 ||
+				 strcmp(te->desc, "POLICY") == 0 ||
 				 strcmp(te->desc, "USER MAPPING") == 0)
 		{
 			/* these object types don't have separate owners */
@@ -3437,21 +3544,9 @@ checkSeek(FILE *fp)
 static void
 dumpTimestamp(ArchiveHandle *AH, const char *msg, time_t tim)
 {
-	char		buf[256];
+	char		buf[64];
 
-	/*
-	 * We don't print the timezone on Win32, because the names are long and
-	 * localized, which means they may contain characters in various random
-	 * encodings; this has been seen to cause encoding errors when reading the
-	 * dump script.
-	 */
-	if (strftime(buf, sizeof(buf),
-#ifndef WIN32
-				 "%Y-%m-%d %H:%M:%S %Z",
-#else
-				 "%Y-%m-%d %H:%M:%S",
-#endif
-				 localtime(&tim)) != 0)
+	if (strftime(buf, sizeof(buf), PGDUMP_STRFTIME_FMT, localtime(&tim)) != 0)
 		ahprintf(AH, "-- %s %s\n\n", msg, buf);
 }
 
@@ -4131,11 +4226,14 @@ identify_locking_dependencies(ArchiveHandle *AH, TocEntry *te)
 		return;
 
 	/*
-	 * We assume the item requires exclusive lock on each TABLE DATA item
-	 * listed among its dependencies.  (This was originally a dependency on
-	 * the TABLE, but fix_dependencies repointed it to the data item. Note
-	 * that all the entry types we are interested in here are POST_DATA, so
-	 * they will all have been changed this way.)
+	 * We assume the entry requires exclusive lock on each TABLE or TABLE DATA
+	 * item listed among its dependencies.  Originally all of these would have
+	 * been TABLE items, but repoint_table_dependencies would have repointed
+	 * them to the TABLE DATA items if those are present (which they might not
+	 * be, eg in a schema-only dump).  Note that all of the entries we are
+	 * processing here are POST_DATA; otherwise there might be a significant
+	 * difference between a dependency on a table and a dependency on its
+	 * data, so that closer analysis would be needed here.
 	 */
 	lockids = (DumpId *) pg_malloc(te->nDeps * sizeof(DumpId));
 	nlockids = 0;
@@ -4144,7 +4242,8 @@ identify_locking_dependencies(ArchiveHandle *AH, TocEntry *te)
 		DumpId		depid = te->dependencies[i];
 
 		if (depid <= AH->maxDumpId && AH->tocsByDumpId[depid] != NULL &&
-			strcmp(AH->tocsByDumpId[depid]->desc, "TABLE DATA") == 0)
+			((strcmp(AH->tocsByDumpId[depid]->desc, "TABLE DATA") == 0) ||
+			 strcmp(AH->tocsByDumpId[depid]->desc, "TABLE") == 0))
 			lockids[nlockids++] = depid;
 	}
 

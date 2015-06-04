@@ -35,7 +35,7 @@
  * and munge the system catalogs of the new database.
  *
  *
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -56,6 +56,8 @@
 #include "access/htup_details.h"
 #include "access/sysattr.h"
 #include "access/xact.h"
+#include "access/xlog.h"
+#include "access/xloginsert.h"
 #include "catalog/catalog.h"
 #include "catalog/dependency.h"
 #include "catalog/indexing.h"
@@ -67,7 +69,6 @@
 #include "commands/seclabel.h"
 #include "commands/tablecmds.h"
 #include "commands/tablespace.h"
-#include "commands/user.h"
 #include "miscadmin.h"
 #include "postmaster/bgwriter.h"
 #include "storage/fd.h"
@@ -257,7 +258,7 @@ CreateTableSpace(CreateTableSpaceStmt *stmt)
 
 	/* However, the eventual owner of the tablespace need not be */
 	if (stmt->owner)
-		ownerId = get_role_oid(stmt->owner, false);
+		ownerId = get_rolespec_oid(stmt->owner, false);
 	else
 		ownerId = GetUserId();
 
@@ -376,20 +377,15 @@ CreateTableSpace(CreateTableSpaceStmt *stmt)
 	/* Record the filesystem change in XLOG */
 	{
 		xl_tblspc_create_rec xlrec;
-		XLogRecData rdata[2];
 
 		xlrec.ts_id = tablespaceoid;
-		rdata[0].data = (char *) &xlrec;
-		rdata[0].len = offsetof(xl_tblspc_create_rec, ts_path);
-		rdata[0].buffer = InvalidBuffer;
-		rdata[0].next = &(rdata[1]);
 
-		rdata[1].data = (char *) location;
-		rdata[1].len = strlen(location) + 1;
-		rdata[1].buffer = InvalidBuffer;
-		rdata[1].next = NULL;
+		XLogBeginInsert();
+		XLogRegisterData((char *) &xlrec,
+						 offsetof(xl_tblspc_create_rec, ts_path));
+		XLogRegisterData((char *) location, strlen(location) + 1);
 
-		(void) XLogInsert(RM_TBLSPC_ID, XLOG_TBLSPC_CREATE, rdata);
+		(void) XLogInsert(RM_TBLSPC_ID, XLOG_TBLSPC_CREATE);
 	}
 
 	/*
@@ -515,6 +511,13 @@ DropTableSpace(DropTableSpaceStmt *stmt)
 		 * but we can't tell them apart from important data files that we
 		 * mustn't delete.  So instead, we force a checkpoint which will clean
 		 * out any lingering files, and try again.
+		 *
+		 * XXX On Windows, an unlinked file persists in the directory listing
+		 * until no process retains an open handle for the file.  The DDL
+		 * commands that schedule files for unlink send invalidation messages
+		 * directing other PostgreSQL processes to close the files.  DROP
+		 * TABLESPACE should not give up on the tablespace becoming empty
+		 * until all relevant invalidation processing is complete.
 		 */
 		RequestCheckpoint(CHECKPOINT_IMMEDIATE | CHECKPOINT_FORCE | CHECKPOINT_WAIT);
 		if (!destroy_tablespace_directories(tablespaceoid, false))
@@ -530,15 +533,13 @@ DropTableSpace(DropTableSpaceStmt *stmt)
 	/* Record the filesystem change in XLOG */
 	{
 		xl_tblspc_drop_rec xlrec;
-		XLogRecData rdata[1];
 
 		xlrec.ts_id = tablespaceoid;
-		rdata[0].data = (char *) &xlrec;
-		rdata[0].len = sizeof(xl_tblspc_drop_rec);
-		rdata[0].buffer = InvalidBuffer;
-		rdata[0].next = NULL;
 
-		(void) XLogInsert(RM_TBLSPC_ID, XLOG_TBLSPC_DROP, rdata);
+		XLogBeginInsert();
+		XLogRegisterData((char *) &xlrec, sizeof(xl_tblspc_drop_rec));
+
+		(void) XLogInsert(RM_TBLSPC_ID, XLOG_TBLSPC_DROP);
 	}
 
 	/*
@@ -954,7 +955,7 @@ directory_is_empty(const char *path)
 /*
  * Rename a tablespace
  */
-Oid
+ObjectAddress
 RenameTableSpace(const char *oldname, const char *newname)
 {
 	Oid			tspId;
@@ -964,6 +965,7 @@ RenameTableSpace(const char *oldname, const char *newname)
 	HeapTuple	tup;
 	HeapTuple	newtuple;
 	Form_pg_tablespace newform;
+	ObjectAddress address;
 
 	/* Search pg_tablespace */
 	rel = heap_open(TableSpaceRelationId, RowExclusiveLock);
@@ -1020,9 +1022,11 @@ RenameTableSpace(const char *oldname, const char *newname)
 
 	InvokeObjectPostAlterHook(TableSpaceRelationId, tspId, 0);
 
+	ObjectAddressSet(address, TableSpaceRelationId, tspId);
+
 	heap_close(rel, NoLock);
 
-	return tspId;
+	return address;
 }
 
 /*
@@ -1098,184 +1102,6 @@ AlterTableSpaceOptions(AlterTableSpaceOptionsStmt *stmt)
 	heap_close(rel, NoLock);
 
 	return tablespaceoid;
-}
-
-/*
- * Alter table space move
- *
- * Allows a user to move all of their objects in a given tablespace in the
- * current database to another tablespace. Only objects which the user is
- * considered to be an owner of are moved and the user must have CREATE rights
- * on the new tablespace. These checks should mean that ALTER TABLE will never
- * fail due to permissions, but note that permissions will also be checked at
- * that level. Objects can be ALL, TABLES, INDEXES, or MATERIALIZED VIEWS.
- *
- * All to-be-moved objects are locked first. If NOWAIT is specified and the
- * lock can't be acquired then we ereport(ERROR).
- */
-Oid
-AlterTableSpaceMove(AlterTableSpaceMoveStmt *stmt)
-{
-	List	   *relations = NIL;
-	ListCell   *l;
-	ScanKeyData key[1];
-	Relation	rel;
-	HeapScanDesc scan;
-	HeapTuple	tuple;
-	Oid			orig_tablespaceoid;
-	Oid			new_tablespaceoid;
-	List	   *role_oids = roleNamesToIds(stmt->roles);
-
-	/* Ensure we were not asked to move something we can't */
-	if (!stmt->move_all && stmt->objtype != OBJECT_TABLE &&
-		stmt->objtype != OBJECT_INDEX && stmt->objtype != OBJECT_MATVIEW)
-		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("only tables, indexes, and materialized views exist in tablespaces")));
-
-	/* Get the orig and new tablespace OIDs */
-	orig_tablespaceoid = get_tablespace_oid(stmt->orig_tablespacename, false);
-	new_tablespaceoid = get_tablespace_oid(stmt->new_tablespacename, false);
-
-	/* Can't move shared relations in to or out of pg_global */
-	/* This is also checked by ATExecSetTableSpace, but nice to stop earlier */
-	if (orig_tablespaceoid == GLOBALTABLESPACE_OID ||
-		new_tablespaceoid == GLOBALTABLESPACE_OID)
-		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("cannot move relations in to or out of pg_global tablespace")));
-
-	/*
-	 * Must have CREATE rights on the new tablespace, unless it is the
-	 * database default tablespace (which all users implicitly have CREATE
-	 * rights on).
-	 */
-	if (OidIsValid(new_tablespaceoid) && new_tablespaceoid != MyDatabaseTableSpace)
-	{
-		AclResult	aclresult;
-
-		aclresult = pg_tablespace_aclcheck(new_tablespaceoid, GetUserId(),
-										   ACL_CREATE);
-		if (aclresult != ACLCHECK_OK)
-			aclcheck_error(aclresult, ACL_KIND_TABLESPACE,
-						   get_tablespace_name(new_tablespaceoid));
-	}
-
-	/*
-	 * Now that the checks are done, check if we should set either to
-	 * InvalidOid because it is our database's default tablespace.
-	 */
-	if (orig_tablespaceoid == MyDatabaseTableSpace)
-		orig_tablespaceoid = InvalidOid;
-
-	if (new_tablespaceoid == MyDatabaseTableSpace)
-		new_tablespaceoid = InvalidOid;
-
-	/* no-op */
-	if (orig_tablespaceoid == new_tablespaceoid)
-		return new_tablespaceoid;
-
-	/*
-	 * Walk the list of objects in the tablespace and move them. This will
-	 * only find objects in our database, of course.
-	 */
-	ScanKeyInit(&key[0],
-				Anum_pg_class_reltablespace,
-				BTEqualStrategyNumber, F_OIDEQ,
-				ObjectIdGetDatum(orig_tablespaceoid));
-
-	rel = heap_open(RelationRelationId, AccessShareLock);
-	scan = heap_beginscan_catalog(rel, 1, key);
-	while ((tuple = heap_getnext(scan, ForwardScanDirection)) != NULL)
-	{
-		Oid			relOid = HeapTupleGetOid(tuple);
-		Form_pg_class relForm;
-
-		relForm = (Form_pg_class) GETSTRUCT(tuple);
-
-		/*
-		 * Do not move objects in pg_catalog as part of this, if an admin
-		 * really wishes to do so, they can issue the individual ALTER
-		 * commands directly.
-		 *
-		 * Also, explicitly avoid any shared tables, temp tables, or TOAST
-		 * (TOAST will be moved with the main table).
-		 */
-		if (IsSystemNamespace(relForm->relnamespace) || relForm->relisshared ||
-			isAnyTempNamespace(relForm->relnamespace) ||
-			relForm->relnamespace == PG_TOAST_NAMESPACE)
-			continue;
-
-		/* Only consider objects which live in tablespaces */
-		if (relForm->relkind != RELKIND_RELATION &&
-			relForm->relkind != RELKIND_INDEX &&
-			relForm->relkind != RELKIND_MATVIEW)
-			continue;
-
-		/* Check if we were asked to only move a certain type of object */
-		if (!stmt->move_all &&
-			((stmt->objtype == OBJECT_TABLE &&
-			  relForm->relkind != RELKIND_RELATION) ||
-			 (stmt->objtype == OBJECT_INDEX &&
-			  relForm->relkind != RELKIND_INDEX) ||
-			 (stmt->objtype == OBJECT_MATVIEW &&
-			  relForm->relkind != RELKIND_MATVIEW)))
-			continue;
-
-		/* Check if we are only moving objects owned by certain roles */
-		if (role_oids != NIL && !list_member_oid(role_oids, relForm->relowner))
-			continue;
-
-		/*
-		 * Handle permissions-checking here since we are locking the tables
-		 * and also to avoid doing a bunch of work only to fail part-way. Note
-		 * that permissions will also be checked by AlterTableInternal().
-		 *
-		 * Caller must be considered an owner on the table to move it.
-		 */
-		if (!pg_class_ownercheck(relOid, GetUserId()))
-			aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
-						   NameStr(relForm->relname));
-
-		if (stmt->nowait &&
-			!ConditionalLockRelationOid(relOid, AccessExclusiveLock))
-			ereport(ERROR,
-					(errcode(ERRCODE_OBJECT_IN_USE),
-			   errmsg("aborting due to \"%s\".\"%s\" --- lock not available",
-					  get_namespace_name(relForm->relnamespace),
-					  NameStr(relForm->relname))));
-		else
-			LockRelationOid(relOid, AccessExclusiveLock);
-
-		/* Add to our list of objects to move */
-		relations = lappend_oid(relations, relOid);
-	}
-
-	heap_endscan(scan);
-	heap_close(rel, AccessShareLock);
-
-	if (relations == NIL)
-		ereport(NOTICE,
-				(errcode(ERRCODE_NO_DATA_FOUND),
-				 errmsg("no matching relations in tablespace \"%s\" found",
-					orig_tablespaceoid == InvalidOid ? "(database default)" :
-						get_tablespace_name(orig_tablespaceoid))));
-
-	/* Everything is locked, loop through and move all of the relations. */
-	foreach(l, relations)
-	{
-		List	   *cmds = NIL;
-		AlterTableCmd *cmd = makeNode(AlterTableCmd);
-
-		cmd->subtype = AT_SetTableSpace;
-		cmd->name = stmt->new_tablespacename;
-
-		cmds = lappend(cmds, cmd);
-
-		AlterTableInternal(lfirst_oid(l), cmds, false);
-	}
-
-	return new_tablespaceoid;
 }
 
 /*
@@ -1374,7 +1200,7 @@ GetDefaultTablespace(char relpersistence)
 typedef struct
 {
 	int			numSpcs;
-	Oid			tblSpcs[1];		/* VARIABLE LENGTH ARRAY */
+	Oid			tblSpcs[FLEXIBLE_ARRAY_MEMBER];
 } temp_tablespaces_extra;
 
 /* check_hook: validate new temp_tablespaces */
@@ -1687,12 +1513,12 @@ get_tablespace_name(Oid spc_oid)
  * TABLESPACE resource manager's routines
  */
 void
-tblspc_redo(XLogRecPtr lsn, XLogRecord *record)
+tblspc_redo(XLogReaderState *record)
 {
-	uint8		info = record->xl_info & ~XLR_INFO_MASK;
+	uint8		info = XLogRecGetInfo(record) & ~XLR_INFO_MASK;
 
 	/* Backup blocks are not used in tblspc records */
-	Assert(!(record->xl_info & XLR_BKP_BLOCK_MASK));
+	Assert(!XLogRecHasAnyBlockRefs(record));
 
 	if (info == XLOG_TBLSPC_CREATE)
 	{

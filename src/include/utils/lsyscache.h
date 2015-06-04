@@ -8,7 +8,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/utils/lsyscache.h
@@ -55,8 +55,6 @@ extern Oid get_opfamily_member(Oid opfamily, Oid lefttype, Oid righttype,
 					int16 strategy);
 extern bool get_ordering_op_properties(Oid opno,
 						   Oid *opfamily, Oid *opcintype, int16 *strategy);
-extern bool get_sort_function_for_ordering_op(Oid opno, Oid *sortfunc,
-								  bool *issupport, bool *reverse);
 extern Oid	get_equality_op_for_ordering_op(Oid opno, bool *reverse);
 extern Oid	get_ordering_op_for_equality_op(Oid opno, bool use_lhs_type);
 extern List *get_mergejoin_opfamilies(Oid opno);
@@ -143,6 +141,7 @@ extern void get_type_category_preferred(Oid typid,
 extern Oid	get_typ_typrelid(Oid typid);
 extern Oid	get_element_type(Oid typid);
 extern Oid	get_array_type(Oid typid);
+extern Oid	get_promoted_array_type(Oid typid);
 extern Oid	get_base_element_type(Oid typid);
 extern void getTypeInputInfo(Oid type, Oid *typInput, Oid *typIOParam);
 extern void getTypeOutputInfo(Oid type, Oid *typOutput, bool *typIsVarlena);
@@ -188,6 +187,7 @@ extern Oid	get_funcid(const char *funcname, oidvector *argtypes, Oid funcnsp);
 extern Oid	get_opnamespace(Oid opno);
 extern Oid	get_operid(const char *oprname, Oid oprleft, Oid oprright, Oid oprnsp);
 #endif
+extern char *get_namespace_name_or_temp(Oid nspid);
 extern Oid	get_range_subtype(Oid rangeOid);
 
 #define type_is_array(typid)  (get_element_type(typid) != InvalidOid)

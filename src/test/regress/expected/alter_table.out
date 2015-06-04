@@ -289,6 +289,8 @@ Inherits: constraint_rename_test
 
 DROP TABLE constraint_rename_test2;
 DROP TABLE constraint_rename_test;
+ALTER TABLE IF EXISTS constraint_not_exist RENAME CONSTRAINT con3 TO con3foo; -- ok
+NOTICE:  relation "constraint_not_exist" does not exist, skipping
 ALTER TABLE IF EXISTS constraint_rename_test ADD CONSTRAINT con4 UNIQUE (a);
 NOTICE:  relation "constraint_rename_test" does not exist, skipping
 -- FOREIGN KEY CONSTRAINT adding TEST
@@ -549,6 +551,7 @@ create table atacc1 ( test int );
 -- add a check constraint (fails)
 alter table atacc1 add constraint atacc_test1 check (test1>3);
 ERROR:  column "test1" does not exist
+HINT:  Perhaps you meant to reference the column "atacc1"."test".
 drop table atacc1;
 -- something a little more complicated
 create table atacc1 ( test int, test2 int, test3 int);
@@ -1356,6 +1359,7 @@ select f1 from c1;
 ERROR:  column "f1" does not exist
 LINE 1: select f1 from c1;
                ^
+HINT:  Perhaps you meant to reference the column "c1"."f2".
 drop table p1 cascade;
 NOTICE:  drop cascades to table c1
 create table p1 (f1 int, f2 int) distribute by roundrobin;
@@ -1369,6 +1373,7 @@ select f1 from c1;
 ERROR:  column "f1" does not exist
 LINE 1: select f1 from c1;
                ^
+HINT:  Perhaps you meant to reference the column "c1"."f2".
 drop table p1 cascade;
 NOTICE:  drop cascades to table c1
 create table p1 (f1 int, f2 int) distribute by roundrobin;
@@ -1828,6 +1833,23 @@ Check constraints:
     "test_inh_check_a_check" CHECK (a::double precision > 10.2::double precision)
 Inherits: test_inh_check
 
+-- check for rollback of ANALYZE corrupting table property flags (bug #11638)
+CREATE TABLE check_fk_presence_1 (id int PRIMARY KEY, t text);
+CREATE TABLE check_fk_presence_2 (id int REFERENCES check_fk_presence_1, t text);
+BEGIN;
+ALTER TABLE check_fk_presence_2 DROP CONSTRAINT check_fk_presence_2_id_fkey;
+ANALYZE check_fk_presence_2;
+ROLLBACK;
+\d check_fk_presence_2
+Table "public.check_fk_presence_2"
+ Column |  Type   | Modifiers 
+--------+---------+-----------
+ id     | integer | 
+ t      | text    | 
+Foreign-key constraints:
+    "check_fk_presence_2_id_fkey" FOREIGN KEY (id) REFERENCES check_fk_presence_1(id)
+
+DROP TABLE check_fk_presence_1, check_fk_presence_2;
 --
 -- lock levels
 --
@@ -1952,9 +1974,9 @@ create trigger ttdummy
 	execute procedure
 	ttdummy (1, 1);
 select * from my_locks order by 1;
-  relname  |    max_lockmode     
------------+---------------------
- alterlock | AccessExclusiveLock
+  relname  |     max_lockmode      
+-----------+-----------------------
+ alterlock | ShareRowExclusiveLock
 (1 row)
 
 rollback;
@@ -1966,10 +1988,10 @@ select * from my_locks order by 1;
 
 alter table alterlock2 add foreign key (f1) references alterlock (f1);
 select * from my_locks order by 1;
-     relname     |    max_lockmode     
------------------+---------------------
- alterlock       | AccessExclusiveLock
- alterlock2      | AccessExclusiveLock
+     relname     |     max_lockmode      
+-----------------+-----------------------
+ alterlock       | ShareRowExclusiveLock
+ alterlock2      | ShareRowExclusiveLock
  alterlock2_pkey | AccessShareLock
  alterlock_pkey  | AccessShareLock
 (4 rows)
@@ -1979,10 +2001,10 @@ begin;
 alter table alterlock2
 add constraint alterlock2nv foreign key (f1) references alterlock (f1) NOT VALID;
 select * from my_locks order by 1;
-  relname   |    max_lockmode     
-------------+---------------------
- alterlock  | AccessExclusiveLock
- alterlock2 | AccessExclusiveLock
+  relname   |     max_lockmode      
+------------+-----------------------
+ alterlock  | ShareRowExclusiveLock
+ alterlock2 | ShareRowExclusiveLock
 (2 rows)
 
 commit;
@@ -2390,14 +2412,19 @@ Check constraints:
 
 DROP TABLE alter2.tt8;
 DROP SCHEMA alter2;
--- Check that we map relation oids to filenodes and back correctly.
--- Only display bad mappings so the test output doesn't change all the
--- time.
+-- Check that we map relation oids to filenodes and back correctly.  Only
+-- display bad mappings so the test output doesn't change all the time.  A
+-- filenode function call can return NULL for a relation dropped concurrently
+-- with the call's surrounding query, so ignore a NULL mapped_oid for
+-- relations that no longer exist after all calls finish.
+CREATE TEMP TABLE filenode_mapping AS
 SELECT
     oid, mapped_oid, reltablespace, relfilenode, relname
 FROM pg_class,
     pg_filenode_relation(reltablespace, pg_relation_filenode(oid)) AS mapped_oid
 WHERE relkind IN ('r', 'i', 'S', 't', 'm') AND mapped_oid IS DISTINCT FROM oid;
+SELECT m.* FROM filenode_mapping m LEFT JOIN pg_class c ON c.oid = m.oid
+WHERE c.oid IS NOT NULL OR m.mapped_oid IS NOT NULL;
  oid | mapped_oid | reltablespace | relfilenode | relname 
 -----+------------+---------------+-------------+---------
 (0 rows)
@@ -2436,3 +2463,94 @@ TRUNCATE old_system_table;
 ALTER TABLE old_system_table DROP CONSTRAINT new_system_table_pkey;
 ALTER TABLE old_system_table DROP COLUMN othercol;
 DROP TABLE old_system_table;
+-- set logged
+CREATE UNLOGGED TABLE unlogged1(f1 SERIAL PRIMARY KEY, f2 TEXT);
+-- check relpersistence of an unlogged table
+SELECT relname, relkind, relpersistence FROM pg_class WHERE relname ~ '^unlogged1'
+UNION ALL
+SELECT 'toast table', t.relkind, t.relpersistence FROM pg_class r JOIN pg_class t ON t.oid = r.reltoastrelid WHERE r.relname ~ '^unlogged1'
+UNION ALL
+SELECT 'toast index', ri.relkind, ri.relpersistence FROM pg_class r join pg_class t ON t.oid = r.reltoastrelid JOIN pg_index i ON i.indrelid = t.oid JOIN pg_class ri ON ri.oid = i.indexrelid WHERE r.relname ~ '^unlogged1'
+ORDER BY relname;
+     relname      | relkind | relpersistence 
+------------------+---------+----------------
+ toast index      | i       | u
+ toast table      | t       | u
+ unlogged1        | r       | u
+ unlogged1_f1_seq | S       | p
+ unlogged1_pkey   | i       | u
+(5 rows)
+
+CREATE UNLOGGED TABLE unlogged2(f1 SERIAL PRIMARY KEY, f2 INTEGER REFERENCES unlogged1); -- foreign key
+CREATE UNLOGGED TABLE unlogged3(f1 SERIAL PRIMARY KEY, f2 INTEGER REFERENCES unlogged3); -- self-referencing foreign key
+ALTER TABLE unlogged3 SET LOGGED; -- skip self-referencing foreign key
+ALTER TABLE unlogged2 SET LOGGED; -- fails because a foreign key to an unlogged table exists
+ERROR:  cannot change status of table unlogged2 to logged
+DETAIL:  Table unlogged2 references unlogged table unlogged1.
+ALTER TABLE unlogged1 SET LOGGED;
+-- check relpersistence of an unlogged table after changing to permament
+SELECT relname, relkind, relpersistence FROM pg_class WHERE relname ~ '^unlogged1'
+UNION ALL
+SELECT 'toast table', t.relkind, t.relpersistence FROM pg_class r JOIN pg_class t ON t.oid = r.reltoastrelid WHERE r.relname ~ '^unlogged1'
+UNION ALL
+SELECT 'toast index', ri.relkind, ri.relpersistence FROM pg_class r join pg_class t ON t.oid = r.reltoastrelid JOIN pg_index i ON i.indrelid = t.oid JOIN pg_class ri ON ri.oid = i.indexrelid WHERE r.relname ~ '^unlogged1'
+ORDER BY relname;
+     relname      | relkind | relpersistence 
+------------------+---------+----------------
+ toast index      | i       | p
+ toast table      | t       | p
+ unlogged1        | r       | p
+ unlogged1_f1_seq | S       | p
+ unlogged1_pkey   | i       | p
+(5 rows)
+
+ALTER TABLE unlogged1 SET LOGGED; -- silently do nothing
+DROP TABLE unlogged3;
+DROP TABLE unlogged2;
+DROP TABLE unlogged1;
+-- set unlogged
+CREATE TABLE logged1(f1 SERIAL PRIMARY KEY, f2 TEXT);
+-- check relpersistence of a permanent table
+SELECT relname, relkind, relpersistence FROM pg_class WHERE relname ~ '^logged1'
+UNION ALL
+SELECT 'toast table', t.relkind, t.relpersistence FROM pg_class r JOIN pg_class t ON t.oid = r.reltoastrelid WHERE r.relname ~ '^logged1'
+UNION ALL
+SELECT 'toast index', ri.relkind, ri.relpersistence FROM pg_class r join pg_class t ON t.oid = r.reltoastrelid JOIN pg_index i ON i.indrelid = t.oid JOIN pg_class ri ON ri.oid = i.indexrelid WHERE r.relname ~ '^logged1'
+ORDER BY relname;
+    relname     | relkind | relpersistence 
+----------------+---------+----------------
+ logged1        | r       | p
+ logged1_f1_seq | S       | p
+ logged1_pkey   | i       | p
+ toast index    | i       | p
+ toast table    | t       | p
+(5 rows)
+
+CREATE TABLE logged2(f1 SERIAL PRIMARY KEY, f2 INTEGER REFERENCES logged1); -- foreign key
+CREATE TABLE logged3(f1 SERIAL PRIMARY KEY, f2 INTEGER REFERENCES logged3); -- self-referencing foreign key
+ALTER TABLE logged1 SET UNLOGGED; -- fails because a foreign key from a permanent table exists
+ERROR:  cannot change status of table logged1 to unlogged
+DETAIL:  Logged table logged2 is referenced by table logged1.
+ALTER TABLE logged3 SET UNLOGGED; -- skip self-referencing foreign key
+ALTER TABLE logged2 SET UNLOGGED;
+ALTER TABLE logged1 SET UNLOGGED;
+-- check relpersistence of a permanent table after changing to unlogged
+SELECT relname, relkind, relpersistence FROM pg_class WHERE relname ~ '^logged1'
+UNION ALL
+SELECT 'toast table', t.relkind, t.relpersistence FROM pg_class r JOIN pg_class t ON t.oid = r.reltoastrelid WHERE r.relname ~ '^logged1'
+UNION ALL
+SELECT 'toast index', ri.relkind, ri.relpersistence FROM pg_class r join pg_class t ON t.oid = r.reltoastrelid JOIN pg_index i ON i.indrelid = t.oid JOIN pg_class ri ON ri.oid = i.indexrelid WHERE r.relname ~ '^logged1'
+ORDER BY relname;
+    relname     | relkind | relpersistence 
+----------------+---------+----------------
+ logged1        | r       | u
+ logged1_f1_seq | S       | p
+ logged1_pkey   | i       | u
+ toast index    | i       | u
+ toast table    | t       | u
+(5 rows)
+
+ALTER TABLE logged1 SET UNLOGGED; -- silently do nothing
+DROP TABLE logged3;
+DROP TABLE logged2;
+DROP TABLE logged1;

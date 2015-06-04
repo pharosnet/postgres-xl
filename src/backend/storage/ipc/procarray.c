@@ -46,7 +46,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  * Portions Copyright (c) 2010-2012 Postgres-XC Development Group
  *
@@ -63,8 +63,9 @@
 #include "access/clog.h"
 #include "access/subtrans.h"
 #include "access/transam.h"
-#include "access/xact.h"
 #include "access/twophase.h"
+#include "access/xact.h"
+#include "access/xlog.h"
 #include "catalog/catalog.h"
 #include "miscadmin.h"
 #include "storage/proc.h"
@@ -111,11 +112,8 @@ typedef struct ProcArrayStruct
 	/* oldest catalog xmin of any replication slot */
 	TransactionId replication_slot_catalog_xmin;
 
-	/*
-	 * We declare pgprocnos[] as 1 entry because C wants a fixed-size array,
-	 * but actually it is maxProcs entries long.
-	 */
-	int			pgprocnos[1];	/* VARIABLE LENGTH ARRAY */
+	/* indexes into allPgXact[], has PROCARRAY_MAXPROCS entries */
+	int			pgprocnos[FLEXIBLE_ARRAY_MEMBER];
 } ProcArrayStruct;
 
 static ProcArrayStruct *procArray;
@@ -2566,6 +2564,8 @@ MinimumActiveBackends(int min)
 		 * free list and are recycled. Its contents are nonsense in that case,
 		 * but that's acceptable for this function.
 		 */
+		if (pgprocno == -1)
+			continue;			/* do not count deleted entries */
 		if (proc == MyProc)
 			continue;			/* do not count myself */
 		if (pgxact->xid == InvalidTransactionId)

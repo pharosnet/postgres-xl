@@ -4,9 +4,10 @@
 -- pg_operator, pg_proc, pg_cast, pg_aggregate, pg_am,
 -- pg_amop, pg_amproc, pg_opclass, pg_opfamily.
 --
--- Every test failures in this file should be closely inspected. The
--- description of the failing test should be read carefully before
--- adjusting the expected output.
+-- Every test failure in this file should be closely inspected.
+-- The description of the failing test should be read carefully before
+-- adjusting the expected output.  In most cases, the queries should
+-- not find *any* matching entries.
 --
 -- NB: we assume the oidjoins test will have caught any dangling links,
 -- that is OID or REGPROC fields that are not zero and do not match some
@@ -318,6 +319,30 @@ ORDER BY 1;
 -- restore normal output mode
 \a\t
 
+-- List of functions used by libpq's fe-lobj.c
+--
+-- If the output of this query changes, you probably broke libpq.
+-- lo_initialize() assumes that there will be at most one match for
+-- each listed name.
+select proname, oid from pg_catalog.pg_proc
+where proname in (
+  'lo_open',
+  'lo_close',
+  'lo_creat',
+  'lo_create',
+  'lo_unlink',
+  'lo_lseek',
+  'lo_lseek64',
+  'lo_tell',
+  'lo_tell64',
+  'lo_truncate',
+  'lo_truncate64',
+  'loread',
+  'lowrite')
+and pronamespace = (select oid from pg_catalog.pg_namespace
+                    where nspname = 'pg_catalog')
+order by 1;
+
 
 -- **************** pg_cast ****************
 
@@ -457,6 +482,22 @@ WHERE p1.oprnegate = p2.oid AND
      p2.oprresult != 'bool'::regtype OR
      p1.oid != p2.oprnegate OR
      p1.oid = p2.oid);
+
+-- Make a list of the names of operators that are claimed to be commutator
+-- pairs.  This list will grow over time, but before accepting a new entry
+-- make sure you didn't link the wrong operators.
+
+SELECT DISTINCT o1.oprname AS op1, o2.oprname AS op2
+FROM pg_operator o1, pg_operator o2
+WHERE o1.oprcom = o2.oid AND o1.oprname <= o2.oprname
+ORDER BY 1, 2;
+
+-- Likewise for negator pairs.
+
+SELECT DISTINCT o1.oprname AS op1, o2.oprname AS op2
+FROM pg_operator o1, pg_operator o2
+WHERE o1.oprnegate = o2.oid AND o1.oprname <= o2.oprname
+ORDER BY 1, 2;
 
 -- A mergejoinable or hashjoinable operator must be binary, must return
 -- boolean, and must have a commutator (itself, unless it's a cross-type
@@ -1155,11 +1196,13 @@ WHERE NOT (
   -- GIN has six support functions. 1-3 are mandatory, 5 is optional, and
   --   at least one of 4 and 6 must be given.
   -- SP-GiST has five support functions, all mandatory
+  -- BRIN has four mandatory support functions, and a bunch of optionals
   amname = 'btree' AND procnums @> '{1}' OR
   amname = 'hash' AND procnums = '{1}' OR
   amname = 'gist' AND procnums @> '{1, 2, 3, 4, 5, 6, 7}' OR
   amname = 'gin' AND (procnums @> '{1, 2, 3}' AND (procnums && '{4, 6}')) OR
-  amname = 'spgist' AND procnums = '{1, 2, 3, 4, 5}'
+  amname = 'spgist' AND procnums = '{1, 2, 3, 4, 5}' OR
+  amname = 'brin' AND procnums @> '{1, 2, 3, 4}'
 );
 
 -- Also, check if there are any pg_opclass entries that don't seem to have
@@ -1178,7 +1221,8 @@ WHERE NOT (
   amname = 'hash' AND procnums = '{1}' OR
   amname = 'gist' AND procnums @> '{1, 2, 3, 4, 5, 6, 7}' OR
   amname = 'gin' AND (procnums @> '{1, 2, 3}' AND (procnums && '{4, 6}')) OR
-  amname = 'spgist' AND procnums = '{1, 2, 3, 4, 5}'
+  amname = 'spgist' AND procnums = '{1, 2, 3, 4, 5}' OR
+  amname = 'brin' AND procnums @> '{1, 2, 3, 4}'
 );
 
 -- Unfortunately, we can't check the amproc link very well because the

@@ -23,7 +23,7 @@
  * the foreign table's columns are not marked with collations that match the
  * remote table's columns, which we can consider to be user error.
  *
- * Portions Copyright (c) 2012-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 2012-2015, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *		  contrib/postgres_fdw/deparse.c
@@ -50,6 +50,7 @@
 #include "parser/parsetree.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
+#include "utils/rel.h"
 #include "utils/syscache.h"
 
 
@@ -116,7 +117,6 @@ static void deparseReturningList(StringInfo buf, PlannerInfo *root,
 static void deparseColumnRef(StringInfo buf, int varno, int varattno,
 				 PlannerInfo *root);
 static void deparseRelation(StringInfo buf, Relation rel);
-static void deparseStringLiteral(StringInfo buf, const char *val);
 static void deparseExpr(Expr *expr, deparse_expr_cxt *context);
 static void deparseVar(Var *node, deparse_expr_cxt *context);
 static void deparseConst(Const *node, deparse_expr_cxt *context);
@@ -254,6 +254,18 @@ foreign_expr_walker(Node *node,
 					var->varlevelsup == 0)
 				{
 					/* Var belongs to foreign table */
+
+					/*
+					 * System columns other than ctid should not be sent to
+					 * the remote, since we don't make any effort to ensure
+					 * that local and remote values match (tableoid, in
+					 * particular, almost certainly doesn't match).
+					 */
+					if (var->varattno < 0 &&
+						var->varattno != SelfItemPointerAttributeNumber)
+						return false;
+
+					/* Else check the collation */
 					collation = var->varcollid;
 					state = OidIsValid(collation) ? FDW_COLLATE_SAFE : FDW_COLLATE_NONE;
 				}
@@ -305,7 +317,7 @@ foreign_expr_walker(Node *node,
 			break;
 		case T_ArrayRef:
 			{
-				ArrayRef   *ar = (ArrayRef *) node;;
+				ArrayRef   *ar = (ArrayRef *) node;
 
 				/* Assignment should not be in restrictions. */
 				if (ar->refassgnexpr != NULL)
@@ -1160,7 +1172,7 @@ deparseRelation(StringInfo buf, Relation rel)
 /*
  * Append a SQL string literal representing "val" to buf.
  */
-static void
+void
 deparseStringLiteral(StringInfo buf, const char *val)
 {
 	const char *valptr;
@@ -1716,9 +1728,6 @@ deparseRelabelType(RelabelType *node, deparse_expr_cxt *context)
 
 /*
  * Deparse a BoolExpr node.
- *
- * Note: by the time we get here, AND and OR expressions have been flattened
- * into N-argument form, so we'd better be prepared to deal with that.
  */
 static void
 deparseBoolExpr(BoolExpr *node, deparse_expr_cxt *context)

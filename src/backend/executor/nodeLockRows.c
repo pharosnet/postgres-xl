@@ -3,7 +3,7 @@
  * nodeLockRows.c
  *	  Routines to handle FOR UPDATE/FOR SHARE row locking
  *
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -93,7 +93,8 @@ lnext:
 				elog(ERROR, "tableoid is NULL");
 			tableoid = DatumGetObjectId(datum);
 
-			if (tableoid != RelationGetRelid(erm->relation))
+			Assert(OidIsValid(erm->relid));
+			if (tableoid != erm->relid)
 			{
 				/* this child is inactive right now */
 				ItemPointerSetInvalid(&(erm->curCtid));
@@ -133,11 +134,15 @@ lnext:
 
 		test = heap_lock_tuple(erm->relation, &tuple,
 							   estate->es_output_cid,
-							   lockmode, erm->noWait, true,
+							   lockmode, erm->waitPolicy, true,
 							   &buffer, &hufd);
 		ReleaseBuffer(buffer);
 		switch (test)
 		{
+			case HeapTupleWouldBlock:
+				/* couldn't lock tuple in SKIP LOCKED mode */
+				goto lnext;
+
 			case HeapTupleSelfUpdated:
 
 				/*
@@ -170,12 +175,16 @@ lnext:
 				}
 
 				/* updated, so fetch and lock the updated version */
-				copyTuple = EvalPlanQualFetch(estate, erm->relation, lockmode,
+				copyTuple = EvalPlanQualFetch(estate, erm->relation,
+											  lockmode, erm->waitPolicy,
 											  &hufd.ctid, hufd.xmax);
 
 				if (copyTuple == NULL)
 				{
-					/* Tuple was deleted, so don't return it */
+					/*
+					 * Tuple was deleted; or it's locked and we're under SKIP
+					 * LOCKED policy, so don't return it
+					 */
 					goto lnext;
 				}
 				/* remember the actually locked tuple's TID */
@@ -187,7 +196,29 @@ lnext:
 				 */
 				if (!epq_started)
 				{
+					ListCell   *lc2;
+
 					EvalPlanQualBegin(&node->lr_epqstate, estate);
+
+					/*
+					 * Ensure that rels with already-visited rowmarks are told
+					 * not to return tuples during the first EPQ test.  We can
+					 * exit this loop once it reaches the current rowmark;
+					 * rels appearing later in the list will be set up
+					 * correctly by the EvalPlanQualSetTuple call at the top
+					 * of the loop.
+					 */
+					foreach(lc2, node->lr_arowMarks)
+					{
+						ExecAuxRowMark *aerm2 = (ExecAuxRowMark *) lfirst(lc2);
+
+						if (lc2 == lc)
+							break;
+						EvalPlanQualSetTuple(&node->lr_epqstate,
+											 aerm2->rowmark->rti,
+											 NULL);
+					}
+
 					epq_started = true;
 				}
 

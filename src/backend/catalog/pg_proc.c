@@ -8,7 +8,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -74,7 +74,7 @@ static bool match_prosrc_to_literal(const char *prosrc, const char *literal,
  * not "ArrayType *", to avoid importing array.h into pg_proc_fn.h.
  * ----------------------------------------------------------------
  */
-Oid
+ObjectAddress
 ProcedureCreate(const char *procedureName,
 				Oid procNamespace,
 				bool replace,
@@ -713,7 +713,7 @@ ProcedureCreate(const char *procedureName,
 			AtEOXact_GUC(true, save_nestlevel);
 	}
 
-	return retval;
+	return myself;
 }
 
 

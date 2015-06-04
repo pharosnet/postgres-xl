@@ -1,3 +1,17 @@
+/*-------------------------------------------------------------------------
+ *
+ * receivelog.h
+ *
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
+ *
+ * IDENTIFICATION
+ *		  src/bin/pg_basebackup/receivelog.h
+ *-------------------------------------------------------------------------
+ */
+
+#ifndef RECEIVELOG_H
+#define RECEIVELOG_H
+
 #include "libpq-fe.h"
 
 #include "access/xlogdefs.h"
@@ -16,4 +30,8 @@ extern bool ReceiveXlogStream(PGconn *conn,
 				  char *basedir,
 				  stream_stop_callback stream_stop,
 				  int standby_message_timeout,
-				  char *partial_suffix);
+				  char *partial_suffix,
+				  bool synchronous,
+				  bool mark_done);
+
+#endif	/* RECEIVELOG_H */

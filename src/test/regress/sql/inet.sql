@@ -56,6 +56,9 @@ SELECT '' AS ten, i, c,
   i && c AS ovr
   FROM INET_TBL ORDER BY i, c;
 
+SELECT max(i) AS max, min(i) AS min FROM INET_TBL;
+SELECT max(c) AS max, min(c) AS min FROM INET_TBL;
+
 -- check the conversion to/from text and set_netmask
 SELECT '' AS ten, set_masklen(inet(text(i)), 24) FROM INET_TBL;
 
@@ -81,6 +84,12 @@ SELECT * FROM inet_tbl WHERE i = '192.168.1.0/24'::cidr ORDER BY i;
 SELECT * FROM inet_tbl WHERE i >= '192.168.1.0/24'::cidr ORDER BY i;
 SELECT * FROM inet_tbl WHERE i > '192.168.1.0/24'::cidr ORDER BY i;
 SELECT * FROM inet_tbl WHERE i <> '192.168.1.0/24'::cidr ORDER BY i;
+
+-- test index-only scans
+EXPLAIN (COSTS OFF)
+SELECT i FROM inet_tbl WHERE i << '192.168.1.0/24'::cidr ORDER BY i;
+SELECT i FROM inet_tbl WHERE i << '192.168.1.0/24'::cidr ORDER BY i;
+
 SET enable_seqscan TO on;
 DROP INDEX inet_idx2;
 

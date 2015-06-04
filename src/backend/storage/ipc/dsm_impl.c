@@ -36,7 +36,7 @@
  *
  * As ever, Windows requires its own implemetation.
  *
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -332,7 +332,7 @@ dsm_impl_posix(dsm_op op, dsm_handle handle, Size request_size,
 
 		ereport(elevel,
 				(errcode_for_dynamic_shared_memory(),
-		 errmsg("could not resize shared memory segment %s to %zu bytes: %m",
+		 errmsg("could not resize shared memory segment \"%s\" to %zu bytes: %m",
 				name, request_size)));
 		return false;
 	}
@@ -368,7 +368,7 @@ dsm_impl_posix(dsm_op op, dsm_handle handle, Size request_size,
 
 	/* Map it. */
 	address = mmap(NULL, request_size, PROT_READ | PROT_WRITE,
-				   MAP_SHARED | MAP_HASSEMAPHORE, fd, 0);
+				   MAP_SHARED | MAP_HASSEMAPHORE | MAP_NOSYNC, fd, 0);
 	if (address == MAP_FAILED)
 	{
 		int			save_errno;
@@ -875,7 +875,7 @@ dsm_impl_mmap(dsm_op op, dsm_handle handle, Size request_size,
 
 		ereport(elevel,
 				(errcode_for_dynamic_shared_memory(),
-		 errmsg("could not resize shared memory segment %s to %zu bytes: %m",
+		 errmsg("could not resize shared memory segment \"%s\" to %zu bytes: %m",
 				name, request_size)));
 		return false;
 	}
@@ -923,7 +923,7 @@ dsm_impl_mmap(dsm_op op, dsm_handle handle, Size request_size,
 
 			ereport(elevel,
 					(errcode_for_dynamic_shared_memory(),
-					 errmsg("could not resize shared memory segment %s to %zu bytes: %m",
+					 errmsg("could not resize shared memory segment \"%s\" to %zu bytes: %m",
 							name, request_size)));
 			return false;
 		}
@@ -960,7 +960,7 @@ dsm_impl_mmap(dsm_op op, dsm_handle handle, Size request_size,
 
 	/* Map it. */
 	address = mmap(NULL, request_size, PROT_READ | PROT_WRITE,
-				   MAP_SHARED | MAP_HASSEMAPHORE, fd, 0);
+				   MAP_SHARED | MAP_HASSEMAPHORE | MAP_NOSYNC, fd, 0);
 	if (address == MAP_FAILED)
 	{
 		int			save_errno;
@@ -996,7 +996,7 @@ dsm_impl_mmap(dsm_op op, dsm_handle handle, Size request_size,
  * do anything to receive the handle; Windows transfers it automatically.
  */
 void
-dsm_impl_keep_segment(dsm_handle handle, void *impl_private)
+dsm_impl_pin_segment(dsm_handle handle, void *impl_private)
 {
 	switch (dynamic_shared_memory_type)
 	{

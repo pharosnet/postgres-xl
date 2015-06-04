@@ -11,6 +11,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include "postgres.h"
 #include "gtm/libpq-fe.h"
 #include "gtm/gtm_client.h"
 #include "access/gtm.h"
@@ -18,8 +19,6 @@
 #include "utils/elog.h"
 #include "miscadmin.h"
 #include "pgxc/pgxc.h"
-#ifdef XCP
-#include "postgres.h"
 #include "gtm/gtm_c.h"
 #include "postmaster/autovacuum.h"
 #include "storage/backendid.h"
@@ -28,7 +27,6 @@
 /* To access sequences */
 #define MyCoordName \
 	OidIsValid(MyCoordId) ? get_pgxc_nodename(MyCoordId) : ""
-#endif
 /* Configuration variables */
 char *GtmHost = "localhost";
 int GtmPort = 6666;

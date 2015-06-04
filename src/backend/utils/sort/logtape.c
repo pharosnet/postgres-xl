@@ -66,7 +66,7 @@
  * care that all calls for a single LogicalTapeSet are made in the same
  * palloc context.
  *
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -166,12 +166,9 @@ struct LogicalTapeSet
 	int			nFreeBlocks;	/* # of currently free blocks */
 	int			freeBlocksLen;	/* current allocated length of freeBlocks[] */
 
-	/*
-	 * tapes[] is declared size 1 since C wants a fixed size, but actually it
-	 * is of length nTapes.
-	 */
+	/* The array of logical tapes. */
 	int			nTapes;			/* # of logical tapes in set */
-	LogicalTape tapes[1];		/* must be last in struct! */
+	LogicalTape tapes[FLEXIBLE_ARRAY_MEMBER];	/* has nTapes nentries */
 };
 
 static void ltsWriteBlock(LogicalTapeSet *lts, long blocknum, void *buffer);
@@ -208,11 +205,9 @@ ltsWriteBlock(LogicalTapeSet *lts, long blocknum, void *buffer)
 	if (BufFileSeekBlock(lts->pfile, blocknum) != 0 ||
 		BufFileWrite(lts->pfile, buffer, BLCKSZ) != BLCKSZ)
 		ereport(ERROR,
-		/* XXX is it okay to assume errno is correct? */
 				(errcode_for_file_access(),
 				 errmsg("could not write block %ld of temporary file: %m",
-						blocknum),
-				 errhint("Perhaps out of disk space?")));
+						blocknum)));
 }
 
 /*
@@ -227,7 +222,6 @@ ltsReadBlock(LogicalTapeSet *lts, long blocknum, void *buffer)
 	if (BufFileSeekBlock(lts->pfile, blocknum) != 0 ||
 		BufFileRead(lts->pfile, buffer, BLCKSZ) != BLCKSZ)
 		ereport(ERROR,
-		/* XXX is it okay to assume errno is correct? */
 				(errcode_for_file_access(),
 				 errmsg("could not read block %ld of temporary file: %m",
 						blocknum)));
@@ -522,12 +516,11 @@ LogicalTapeSetCreate(int ntapes)
 	int			i;
 
 	/*
-	 * Create top-level struct including per-tape LogicalTape structs. First
-	 * LogicalTape struct is already counted in sizeof(LogicalTapeSet).
+	 * Create top-level struct including per-tape LogicalTape structs.
 	 */
 	Assert(ntapes > 0);
-	lts = (LogicalTapeSet *) palloc(sizeof(LogicalTapeSet) +
-									(ntapes - 1) *sizeof(LogicalTape));
+	lts = (LogicalTapeSet *) palloc(offsetof(LogicalTapeSet, tapes) +
+									ntapes * sizeof(LogicalTape));
 	lts->pfile = BufFileCreateTemp(false);
 	lts->nFileBlocks = 0L;
 	lts->forgetFreeSpace = false;

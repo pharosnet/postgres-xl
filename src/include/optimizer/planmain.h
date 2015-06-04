@@ -9,7 +9,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/optimizer/planmain.h
@@ -90,6 +90,7 @@ extern Result *make_result(PlannerInfo *root, List *tlist,
 			Node *resconstantqual, Plan *subplan);
 extern ModifyTable *make_modifytable(PlannerInfo *root,
 				 CmdType operation, bool canSetTag,
+				 Index nominalRelation,
 				 List *resultRelations, List *subplans,
 				 List *withCheckOptionLists, List *returningLists,
 				 List *rowMarks, int epqParam);
@@ -130,6 +131,8 @@ extern RestrictInfo *build_implied_join_equality(Oid opno,
  * prototypes for plan/analyzejoins.c
  */
 extern List *remove_useless_joins(PlannerInfo *root, List *joinlist);
+extern bool query_supports_distinctness(Query *query);
+extern bool query_is_distinct_for(Query *query, List *colnos, List *opids);
 
 /*
  * prototypes for plan/setrefs.c
@@ -141,7 +144,8 @@ extern void set_sa_opfuncid(ScalarArrayOpExpr *opexpr);
 extern void record_plan_function_dependency(PlannerInfo *root, Oid funcid);
 extern void extract_query_dependencies(Node *query,
 						   List **relationOids,
-						   List **invalItems);
+						   List **invalItems,
+						   bool *hasRowSecurity);
 
 #ifdef PGXC
 #ifdef XCP

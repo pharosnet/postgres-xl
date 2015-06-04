@@ -2,7 +2,7 @@
  * reorderbuffer.h
  *	  PostgreSQL logical replay/reorder buffer management.
  *
- * Copyright (c) 2012-2014, PostgreSQL Global Development Group
+ * Copyright (c) 2012-2015, PostgreSQL Global Development Group
  *
  * src/include/replication/reorderbuffer.h
  */
@@ -28,8 +28,12 @@ typedef struct ReorderBufferTupleBuf
 
 	/* tuple, stored sequentially */
 	HeapTupleData tuple;
-	HeapTupleHeaderData header;
-	char		data[MaxHeapTupleSize];
+	union
+	{
+		HeapTupleHeaderData header;
+		char		data[MaxHeapTupleSize];
+		double		align_it;	/* ensure t_data is MAXALIGN'd */
+	}			t_data;
 } ReorderBufferTupleBuf;
 
 /*
@@ -75,6 +79,10 @@ typedef struct ReorderBufferChange
 		{
 			/* relation that has been changed */
 			RelFileNode relnode;
+
+			/* no previously reassembled toast chunks are necessary anymore */
+			bool		clear_toast_afterwards;
+
 			/* valid for DELETE || UPDATE */
 			ReorderBufferTupleBuf *oldtuple;
 			/* valid for INSERT || UPDATE */

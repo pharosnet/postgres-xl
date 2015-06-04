@@ -1353,6 +1353,29 @@ pg_matviews| SELECT n.nspname AS schemaname,
      LEFT JOIN pg_namespace n ON ((n.oid = c.relnamespace)))
      LEFT JOIN pg_tablespace t ON ((t.oid = c.reltablespace)))
   WHERE (c.relkind = 'm'::"char");
+pg_policies| SELECT n.nspname AS schemaname,
+    c.relname AS tablename,
+    pol.polname AS policyname,
+        CASE
+            WHEN (pol.polroles = '{0}'::oid[]) THEN (string_to_array('public'::text, ''::text))::name[]
+            ELSE ARRAY( SELECT pg_authid.rolname
+               FROM pg_authid
+              WHERE (pg_authid.oid = ANY (pol.polroles))
+              ORDER BY pg_authid.rolname)
+        END AS roles,
+        CASE pol.polcmd
+            WHEN 'r'::"char" THEN 'SELECT'::text
+            WHEN 'a'::"char" THEN 'INSERT'::text
+            WHEN 'w'::"char" THEN 'UPDATE'::text
+            WHEN 'd'::"char" THEN 'DELETE'::text
+            WHEN '*'::"char" THEN 'ALL'::text
+            ELSE NULL::text
+        END AS cmd,
+    pg_get_expr(pol.polqual, pol.polrelid) AS qual,
+    pg_get_expr(pol.polwithcheck, pol.polrelid) AS with_check
+   FROM ((pg_policy pol
+     JOIN pg_class c ON ((c.oid = pol.polrelid)))
+     LEFT JOIN pg_namespace n ON ((n.oid = c.relnamespace)));
 pg_prepared_statements| SELECT p.name,
     p.statement,
     p.prepare_time,
@@ -1383,12 +1406,12 @@ pg_roles| SELECT pg_authid.rolname,
     pg_authid.rolinherit,
     pg_authid.rolcreaterole,
     pg_authid.rolcreatedb,
-    pg_authid.rolcatupdate,
     pg_authid.rolcanlogin,
     pg_authid.rolreplication,
     pg_authid.rolconnlimit,
     '********'::text AS rolpassword,
     pg_authid.rolvaliduntil,
+    pg_authid.rolbypassrls,
     s.setconfig AS rolconfig,
     pg_authid.oid
    FROM (pg_authid
@@ -1583,8 +1606,8 @@ pg_shadow| SELECT pg_authid.rolname AS usename,
     pg_authid.oid AS usesysid,
     pg_authid.rolcreatedb AS usecreatedb,
     pg_authid.rolsuper AS usesuper,
-    pg_authid.rolcatupdate AS usecatupd,
     pg_authid.rolreplication AS userepl,
+    pg_authid.rolbypassrls AS usebypassrls,
     pg_authid.rolpassword AS passwd,
     (pg_authid.rolvaliduntil)::abstime AS valuntil,
     s.setconfig AS useconfig
@@ -1610,7 +1633,7 @@ pg_stat_activity| SELECT s.datid,
     s.backend_xmin,
     s.query
    FROM pg_database d,
-    pg_stat_get_activity(NULL::integer) s(datid, pid, usesysid, application_name, state, query, waiting, xact_start, query_start, backend_start, state_change, client_addr, client_hostname, client_port, backend_xid, backend_xmin),
+    pg_stat_get_activity(NULL::integer) s(datid, pid, usesysid, application_name, state, query, waiting, xact_start, query_start, backend_start, state_change, client_addr, client_hostname, client_port, backend_xid, backend_xmin, ssl, sslversion, sslcipher, sslbits, sslcompression, sslclientdn),
     pg_authid u
   WHERE ((s.datid = d.oid) AND (s.usesysid = u.oid));
 pg_stat_all_indexes| SELECT c.oid AS relid,
@@ -1716,10 +1739,18 @@ pg_stat_replication| SELECT s.pid,
     w.replay_location,
     w.sync_priority,
     w.sync_state
-   FROM pg_stat_get_activity(NULL::integer) s(datid, pid, usesysid, application_name, state, query, waiting, xact_start, query_start, backend_start, state_change, client_addr, client_hostname, client_port, backend_xid, backend_xmin),
+   FROM pg_stat_get_activity(NULL::integer) s(datid, pid, usesysid, application_name, state, query, waiting, xact_start, query_start, backend_start, state_change, client_addr, client_hostname, client_port, backend_xid, backend_xmin, ssl, sslversion, sslcipher, sslbits, sslcompression, sslclientdn),
     pg_authid u,
     pg_stat_get_wal_senders() w(pid, state, sent_location, write_location, flush_location, replay_location, sync_priority, sync_state)
   WHERE ((s.usesysid = u.oid) AND (s.pid = w.pid));
+pg_stat_ssl| SELECT s.pid,
+    s.ssl,
+    s.sslversion AS version,
+    s.sslcipher AS cipher,
+    s.sslbits AS bits,
+    s.sslcompression AS compression,
+    s.sslclientdn AS clientdn
+   FROM pg_stat_get_activity(NULL::integer) s(datid, pid, usesysid, application_name, state, query, waiting, xact_start, query_start, backend_start, state_change, client_addr, client_hostname, client_port, backend_xid, backend_xmin, ssl, sslversion, sslcipher, sslbits, sslcompression, sslclientdn);
 pg_stat_sys_indexes| SELECT pg_stat_all_indexes.relid,
     pg_stat_all_indexes.indexrelid,
     pg_stat_all_indexes.schemaname,
@@ -2018,7 +2049,8 @@ pg_tables| SELECT n.nspname AS schemaname,
     t.spcname AS tablespace,
     c.relhasindex AS hasindexes,
     c.relhasrules AS hasrules,
-    c.relhastriggers AS hastriggers
+    c.relhastriggers AS hastriggers,
+    c.relrowsecurity AS rowsecurity
    FROM ((pg_class c
      LEFT JOIN pg_namespace n ON ((n.oid = c.relnamespace)))
      LEFT JOIN pg_tablespace t ON ((t.oid = c.reltablespace)))
@@ -2036,8 +2068,8 @@ pg_user| SELECT pg_shadow.usename,
     pg_shadow.usesysid,
     pg_shadow.usecreatedb,
     pg_shadow.usesuper,
-    pg_shadow.usecatupd,
     pg_shadow.userepl,
+    pg_shadow.usebypassrls,
     '********'::text AS passwd,
     pg_shadow.valuntil,
     pg_shadow.useconfig
@@ -2117,7 +2149,7 @@ shoe_ready| SELECT rsh.shoename,
     int4smaller(rsh.sh_avail, rsl.sl_avail) AS total_avail
    FROM shoe rsh,
     shoelace rsl
-  WHERE (((rsl.sl_color = rsh.slcolor) AND (rsl.sl_len_cm >= rsh.slminlen_cm)) AND (rsl.sl_len_cm <= rsh.slmaxlen_cm));
+  WHERE ((rsl.sl_color = rsh.slcolor) AND (rsl.sl_len_cm >= rsh.slminlen_cm) AND (rsl.sl_len_cm <= rsh.slmaxlen_cm));
 shoelace| SELECT s.sl_name,
     s.sl_avail,
     s.sl_color,
@@ -2480,6 +2512,7 @@ select * from only t1_2 order by 1;
  19
 (10 rows)
 
+reset constraint_exclusion;
 -- test various flavors of pg_get_viewdef()
 select pg_get_viewdef('shoe'::regclass) as unpretty;
                     unpretty                    
@@ -2651,3 +2684,56 @@ ALTER RULE "_RETURN" ON rule_v1 RENAME TO abc; -- ON SELECT rule cannot be renam
 ERROR:  renaming an ON SELECT rule is not allowed
 DROP VIEW rule_v1;
 DROP TABLE rule_t1;
+--
+-- check display of VALUES in view definitions
+--
+create view rule_v1 as values(1,2);
+\d+ rule_v1
+                 View "public.rule_v1"
+ Column  |  Type   | Modifiers | Storage | Description 
+---------+---------+-----------+---------+-------------
+ column1 | integer |           | plain   | 
+ column2 | integer |           | plain   | 
+View definition:
+ VALUES (1,2);
+
+drop view rule_v1;
+create view rule_v1(x) as values(1,2);
+\d+ rule_v1
+                 View "public.rule_v1"
+ Column  |  Type   | Modifiers | Storage | Description 
+---------+---------+-----------+---------+-------------
+ x       | integer |           | plain   | 
+ column2 | integer |           | plain   | 
+View definition:
+ SELECT "*VALUES*".column1 AS x,
+    "*VALUES*".column2
+   FROM (VALUES (1,2)) "*VALUES*";
+
+drop view rule_v1;
+create view rule_v1(x) as select * from (values(1,2)) v;
+\d+ rule_v1
+                 View "public.rule_v1"
+ Column  |  Type   | Modifiers | Storage | Description 
+---------+---------+-----------+---------+-------------
+ x       | integer |           | plain   | 
+ column2 | integer |           | plain   | 
+View definition:
+ SELECT v.column1 AS x,
+    v.column2
+   FROM ( VALUES (1,2)) v;
+
+drop view rule_v1;
+create view rule_v1(x) as select * from (values(1,2)) v(q,w);
+\d+ rule_v1
+                View "public.rule_v1"
+ Column |  Type   | Modifiers | Storage | Description 
+--------+---------+-----------+---------+-------------
+ x      | integer |           | plain   | 
+ w      | integer |           | plain   | 
+View definition:
+ SELECT v.q AS x,
+    v.w
+   FROM ( VALUES (1,2)) v(q, w);
+
+drop view rule_v1;

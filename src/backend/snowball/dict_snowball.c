@@ -3,7 +3,7 @@
  * dict_snowball.c
  *		Snowball dictionary
  *
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *	  src/backend/snowball/dict_snowball.c
@@ -57,7 +57,6 @@
 #include "snowball/libstemmer/stem_UTF_8_spanish.h"
 #include "snowball/libstemmer/stem_UTF_8_swedish.h"
 #include "snowball/libstemmer/stem_UTF_8_turkish.h"
-
 
 PG_MODULE_MAGIC;
 

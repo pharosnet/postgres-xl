@@ -9,7 +9,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  * Portions Copyright (c) 2010-2012 Postgres-XC Development Group
  *
@@ -117,6 +117,8 @@ typedef struct RelationData
 	RuleLock   *rd_rules;		/* rewrite rules */
 	MemoryContext rd_rulescxt;	/* private memory cxt for rd_rules, if any */
 	TriggerDesc *trigdesc;		/* Trigger info, or NULL if rel has none */
+	/* use "struct" here to avoid needing to include rowsecurity.h: */
+	struct RowSecurityDesc *rd_rsdesc;	/* row security policies, or NULL */
 
 	/* data managed by RelationGetIndexList: */
 	List	   *rd_indexlist;	/* list of OIDs of indexes on relation */
@@ -222,6 +224,7 @@ typedef struct AutoVacOpts
 	int			multixact_freeze_min_age;
 	int			multixact_freeze_max_age;
 	int			multixact_freeze_table_age;
+	int			log_min_duration;
 	float8		vacuum_scale_factor;
 	float8		analyze_scale_factor;
 } AutoVacOpts;
@@ -231,8 +234,6 @@ typedef struct StdRdOptions
 	int32		vl_len_;		/* varlena header (do not touch directly!) */
 	int			fillfactor;		/* page fill factor in percent (0..100) */
 	AutoVacOpts autovacuum;		/* autovacuum-related options */
-	bool		security_barrier;		/* for views */
-	int			check_option_offset;	/* for views */
 	bool		user_catalog_table;		/* use as an additional catalog
 										 * relation */
 } StdRdOptions;
@@ -263,54 +264,68 @@ typedef struct StdRdOptions
 	(BLCKSZ * (100 - RelationGetFillFactor(relation, defaultff)) / 100)
 
 /*
+ * RelationIsUsedAsCatalogTable
+ *		Returns whether the relation should be treated as a catalog table
+ *		from the pov of logical decoding.  Note multiple eval or argument!
+ */
+#define RelationIsUsedAsCatalogTable(relation)	\
+	((relation)->rd_options ?				\
+	 ((StdRdOptions *) (relation)->rd_options)->user_catalog_table : false)
+
+
+/*
+ * ViewOptions
+ *		Contents of rd_options for views
+ */
+typedef struct ViewOptions
+{
+	int32		vl_len_;		/* varlena header (do not touch directly!) */
+	bool		security_barrier;
+	int			check_option_offset;
+} ViewOptions;
+
+/*
  * RelationIsSecurityView
- *		Returns whether the relation is security view, or not
+ *		Returns whether the relation is security view, or not.  Note multiple
+ *		eval of argument!
  */
 #define RelationIsSecurityView(relation)	\
 	((relation)->rd_options ?				\
-	 ((StdRdOptions *) (relation)->rd_options)->security_barrier : false)
+	 ((ViewOptions *) (relation)->rd_options)->security_barrier : false)
 
 /*
  * RelationHasCheckOption
  *		Returns true if the relation is a view defined with either the local
- *		or the cascaded check option.
+ *		or the cascaded check option.  Note multiple eval of argument!
  */
 #define RelationHasCheckOption(relation)									\
 	((relation)->rd_options &&												\
-	 ((StdRdOptions *) (relation)->rd_options)->check_option_offset != 0)
+	 ((ViewOptions *) (relation)->rd_options)->check_option_offset != 0)
 
 /*
  * RelationHasLocalCheckOption
  *		Returns true if the relation is a view defined with the local check
- *		option.
+ *		option.  Note multiple eval of argument!
  */
 #define RelationHasLocalCheckOption(relation)								\
 	((relation)->rd_options &&												\
-	 ((StdRdOptions *) (relation)->rd_options)->check_option_offset != 0 ?	\
+	 ((ViewOptions *) (relation)->rd_options)->check_option_offset != 0 ?	\
 	 strcmp((char *) (relation)->rd_options +								\
-			((StdRdOptions *) (relation)->rd_options)->check_option_offset, \
+			((ViewOptions *) (relation)->rd_options)->check_option_offset,	\
 			"local") == 0 : false)
 
 /*
  * RelationHasCascadedCheckOption
  *		Returns true if the relation is a view defined with the cascaded check
- *		option.
+ *		option.  Note multiple eval of argument!
  */
 #define RelationHasCascadedCheckOption(relation)							\
 	((relation)->rd_options &&												\
-	 ((StdRdOptions *) (relation)->rd_options)->check_option_offset != 0 ?	\
+	 ((ViewOptions *) (relation)->rd_options)->check_option_offset != 0 ?	\
 	 strcmp((char *) (relation)->rd_options +								\
-			((StdRdOptions *) (relation)->rd_options)->check_option_offset, \
+			((ViewOptions *) (relation)->rd_options)->check_option_offset,	\
 			"cascaded") == 0 : false)
 
-/*
- * RelationIsUsedAsCatalogTable
- *		Returns whether the relation should be treated as a catalog table
- *		from the pov of logical decoding.
- */
-#define RelationIsUsedAsCatalogTable(relation)	\
-	((relation)->rd_options ?				\
-	 ((StdRdOptions *) (relation)->rd_options)->user_catalog_table : false)
 
 /*
  * RelationIsValid

@@ -721,6 +721,17 @@ SELECT pg_catalog.pg_extension_config_dump('my_config', 'WHERE NOT standard_entr
      a table as no longer a configuration table is to dissociate it from the
      extension with <command>ALTER EXTENSION ... DROP TABLE</>.
     </para>
+
+    <para>
+     Note that foreign key relationships between these tables will dictate the
+     order in which the tables are dumped out by pg_dump.  Specifically, pg_dump
+     will attempt to dump the referenced-by table before the referencing table.
+     As the foreign key relationships are set up at CREATE EXTENSION time (prior
+     to data being loaded into the tables) circular dependencies are not
+     supported.  When circular dependencies exist, the data will still be dumped
+     out but the dump will not be able to be restored directly and user
+     intervention will be required.
+    </para>
    </sect2>
 
    <sect2>
@@ -1167,12 +1178,12 @@ include $(PGXS)
     This procedure is also called a
     <indexterm><primary>VPATH</primary></indexterm><firstterm>VPATH</firstterm>
     build.  Here's how:
-    <screen>
-      <userinput>mkdir build_dir</userinput>
-      <userinput>cd build_dir</userinput>
-      <userinput>make -f /path/to/extension/source/tree/Makefile</userinput>
-      <userinput>make -f /path/to/extension/source/tree/Makefile install</userinput>
-    </screen>
+<programlisting>
+mkdir build_dir
+cd build_dir
+make -f /path/to/extension/source/tree/Makefile
+make -f /path/to/extension/source/tree/Makefile install
+</programlisting>
    </para>
 
    <para>
@@ -1180,11 +1191,11 @@ include $(PGXS)
     way to how it is done for the core code. One way to do this is using the
     core script <filename>config/prep_buildtree</>. Once this has been done
     you can build by setting the <literal>make</literal> variable
-    <varname>USE_VPATH</varname> like this:
-    <screen>
-      <userinput>make USE_VPATH=/path/to/extension/source/tree</userinput>
-      <userinput>make USE_VPATH=/path/to/extension/source/tree install</userinput>
-    </screen>
+    <varname>VPATH</varname> like this:
+<programlisting>
+make VPATH=/path/to/extension/source/tree
+make VPATH=/path/to/extension/source/tree install
+</programlisting>
     This procedure can work with a greater variety of directory layouts.
    </para>
 

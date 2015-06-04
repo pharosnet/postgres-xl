@@ -4,9 +4,10 @@
 -- pg_operator, pg_proc, pg_cast, pg_aggregate, pg_am,
 -- pg_amop, pg_amproc, pg_opclass, pg_opfamily.
 --
--- Every test failures in this file should be closely inspected. The
--- description of the failing test should be read carefully before
--- adjusting the expected output.
+-- Every test failure in this file should be closely inspected.
+-- The description of the failing test should be read carefully before
+-- adjusting the expected output.  In most cases, the queries should
+-- not find *any* matching entries.
 --
 -- NB: we assume the oidjoins test will have caught any dangling links,
 -- that is OID or REGPROC fields that are not zero and do not match some
@@ -176,8 +177,7 @@ ORDER BY 1, 2;
           25 |        1043
         1114 |        1184
         1560 |        1562
-        2277 |        2283
-(5 rows)
+(4 rows)
 
 SELECT DISTINCT p1.proargtypes[1], p2.proargtypes[1]
 FROM pg_proc AS p1, pg_proc AS p2
@@ -194,8 +194,7 @@ ORDER BY 1, 2;
           23 |          28
         1114 |        1184
         1560 |        1562
-        2277 |        2283
-(4 rows)
+(3 rows)
 
 SELECT DISTINCT p1.proargtypes[2], p2.proargtypes[2]
 FROM pg_proc AS p1, pg_proc AS p2
@@ -639,6 +638,46 @@ uuid_gt(uuid,uuid)
 uuid_ne(uuid,uuid)
 -- restore normal output mode
 \a\t
+-- List of functions used by libpq's fe-lobj.c
+--
+-- If the output of this query changes, you probably broke libpq.
+-- lo_initialize() assumes that there will be at most one match for
+-- each listed name.
+select proname, oid from pg_catalog.pg_proc
+where proname in (
+  'lo_open',
+  'lo_close',
+  'lo_creat',
+  'lo_create',
+  'lo_unlink',
+  'lo_lseek',
+  'lo_lseek64',
+  'lo_tell',
+  'lo_tell64',
+  'lo_truncate',
+  'lo_truncate64',
+  'loread',
+  'lowrite')
+and pronamespace = (select oid from pg_catalog.pg_namespace
+                    where nspname = 'pg_catalog')
+order by 1;
+    proname    | oid  
+---------------+------
+ lo_close      |  953
+ lo_creat      |  957
+ lo_create     |  715
+ lo_lseek      |  956
+ lo_lseek64    | 3170
+ lo_open       |  952
+ lo_tell       |  958
+ lo_tell64     | 3171
+ lo_truncate   | 1004
+ lo_truncate64 | 3172
+ lo_unlink     |  964
+ loread        |  954
+ lowrite       |  955
+(13 rows)
+
 -- **************** pg_cast ****************
 -- Catch bogus values in pg_cast columns (other than cases detected by
 -- oidjoins test).
@@ -804,6 +843,72 @@ WHERE p1.oprnegate = p2.oid AND
  oid | oprcode | oid | oprcode 
 -----+---------+-----+---------
 (0 rows)
+
+-- Make a list of the names of operators that are claimed to be commutator
+-- pairs.  This list will grow over time, but before accepting a new entry
+-- make sure you didn't link the wrong operators.
+SELECT DISTINCT o1.oprname AS op1, o2.oprname AS op2
+FROM pg_operator o1, pg_operator o2
+WHERE o1.oprcom = o2.oid AND o1.oprname <= o2.oprname
+ORDER BY 1, 2;
+ op1  | op2  
+------+------
+ #    | #
+ &    | &
+ &&   | &&
+ *    | *
+ *<   | *>
+ *<=  | *>=
+ *<>  | *<>
+ *=   | *=
+ +    | +
+ -|-  | -|-
+ <    | >
+ <->  | <->
+ <<   | >>
+ <<=  | >>=
+ <=   | >=
+ <>   | <>
+ <@   | @>
+ =    | =
+ ?#   | ?#
+ ?-   | ?-
+ ?-|  | ?-|
+ ?|   | ?|
+ ?||  | ?||
+ @    | ~
+ @@   | @@
+ @@@  | @@@
+ |    | |
+ ~<=~ | ~>=~
+ ~<~  | ~>~
+ ~=   | ~=
+(30 rows)
+
+-- Likewise for negator pairs.
+SELECT DISTINCT o1.oprname AS op1, o2.oprname AS op2
+FROM pg_operator o1, pg_operator o2
+WHERE o1.oprnegate = o2.oid AND o1.oprname <= o2.oprname
+ORDER BY 1, 2;
+ op1  | op2  
+------+------
+ !~   | ~
+ !~*  | ~*
+ !~~  | ~~
+ !~~* | ~~*
+ #<   | #>=
+ #<=  | #>
+ #<>  | #=
+ *<   | *>=
+ *<=  | *>
+ *<>  | *=
+ <    | >=
+ <=   | >
+ <>   | =
+ <>   | ~=
+ ~<=~ | ~>~
+ ~<~  | ~>=~
+(16 rows)
 
 -- A mergejoinable or hashjoinable operator must be binary, must return
 -- boolean, and must have a commutator (itself, unless it's a cross-type
@@ -1006,14 +1111,18 @@ SELECT p_oid, proname, prodesc FROM funcdescs
   WHERE prodesc IS DISTINCT FROM expecteddesc
     AND oprdesc NOT LIKE 'deprecated%'
 ORDER BY 1;
- p_oid |    proname    |               prodesc               
--------+---------------+-------------------------------------
-   378 | array_append  | append element onto end of array
-   379 | array_prepend | prepend element onto front of array
-  1035 | aclinsert     | add/update ACL item
-  1036 | aclremove     | remove ACL item
-  1037 | aclcontains   | contains
-(5 rows)
+ p_oid |         proname         |                     prodesc                     
+-------+-------------------------+-------------------------------------------------
+   378 | array_append            | append element onto end of array
+   379 | array_prepend           | prepend element onto front of array
+  1035 | aclinsert               | add/update ACL item
+  1036 | aclremove               | remove ACL item
+  1037 | aclcontains             | contains
+  3217 | jsonb_extract_path      | get value from jsonb with path elements
+  3940 | jsonb_extract_path_text | get value from jsonb as text with path elements
+  3951 | json_extract_path       | get value from json with path elements
+  3953 | json_extract_path_text  | get value from json as text with path elements
+(9 rows)
 
 -- **************** pg_aggregate ****************
 -- Look for illegal values in pg_aggregate fields.
@@ -1548,6 +1657,11 @@ ORDER BY 1, 2, 3;
        2742 |            9 | ?
        2742 |           10 | ?|
        2742 |           11 | ?&
+       3580 |            1 | <
+       3580 |            2 | <=
+       3580 |            3 | =
+       3580 |            4 | >=
+       3580 |            5 | >
        4000 |            1 | <<
        4000 |            1 | ~<~
        4000 |            2 | &<
@@ -1570,7 +1684,7 @@ ORDER BY 1, 2, 3;
        4000 |           15 | >
        4000 |           16 | @>
        4000 |           18 | =
-(80 rows)
+(85 rows)
 
 -- Check that all opclass search operators have selectivity estimators.
 -- This is not absolutely required, but it seems a reasonable thing
@@ -1732,11 +1846,13 @@ WHERE NOT (
   -- GIN has six support functions. 1-3 are mandatory, 5 is optional, and
   --   at least one of 4 and 6 must be given.
   -- SP-GiST has five support functions, all mandatory
+  -- BRIN has four mandatory support functions, and a bunch of optionals
   amname = 'btree' AND procnums @> '{1}' OR
   amname = 'hash' AND procnums = '{1}' OR
   amname = 'gist' AND procnums @> '{1, 2, 3, 4, 5, 6, 7}' OR
   amname = 'gin' AND (procnums @> '{1, 2, 3}' AND (procnums && '{4, 6}')) OR
-  amname = 'spgist' AND procnums = '{1, 2, 3, 4, 5}'
+  amname = 'spgist' AND procnums = '{1, 2, 3, 4, 5}' OR
+  amname = 'brin' AND procnums @> '{1, 2, 3, 4}'
 );
  amname | opfname | amproclefttype | amprocrighttype | procnums 
 --------+---------+----------------+-----------------+----------
@@ -1757,7 +1873,8 @@ WHERE NOT (
   amname = 'hash' AND procnums = '{1}' OR
   amname = 'gist' AND procnums @> '{1, 2, 3, 4, 5, 6, 7}' OR
   amname = 'gin' AND (procnums @> '{1, 2, 3}' AND (procnums && '{4, 6}')) OR
-  amname = 'spgist' AND procnums = '{1, 2, 3, 4, 5}'
+  amname = 'spgist' AND procnums = '{1, 2, 3, 4, 5}' OR
+  amname = 'brin' AND procnums @> '{1, 2, 3, 4}'
 );
  amname | opcname | procnums 
 --------+---------+----------

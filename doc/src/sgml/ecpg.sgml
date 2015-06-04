@@ -476,7 +476,7 @@ EXEC SQL COMMIT;
    In the default mode, statements are committed only when
    <command>EXEC SQL COMMIT</command> is issued. The embedded SQL
    interface also supports autocommit of transactions (similar to
-   <application>libpq</> behavior) via the <option>-t</option>
+   <application>psql</>'s default behavior) via the <option>-t</option>
    command-line option to <command>ecpg</command> (see <xref
    linkend="app-ecpg">) or via the <literal>EXEC SQL SET AUTOCOMMIT TO
    ON</literal> statement. In autocommit mode, each command is
@@ -1377,10 +1377,13 @@ EXEC SQL END DECLARE SECTION;
     <title>Arrays</title>
 
     <para>
-     SQL-level arrays are not directly supported in ECPG.  It is not
-     possible to simply map an SQL array into a C array host variable.
-     This will result in undefined behavior.  Some workarounds exist,
-     however.
+     Multi-dimensional SQL-level arrays are not directly supported in ECPG.
+     One-dimensional SQL-level arrays can be mapped into C array host
+     variables and vice-versa.  However, when creating a statement ecpg does
+     not know the types of the columns, so that it cannot check if a C array
+     is input into a corresponding SQL-level array.  When processing the
+     output of a SQL statement, ecpg has the necessary information and thus
+     checks if both are arrays.
     </para>
 
     <para>

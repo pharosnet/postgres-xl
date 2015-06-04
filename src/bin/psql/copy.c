@@ -1,7 +1,7 @@
 /*
  * psql - the PostgreSQL interactive terminal
  *
- * Copyright (c) 2000-2014, PostgreSQL Global Development Group
+ * Copyright (c) 2000-2015, PostgreSQL Global Development Group
  *
  * src/bin/psql/copy.c
  */
@@ -343,8 +343,8 @@ do_copy(const char *args)
 
 		/* make sure the specified file is not a directory */
 		if ((result = fstat(fileno(copystream), &st)) < 0)
-			psql_error("could not stat file: %s\n",
-					   strerror(errno));
+			psql_error("could not stat file \"%s\": %s\n",
+					   options->file, strerror(errno));
 
 		if (result == 0 && S_ISDIR(st.st_mode))
 			psql_error("%s: cannot copy from/to a directory\n",
@@ -517,8 +517,8 @@ bool
 handleCopyIn(PGconn *conn, FILE *copystream, bool isbinary, PGresult **res)
 {
 	bool		OK;
-	const char *prompt;
 	char		buf[COPYBUFSIZ];
+	bool		showprompt;
 
 	/*
 	 * Establish longjmp destination for exiting from wait-for-input. (This is
@@ -540,21 +540,22 @@ handleCopyIn(PGconn *conn, FILE *copystream, bool isbinary, PGresult **res)
 	/* Prompt if interactive input */
 	if (isatty(fileno(copystream)))
 	{
+		showprompt = true;
 		if (!pset.quiet)
 			puts(_("Enter data to be copied followed by a newline.\n"
 				   "End with a backslash and a period on a line by itself."));
-		prompt = get_prompt(PROMPT_COPY);
 	}
 	else
-		prompt = NULL;
+		showprompt = false;
 
 	OK = true;
 
 	if (isbinary)
 	{
 		/* interactive input probably silly, but give one prompt anyway */
-		if (prompt)
+		if (showprompt)
 		{
+			const char *prompt = get_prompt(PROMPT_COPY);
 			fputs(prompt, stdout);
 			fflush(stdout);
 		}
@@ -589,8 +590,9 @@ handleCopyIn(PGconn *conn, FILE *copystream, bool isbinary, PGresult **res)
 			bool		firstload;
 			bool		linedone;
 
-			if (prompt)
+			if (showprompt)
 			{
+				const char *prompt = get_prompt(PROMPT_COPY);
 				fputs(prompt, stdout);
 				fflush(stdout);
 			}
@@ -650,7 +652,10 @@ handleCopyIn(PGconn *conn, FILE *copystream, bool isbinary, PGresult **res)
 			}
 
 			if (copystream == pset.cur_cmd_source)
+			{
 				pset.lineno++;
+				pset.stmt_lineno++;
+			}
 		}
 	}
 

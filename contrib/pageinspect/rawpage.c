@@ -5,7 +5,7 @@
  *
  * Access-method specific inspection functions are in separate files.
  *
- * Copyright (c) 2007-2014, PostgreSQL Global Development Group
+ * Copyright (c) 2007-2015, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *	  contrib/pageinspect/rawpage.c
@@ -131,9 +131,11 @@ get_raw_page_internal(text *relname, ForkNumber forknum, BlockNumber blkno)
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot access temporary tables of other sessions")));
 
-	if (blkno >= RelationGetNumberOfBlocks(rel))
-		elog(ERROR, "block number %u is out of range for relation \"%s\"",
-			 blkno, RelationGetRelationName(rel));
+	if (blkno >= RelationGetNumberOfBlocksInFork(rel, forknum))
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("block number %u is out of range for relation \"%s\"",
+						blkno, RelationGetRelationName(rel))));
 
 	/* Initialize buffer to copy to */
 	raw_page = (bytea *) palloc(BLCKSZ + VARHDRSZ);
@@ -190,7 +192,7 @@ page_header(PG_FUNCTION_ARGS)
 	 * Check that enough data was supplied, so that we don't try to access
 	 * fields outside the supplied buffer.
 	 */
-	if (raw_page_size < sizeof(PageHeaderData))
+	if (raw_page_size < SizeOfPageHeaderData)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				 errmsg("input page too small (%d bytes)", raw_page_size)));

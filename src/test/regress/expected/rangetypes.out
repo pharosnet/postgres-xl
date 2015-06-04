@@ -260,7 +260,12 @@ select * from numrange_test where nr = '[1.1, 2.2)' ORDER BY nr;
  [1.1,2.2)
 (1 row)
 
-select * from numrange_test where nr < numrange(-1000.0, -1000.0,'[]') ORDER BY nr;
+select * from numrange_test where nr < 'empty';
+ nr 
+----
+(0 rows)
+
+select * from numrange_test where nr < numrange(-1000.0, -1000.0,'[]');
   nr   
 -------
  empty
@@ -287,7 +292,34 @@ select * from numrange_test where nr < numrange(1000.0, 1001.0,'[]') ORDER BY nr
  [3,)
 (6 rows)
 
-select * from numrange_test where nr > numrange(-1001.0, -1000.0,'[]') ORDER BY nr;
+select * from numrange_test where nr <= 'empty';
+  nr   
+-------
+ empty
+(1 row)
+
+select * from numrange_test where nr >= 'empty';
+    nr     
+-----------
+ (,)
+ [3,)
+ (,5)
+ [1.1,2.2)
+ empty
+ [1.7,1.7]
+(6 rows)
+
+select * from numrange_test where nr > 'empty';
+    nr     
+-----------
+ (,)
+ [3,)
+ (,5)
+ [1.1,2.2)
+ [1.7,1.7]
+(5 rows)
+
+select * from numrange_test where nr > numrange(-1001.0, -1000.0,'[]');
     nr     
 -----------
  [1.1,2.2)
@@ -1039,6 +1071,25 @@ select count(*) from test_range_spgist where ir -|- int4range(100,500);
 -------
      5
 (1 row)
+
+-- test index-only scans
+explain (costs off)
+select ir from test_range_spgist where ir -|- int4range(10,20) order by ir;
+                               QUERY PLAN                               
+------------------------------------------------------------------------
+ Sort
+   Sort Key: ir
+   ->  Index Only Scan using test_range_spgist_idx on test_range_spgist
+         Index Cond: (ir -|- '[10,20)'::int4range)
+(4 rows)
+
+select ir from test_range_spgist where ir -|- int4range(10,20) order by ir;
+     ir     
+------------
+ [20,30)
+ [20,30)
+ [20,10020)
+(3 rows)
 
 RESET enable_seqscan;
 RESET enable_indexscan;

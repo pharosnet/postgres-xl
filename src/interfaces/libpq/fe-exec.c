@@ -3,7 +3,7 @@
  * fe-exec.c
  *	  functions related to sending a query down to the backend
  *
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -892,7 +892,8 @@ pqSaveMessageField(PGresult *res, char code, const char *value)
 
 	pfield = (PGMessageField *)
 		pqResultAlloc(res,
-					  sizeof(PGMessageField) + strlen(value),
+					  offsetof(PGMessageField, contents) +
+					  strlen(value) + 1,
 					  TRUE);
 	if (!pfield)
 		return;					/* out of memory? */
@@ -2513,20 +2514,18 @@ PQendcopy(PGconn *conn)
  *		PQfn -	Send a function call to the POSTGRES backend.
  *
  *		conn			: backend connection
- *		fnid			: function id
- *		result_buf		: pointer to result buffer (&int if integer)
- *		result_len		: length of return value.
- *		actual_result_len: actual length returned. (differs from result_len
- *						  for varlena structures.)
- *		result_type		: If the result is an integer, this must be 1,
+ *		fnid			: OID of function to be called
+ *		result_buf		: pointer to result buffer
+ *		result_len		: actual length of result is returned here
+ *		result_is_int	: If the result is an integer, this must be 1,
  *						  otherwise this should be 0
- *		args			: pointer to an array of function arguments.
+ *		args			: pointer to an array of function arguments
  *						  (each has length, if integer, and value/pointer)
  *		nargs			: # of arguments in args array.
  *
  * RETURNS
  *		PGresult with status = PGRES_COMMAND_OK if successful.
- *			*actual_result_len is > 0 if there is a return value, 0 if not.
+ *			*result_len is > 0 if there is a return value, 0 if not.
  *		PGresult with status = PGRES_FATAL_ERROR if backend returns an error.
  *		NULL on communications failure.  conn->errorMessage will be set.
  * ----------------
@@ -2536,12 +2535,12 @@ PGresult *
 PQfn(PGconn *conn,
 	 int fnid,
 	 int *result_buf,
-	 int *actual_result_len,
+	 int *result_len,
 	 int result_is_int,
 	 const PQArgBlock *args,
 	 int nargs)
 {
-	*actual_result_len = 0;
+	*result_len = 0;
 
 	if (!conn)
 		return NULL;
@@ -2559,12 +2558,12 @@ PQfn(PGconn *conn,
 
 	if (PG_PROTOCOL_MAJOR(conn->pversion) >= 3)
 		return pqFunctionCall3(conn, fnid,
-							   result_buf, actual_result_len,
+							   result_buf, result_len,
 							   result_is_int,
 							   args, nargs);
 	else
 		return pqFunctionCall2(conn, fnid,
-							   result_buf, actual_result_len,
+							   result_buf, result_len,
 							   result_is_int,
 							   args, nargs);
 }
@@ -2910,9 +2909,9 @@ PQoidStatus(const PGresult *res)
 		return "";
 
 	len = strspn(res->cmdStatus + 7, "0123456789");
-	if (len > 23)
-		len = 23;
-	strncpy(buf, res->cmdStatus + 7, len);
+	if (len > sizeof(buf) - 1)
+		len = sizeof(buf) - 1;
+	memcpy(buf, res->cmdStatus + 7, len);
 	buf[len] = '\0';
 
 	return buf;

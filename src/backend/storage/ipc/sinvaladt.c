@@ -3,7 +3,7 @@
  * sinvaladt.c
  *	  POSTGRES shared cache invalidation data manager.
  *
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -184,12 +184,9 @@ typedef struct SISeg
 	SharedInvalidationMessage buffer[MAXNUMMESSAGES];
 
 	/*
-	 * Per-backend state info.
-	 *
-	 * We declare procState as 1 entry because C wants a fixed-size array, but
-	 * actually it is maxBackends entries long.
+	 * Per-backend invalidation state info (has MaxBackends entries).
 	 */
-	ProcState	procState[1];	/* reflects the invalidation state */
+	ProcState	procState[FLEXIBLE_ARRAY_MEMBER];
 } SISeg;
 
 static SISeg *shmInvalBuffer;	/* pointer to the shared inval buffer */
@@ -221,16 +218,12 @@ SInvalShmemSize(void)
 void
 CreateSharedInvalidationState(void)
 {
-	Size		size;
 	int			i;
 	bool		found;
 
 	/* Allocate space in shared memory */
-	size = offsetof(SISeg, procState);
-	size = add_size(size, mul_size(sizeof(ProcState), MaxBackends));
-
 	shmInvalBuffer = (SISeg *)
-		ShmemInitStruct("shmInvalBuffer", size, &found);
+		ShmemInitStruct("shmInvalBuffer", SInvalShmemSize(), &found);
 	if (found)
 		return;
 
@@ -410,9 +403,7 @@ BackendIdGetProc(int backendID)
 void
 BackendIdGetTransactionIds(int backendID, TransactionId *xid, TransactionId *xmin)
 {
-	ProcState  *stateP;
 	SISeg	   *segP = shmInvalBuffer;
-	PGXACT	   *xact;
 
 	*xid = InvalidTransactionId;
 	*xmin = InvalidTransactionId;
@@ -422,11 +413,16 @@ BackendIdGetTransactionIds(int backendID, TransactionId *xid, TransactionId *xmi
 
 	if (backendID > 0 && backendID <= segP->lastBackend)
 	{
-		stateP = &segP->procState[backendID - 1];
-		xact = &ProcGlobal->allPgXact[stateP->proc->pgprocno];
+		ProcState  *stateP = &segP->procState[backendID - 1];
+		PGPROC	   *proc = stateP->proc;
 
-		*xid = xact->xid;
-		*xmin = xact->xmin;
+		if (proc != NULL)
+		{
+			PGXACT	   *xact = &ProcGlobal->allPgXact[proc->pgprocno];
+
+			*xid = xact->xid;
+			*xmin = xact->xmin;
+		}
 	}
 
 	LWLockRelease(SInvalWriteLock);

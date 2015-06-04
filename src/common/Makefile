@@ -23,9 +23,10 @@ include $(top_builddir)/src/Makefile.global
 override CPPFLAGS := -DFRONTEND $(CPPFLAGS)
 LIBS += $(PTHREAD_LIBS)
 
-OBJS_COMMON = exec.o pgfnames.o psprintf.o relpath.o rmtree.o username.o wait_error.o
+OBJS_COMMON = exec.o pg_lzcompress.o pgfnames.o psprintf.o relpath.o \
+	rmtree.o string.o username.o wait_error.o
 
-OBJS_FRONTEND = $(OBJS_COMMON) fe_memutils.o
+OBJS_FRONTEND = $(OBJS_COMMON) fe_memutils.o restricted_token.o
 
 OBJS_SRV = $(OBJS_COMMON:%.o=%_srv.o)
 
@@ -42,6 +43,7 @@ uninstall:
 	rm -f '$(DESTDIR)$(libdir)/libpgcommon.a'
 
 libpgcommon.a: $(OBJS_FRONTEND)
+	rm -f $@
 	$(AR) $(AROPT) $@ $^
 
 #
@@ -49,6 +51,7 @@ libpgcommon.a: $(OBJS_FRONTEND)
 #
 
 libpgcommon_srv.a: $(OBJS_SRV)
+	rm -f $@
 	$(AR) $(AROPT) $@ $^
 
 # Because this uses its own compilation rule, it doesn't use the

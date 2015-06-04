@@ -4,7 +4,7 @@
  *	  POSTGRES heap tuple header definitions.
  *
  *
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/access/htup_details.h
@@ -150,12 +150,14 @@ struct HeapTupleHeaderData
 
 	/* ^ - 23 bytes - ^ */
 
-	bits8		t_bits[1];		/* bitmap of NULLs -- VARIABLE LENGTH */
+	bits8		t_bits[FLEXIBLE_ARRAY_MEMBER];	/* bitmap of NULLs */
 
 	/* MORE DATA FOLLOWS AT END OF STRUCT */
 };
 
 /* typedef appears in tupbasics.h */
+
+#define SizeofHeapTupleHeader offsetof(HeapTupleHeaderData, t_bits)
 
 /*
  * information stored in t_infomask:
@@ -498,6 +500,7 @@ do { \
  * you can, say, fit 2 tuples of size MaxHeapTupleSize/2 on the same page.
  */
 #define MaxHeapTupleSize  (BLCKSZ - MAXALIGN(SizeOfPageHeaderData + sizeof(ItemIdData)))
+#define MinHeapTupleSize  MAXALIGN(SizeofHeapTupleHeader)
 
 /*
  * MaxHeapTuplesPerPage is an upper bound on the number of tuples that can
@@ -512,7 +515,7 @@ do { \
  */
 #define MaxHeapTuplesPerPage	\
 	((int) ((BLCKSZ - SizeOfPageHeaderData) / \
-			(MAXALIGN(offsetof(HeapTupleHeaderData, t_bits)) + sizeof(ItemIdData))))
+			(MAXALIGN(SizeofHeapTupleHeader) + sizeof(ItemIdData))))
 
 /*
  * MaxAttrSize is a somewhat arbitrary upper limit on the declared size of
@@ -578,12 +581,14 @@ struct MinimalTupleData
 
 	/* ^ - 23 bytes - ^ */
 
-	bits8		t_bits[1];		/* bitmap of NULLs -- VARIABLE LENGTH */
+	bits8		t_bits[FLEXIBLE_ARRAY_MEMBER];	/* bitmap of NULLs */
 
 	/* MORE DATA FOLLOWS AT END OF STRUCT */
 };
 
 /* typedef appears in htup.h */
+
+#define SizeofMinimalTupleHeader offsetof(MinimalTupleData, t_bits)
 
 
 /*

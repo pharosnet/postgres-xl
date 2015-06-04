@@ -8,7 +8,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -27,8 +27,9 @@
 #include "optimizer/cost.h"
 #include "optimizer/pathnode.h"
 #include "optimizer/paths.h"
+#include "optimizer/planmain.h"
 #include "optimizer/restrictinfo.h"
-#include "optimizer/tlist.h"
+#include "optimizer/var.h"
 #include "parser/parsetree.h"
 #include "utils/lsyscache.h"
 #include "utils/selfuncs.h"
@@ -51,8 +52,6 @@ typedef enum
 } PathCostComparison;
 
 static List *translate_sub_tlist(List *tlist, int relid);
-static bool query_is_distinct_for(Query *query, List *colnos, List *opids);
-static Oid	distinct_col_search(int colno, List *colnos, List *opids);
 #ifdef XCP
 static void restrict_distribution(PlannerInfo *root, RestrictInfo *ri,
 								  Path *pathnode);
@@ -2212,12 +2211,7 @@ create_unique_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 	Path		sort_path;		/* dummy for result of cost_sort */
 	Path		agg_path;		/* dummy for result of cost_agg */
 	MemoryContext oldcontext;
-	List	   *in_operators;
-	List	   *uniq_exprs;
-	bool		all_btree;
-	bool		all_hash;
 	int			numCols;
-	ListCell   *lc;
 
 	/* Caller made a mistake if subpath isn't cheapest_total ... */
 	Assert(subpath == rel->cheapest_total_path);
@@ -2230,8 +2224,8 @@ create_unique_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 	if (rel->cheapest_unique_path)
 		return (UniquePath *) rel->cheapest_unique_path;
 
-	/* If we previously failed, return NULL quickly */
-	if (sjinfo->join_quals == NIL)
+	/* If it's not possible to unique-ify, return NULL */
+	if (!(sjinfo->semi_can_btree || sjinfo->semi_can_hash))
 		return NULL;
 
 	/*
@@ -2240,176 +2234,6 @@ create_unique_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 	 */
 	oldcontext = MemoryContextSwitchTo(root->planner_cxt);
 
-	/*----------
-	 * Look to see whether the semijoin's join quals consist of AND'ed
-	 * equality operators, with (only) RHS variables on only one side of
-	 * each one.  If so, we can figure out how to enforce uniqueness for
-	 * the RHS.
-	 *
-	 * Note that the input join_quals list is the list of quals that are
-	 * *syntactically* associated with the semijoin, which in practice means
-	 * the synthesized comparison list for an IN or the WHERE of an EXISTS.
-	 * Particularly in the latter case, it might contain clauses that aren't
-	 * *semantically* associated with the join, but refer to just one side or
-	 * the other.  We can ignore such clauses here, as they will just drop
-	 * down to be processed within one side or the other.  (It is okay to
-	 * consider only the syntactically-associated clauses here because for a
-	 * semijoin, no higher-level quals could refer to the RHS, and so there
-	 * can be no other quals that are semantically associated with this join.
-	 * We do things this way because it is useful to be able to run this test
-	 * before we have extracted the list of quals that are actually
-	 * semantically associated with the particular join.)
-	 *
-	 * Note that the in_operators list consists of the joinqual operators
-	 * themselves (but commuted if needed to put the RHS value on the right).
-	 * These could be cross-type operators, in which case the operator
-	 * actually needed for uniqueness is a related single-type operator.
-	 * We assume here that that operator will be available from the btree
-	 * or hash opclass when the time comes ... if not, create_unique_plan()
-	 * will fail.
-	 *----------
-	 */
-	in_operators = NIL;
-	uniq_exprs = NIL;
-	all_btree = true;
-	all_hash = enable_hashagg;	/* don't consider hash if not enabled */
-	foreach(lc, sjinfo->join_quals)
-	{
-		OpExpr	   *op = (OpExpr *) lfirst(lc);
-		Oid			opno;
-		Node	   *left_expr;
-		Node	   *right_expr;
-		Relids		left_varnos;
-		Relids		right_varnos;
-		Relids		all_varnos;
-		Oid			opinputtype;
-
-		/* Is it a binary opclause? */
-		if (!IsA(op, OpExpr) ||
-			list_length(op->args) != 2)
-		{
-			/* No, but does it reference both sides? */
-			all_varnos = pull_varnos((Node *) op);
-			if (!bms_overlap(all_varnos, sjinfo->syn_righthand) ||
-				bms_is_subset(all_varnos, sjinfo->syn_righthand))
-			{
-				/*
-				 * Clause refers to only one rel, so ignore it --- unless it
-				 * contains volatile functions, in which case we'd better
-				 * punt.
-				 */
-				if (contain_volatile_functions((Node *) op))
-					goto no_unique_path;
-				continue;
-			}
-			/* Non-operator clause referencing both sides, must punt */
-			goto no_unique_path;
-		}
-
-		/* Extract data from binary opclause */
-		opno = op->opno;
-		left_expr = linitial(op->args);
-		right_expr = lsecond(op->args);
-		left_varnos = pull_varnos(left_expr);
-		right_varnos = pull_varnos(right_expr);
-		all_varnos = bms_union(left_varnos, right_varnos);
-		opinputtype = exprType(left_expr);
-
-		/* Does it reference both sides? */
-		if (!bms_overlap(all_varnos, sjinfo->syn_righthand) ||
-			bms_is_subset(all_varnos, sjinfo->syn_righthand))
-		{
-			/*
-			 * Clause refers to only one rel, so ignore it --- unless it
-			 * contains volatile functions, in which case we'd better punt.
-			 */
-			if (contain_volatile_functions((Node *) op))
-				goto no_unique_path;
-			continue;
-		}
-
-		/* check rel membership of arguments */
-		if (!bms_is_empty(right_varnos) &&
-			bms_is_subset(right_varnos, sjinfo->syn_righthand) &&
-			!bms_overlap(left_varnos, sjinfo->syn_righthand))
-		{
-			/* typical case, right_expr is RHS variable */
-		}
-		else if (!bms_is_empty(left_varnos) &&
-				 bms_is_subset(left_varnos, sjinfo->syn_righthand) &&
-				 !bms_overlap(right_varnos, sjinfo->syn_righthand))
-		{
-			/* flipped case, left_expr is RHS variable */
-			opno = get_commutator(opno);
-			if (!OidIsValid(opno))
-				goto no_unique_path;
-			right_expr = left_expr;
-		}
-		else
-			goto no_unique_path;
-
-		/* all operators must be btree equality or hash equality */
-		if (all_btree)
-		{
-			/* oprcanmerge is considered a hint... */
-			if (!op_mergejoinable(opno, opinputtype) ||
-				get_mergejoin_opfamilies(opno) == NIL)
-				all_btree = false;
-		}
-		if (all_hash)
-		{
-			/* ... but oprcanhash had better be correct */
-			if (!op_hashjoinable(opno, opinputtype))
-				all_hash = false;
-		}
-		if (!(all_btree || all_hash))
-			goto no_unique_path;
-
-		/* so far so good, keep building lists */
-		in_operators = lappend_oid(in_operators, opno);
-		uniq_exprs = lappend(uniq_exprs, copyObject(right_expr));
-	}
-
-	/* Punt if we didn't find at least one column to unique-ify */
-	if (uniq_exprs == NIL)
-		goto no_unique_path;
-
-	/*
-	 * The expressions we'd need to unique-ify mustn't be volatile.
-	 */
-	if (contain_volatile_functions((Node *) uniq_exprs))
-		goto no_unique_path;
-
-#ifdef XCP
-	/*
-	 * We may only guarantee uniqueness if subplan is either replicated or it is
-	 * partitioned and one of the unigue expressions equals to the
-	 * distribution expression.
-	 */
-	if (subpath->distribution &&
-		!IsLocatorReplicated(subpath->distribution->distributionType))
-	{
-		/* Punt if no distribution key */
-		if (subpath->distribution->distributionExpr == NULL)
-			goto no_unique_path;
-
-		foreach(lc, uniq_exprs)
-		{
-			void *expr = lfirst(lc);
-			if (equal(expr, subpath->distribution->distributionExpr))
-				break;
-		}
-
-		/* XXX we may try and repartition if no matching expression */
-		if (!lc)
-			goto no_unique_path;
-	}
-#endif
-
-	/*
-	 * If we get here, we can unique-ify using at least one of sorting and
-	 * hashing.  Start building the result Path object.
-	 */
 	pathnode = makeNode(UniquePath);
 
 	pathnode->path.pathtype = T_Unique;
@@ -2423,8 +2247,8 @@ create_unique_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 	pathnode->path.pathkeys = NIL;
 
 	pathnode->subpath = subpath;
-	pathnode->in_operators = in_operators;
-	pathnode->uniq_exprs = uniq_exprs;
+	pathnode->in_operators = sjinfo->semi_operators;
+	pathnode->uniq_exprs = sjinfo->semi_rhs_exprs;
 
 #ifdef XCP
 	/* distribution is the same as in the subpath */
@@ -2433,13 +2257,14 @@ create_unique_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 
 	/*
 	 * If the input is a relation and it has a unique index that proves the
-	 * uniq_exprs are unique, then we don't need to do anything.  Note that
-	 * relation_has_unique_index_for automatically considers restriction
+	 * semi_rhs_exprs are unique, then we don't need to do anything.  Note
+	 * that relation_has_unique_index_for automatically considers restriction
 	 * clauses for the rel, as well.
 	 */
-	if (rel->rtekind == RTE_RELATION && all_btree &&
+	if (rel->rtekind == RTE_RELATION && sjinfo->semi_can_btree &&
 		relation_has_unique_index_for(root, rel, NIL,
-									  uniq_exprs, in_operators))
+									  sjinfo->semi_rhs_exprs,
+									  sjinfo->semi_operators))
 	{
 		pathnode->umethod = UNIQUE_PATH_NOOP;
 		pathnode->path.rows = rel->rows;
@@ -2459,40 +2284,48 @@ create_unique_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 	 * don't need to do anything.  The test for uniqueness has to consider
 	 * exactly which columns we are extracting; for example "SELECT DISTINCT
 	 * x,y" doesn't guarantee that x alone is distinct. So we cannot check for
-	 * this optimization unless uniq_exprs consists only of simple Vars
+	 * this optimization unless semi_rhs_exprs consists only of simple Vars
 	 * referencing subquery outputs.  (Possibly we could do something with
 	 * expressions in the subquery outputs, too, but for now keep it simple.)
 	 */
 	if (rel->rtekind == RTE_SUBQUERY)
 	{
 		RangeTblEntry *rte = planner_rt_fetch(rel->relid, root);
-		List	   *sub_tlist_colnos;
 
-		sub_tlist_colnos = translate_sub_tlist(uniq_exprs, rel->relid);
-
-		if (sub_tlist_colnos &&
-			query_is_distinct_for(rte->subquery,
-								  sub_tlist_colnos, in_operators))
+		if (query_supports_distinctness(rte->subquery))
 		{
-			pathnode->umethod = UNIQUE_PATH_NOOP;
-			pathnode->path.rows = rel->rows;
-			pathnode->path.startup_cost = subpath->startup_cost;
-			pathnode->path.total_cost = subpath->total_cost;
-			pathnode->path.pathkeys = subpath->pathkeys;
+			List	   *sub_tlist_colnos;
 
-			rel->cheapest_unique_path = (Path *) pathnode;
+			sub_tlist_colnos = translate_sub_tlist(sjinfo->semi_rhs_exprs,
+												   rel->relid);
 
-			MemoryContextSwitchTo(oldcontext);
+			if (sub_tlist_colnos &&
+				query_is_distinct_for(rte->subquery,
+									  sub_tlist_colnos,
+									  sjinfo->semi_operators))
+			{
+				pathnode->umethod = UNIQUE_PATH_NOOP;
+				pathnode->path.rows = rel->rows;
+				pathnode->path.startup_cost = subpath->startup_cost;
+				pathnode->path.total_cost = subpath->total_cost;
+				pathnode->path.pathkeys = subpath->pathkeys;
 
-			return pathnode;
+				rel->cheapest_unique_path = (Path *) pathnode;
+
+				MemoryContextSwitchTo(oldcontext);
+
+				return pathnode;
+			}
 		}
 	}
 
 	/* Estimate number of output rows */
-	pathnode->path.rows = estimate_num_groups(root, uniq_exprs, rel->rows);
-	numCols = list_length(uniq_exprs);
+	pathnode->path.rows = estimate_num_groups(root,
+											  sjinfo->semi_rhs_exprs,
+											  rel->rows);
+	numCols = list_length(sjinfo->semi_rhs_exprs);
 
-	if (all_btree)
+	if (sjinfo->semi_can_btree)
 	{
 		/*
 		 * Estimate cost for sort+unique implementation
@@ -2514,7 +2347,7 @@ create_unique_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 		sort_path.total_cost += cpu_operator_cost * rel->rows * numCols;
 	}
 
-	if (all_hash)
+	if (sjinfo->semi_can_hash)
 	{
 		/*
 		 * Estimate the overhead per hashtable entry at 64 bytes (same as in
@@ -2523,7 +2356,13 @@ create_unique_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 		int			hashentrysize = rel->width + 64;
 
 		if (hashentrysize * pathnode->path.rows > work_mem * 1024L)
-			all_hash = false;	/* don't try to hash */
+		{
+			/*
+			 * We should not try to hash.  Hack the SpecialJoinInfo to
+			 * remember this, in case we come through here again.
+			 */
+			sjinfo->semi_can_hash = false;
+		}
 		else
 			cost_agg(&agg_path, root,
 					 AGG_HASHED, NULL,
@@ -2533,19 +2372,23 @@ create_unique_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 					 rel->rows);
 	}
 
-	if (all_btree && all_hash)
+	if (sjinfo->semi_can_btree && sjinfo->semi_can_hash)
 	{
 		if (agg_path.total_cost < sort_path.total_cost)
 			pathnode->umethod = UNIQUE_PATH_HASH;
 		else
 			pathnode->umethod = UNIQUE_PATH_SORT;
 	}
-	else if (all_btree)
+	else if (sjinfo->semi_can_btree)
 		pathnode->umethod = UNIQUE_PATH_SORT;
-	else if (all_hash)
+	else if (sjinfo->semi_can_hash)
 		pathnode->umethod = UNIQUE_PATH_HASH;
 	else
-		goto no_unique_path;
+	{
+		/* we can get here only if we abandoned hashing above */
+		MemoryContextSwitchTo(oldcontext);
+		return NULL;
+	}
 
 	if (pathnode->umethod == UNIQUE_PATH_HASH)
 	{
@@ -2563,15 +2406,6 @@ create_unique_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 	MemoryContextSwitchTo(oldcontext);
 
 	return pathnode;
-
-no_unique_path:			/* failure exit */
-
-	/* Mark the SpecialJoinInfo as not unique-able */
-	sjinfo->join_quals = NIL;
-
-	MemoryContextSwitchTo(oldcontext);
-
-	return NULL;
 }
 
 /*
@@ -2602,150 +2436,6 @@ translate_sub_tlist(List *tlist, int relid)
 		result = lappend_int(result, var->varattno);
 	}
 	return result;
-}
-
-/*
- * query_is_distinct_for - does query never return duplicates of the
- *		specified columns?
- *
- * colnos is an integer list of output column numbers (resno's).  We are
- * interested in whether rows consisting of just these columns are certain
- * to be distinct.  "Distinctness" is defined according to whether the
- * corresponding upper-level equality operators listed in opids would think
- * the values are distinct.  (Note: the opids entries could be cross-type
- * operators, and thus not exactly the equality operators that the subquery
- * would use itself.  We use equality_ops_are_compatible() to check
- * compatibility.  That looks at btree or hash opfamily membership, and so
- * should give trustworthy answers for all operators that we might need
- * to deal with here.)
- */
-static bool
-query_is_distinct_for(Query *query, List *colnos, List *opids)
-{
-	ListCell   *l;
-	Oid			opid;
-
-	Assert(list_length(colnos) == list_length(opids));
-
-	/*
-	 * DISTINCT (including DISTINCT ON) guarantees uniqueness if all the
-	 * columns in the DISTINCT clause appear in colnos and operator semantics
-	 * match.
-	 */
-	if (query->distinctClause)
-	{
-		foreach(l, query->distinctClause)
-		{
-			SortGroupClause *sgc = (SortGroupClause *) lfirst(l);
-			TargetEntry *tle = get_sortgroupclause_tle(sgc,
-													   query->targetList);
-
-			opid = distinct_col_search(tle->resno, colnos, opids);
-			if (!OidIsValid(opid) ||
-				!equality_ops_are_compatible(opid, sgc->eqop))
-				break;			/* exit early if no match */
-		}
-		if (l == NULL)			/* had matches for all? */
-			return true;
-	}
-
-	/*
-	 * Similarly, GROUP BY guarantees uniqueness if all the grouped columns
-	 * appear in colnos and operator semantics match.
-	 */
-	if (query->groupClause)
-	{
-		foreach(l, query->groupClause)
-		{
-			SortGroupClause *sgc = (SortGroupClause *) lfirst(l);
-			TargetEntry *tle = get_sortgroupclause_tle(sgc,
-													   query->targetList);
-
-			opid = distinct_col_search(tle->resno, colnos, opids);
-			if (!OidIsValid(opid) ||
-				!equality_ops_are_compatible(opid, sgc->eqop))
-				break;			/* exit early if no match */
-		}
-		if (l == NULL)			/* had matches for all? */
-			return true;
-	}
-	else
-	{
-		/*
-		 * If we have no GROUP BY, but do have aggregates or HAVING, then the
-		 * result is at most one row so it's surely unique, for any operators.
-		 */
-		if (query->hasAggs || query->havingQual)
-			return true;
-	}
-
-	/*
-	 * UNION, INTERSECT, EXCEPT guarantee uniqueness of the whole output row,
-	 * except with ALL.
-	 */
-	if (query->setOperations)
-	{
-		SetOperationStmt *topop = (SetOperationStmt *) query->setOperations;
-
-		Assert(IsA(topop, SetOperationStmt));
-		Assert(topop->op != SETOP_NONE);
-
-		if (!topop->all)
-		{
-			ListCell   *lg;
-
-			/* We're good if all the nonjunk output columns are in colnos */
-			lg = list_head(topop->groupClauses);
-			foreach(l, query->targetList)
-			{
-				TargetEntry *tle = (TargetEntry *) lfirst(l);
-				SortGroupClause *sgc;
-
-				if (tle->resjunk)
-					continue;	/* ignore resjunk columns */
-
-				/* non-resjunk columns should have grouping clauses */
-				Assert(lg != NULL);
-				sgc = (SortGroupClause *) lfirst(lg);
-				lg = lnext(lg);
-
-				opid = distinct_col_search(tle->resno, colnos, opids);
-				if (!OidIsValid(opid) ||
-					!equality_ops_are_compatible(opid, sgc->eqop))
-					break;		/* exit early if no match */
-			}
-			if (l == NULL)		/* had matches for all? */
-				return true;
-		}
-	}
-
-	/*
-	 * XXX Are there any other cases in which we can easily see the result
-	 * must be distinct?
-	 */
-
-	return false;
-}
-
-/*
- * distinct_col_search - subroutine for query_is_distinct_for
- *
- * If colno is in colnos, return the corresponding element of opids,
- * else return InvalidOid.  (We expect colnos does not contain duplicates,
- * so the result is well-defined.)
- */
-static Oid
-distinct_col_search(int colno, List *colnos, List *opids)
-{
-	ListCell   *lc1,
-			   *lc2;
-
-	forboth(lc1, colnos, lc2, opids)
-	{
-		if (colno == lfirst_int(lc1))
-			return lfirst_oid(lc2);
-	}
-	return InvalidOid;
 }
 
 /*

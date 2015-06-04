@@ -22,7 +22,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -454,6 +454,7 @@ build_minmax_path(PlannerInfo *root, MinMaxAggInfo *mminfo,
 	ntest->arg = copyObject(mminfo->target);
 	/* we checked it wasn't a rowtype in find_minmax_aggs_walker */
 	ntest->argisrow = false;
+	ntest->location = -1;
 
 	/* User might have had that in WHERE already */
 	if (!list_member((List *) parse->jointree->quals, ntest))

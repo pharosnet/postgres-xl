@@ -8,7 +8,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -62,8 +62,9 @@ typedef struct finalize_primnode_context
 
 static Node *build_subplan(PlannerInfo *root, Plan *plan, PlannerInfo *subroot,
 			  List *plan_params,
-			  SubLinkType subLinkType, Node *testexpr,
-			  bool adjust_testexpr, bool unknownEqFalse);
+			  SubLinkType subLinkType, int subLinkId,
+			  Node *testexpr, bool adjust_testexpr,
+			  bool unknownEqFalse);
 static List *generate_subquery_params(PlannerInfo *root, List *tlist,
 						 List **paramIds);
 static List *generate_subquery_vars(PlannerInfo *root, List *tlist,
@@ -76,7 +77,7 @@ static Node *convert_testexpr_mutator(Node *node,
 static bool subplan_is_hashable(Plan *plan);
 static bool testexpr_is_hashable(Node *testexpr);
 static bool hash_ok_operator(OpExpr *expr);
-static bool simplify_EXISTS_query(Query *query);
+static bool simplify_EXISTS_query(PlannerInfo *root, Query *query);
 static Query *convert_EXISTS_to_ANY(PlannerInfo *root, Query *subselect,
 					  Node **testexpr, List **paramIds);
 static Node *replace_correlation_vars_mutator(Node *node, PlannerInfo *root);
@@ -414,7 +415,7 @@ get_first_col_type(Plan *plan, Oid *coltype, int32 *coltypmod,
 /*
  * Convert a SubLink (as created by the parser) into a SubPlan.
  *
- * We are given the SubLink's contained query, type, and testexpr.  We are
+ * We are given the SubLink's contained query, type, ID, and testexpr.  We are
  * also told if this expression appears at top level of a WHERE/HAVING qual.
  *
  * Note: we assume that the testexpr has been AND/OR flattened (actually,
@@ -422,14 +423,20 @@ get_first_col_type(Plan *plan, Oid *coltype, int32 *coltypmod,
  * implicit-AND form; and any SubLinks in it should already have been
  * converted to SubPlans.  The subquery is as yet untouched, however.
  *
- * The result is whatever we need to substitute in place of the SubLink
- * node in the executable expression.  This will be either the SubPlan
- * node (if we have to do the subplan as a subplan), or a Param node
- * representing the result of an InitPlan, or a row comparison expression
- * tree containing InitPlan Param nodes.
+ * The result is whatever we need to substitute in place of the SubLink node
+ * in the executable expression.  If we're going to do the subplan as a
+ * regular subplan, this will be the constructed SubPlan node.  If we're going
+ * to do the subplan as an InitPlan, the SubPlan node instead goes into
+ * root->init_plans, and what we return here is an expression tree
+ * representing the InitPlan's result: usually just a Param node representing
+ * a single scalar result, but possibly a row comparison tree containing
+ * multiple Param nodes, or for a MULTIEXPR subquery a simple NULL constant
+ * (since the real output Params are elsewhere in the tree, and the MULTIEXPR
+ * subquery itself is in a resjunk tlist entry whose value is uninteresting).
  */
 static Node *
-make_subplan(PlannerInfo *root, Query *orig_subquery, SubLinkType subLinkType,
+make_subplan(PlannerInfo *root, Query *orig_subquery,
+			 SubLinkType subLinkType, int subLinkId,
 			 Node *testexpr, bool isTopQual)
 {
 	Query	   *subquery;
@@ -452,15 +459,15 @@ make_subplan(PlannerInfo *root, Query *orig_subquery, SubLinkType subLinkType,
 	 * If it's an EXISTS subplan, we might be able to simplify it.
 	 */
 	if (subLinkType == EXISTS_SUBLINK)
-		simple_exists = simplify_EXISTS_query(subquery);
+		simple_exists = simplify_EXISTS_query(root, subquery);
 
 	/*
 	 * For an EXISTS subplan, tell lower-level planner to expect that only the
 	 * first tuple will be retrieved.  For ALL and ANY subplans, we will be
 	 * able to stop evaluating if the test condition fails or matches, so very
 	 * often not all the tuples will be retrieved; for lack of a better idea,
-	 * specify 50% retrieval.  For EXPR and ROWCOMPARE subplans, use default
-	 * behavior (we're only expecting one row out, anyway).
+	 * specify 50% retrieval.  For EXPR, MULTIEXPR, and ROWCOMPARE subplans,
+	 * use default behavior (we're only expecting one row out, anyway).
 	 *
 	 * NOTE: if you change these numbers, also change cost_subplan() in
 	 * path/costsize.c.
@@ -514,7 +521,8 @@ make_subplan(PlannerInfo *root, Query *orig_subquery, SubLinkType subLinkType,
 
 	/* And convert to SubPlan or InitPlan format. */
 	result = build_subplan(root, plan, subroot, plan_params,
-						   subLinkType, testexpr, true, isTopQual);
+						   subLinkType, subLinkId,
+						   testexpr, true, isTopQual);
 #ifdef PGXC
 	/* This is not necessary for a PGXC Coordinator, we just need one plan */
 	if (IS_PGXC_LOCAL_COORDINATOR)
@@ -538,7 +546,7 @@ make_subplan(PlannerInfo *root, Query *orig_subquery, SubLinkType subLinkType,
 		/* Make a second copy of the original subquery */
 		subquery = (Query *) copyObject(orig_subquery);
 		/* and re-simplify */
-		simple_exists = simplify_EXISTS_query(subquery);
+		simple_exists = simplify_EXISTS_query(root, subquery);
 		Assert(simple_exists);
 		/* See if it can be converted to an ANY query */
 		subquery = convert_EXISTS_to_ANY(root, subquery,
@@ -564,7 +572,8 @@ make_subplan(PlannerInfo *root, Query *orig_subquery, SubLinkType subLinkType,
 				/* OK, convert to SubPlan format. */
 				hashplan = (SubPlan *) build_subplan(root, plan, subroot,
 													 plan_params,
-													 ANY_SUBLINK, newtestexpr,
+													 ANY_SUBLINK, 0,
+													 newtestexpr,
 													 false, true);
 				/* Check we got what we expected */
 				Assert(IsA(hashplan, SubPlan));
@@ -587,14 +596,15 @@ make_subplan(PlannerInfo *root, Query *orig_subquery, SubLinkType subLinkType,
 /*
  * Build a SubPlan node given the raw inputs --- subroutine for make_subplan
  *
- * Returns either the SubPlan, or an expression using initplan output Params,
- * as explained in the comments for make_subplan.
+ * Returns either the SubPlan, or a replacement expression if we decide to
+ * make it an InitPlan, as explained in the comments for make_subplan.
  */
 static Node *
 build_subplan(PlannerInfo *root, Plan *plan, PlannerInfo *subroot,
 			  List *plan_params,
-			  SubLinkType subLinkType, Node *testexpr,
-			  bool adjust_testexpr, bool unknownEqFalse)
+			  SubLinkType subLinkType, int subLinkId,
+			  Node *testexpr, bool adjust_testexpr,
+			  bool unknownEqFalse)
 {
 	Node	   *result;
 	SubPlan    *splan;
@@ -643,12 +653,15 @@ build_subplan(PlannerInfo *root, Plan *plan, PlannerInfo *subroot,
 	}
 
 	/*
-	 * Un-correlated or undirect correlated plans of EXISTS, EXPR, ARRAY, or
-	 * ROWCOMPARE types can be used as initPlans.  For EXISTS, EXPR, or ARRAY,
-	 * we just produce a Param referring to the result of evaluating the
-	 * initPlan.  For ROWCOMPARE, we must modify the testexpr tree to contain
-	 * PARAM_EXEC Params instead of the PARAM_SUBLINK Params emitted by the
-	 * parser.
+	 * Un-correlated or undirect correlated plans of EXISTS, EXPR, ARRAY,
+	 * ROWCOMPARE, or MULTIEXPR types can be used as initPlans.  For EXISTS,
+	 * EXPR, or ARRAY, we return a Param referring to the result of evaluating
+	 * the initPlan.  For ROWCOMPARE, we must modify the testexpr tree to
+	 * contain PARAM_EXEC Params instead of the PARAM_SUBLINK Params emitted
+	 * by the parser, and then return that tree.  For MULTIEXPR, we return a
+	 * null constant: the resjunk targetlist item containing the SubLink does
+	 * not need to return anything useful, since the referencing Params are
+	 * elsewhere.
 	 */
 	if (splan->parParam == NIL && subLinkType == EXISTS_SUBLINK)
 	{
@@ -683,7 +696,7 @@ build_subplan(PlannerInfo *root, Plan *plan, PlannerInfo *subroot,
 
 		Assert(!te->resjunk);
 		Assert(testexpr == NULL);
-		arraytype = get_array_type(exprType((Node *) te->expr));
+		arraytype = get_promoted_array_type(exprType((Node *) te->expr));
 		if (!OidIsValid(arraytype))
 			elog(ERROR, "could not find array type for datatype %s",
 				 format_type_be(exprType((Node *) te->expr)));
@@ -714,6 +727,42 @@ build_subplan(PlannerInfo *root, Plan *plan, PlannerInfo *subroot,
 		 * The executable expression is returned to become part of the outer
 		 * plan's expression tree; it is not kept in the initplan node.
 		 */
+	}
+	else if (subLinkType == MULTIEXPR_SUBLINK)
+	{
+		/*
+		 * Whether it's an initplan or not, it needs to set a PARAM_EXEC Param
+		 * for each output column.
+		 */
+		List	   *params;
+
+		Assert(testexpr == NULL);
+		params = generate_subquery_params(root,
+										  plan->targetlist,
+										  &splan->setParam);
+
+		/*
+		 * Save the list of replacement Params in the n'th cell of
+		 * root->multiexpr_params; setrefs.c will use it to replace
+		 * PARAM_MULTIEXPR Params.
+		 */
+		while (list_length(root->multiexpr_params) < subLinkId)
+			root->multiexpr_params = lappend(root->multiexpr_params, NIL);
+		lc = list_nth_cell(root->multiexpr_params, subLinkId - 1);
+		Assert(lfirst(lc) == NIL);
+		lfirst(lc) = params;
+
+		/* It can be an initplan if there are no parParams. */
+		if (splan->parParam == NIL)
+		{
+			isInitPlan = true;
+			result = (Node *) makeNullConst(RECORDOID, -1, InvalidOid);
+		}
+		else
+		{
+			isInitPlan = false;
+			result = (Node *) splan;
+		}
 	}
 	else
 	{
@@ -788,25 +837,22 @@ build_subplan(PlannerInfo *root, Plan *plan, PlannerInfo *subroot,
 												   splan->plan_id);
 
 	/* Label the subplan for EXPLAIN purposes */
-	if (isInitPlan)
+	splan->plan_name = palloc(32 + 12 * list_length(splan->setParam));
+	sprintf(splan->plan_name, "%s %d",
+			isInitPlan ? "InitPlan" : "SubPlan",
+			splan->plan_id);
+	if (splan->setParam)
 	{
-		ListCell   *lc;
-		int			offset;
+		char	   *ptr = splan->plan_name + strlen(splan->plan_name);
 
-		splan->plan_name = palloc(32 + 12 * list_length(splan->setParam));
-		sprintf(splan->plan_name, "InitPlan %d (returns ", splan->plan_id);
-		offset = strlen(splan->plan_name);
+		ptr += sprintf(ptr, " (returns ");
 		foreach(lc, splan->setParam)
 		{
-			sprintf(splan->plan_name + offset, "$%d%s",
-					lfirst_int(lc),
-					lnext(lc) ? "," : "");
-			offset += strlen(splan->plan_name + offset);
+			ptr += sprintf(ptr, "$%d%s",
+						   lfirst_int(lc),
+						   lnext(lc) ? "," : ")");
 		}
-		sprintf(splan->plan_name + offset, ")");
 	}
-	else
-		splan->plan_name = psprintf("SubPlan %d", splan->plan_id);
 
 	/* Lastly, fill in the cost estimates for use later */
 	cost_subplan(root, splan, plan);
@@ -956,12 +1002,12 @@ subplan_is_hashable(Plan *plan)
 
 	/*
 	 * The estimated size of the subquery result must fit in work_mem. (Note:
-	 * we use sizeof(HeapTupleHeaderData) here even though the tuples will
-	 * actually be stored as MinimalTuples; this provides some fudge factor
-	 * for hashtable overhead.)
+	 * we use heap tuple overhead here even though the tuples will actually be
+	 * stored as MinimalTuples; this provides some fudge factor for hashtable
+	 * overhead.)
 	 */
 	subquery_size = plan->plan_rows *
-		(MAXALIGN(plan->plan_width) + MAXALIGN(sizeof(HeapTupleHeaderData)));
+		(MAXALIGN(plan->plan_width) + MAXALIGN(SizeofHeapTupleHeader));
 	if (subquery_size > work_mem * 1024L)
 		return false;
 
@@ -1231,6 +1277,7 @@ convert_ANY_sublink_to_join(PlannerInfo *root, SubLink *sublink,
 	RangeTblRef *rtr;
 	List	   *subquery_vars;
 	Node	   *quals;
+	ParseState *pstate;
 
 	Assert(sublink->subLinkType == ANY_SUBLINK);
 
@@ -1262,6 +1309,9 @@ convert_ANY_sublink_to_join(PlannerInfo *root, SubLink *sublink,
 	if (contain_volatile_functions(sublink->testexpr))
 		return NULL;
 
+	/* Create a dummy ParseState for addRangeTableEntryForSubquery */
+	pstate = make_parsestate(NULL);
+
 	/*
 	 * Okay, pull up the sub-select into upper range table.
 	 *
@@ -1270,7 +1320,7 @@ convert_ANY_sublink_to_join(PlannerInfo *root, SubLink *sublink,
 	 * below). Therefore this is a lot easier than what pull_up_subqueries has
 	 * to go through.
 	 */
-	rte = addRangeTableEntryForSubquery(NULL,
+	rte = addRangeTableEntryForSubquery(pstate,
 										subselect,
 										makeAlias("ANY_subquery", NIL),
 										false,
@@ -1357,7 +1407,7 @@ convert_EXISTS_sublink_to_join(PlannerInfo *root, SubLink *sublink,
 	 * targetlist, we have to fail, because the pullup operation leaves us
 	 * with noplace to evaluate the targetlist.
 	 */
-	if (!simplify_EXISTS_query(subselect))
+	if (!simplify_EXISTS_query(root, subselect))
 		return NULL;
 
 	/*
@@ -1484,13 +1534,14 @@ convert_EXISTS_sublink_to_join(PlannerInfo *root, SubLink *sublink,
  * Returns TRUE if was able to discard the targetlist, else FALSE.
  */
 static bool
-simplify_EXISTS_query(Query *query)
+simplify_EXISTS_query(PlannerInfo *root, Query *query)
 {
 	/*
 	 * We don't try to simplify at all if the query uses set operations,
-	 * aggregates, modifying CTEs, HAVING, LIMIT/OFFSET, or FOR UPDATE/SHARE;
-	 * none of these seem likely in normal usage and their possible effects
-	 * are complex.
+	 * aggregates, modifying CTEs, HAVING, OFFSET, or FOR UPDATE/SHARE; none
+	 * of these seem likely in normal usage and their possible effects are
+	 * complex.  (Note: we could ignore an "OFFSET 0" clause, but that
+	 * traditionally is used as an optimization fence, so we don't.)
 	 */
 	if (query->commandType != CMD_SELECT ||
 		query->setOperations ||
@@ -1499,9 +1550,42 @@ simplify_EXISTS_query(Query *query)
 		query->hasModifyingCTE ||
 		query->havingQual ||
 		query->limitOffset ||
-		query->limitCount ||
 		query->rowMarks)
 		return false;
+
+	/*
+	 * LIMIT with a constant positive (or NULL) value doesn't affect the
+	 * semantics of EXISTS, so let's ignore such clauses.  This is worth doing
+	 * because people accustomed to certain other DBMSes may be in the habit
+	 * of writing EXISTS(SELECT ... LIMIT 1) as an optimization.  If there's a
+	 * LIMIT with anything else as argument, though, we can't simplify.
+	 */
+	if (query->limitCount)
+	{
+		/*
+		 * The LIMIT clause has not yet been through eval_const_expressions,
+		 * so we have to apply that here.  It might seem like this is a waste
+		 * of cycles, since the only case plausibly worth worrying about is
+		 * "LIMIT 1" ... but what we'll actually see is "LIMIT int8(1::int4)",
+		 * so we have to fold constants or we're not going to recognize it.
+		 */
+		Node	   *node = eval_const_expressions(root, query->limitCount);
+		Const	   *limit;
+
+		/* Might as well update the query if we simplified the clause. */
+		query->limitCount = node;
+
+		if (!IsA(node, Const))
+			return false;
+
+		limit = (Const *) node;
+		Assert(limit->consttype == INT8OID);
+		if (!limit->constisnull && DatumGetInt64(limit->constvalue) <= 0)
+			return false;
+
+		/* Whether or not the targetlist is safe, we can drop the LIMIT. */
+		query->limitCount = NULL;
+	}
 
 	/*
 	 * Mustn't throw away the targetlist if it contains set-returning
@@ -1860,6 +1944,7 @@ process_sublinks_mutator(Node *node, process_sublinks_context *context)
 		return make_subplan(context->root,
 							(Query *) sublink->subselect,
 							sublink->subLinkType,
+							sublink->subLinkId,
 							testexpr,
 							context->isTopQual);
 	}
@@ -2276,6 +2361,12 @@ finalize_plan(PlannerInfo *root, Plan *plan, Bitmapset *valid_params,
 
 		case T_ForeignScan:
 			finalize_primnode((Node *) ((ForeignScan *) plan)->fdw_exprs,
+							  &context);
+			context.paramids = bms_add_members(context.paramids, scan_params);
+			break;
+
+		case T_CustomScan:
+			finalize_primnode((Node *) ((CustomScan *) plan)->custom_exprs,
 							  &context);
 			context.paramids = bms_add_members(context.paramids, scan_params);
 			break;

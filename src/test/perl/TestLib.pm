@@ -6,6 +6,8 @@ use warnings;
 use Exporter 'import';
 our @EXPORT = qw(
   tempdir
+  tempdir_short
+  standard_initdb
   start_test_server
   restart_test_server
   psql
@@ -24,19 +26,15 @@ our @EXPORT = qw(
 use Cwd;
 use File::Spec;
 use File::Temp ();
+use IPC::Run qw(run start);
 use Test::More;
 
-BEGIN
-{
-	eval {
-		require IPC::Run;
-		import IPC::Run qw(run start);
-		1;
-	} or do
-	{
-		plan skip_all => "IPC::Run not available";
-	  }
-}
+
+# Set to untranslated messages, to be able to compare program output
+# with expected strings.
+delete $ENV{LANGUAGE};
+delete $ENV{LC_ALL};
+$ENV{LC_MESSAGES} = 'C';
 
 delete $ENV{PGCONNECT_TIMEOUT};
 delete $ENV{PGDATA};
@@ -62,7 +60,22 @@ $ENV{PGPORT} = int($ENV{PGPORT}) % 65536;
 
 sub tempdir
 {
-	return File::Temp::tempdir('testXXXX', DIR => cwd(), CLEANUP => 1);
+	return File::Temp::tempdir('tmp_testXXXX', DIR => $ENV{TESTDIR} || cwd(), CLEANUP => 1);
+}
+
+sub tempdir_short
+{
+	# Use a separate temp dir outside the build tree for the
+	# Unix-domain socket, to avoid file name length issues.
+	return File::Temp::tempdir(CLEANUP => 1);
+}
+
+sub standard_initdb
+{
+	my $pgdata = shift;
+	system_or_bail("initdb -D '$pgdata' -A trust -N >/dev/null");
+	system_or_bail("$ENV{top_builddir}/src/test/regress/pg_regress",
+				   '--config-auth', $pgdata);
 }
 
 my ($test_server_datadir, $test_server_logfile);
@@ -72,10 +85,12 @@ sub start_test_server
 	my ($tempdir) = @_;
 	my $ret;
 
-	system "initdb -D $tempdir/pgdata -A trust -N >/dev/null";
+	my $tempdir_short = tempdir_short;
+
+	standard_initdb "$tempdir/pgdata";
 	$ret = system 'pg_ctl', '-D', "$tempdir/pgdata", '-s', '-w', '-l',
 	  "$tempdir/logfile", '-o',
-	  "--fsync=off -k $tempdir --listen-addresses='' --log-statement=all",
+	  "--fsync=off -k $tempdir_short --listen-addresses='' --log-statement=all",
 	  'start';
 
 	if ($ret != 0)
@@ -84,7 +99,7 @@ sub start_test_server
 		BAIL_OUT("pg_ctl failed");
 	}
 
-	$ENV{PGHOST}         = $tempdir;
+	$ENV{PGHOST}         = $tempdir_short;
 	$test_server_datadir = "$tempdir/pgdata";
 	$test_server_logfile = "$tempdir/logfile";
 }
@@ -149,67 +164,51 @@ sub command_exit_is
 sub program_help_ok
 {
 	my ($cmd) = @_;
-	subtest "$cmd --help" => sub {
-		plan tests => 3;
-		my ($stdout, $stderr);
-		my $result = run [ $cmd, '--help' ], '>', \$stdout, '2>', \$stderr;
-		ok($result, "$cmd --help exit code 0");
-		isnt($stdout, '', "$cmd --help goes to stdout");
-		is($stderr, '', "$cmd --help nothing to stderr");
-	};
+	my ($stdout, $stderr);
+	my $result = run [ $cmd, '--help' ], '>', \$stdout, '2>', \$stderr;
+	ok($result, "$cmd --help exit code 0");
+	isnt($stdout, '', "$cmd --help goes to stdout");
+	is($stderr, '', "$cmd --help nothing to stderr");
 }
 
 sub program_version_ok
 {
 	my ($cmd) = @_;
-	subtest "$cmd --version" => sub {
-		plan tests => 3;
-		my ($stdout, $stderr);
-		my $result = run [ $cmd, '--version' ], '>', \$stdout, '2>', \$stderr;
-		ok($result, "$cmd --version exit code 0");
-		isnt($stdout, '', "$cmd --version goes to stdout");
-		is($stderr, '', "$cmd --version nothing to stderr");
-	};
+	my ($stdout, $stderr);
+	my $result = run [ $cmd, '--version' ], '>', \$stdout, '2>', \$stderr;
+	ok($result, "$cmd --version exit code 0");
+	isnt($stdout, '', "$cmd --version goes to stdout");
+	is($stderr, '', "$cmd --version nothing to stderr");
 }
 
 sub program_options_handling_ok
 {
 	my ($cmd) = @_;
-	subtest "$cmd options handling" => sub {
-		plan tests => 2;
-		my ($stdout, $stderr);
-		my $result = run [ $cmd, '--not-a-valid-option' ], '>', \$stdout,
-		  '2>', \$stderr;
-		ok(!$result, "$cmd with invalid option nonzero exit code");
-		isnt($stderr, '', "$cmd with invalid option prints error message");
-	};
+	my ($stdout, $stderr);
+	my $result = run [ $cmd, '--not-a-valid-option' ], '>', \$stdout, '2>', \$stderr;
+	ok(!$result, "$cmd with invalid option nonzero exit code");
+	isnt($stderr, '', "$cmd with invalid option prints error message");
 }
 
 sub command_like
 {
 	my ($cmd, $expected_stdout, $test_name) = @_;
-	subtest $test_name => sub {
-		plan tests => 3;
-		my ($stdout, $stderr);
-		my $result = run $cmd, '>', \$stdout, '2>', \$stderr;
-		ok($result, "@$cmd exit code 0");
-		is($stderr, '', "@$cmd no stderr");
-		like($stdout, $expected_stdout, "$test_name: matches");
-	};
+	my ($stdout, $stderr);
+	my $result = run $cmd, '>', \$stdout, '2>', \$stderr;
+	ok($result, "@$cmd exit code 0");
+	is($stderr, '', "@$cmd no stderr");
+	like($stdout, $expected_stdout, "$test_name: matches");
 }
 
 sub issues_sql_like
 {
 	my ($cmd, $expected_sql, $test_name) = @_;
-	subtest $test_name => sub {
-		plan tests => 2;
-		my ($stdout, $stderr);
-		truncate $test_server_logfile, 0;
-		my $result = run $cmd, '>', \$stdout, '2>', \$stderr;
-		ok($result, "@$cmd exit code 0");
-		my $log = `cat $test_server_logfile`;
-		like($log, $expected_sql, "$test_name: SQL found in server log");
-	};
+	my ($stdout, $stderr);
+	truncate $test_server_logfile, 0;
+	my $result = run $cmd, '>', \$stdout, '2>', \$stderr;
+	ok($result, "@$cmd exit code 0");
+	my $log = `cat '$test_server_logfile'`;
+	like($log, $expected_sql, "$test_name: SQL found in server log");
 }
 
 1;

@@ -3,7 +3,7 @@
  * rewriteHandler.c
  *		Primary module of query rewriter.
  *
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -25,6 +25,7 @@
 #include "rewrite/rewriteDefine.h"
 #include "rewrite/rewriteHandler.h"
 #include "rewrite/rewriteManip.h"
+#include "rewrite/rowsecurity.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
@@ -74,7 +75,8 @@ static void rewriteValuesRTE(RangeTblEntry *rte, Relation target_relation,
 static void rewriteTargetListUD(Query *parsetree, RangeTblEntry *target_rte,
 					Relation target_relation);
 static void markQueryForLocking(Query *qry, Node *jtnode,
-				  LockClauseStrength strength, bool noWait, bool pushedDown);
+					LockClauseStrength strength, LockWaitPolicy waitPolicy,
+					bool pushedDown);
 static List *matchLocks(CmdType event, RuleLock *rulelocks,
 		   int varno, Query *parsetree);
 static Query *fireRIRrules(Query *parsetree, List *activeRIRs,
@@ -684,7 +686,7 @@ adjustJoinTreeList(Query *parsetree, bool removert, int rt_index)
  *			UPDATE table SET foo[2] = 42, foo[4] = 43;
  * We can merge such operations into a single assignment op.  Essentially,
  * the expression we want to produce in this case is like
- *		foo = array_set(array_set(foo, 2, 42), 4, 43)
+ *		foo = array_set_element(array_set_element(foo, 2, 42), 4, 43)
  *
  * 4. Sort the tlist into standard order: non-junk fields in order by resno,
  * then junk fields (these in no particular order).
@@ -905,13 +907,13 @@ process_matched_tle(TargetEntry *src_tle,
 	 *		UPDATE tab SET col.fld1.subfld1 = x, col.fld2.subfld2 = y
 	 * The two expressions produced by the parser will look like
 	 *		FieldStore(col, fld1, FieldStore(placeholder, subfld1, x))
-	 *		FieldStore(col, fld2, FieldStore(placeholder, subfld2, x))
+	 *		FieldStore(col, fld2, FieldStore(placeholder, subfld2, y))
 	 * However, we can ignore the substructure and just consider the top
 	 * FieldStore or ArrayRef from each assignment, because it works to
 	 * combine these as
 	 *		FieldStore(FieldStore(col, fld1,
 	 *							  FieldStore(placeholder, subfld1, x)),
-	 *				   fld2, FieldStore(placeholder, subfld2, x))
+	 *				   fld2, FieldStore(placeholder, subfld2, y))
 	 * Note the leftmost expression goes on the inside so that the
 	 * assignments appear to occur left-to-right.
 	 *
@@ -1633,7 +1635,7 @@ ApplyRetrieveRule(Query *parsetree,
 	 */
 	if (rc != NULL)
 		markQueryForLocking(rule_action, (Node *) rule_action->jointree,
-							rc->strength, rc->noWait, true);
+							rc->strength, rc->waitPolicy, true);
 
 	return parsetree;
 }
@@ -1651,7 +1653,8 @@ ApplyRetrieveRule(Query *parsetree,
  */
 static void
 markQueryForLocking(Query *qry, Node *jtnode,
-					LockClauseStrength strength, bool noWait, bool pushedDown)
+					LockClauseStrength strength, LockWaitPolicy waitPolicy,
+					bool pushedDown)
 {
 	if (jtnode == NULL)
 		return;
@@ -1662,15 +1665,15 @@ markQueryForLocking(Query *qry, Node *jtnode,
 
 		if (rte->rtekind == RTE_RELATION)
 		{
-			applyLockingClause(qry, rti, strength, noWait, pushedDown);
+			applyLockingClause(qry, rti, strength, waitPolicy, pushedDown);
 			rte->requiredPerms |= ACL_SELECT_FOR_UPDATE;
 		}
 		else if (rte->rtekind == RTE_SUBQUERY)
 		{
-			applyLockingClause(qry, rti, strength, noWait, pushedDown);
+			applyLockingClause(qry, rti, strength, waitPolicy, pushedDown);
 			/* FOR UPDATE/SHARE of subquery is propagated to subquery's rels */
 			markQueryForLocking(rte->subquery, (Node *) rte->subquery->jointree,
-								strength, noWait, true);
+								strength, waitPolicy, true);
 		}
 		/* other RTE types are unaffected by FOR UPDATE */
 	}
@@ -1680,14 +1683,14 @@ markQueryForLocking(Query *qry, Node *jtnode,
 		ListCell   *l;
 
 		foreach(l, f->fromlist)
-			markQueryForLocking(qry, lfirst(l), strength, noWait, pushedDown);
+			markQueryForLocking(qry, lfirst(l), strength, waitPolicy, pushedDown);
 	}
 	else if (IsA(jtnode, JoinExpr))
 	{
 		JoinExpr   *j = (JoinExpr *) jtnode;
 
-		markQueryForLocking(qry, j->larg, strength, noWait, pushedDown);
-		markQueryForLocking(qry, j->rarg, strength, noWait, pushedDown);
+		markQueryForLocking(qry, j->larg, strength, waitPolicy, pushedDown);
+		markQueryForLocking(qry, j->rarg, strength, waitPolicy, pushedDown);
 	}
 	else
 		elog(ERROR, "unrecognized node type: %d",
@@ -1822,48 +1825,91 @@ fireRIRrules(Query *parsetree, List *activeRIRs, bool forUpdatePushedDown)
 		 * Collect the RIR rules that we must apply
 		 */
 		rules = rel->rd_rules;
-		if (rules == NULL)
+		if (rules != NULL)
 		{
-			heap_close(rel, NoLock);
-			continue;
-		}
-		locks = NIL;
-		for (i = 0; i < rules->numLocks; i++)
-		{
-			rule = rules->rules[i];
-			if (rule->event != CMD_SELECT)
-				continue;
-
-			locks = lappend(locks, rule);
-		}
-
-		/*
-		 * If we found any, apply them --- but first check for recursion!
-		 */
-		if (locks != NIL)
-		{
-			ListCell   *l;
-
-			if (list_member_oid(activeRIRs, RelationGetRelid(rel)))
-				ereport(ERROR,
-						(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
-						 errmsg("infinite recursion detected in rules for relation \"%s\"",
-								RelationGetRelationName(rel))));
-			activeRIRs = lcons_oid(RelationGetRelid(rel), activeRIRs);
-
-			foreach(l, locks)
+			locks = NIL;
+			for (i = 0; i < rules->numLocks; i++)
 			{
-				rule = lfirst(l);
+				rule = rules->rules[i];
+				if (rule->event != CMD_SELECT)
+					continue;
 
-				parsetree = ApplyRetrieveRule(parsetree,
-											  rule,
-											  rt_index,
-											  rel,
-											  activeRIRs,
-											  forUpdatePushedDown);
+				locks = lappend(locks, rule);
 			}
 
-			activeRIRs = list_delete_first(activeRIRs);
+			/*
+			 * If we found any, apply them --- but first check for recursion!
+			 */
+			if (locks != NIL)
+			{
+				ListCell   *l;
+
+				if (list_member_oid(activeRIRs, RelationGetRelid(rel)))
+					ereport(ERROR,
+							(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
+							 errmsg("infinite recursion detected in rules for relation \"%s\"",
+									RelationGetRelationName(rel))));
+				activeRIRs = lcons_oid(RelationGetRelid(rel), activeRIRs);
+
+				foreach(l, locks)
+				{
+					rule = lfirst(l);
+
+					parsetree = ApplyRetrieveRule(parsetree,
+												  rule,
+												  rt_index,
+												  rel,
+												  activeRIRs,
+												  forUpdatePushedDown);
+				}
+
+				activeRIRs = list_delete_first(activeRIRs);
+			}
+		}
+		/*
+		 * If the RTE has row security quals, apply them and recurse into the
+		 * securityQuals.
+		 */
+		if (prepend_row_security_policies(parsetree, rte, rt_index))
+		{
+			/*
+			 * We applied security quals, check for infinite recursion and
+			 * then expand any nested queries.
+			 */
+			if (list_member_oid(activeRIRs, RelationGetRelid(rel)))
+					ereport(ERROR,
+							(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
+							 errmsg("infinite recursion detected in policy for relation \"%s\"",
+									RelationGetRelationName(rel))));
+
+			/*
+			 * Make sure we check for recursion in either securityQuals or
+			 * WITH CHECK quals.
+			 */
+			if (rte->securityQuals != NIL)
+			{
+				activeRIRs = lcons_oid(RelationGetRelid(rel), activeRIRs);
+
+				expression_tree_walker( (Node*) rte->securityQuals,
+										fireRIRonSubLink, (void*)activeRIRs );
+
+				activeRIRs = list_delete_first(activeRIRs);
+			}
+
+			if (parsetree->withCheckOptions != NIL)
+			{
+				WithCheckOption    *wco;
+				List			   *quals = NIL;
+
+				wco = (WithCheckOption *) makeNode(WithCheckOption);
+				quals = lcons(wco->qual, quals);
+
+				activeRIRs = lcons_oid(RelationGetRelid(rel), activeRIRs);
+
+				expression_tree_walker( (Node*) quals, fireRIRonSubLink,
+									   (void*)activeRIRs);
+			}
+
 		}
 
 		heap_close(rel, NoLock);
@@ -2240,10 +2286,10 @@ view_query_is_auto_updatable(Query *viewquery, bool check_cols)
 	 * unique row in the underlying base relation.
 	 */
 	if (viewquery->hasAggs)
-		return gettext_noop("Views that return aggregate functions are not automatically updatable");
+		return gettext_noop("Views that return aggregate functions are not automatically updatable.");
 
 	if (viewquery->hasWindowFuncs)
-		return gettext_noop("Views that return window functions are not automatically updatable");
+		return gettext_noop("Views that return window functions are not automatically updatable.");
 
 	if (expression_returns_set((Node *) viewquery->targetList))
 		return gettext_noop("Views that return set-returning functions are not automatically updatable.");
@@ -2562,11 +2608,10 @@ static Bitmapset *
 adjust_view_column_set(Bitmapset *cols, List *targetlist)
 {
 	Bitmapset  *result = NULL;
-	Bitmapset  *tmpcols;
-	AttrNumber	col;
+	int			col;
 
-	tmpcols = bms_copy(cols);
-	while ((col = bms_first_member(tmpcols)) >= 0)
+	col = -1;
+	while ((col = bms_next_member(cols, col)) >= 0)
 	{
 		/* bit numbers are offset by FirstLowInvalidHeapAttributeNumber */
 		AttrNumber	attno = col + FirstLowInvalidHeapAttributeNumber;
@@ -2616,7 +2661,6 @@ adjust_view_column_set(Bitmapset *cols, List *targetlist)
 					 attno);
 		}
 	}
-	bms_free(tmpcols);
 
 	return result;
 }

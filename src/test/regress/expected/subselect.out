@@ -230,6 +230,46 @@ from int8_tbl group by q1 order by q1;
 (2 rows)
 
 --
+-- Check EXISTS simplification with LIMIT
+--
+explain (costs off)
+select * from int4_tbl o where exists
+  (select 1 from int4_tbl i where i.f1=o.f1 limit null);
+             QUERY PLAN             
+------------------------------------
+ Hash Semi Join
+   Hash Cond: (o.f1 = i.f1)
+   ->  Seq Scan on int4_tbl o
+   ->  Hash
+         ->  Seq Scan on int4_tbl i
+(5 rows)
+
+explain (costs off)
+select * from int4_tbl o where not exists
+  (select 1 from int4_tbl i where i.f1=o.f1 limit 1);
+             QUERY PLAN             
+------------------------------------
+ Hash Anti Join
+   Hash Cond: (o.f1 = i.f1)
+   ->  Seq Scan on int4_tbl o
+   ->  Hash
+         ->  Seq Scan on int4_tbl i
+(5 rows)
+
+explain (costs off)
+select * from int4_tbl o where exists
+  (select 1 from int4_tbl i where i.f1=o.f1 limit 0);
+              QUERY PLAN              
+--------------------------------------
+ Seq Scan on int4_tbl o
+   Filter: (SubPlan 1)
+   SubPlan 1
+     ->  Limit
+           ->  Seq Scan on int4_tbl i
+                 Filter: (f1 = o.f1)
+(6 rows)
+
+--
 -- Test cases to catch unpleasant interactions between IN-join processing
 -- and subquery pullup.
 --
@@ -750,5 +790,87 @@ select * from int4_tbl where
  f1 
 ----
   0
+(1 row)
+
+--
+-- Check for incorrect optimization when IN subquery contains a SRF
+--
+explain (verbose, costs off)
+select * from int4_tbl o where (f1, f1) in
+  (select f1, generate_series(1,2) / 10 g from int4_tbl i group by f1);
+                              QUERY PLAN                              
+----------------------------------------------------------------------
+ Hash Join
+   Output: o.f1
+   Hash Cond: (o.f1 = "ANY_subquery".f1)
+   ->  Seq Scan on public.int4_tbl o
+         Output: o.f1
+   ->  Hash
+         Output: "ANY_subquery".f1, "ANY_subquery".g
+         ->  HashAggregate
+               Output: "ANY_subquery".f1, "ANY_subquery".g
+               Group Key: "ANY_subquery".f1, "ANY_subquery".g
+               ->  Subquery Scan on "ANY_subquery"
+                     Output: "ANY_subquery".f1, "ANY_subquery".g
+                     Filter: ("ANY_subquery".f1 = "ANY_subquery".g)
+                     ->  HashAggregate
+                           Output: i.f1, (generate_series(1, 2) / 10)
+                           Group Key: i.f1
+                           ->  Seq Scan on public.int4_tbl i
+                                 Output: i.f1
+(18 rows)
+
+select * from int4_tbl o where (f1, f1) in
+  (select f1, generate_series(1,2) / 10 g from int4_tbl i group by f1);
+ f1 
+----
+  0
+(1 row)
+
+--
+-- check for over-optimization of whole-row Var referencing an Append plan
+--
+select (select q from
+         (select 1,2,3 where f1 > 0
+          union all
+          select 4,5,6.0 where f1 <= 0
+         ) q )
+from int4_tbl;
+     q     
+-----------
+ (4,5,6.0)
+ (1,2,3)
+ (4,5,6.0)
+ (1,2,3)
+ (4,5,6.0)
+(5 rows)
+
+--
+-- Check that volatile quals aren't pushed down past a DISTINCT:
+-- nextval() should not be called more than the nominal number of times
+--
+create temp sequence ts1;
+select * from
+  (select distinct ten from tenk1) ss
+  where ten < 10 + nextval('ts1')
+  order by 1;
+ ten 
+-----
+   0
+   1
+   2
+   3
+   4
+   5
+   6
+   7
+   8
+   9
+(10 rows)
+
+select nextval('ts1');
+ nextval 
+---------
+      11
 (1 row)
 

@@ -6,7 +6,7 @@
  *	  changes should be made with care.
  *
  *
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/access/gist.h
@@ -33,7 +33,8 @@
 #define GIST_PICKSPLIT_PROC				6
 #define GIST_EQUAL_PROC					7
 #define GIST_DISTANCE_PROC				8
-#define GISTNProcs						8
+#define GIST_FETCH_PROC					9
+#define GISTNProcs					9
 
 /*
  * strategy numbers for GiST opclasses that want to implement the old
@@ -147,8 +148,6 @@ typedef struct GISTENTRY
 
 #define GistPageIsLeaf(page)	( GistPageGetOpaque(page)->flags & F_LEAF)
 #define GIST_LEAF(entry) (GistPageIsLeaf((entry)->page))
-#define GistPageSetLeaf(page)	( GistPageGetOpaque(page)->flags |= F_LEAF)
-#define GistPageSetNonLeaf(page)	( GistPageGetOpaque(page)->flags &= ~F_LEAF)
 
 #define GistPageIsDeleted(page) ( GistPageGetOpaque(page)->flags & F_DELETED)
 #define GistPageSetDeleted(page)	( GistPageGetOpaque(page)->flags |= F_DELETED)

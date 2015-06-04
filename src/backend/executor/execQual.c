@@ -3,7 +3,7 @@
  * execQual.c
  *	  Routines to evaluate qualification and targetlist expressions
  *
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -41,7 +41,6 @@
 #include "access/tupconvert.h"
 #include "catalog/objectaccess.h"
 #include "catalog/pg_type.h"
-#include "commands/typecmds.h"
 #include "executor/execdebug.h"
 #include "executor/nodeSubplan.h"
 #include "funcapi.h"
@@ -50,6 +49,7 @@
 #include "nodes/nodeFuncs.h"
 #include "optimizer/planner.h"
 #include "parser/parse_coerce.h"
+#include "parser/parsetree.h"
 #include "pgstat.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
@@ -251,12 +251,6 @@ static Datum ExecEvalCurrentOfExpr(ExprState *exprstate, ExprContext *econtext,
  *
  * NOTE: if we get a NULL result from a subscript expression, we return NULL
  * when it's an array reference, or raise an error when it's an assignment.
- *
- * NOTE: we deliberately refrain from applying DatumGetArrayTypeP() here,
- * even though that might seem natural, because this code needs to support
- * both varlena arrays and fixed-length array types.  DatumGetArrayTypeP()
- * only works for the varlena kind.  The routines we call in arrayfuncs.c
- * have to know the difference (that's what they need refattrlength for).
  *----------
  */
 static Datum
@@ -266,8 +260,7 @@ ExecEvalArrayRef(ArrayRefExprState *astate,
 				 ExprDoneCond *isDone)
 {
 	ArrayRef   *arrayRef = (ArrayRef *) astate->xprstate.expr;
-	ArrayType  *array_source;
-	ArrayType  *resultArray;
+	Datum		array_source;
 	bool		isAssignment = (arrayRef->refassgnexpr != NULL);
 	bool		eisnull;
 	ListCell   *l;
@@ -277,11 +270,10 @@ ExecEvalArrayRef(ArrayRefExprState *astate,
 				lower;
 	int		   *lIndex;
 
-	array_source = (ArrayType *)
-		DatumGetPointer(ExecEvalExpr(astate->refexpr,
-									 econtext,
-									 isNull,
-									 isDone));
+	array_source = ExecEvalExpr(astate->refexpr,
+								econtext,
+								isNull,
+								isDone);
 
 	/*
 	 * If refexpr yields NULL, and it's a fetch, then result is NULL. In the
@@ -389,23 +381,24 @@ ExecEvalArrayRef(ArrayRefExprState *astate,
 			}
 			else if (lIndex == NULL)
 			{
-				econtext->caseValue_datum = array_ref(array_source, i,
-													  upper.indx,
-													  astate->refattrlength,
-													  astate->refelemlength,
-													  astate->refelembyval,
-													  astate->refelemalign,
-												&econtext->caseValue_isNull);
+				econtext->caseValue_datum =
+					array_get_element(array_source, i,
+									  upper.indx,
+									  astate->refattrlength,
+									  astate->refelemlength,
+									  astate->refelembyval,
+									  astate->refelemalign,
+									  &econtext->caseValue_isNull);
 			}
 			else
 			{
-				resultArray = array_get_slice(array_source, i,
-											  upper.indx, lower.indx,
-											  astate->refattrlength,
-											  astate->refelemlength,
-											  astate->refelembyval,
-											  astate->refelemalign);
-				econtext->caseValue_datum = PointerGetDatum(resultArray);
+				econtext->caseValue_datum =
+					array_get_slice(array_source, i,
+									upper.indx, lower.indx,
+									astate->refattrlength,
+									astate->refelemlength,
+									astate->refelembyval,
+									astate->refelemalign);
 				econtext->caseValue_isNull = false;
 			}
 		}
@@ -434,7 +427,7 @@ ExecEvalArrayRef(ArrayRefExprState *astate,
 		 */
 		if (astate->refattrlength > 0)	/* fixed-length array? */
 			if (eisnull || *isNull)
-				return PointerGetDatum(array_source);
+				return array_source;
 
 		/*
 		 * For assignment to varlena arrays, we handle a NULL original array
@@ -444,48 +437,45 @@ ExecEvalArrayRef(ArrayRefExprState *astate,
 		 */
 		if (*isNull)
 		{
-			array_source = construct_empty_array(arrayRef->refelemtype);
+			array_source = PointerGetDatum(construct_empty_array(arrayRef->refelemtype));
 			*isNull = false;
 		}
 
 		if (lIndex == NULL)
-			resultArray = array_set(array_source, i,
-									upper.indx,
-									sourceData,
-									eisnull,
-									astate->refattrlength,
-									astate->refelemlength,
-									astate->refelembyval,
-									astate->refelemalign);
+			return array_set_element(array_source, i,
+									 upper.indx,
+									 sourceData,
+									 eisnull,
+									 astate->refattrlength,
+									 astate->refelemlength,
+									 astate->refelembyval,
+									 astate->refelemalign);
 		else
-			resultArray = array_set_slice(array_source, i,
-										  upper.indx, lower.indx,
-								   (ArrayType *) DatumGetPointer(sourceData),
-										  eisnull,
-										  astate->refattrlength,
-										  astate->refelemlength,
-										  astate->refelembyval,
-										  astate->refelemalign);
-		return PointerGetDatum(resultArray);
+			return array_set_slice(array_source, i,
+								   upper.indx, lower.indx,
+								   sourceData,
+								   eisnull,
+								   astate->refattrlength,
+								   astate->refelemlength,
+								   astate->refelembyval,
+								   astate->refelemalign);
 	}
 
 	if (lIndex == NULL)
-		return array_ref(array_source, i, upper.indx,
-						 astate->refattrlength,
-						 astate->refelemlength,
-						 astate->refelembyval,
-						 astate->refelemalign,
-						 isNull);
+		return array_get_element(array_source, i,
+								 upper.indx,
+								 astate->refattrlength,
+								 astate->refelemlength,
+								 astate->refelembyval,
+								 astate->refelemalign,
+								 isNull);
 	else
-	{
-		resultArray = array_get_slice(array_source, i,
-									  upper.indx, lower.indx,
-									  astate->refattrlength,
-									  astate->refelemlength,
-									  astate->refelembyval,
-									  astate->refelemalign);
-		return PointerGetDatum(resultArray);
-	}
+		return array_get_slice(array_source, i,
+							   upper.indx, lower.indx,
+							   astate->refattrlength,
+							   astate->refelemlength,
+							   astate->refelembyval,
+							   astate->refelemalign);
 }
 
 /*
@@ -712,7 +702,8 @@ ExecEvalWholeRowVar(WholeRowVarExprState *wrvstate, ExprContext *econtext,
 {
 	Var		   *variable = (Var *) wrvstate->xprstate.expr;
 	TupleTableSlot *slot;
-	TupleDesc	slot_tupdesc;
+	TupleDesc	output_tupdesc;
+	MemoryContext oldcontext;
 	bool		needslow = false;
 
 	if (isDone)
@@ -788,8 +779,6 @@ ExecEvalWholeRowVar(WholeRowVarExprState *wrvstate, ExprContext *econtext,
 			/* If so, build the junkfilter in the query memory context */
 			if (junk_filter_needed)
 			{
-				MemoryContext oldcontext;
-
 				oldcontext = MemoryContextSwitchTo(econtext->ecxt_per_query_memory);
 				wrvstate->wrv_junkFilter =
 					ExecInitJunkFilter(subplan->plan->targetlist,
@@ -804,25 +793,14 @@ ExecEvalWholeRowVar(WholeRowVarExprState *wrvstate, ExprContext *econtext,
 	if (wrvstate->wrv_junkFilter != NULL)
 		slot = ExecFilterJunk(wrvstate->wrv_junkFilter, slot);
 
-	slot_tupdesc = slot->tts_tupleDescriptor;
-
 	/*
-	 * If it's a RECORD Var, we'll use the slot's type ID info.  It's likely
-	 * that the slot's type is also RECORD; if so, make sure it's been
-	 * "blessed", so that the Datum can be interpreted later.
-	 *
 	 * If the Var identifies a named composite type, we must check that the
 	 * actual tuple type is compatible with it.
 	 */
-	if (variable->vartype == RECORDOID)
-	{
-		if (slot_tupdesc->tdtypeid == RECORDOID &&
-			slot_tupdesc->tdtypmod < 0)
-			assign_record_type_typmod(slot_tupdesc);
-	}
-	else
+	if (variable->vartype != RECORDOID)
 	{
 		TupleDesc	var_tupdesc;
+		TupleDesc	slot_tupdesc;
 		int			i;
 
 		/*
@@ -838,6 +816,8 @@ ExecEvalWholeRowVar(WholeRowVarExprState *wrvstate, ExprContext *econtext,
 		 * ExecEvalWholeRowSlow to check (2) for each row.
 		 */
 		var_tupdesc = lookup_rowtype_tupdesc(variable->vartype, -1);
+
+		slot_tupdesc = slot->tts_tupleDescriptor;
 
 		if (var_tupdesc->natts != slot_tupdesc->natts)
 			ereport(ERROR,
@@ -870,10 +850,63 @@ ExecEvalWholeRowVar(WholeRowVarExprState *wrvstate, ExprContext *econtext,
 				needslow = true;	/* need runtime check for null */
 		}
 
+		/*
+		 * Use the variable's declared rowtype as the descriptor for the
+		 * output values, modulo possibly assigning new column names below. In
+		 * particular, we *must* absorb any attisdropped markings.
+		 */
+		oldcontext = MemoryContextSwitchTo(econtext->ecxt_per_query_memory);
+		output_tupdesc = CreateTupleDescCopy(var_tupdesc);
+		MemoryContextSwitchTo(oldcontext);
+
 		ReleaseTupleDesc(var_tupdesc);
 	}
+	else
+	{
+		/*
+		 * In the RECORD case, we use the input slot's rowtype as the
+		 * descriptor for the output values, modulo possibly assigning new
+		 * column names below.
+		 */
+		oldcontext = MemoryContextSwitchTo(econtext->ecxt_per_query_memory);
+		output_tupdesc = CreateTupleDescCopy(slot->tts_tupleDescriptor);
+		MemoryContextSwitchTo(oldcontext);
+	}
 
-	/* Skip the checking on future executions of node */
+	/*
+	 * Construct a tuple descriptor for the composite values we'll produce,
+	 * and make sure its record type is "blessed".  The main reason to do this
+	 * is to be sure that operations such as row_to_json() will see the
+	 * desired column names when they look up the descriptor from the type
+	 * information embedded in the composite values.
+	 *
+	 * We already got the correct physical datatype info above, but now we
+	 * should try to find the source RTE and adopt its column aliases, in case
+	 * they are different from the original rowtype's names.  For example, in
+	 * "SELECT foo(t) FROM tab t(x,y)", the first two columns in the composite
+	 * output should be named "x" and "y" regardless of tab's column names.
+	 *
+	 * If we can't locate the RTE, assume the column names we've got are OK.
+	 * (As of this writing, the only cases where we can't locate the RTE are
+	 * in execution of trigger WHEN clauses, and then the Var will have the
+	 * trigger's relation's rowtype, so its names are fine.)  Also, if the
+	 * creator of the RTE didn't bother to fill in an eref field, assume our
+	 * column names are OK.  (This happens in COPY, and perhaps other places.)
+	 */
+	if (econtext->ecxt_estate &&
+		variable->varno <= list_length(econtext->ecxt_estate->es_range_table))
+	{
+		RangeTblEntry *rte = rt_fetch(variable->varno,
+									  econtext->ecxt_estate->es_range_table);
+
+		if (rte->eref)
+			ExecTypeSetColNames(output_tupdesc, rte->eref->colnames);
+	}
+
+	/* Bless the tupdesc if needed, and save it in the execution state */
+	wrvstate->wrv_tupdesc = BlessTupleDesc(output_tupdesc);
+
+	/* Skip all the above on future executions of node */
 	if (needslow)
 		wrvstate->xprstate.evalfunc = (ExprStateEvalFunc) ExecEvalWholeRowSlow;
 	else
@@ -931,14 +964,10 @@ ExecEvalWholeRowFast(WholeRowVarExprState *wrvstate, ExprContext *econtext,
 	dtuple = DatumGetHeapTupleHeader(ExecFetchSlotTupleDatum(slot));
 
 	/*
-	 * If the Var identifies a named composite type, label the datum with that
-	 * type; otherwise we'll use the slot's info.
+	 * Label the datum with the composite type info we identified before.
 	 */
-	if (variable->vartype != RECORDOID)
-	{
-		HeapTupleHeaderSetTypeId(dtuple, variable->vartype);
-		HeapTupleHeaderSetTypMod(dtuple, variable->vartypmod);
-	}
+	HeapTupleHeaderSetTypeId(dtuple, wrvstate->wrv_tupdesc->tdtypeid);
+	HeapTupleHeaderSetTypMod(dtuple, wrvstate->wrv_tupdesc->tdtypmod);
 
 	return PointerGetDatum(dtuple);
 }
@@ -992,8 +1021,9 @@ ExecEvalWholeRowSlow(WholeRowVarExprState *wrvstate, ExprContext *econtext,
 	tuple = ExecFetchSlotTuple(slot);
 	tupleDesc = slot->tts_tupleDescriptor;
 
+	/* wrv_tupdesc is a good enough representation of the Var's rowtype */
 	Assert(variable->vartype != RECORDOID);
-	var_tupdesc = lookup_rowtype_tupdesc(variable->vartype, -1);
+	var_tupdesc = wrvstate->wrv_tupdesc;
 
 	/* Check to see if any dropped attributes are non-null */
 	for (i = 0; i < var_tupdesc->natts; i++)
@@ -1020,12 +1050,10 @@ ExecEvalWholeRowSlow(WholeRowVarExprState *wrvstate, ExprContext *econtext,
 	dtuple = DatumGetHeapTupleHeader(ExecFetchSlotTupleDatum(slot));
 
 	/*
-	 * Reset datum's type ID fields to match the Var.
+	 * Label the datum with the composite type info we identified before.
 	 */
-	HeapTupleHeaderSetTypeId(dtuple, variable->vartype);
-	HeapTupleHeaderSetTypMod(dtuple, variable->vartypmod);
-
-	ReleaseTupleDesc(var_tupdesc);
+	HeapTupleHeaderSetTypeId(dtuple, wrvstate->wrv_tupdesc->tdtypeid);
+	HeapTupleHeaderSetTypMod(dtuple, wrvstate->wrv_tupdesc->tdtypmod);
 
 	return PointerGetDatum(dtuple);
 }
@@ -2008,6 +2036,7 @@ ExecMakeFunctionResultNoSets(FuncExprState *fcache,
 Tuplestorestate *
 ExecMakeTableFunctionResult(ExprState *funcexpr,
 							ExprContext *econtext,
+							MemoryContext argContext,
 							TupleDesc expectedDesc,
 							bool randomAccess)
 {
@@ -2089,12 +2118,18 @@ ExecMakeTableFunctionResult(ExprState *funcexpr,
 		/*
 		 * Evaluate the function's argument list.
 		 *
-		 * Note: ideally, we'd do this in the per-tuple context, but then the
-		 * argument values would disappear when we reset the context in the
-		 * inner loop.  So do it in caller context.  Perhaps we should make a
-		 * separate context just to hold the evaluated arguments?
+		 * We can't do this in the per-tuple context: the argument values
+		 * would disappear when we reset that context in the inner loop.  And
+		 * the caller's CurrentMemoryContext is typically a query-lifespan
+		 * context, so we don't want to leak memory there.  We require the
+		 * caller to pass a separate memory context that can be used for this,
+		 * and can be reset each time through to avoid bloat.
 		 */
+		MemoryContextReset(argContext);
+		oldcontext = MemoryContextSwitchTo(argContext);
 		argDone = ExecEvalFuncArgs(&fcinfo, fcache->args, econtext);
+		MemoryContextSwitchTo(oldcontext);
+
 		/* We don't allow sets in the arguments of the table function */
 		if (argDone != ExprSingleResult)
 			ereport(ERROR,
@@ -2844,8 +2879,14 @@ ExecEvalConvertRowtype(ConvertRowtypeExprState *cstate,
 		cstate->initialized = false;
 	}
 
-	Assert(HeapTupleHeaderGetTypeId(tuple) == cstate->indesc->tdtypeid);
-	Assert(HeapTupleHeaderGetTypMod(tuple) == cstate->indesc->tdtypmod);
+	/*
+	 * We used to be able to assert that incoming tuples are marked with
+	 * exactly the rowtype of cstate->indesc.  However, now that
+	 * ExecEvalWholeRowVar might change the tuples' marking to plain RECORD
+	 * due to inserting aliases, we can only make this weak test:
+	 */
+	Assert(HeapTupleHeaderGetTypeId(tuple) == cstate->indesc->tdtypeid ||
+		   HeapTupleHeaderGetTypeId(tuple) == RECORDOID);
 
 	/* if first time through, initialize conversion map */
 	if (!cstate->initialized)
@@ -3893,7 +3934,10 @@ ExecEvalCoerceToDomain(CoerceToDomainState *cstate, ExprContext *econtext,
 	if (isDone && *isDone == ExprEndResult)
 		return result;			/* nothing to check */
 
-	foreach(l, cstate->constraints)
+	/* Make sure we have up-to-date constraints */
+	UpdateDomainConstraintRef(cstate->constraint_ref);
+
+	foreach(l, cstate->constraint_ref->constraints)
 	{
 		DomainConstraintState *con = (DomainConstraintState *) lfirst(l);
 
@@ -4372,6 +4416,7 @@ ExecInitExpr(Expr *node, PlanState *parent)
 				WholeRowVarExprState *wstate = makeNode(WholeRowVarExprState);
 
 				wstate->parent = parent;
+				wstate->wrv_tupdesc = NULL;
 				wstate->wrv_junkFilter = NULL;
 				state = (ExprState *) wstate;
 				state->evalfunc = (ExprStateEvalFunc) ExecEvalWholeRowVar;
@@ -4775,17 +4820,18 @@ ExecInitExpr(Expr *node, PlanState *parent)
 				/* Build tupdesc to describe result tuples */
 				if (rowexpr->row_typeid == RECORDOID)
 				{
-					/* generic record, use runtime type assignment */
-					rstate->tupdesc = ExecTypeFromExprList(rowexpr->args,
-														   rowexpr->colnames);
-					BlessTupleDesc(rstate->tupdesc);
-					/* we won't need to redo this at runtime */
+					/* generic record, use types of given expressions */
+					rstate->tupdesc = ExecTypeFromExprList(rowexpr->args);
 				}
 				else
 				{
 					/* it's been cast to a named type, use that */
 					rstate->tupdesc = lookup_rowtype_tupdesc_copy(rowexpr->row_typeid, -1);
 				}
+				/* In either case, adopt RowExpr's column aliases */
+				ExecTypeSetColNames(rstate->tupdesc, rowexpr->colnames);
+				/* Bless the tupdesc in case it's now of type RECORD */
+				BlessTupleDesc(rstate->tupdesc);
 				/* Set up evaluation, skipping any deleted columns */
 				Assert(list_length(rowexpr->args) <= rstate->tupdesc->natts);
 				attrs = rstate->tupdesc->attrs;
@@ -5015,7 +5061,12 @@ ExecInitExpr(Expr *node, PlanState *parent)
 
 				cstate->xprstate.evalfunc = (ExprStateEvalFunc) ExecEvalCoerceToDomain;
 				cstate->arg = ExecInitExpr(ctest->arg, parent);
-				cstate->constraints = GetDomainConstraints(ctest->resulttype);
+				/* We spend an extra palloc to reduce header inclusions */
+				cstate->constraint_ref = (DomainConstraintRef *)
+					palloc(sizeof(DomainConstraintRef));
+				InitDomainConstraintRef(ctest->resulttype,
+										cstate->constraint_ref,
+										CurrentMemoryContext);
 				state = (ExprState *) cstate;
 			}
 			break;

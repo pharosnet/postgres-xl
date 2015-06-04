@@ -9,7 +9,7 @@
  * proper FooMain() routine for the incarnation.
  *
  *
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -22,14 +22,6 @@
 
 #include <unistd.h>
 
-#if defined(__alpha) && defined(__osf__)		/* no __alpha__ ? */
-#include <sys/sysinfo.h>
-#include "machine/hal_sysinfo.h"
-#define ASSEMBLER
-#include <sys/proc.h>
-#undef ASSEMBLER
-#endif
-
 #if defined(__NetBSD__)
 #include <sys/param.h>
 #endif
@@ -38,6 +30,7 @@
 #include "common/username.h"
 #include "postmaster/postmaster.h"
 #include "storage/barrier.h"
+#include "storage/s_lock.h"
 #include "storage/spin.h"
 #include "tcop/tcopprot.h"
 #include "utils/help_config.h"
@@ -50,6 +43,7 @@ const char *progname;
 
 
 static void startup_hacks(const char *progname);
+static void init_locale(int category, const char *locale);
 static void help(const char *progname);
 static void check_root(const char *progname);
 
@@ -122,31 +116,31 @@ main(int argc, char *argv[])
 		char	   *env_locale;
 
 		if ((env_locale = getenv("LC_COLLATE")) != NULL)
-			pg_perm_setlocale(LC_COLLATE, env_locale);
+			init_locale(LC_COLLATE, env_locale);
 		else
-			pg_perm_setlocale(LC_COLLATE, "");
+			init_locale(LC_COLLATE, "");
 
 		if ((env_locale = getenv("LC_CTYPE")) != NULL)
-			pg_perm_setlocale(LC_CTYPE, env_locale);
+			init_locale(LC_CTYPE, env_locale);
 		else
-			pg_perm_setlocale(LC_CTYPE, "");
+			init_locale(LC_CTYPE, "");
 	}
 #else
-	pg_perm_setlocale(LC_COLLATE, "");
-	pg_perm_setlocale(LC_CTYPE, "");
+	init_locale(LC_COLLATE, "");
+	init_locale(LC_CTYPE, "");
 #endif
 
 #ifdef LC_MESSAGES
-	pg_perm_setlocale(LC_MESSAGES, "");
+	init_locale(LC_MESSAGES, "");
 #endif
 
 	/*
 	 * We keep these set to "C" always, except transiently in pg_locale.c; see
 	 * that file for explanations.
 	 */
-	pg_perm_setlocale(LC_MONETARY, "C");
-	pg_perm_setlocale(LC_NUMERIC, "C");
-	pg_perm_setlocale(LC_TIME, "C");
+	init_locale(LC_MONETARY, "C");
+	init_locale(LC_NUMERIC, "C");
+	init_locale(LC_TIME, "C");
 
 	/*
 	 * Now that we have absorbed as much as we wish to from the locale
@@ -245,27 +239,6 @@ static void
 startup_hacks(const char *progname)
 {
 	/*
-	 * On some platforms, unaligned memory accesses result in a kernel trap;
-	 * the default kernel behavior is to emulate the memory access, but this
-	 * results in a significant performance penalty.  We want PG never to make
-	 * such unaligned memory accesses, so this code disables the kernel
-	 * emulation: unaligned accesses will result in SIGBUS instead.
-	 */
-#ifdef NOFIXADE
-
-#if defined(__alpha)			/* no __alpha__ ? */
-	{
-		int			buffer[] = {SSIN_UACPROC, UAC_SIGBUS | UAC_NOPRINT};
-
-		if (setsysinfo(SSI_NVPAIRS, buffer, 1, (caddr_t) NULL,
-					   (unsigned long) NULL) < 0)
-			write_stderr("%s: setsysinfo failed: %s\n",
-						 progname, strerror(errno));
-	}
-#endif   /* __alpha */
-#endif   /* NOFIXADE */
-
-	/*
 	 * Windows-specific execution environment hacking.
 	 */
 #ifdef WIN32
@@ -300,6 +273,23 @@ startup_hacks(const char *progname)
 
 
 /*
+ * Make the initial permanent setting for a locale category.  If that fails,
+ * perhaps due to LC_foo=invalid in the environment, use locale C.  If even
+ * that fails, perhaps due to out-of-memory, the entire startup fails with it.
+ * When this returns, we are guaranteed to have a setting for the given
+ * category's environment variable.
+ */
+static void
+init_locale(int category, const char *locale)
+{
+	if (pg_perm_setlocale(category, locale) == NULL &&
+		pg_perm_setlocale(category, "C") == NULL)
+		elog(FATAL, "could not adopt C locale");
+}
+
+
+
+/*
  * Help display should match the options accepted by PostmasterMain()
  * and PostgresMain().
  *
@@ -313,9 +303,6 @@ help(const char *progname)
 	printf(_("%s is the PostgreSQL server.\n\n"), progname);
 	printf(_("Usage:\n  %s [OPTION]...\n\n"), progname);
 	printf(_("Options:\n"));
-#ifdef USE_ASSERT_CHECKING
-	printf(_("  -A 1|0             enable/disable run-time assert checking\n"));
-#endif
 	printf(_("  -B NBUFFERS        number of shared buffers\n"));
 	printf(_("  -c NAME=VALUE      set run-time parameter\n"));
 	printf(_("  -C NAME            print value of run-time parameter, then exit\n"));

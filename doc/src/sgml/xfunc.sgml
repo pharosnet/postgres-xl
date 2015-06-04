@@ -143,6 +143,21 @@ SELECT clean_emp();
 </screen>
     </para>
 
+    <note>
+     <para>
+      The entire body of a SQL function is parsed before any of it is
+      executed.  While a SQL function can contain commands that alter
+      the system catalogs (e.g., <command>CREATE TABLE</>), the effects
+      of such commands will not be visible during parse analysis of
+      later commands in the function.  Thus, for example,
+      <literal>CREATE TABLE foo (...); INSERT INTO foo VALUES(...);</literal>
+      will not work as desired if packaged up into a single SQL function,
+      since <structname>foo</> won't exist yet when the <command>INSERT</>
+      command is parsed.  It's recommended to use <application>PL/PgSQL</>
+      instead of a SQL function in this type of situation.
+     </para>
+   </note>
+
    <para>
     The syntax of the <command>CREATE FUNCTION</command> command requires
     the function body to be written as a string constant.  It is usually
@@ -740,6 +755,20 @@ SELECT mleast(VARIADIC ARRAY[10, -1, 5, 4.4]);
     </para>
 
     <para>
+     Specifying <literal>VARIADIC</> in the call is also the only way to
+     pass an empty array to a variadic function, for example:
+
+<screen>
+SELECT mleast(VARIADIC ARRAY[]::numeric[]);
+</screen>
+
+     Simply writing <literal>SELECT mleast()</> does not work because a
+     variadic parameter must match at least one actual argument.
+     (You could define a second function also named <literal>mleast</>,
+     with no parameters, if you wanted to allow such calls.)
+    </para>
+
+    <para>
      The array element parameters generated from a variadic parameter are
      treated as not having any names of their own.  This means it is not
      possible to call a variadic function using named arguments (<xref
@@ -747,14 +776,14 @@ SELECT mleast(VARIADIC ARRAY[10, -1, 5, 4.4]);
      <literal>VARIADIC</>.  For example, this will work:
 
 <screen>
-SELECT mleast(VARIADIC arr := ARRAY[10, -1, 5, 4.4]);
+SELECT mleast(VARIADIC arr => ARRAY[10, -1, 5, 4.4]);
 </screen>
 
      but not these:
 
 <screen>
-SELECT mleast(arr := 10);
-SELECT mleast(arr := ARRAY[10, -1, 5, 4.4]);
+SELECT mleast(arr => 10);
+SELECT mleast(arr => ARRAY[10, -1, 5, 4.4]);
 </screen>
     </para>
    </sect2>
@@ -1856,17 +1885,12 @@ typedef struct
 <programlisting>
 typedef struct {
     int32 length;
-    char data[1];
+    char data[FLEXIBLE_ARRAY_MEMBER];
 } text;
 </programlisting>
 
-     Obviously,  the  data  field declared here is not long enough to hold
-     all possible strings.  Since it's impossible to declare a variable-size
-     structure in <acronym>C</acronym>, we rely on the knowledge that the
-     <acronym>C</acronym> compiler won't range-check array subscripts.  We
-     just allocate the necessary amount of space and then access the array as
-     if it were declared the right length.  (This is a common trick, which
-     you can read about in many textbooks about C.)
+     The <literal>[FLEXIBLE_ARRAY_MEMBER]</> notation means that the actual
+     length of the data part is not specified by this declaration.
     </para>
 
     <para>
@@ -2956,6 +2980,20 @@ SRF_RETURN_DONE(funcctx)
      cases, this means that you should switch into
      <structfield>multi_call_memory_ctx</> while doing the first-call setup.
     </para>
+
+    <warning>
+     <para>
+      While the actual arguments to the function remain unchanged between
+      calls, if you detoast the argument values (which is normally done
+      transparently by the
+      <function>PG_GETARG_<replaceable>xxx</replaceable></function> macro)
+      in the transient context then the detoasted copies will be freed on
+      each cycle. Accordingly, if you keep references to such values in
+      your <structfield>user_fctx</>, you must either copy them into the
+      <structfield>multi_call_memory_ctx</> after detoasting, or ensure
+      that you detoast the values only in that context.
+     </para>
+    </warning>
 
     <para>
      A complete pseudo-code example looks like the following:

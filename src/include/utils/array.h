@@ -46,7 +46,7 @@
  * only work with varlena arrays.
  *
  *
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/utils/array.h
@@ -76,6 +76,7 @@ typedef struct
 
 /*
  * working state for accumArrayResult() and friends
+ * note that the input must be scalars (legal array elements)
  */
 typedef struct ArrayBuildState
 {
@@ -88,7 +89,40 @@ typedef struct ArrayBuildState
 	int16		typlen;			/* needed info about datatype */
 	bool		typbyval;
 	char		typalign;
+	bool		private_cxt;	/* use private memory context */
 } ArrayBuildState;
+
+/*
+ * working state for accumArrayResultArr() and friends
+ * note that the input must be arrays, and the same array type is returned
+ */
+typedef struct ArrayBuildStateArr
+{
+	MemoryContext mcontext;		/* where all the temp stuff is kept */
+	char	   *data;			/* accumulated data */
+	bits8	   *nullbitmap;		/* bitmap of is-null flags, or NULL if none */
+	int			abytes;			/* allocated length of "data" */
+	int			nbytes;			/* number of bytes used so far */
+	int			aitems;			/* allocated length of bitmap (in elements) */
+	int			nitems;			/* total number of elements in result */
+	int			ndims;			/* current dimensions of result */
+	int			dims[MAXDIM];
+	int			lbs[MAXDIM];
+	Oid			array_type;		/* data type of the arrays */
+	Oid			element_type;	/* data type of the array elements */
+	bool		private_cxt;	/* use private memory context */
+} ArrayBuildStateArr;
+
+/*
+ * working state for accumArrayResultAny() and friends
+ * these functions handle both cases
+ */
+typedef struct ArrayBuildStateAny
+{
+	/* Exactly one of these is not NULL: */
+	ArrayBuildState *scalarstate;
+	ArrayBuildStateArr *arraystate;
+} ArrayBuildStateAny;
 
 /*
  * structure to cache type metadata needed for array manipulation
@@ -214,6 +248,21 @@ extern Datum array_fill_with_lower_bounds(PG_FUNCTION_ARGS);
 extern Datum array_unnest(PG_FUNCTION_ARGS);
 extern Datum array_remove(PG_FUNCTION_ARGS);
 extern Datum array_replace(PG_FUNCTION_ARGS);
+extern Datum width_bucket_array(PG_FUNCTION_ARGS);
+
+extern Datum array_get_element(Datum arraydatum, int nSubscripts, int *indx,
+				  int arraytyplen, int elmlen, bool elmbyval, char elmalign,
+				  bool *isNull);
+extern Datum array_set_element(Datum arraydatum, int nSubscripts, int *indx,
+				  Datum dataValue, bool isNull,
+				  int arraytyplen, int elmlen, bool elmbyval, char elmalign);
+extern Datum array_get_slice(Datum arraydatum, int nSubscripts,
+				int *upperIndx, int *lowerIndx,
+				int arraytyplen, int elmlen, bool elmbyval, char elmalign);
+extern Datum array_set_slice(Datum arraydatum, int nSubscripts,
+				int *upperIndx, int *lowerIndx,
+				Datum srcArrayDatum, bool isNull,
+				int arraytyplen, int elmlen, bool elmbyval, char elmalign);
 
 extern Datum array_ref(ArrayType *array, int nSubscripts, int *indx,
 		  int arraytyplen, int elmlen, bool elmbyval, char elmalign,
@@ -221,13 +270,6 @@ extern Datum array_ref(ArrayType *array, int nSubscripts, int *indx,
 extern ArrayType *array_set(ArrayType *array, int nSubscripts, int *indx,
 		  Datum dataValue, bool isNull,
 		  int arraytyplen, int elmlen, bool elmbyval, char elmalign);
-extern ArrayType *array_get_slice(ArrayType *array, int nSubscripts,
-				int *upperIndx, int *lowerIndx,
-				int arraytyplen, int elmlen, bool elmbyval, char elmalign);
-extern ArrayType *array_set_slice(ArrayType *array, int nSubscripts,
-				int *upperIndx, int *lowerIndx,
-				ArrayType *srcArray, bool isNull,
-				int arraytyplen, int elmlen, bool elmbyval, char elmalign);
 
 extern Datum array_map(FunctionCallInfo fcinfo, Oid inpType, Oid retType,
 		  ArrayMapState *amstate);
@@ -251,6 +293,9 @@ extern void deconstruct_array(ArrayType *array,
 				  int elmlen, bool elmbyval, char elmalign,
 				  Datum **elemsp, bool **nullsp, int *nelemsp);
 extern bool array_contains_nulls(ArrayType *array);
+
+extern ArrayBuildState *initArrayResult(Oid element_type,
+				MemoryContext rcontext, bool subcontext);
 extern ArrayBuildState *accumArrayResult(ArrayBuildState *astate,
 				 Datum dvalue, bool disnull,
 				 Oid element_type,
@@ -260,7 +305,25 @@ extern Datum makeArrayResult(ArrayBuildState *astate,
 extern Datum makeMdArrayResult(ArrayBuildState *astate, int ndims,
 				  int *dims, int *lbs, MemoryContext rcontext, bool release);
 
-extern ArrayIterator array_create_iterator(ArrayType *arr, int slice_ndim);
+extern ArrayBuildStateArr *initArrayResultArr(Oid array_type, Oid element_type,
+				   MemoryContext rcontext, bool subcontext);
+extern ArrayBuildStateArr *accumArrayResultArr(ArrayBuildStateArr *astate,
+					Datum dvalue, bool disnull,
+					Oid array_type,
+					MemoryContext rcontext);
+extern Datum makeArrayResultArr(ArrayBuildStateArr *astate,
+				   MemoryContext rcontext, bool release);
+
+extern ArrayBuildStateAny *initArrayResultAny(Oid input_type,
+				   MemoryContext rcontext, bool subcontext);
+extern ArrayBuildStateAny *accumArrayResultAny(ArrayBuildStateAny *astate,
+					Datum dvalue, bool disnull,
+					Oid input_type,
+					MemoryContext rcontext);
+extern Datum makeArrayResultAny(ArrayBuildStateAny *astate,
+				   MemoryContext rcontext, bool release);
+
+extern ArrayIterator array_create_iterator(ArrayType *arr, int slice_ndim, ArrayMetaState *mstate);
 extern bool array_iterate(ArrayIterator iterator, Datum *value, bool *isnull);
 extern void array_free_iterator(ArrayIterator iterator);
 
@@ -280,7 +343,8 @@ extern int32 *ArrayGetIntegerTypmods(ArrayType *arr, int *n);
 /*
  * prototypes for functions defined in array_userfuncs.c
  */
-extern Datum array_push(PG_FUNCTION_ARGS);
+extern Datum array_append(PG_FUNCTION_ARGS);
+extern Datum array_prepend(PG_FUNCTION_ARGS);
 extern Datum array_cat(PG_FUNCTION_ARGS);
 
 extern ArrayType *create_singleton_array(FunctionCallInfo fcinfo,
@@ -291,6 +355,12 @@ extern ArrayType *create_singleton_array(FunctionCallInfo fcinfo,
 
 extern Datum array_agg_transfn(PG_FUNCTION_ARGS);
 extern Datum array_agg_finalfn(PG_FUNCTION_ARGS);
+extern Datum array_agg_array_transfn(PG_FUNCTION_ARGS);
+extern Datum array_agg_array_finalfn(PG_FUNCTION_ARGS);
+
+extern Datum array_position(PG_FUNCTION_ARGS);
+extern Datum array_position_start(PG_FUNCTION_ARGS);
+extern Datum array_positions(PG_FUNCTION_ARGS);
 
 /*
  * prototypes for functions defined in array_typanalyze.c

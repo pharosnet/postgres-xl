@@ -45,16 +45,19 @@
  * anything we saw during replay.
  *
  * We are able to remove segments no longer necessary by carefully tracking
- * each table's used values: during vacuum, any multixact older than a
- * certain value is removed; the cutoff value is stored in pg_class.
- * The minimum value in each database is stored in pg_database, and the
- * global minimum is part of pg_control.  Any vacuum that is able to
- * advance its database's minimum value also computes a new global minimum,
- * and uses this value to truncate older segments.  When new multixactid
- * values are to be created, care is taken that the counter does not
- * fall within the wraparound horizon considering the global minimum value.
+ * each table's used values: during vacuum, any multixact older than a certain
+ * value is removed; the cutoff value is stored in pg_class.  The minimum value
+ * across all tables in each database is stored in pg_database, and the global
+ * minimum across all databases is part of pg_control and is kept in shared
+ * memory.  At checkpoint time, after the value is known flushed in WAL, any
+ * files that correspond to multixacts older than that value are removed.
+ * (These files are also removed when a restartpoint is executed.)
  *
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * When new multixactid values are to be created, care is taken that the
+ * counter does not fall within the wraparound horizon considering the global
+ * minimum value.
+ *
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/backend/access/transam/multixact.c
@@ -69,6 +72,8 @@
 #include "access/twophase.h"
 #include "access/twophase_rmgr.h"
 #include "access/xact.h"
+#include "access/xlog.h"
+#include "access/xloginsert.h"
 #include "catalog/pg_type.h"
 #include "commands/dbcommands.h"
 #include "funcapi.h"
@@ -91,7 +96,7 @@
  * Note: because MultiXactOffsets are 32 bits and wrap around at 0xFFFFFFFF,
  * MultiXact page numbering also wraps around at
  * 0xFFFFFFFF/MULTIXACT_OFFSETS_PER_PAGE, and segment numbering at
- * 0xFFFFFFFF/MULTIXACT_OFFSETS_PER_PAGE/SLRU_SEGMENTS_PER_PAGE.    We need
+ * 0xFFFFFFFF/MULTIXACT_OFFSETS_PER_PAGE/SLRU_PAGES_PER_SEGMENT.  We need
  * take no explicit notice of that fact in this module, except when comparing
  * segment and page numbers in TruncateMultiXact (see
  * MultiXactOffsetPagePrecedes).
@@ -188,15 +193,19 @@ typedef struct MultiXactStateData
 	/* next-to-be-assigned offset */
 	MultiXactOffset nextOffset;
 
-	/* the Offset SLRU area was last truncated at this MultiXactId */
-	MultiXactId lastTruncationPoint;
-
 	/*
-	 * oldest multixact that is still on disk.  Anything older than this
-	 * should not be consulted.
+	 * Oldest multixact that is still on disk.  Anything older than this
+	 * should not be consulted.  These values are updated by vacuum.
 	 */
 	MultiXactId oldestMultiXactId;
 	Oid			oldestMultiXactDB;
+
+	/*
+	 * This is what the previous checkpoint stored as the truncate position.
+	 * This value is the oldestMultiXactId that was valid when a checkpoint
+	 * was last executed.
+	 */
+	MultiXactId lastCheckpointedOldest;
 
 	/* support for anti-wraparound measures */
 	MultiXactId multiVacLimit;
@@ -234,14 +243,22 @@ typedef struct MultiXactStateData
 	 * than its own OldestVisibleMXactId[] setting; this is necessary because
 	 * the checkpointer could truncate away such data at any instant.
 	 *
-	 * The checkpointer can compute the safe truncation point as the oldest
-	 * valid value among all the OldestMemberMXactId[] and
-	 * OldestVisibleMXactId[] entries, or nextMXact if none are valid.
-	 * Clearly, it is not possible for any later-computed OldestVisibleMXactId
-	 * value to be older than this, and so there is no risk of truncating data
-	 * that is still needed.
+	 * The oldest valid value among all of the OldestMemberMXactId[] and
+	 * OldestVisibleMXactId[] entries is considered by vacuum as the earliest
+	 * possible value still having any live member transaction.  Subtracting
+	 * vacuum_multixact_freeze_min_age from that value we obtain the freezing
+	 * point for multixacts for that table.  Any value older than that is
+	 * removed from tuple headers (or "frozen"; see FreezeMultiXactId.  Note
+	 * that multis that have member xids that are older than the cutoff point
+	 * for xids must also be frozen, even if the multis themselves are newer
+	 * than the multixid cutoff point).  Whenever a full table vacuum happens,
+	 * the freezing point so computed is used as the new pg_class.relminmxid
+	 * value.  The minimum of all those values in a database is stored as
+	 * pg_database.datminmxid.  In turn, the minimum of all of those values is
+	 * stored in pg_control and used as truncation point for pg_multixact.  At
+	 * checkpoint or restartpoint, unneeded segments are removed.
 	 */
-	MultiXactId perBackendXactIds[1];	/* VARIABLE LENGTH ARRAY */
+	MultiXactId perBackendXactIds[FLEXIBLE_ARRAY_MEMBER];
 } MultiXactStateData;
 
 /*
@@ -413,7 +430,7 @@ MultiXactIdExpand(MultiXactId multi, TransactionId xid, MultiXactStatus status)
 	 * caller of this function does a check that the multixact is no longer
 	 * running.
 	 */
-	nmembers = GetMultiXactIdMembers(multi, &members, false);
+	nmembers = GetMultiXactIdMembers(multi, &members, false, false);
 
 	if (nmembers < 0)
 	{
@@ -502,7 +519,7 @@ MultiXactIdExpand(MultiXactId multi, TransactionId xid, MultiXactStatus status)
  * a pg_upgraded share-locked tuple.
  */
 bool
-MultiXactIdIsRunning(MultiXactId multi)
+MultiXactIdIsRunning(MultiXactId multi, bool isLockOnly)
 {
 	MultiXactMember *members;
 	int			nmembers;
@@ -514,9 +531,9 @@ MultiXactIdIsRunning(MultiXactId multi)
 	 * "false" here means we assume our callers have checked that the given
 	 * multi cannot possibly come from a pg_upgraded database.
 	 */
-	nmembers = GetMultiXactIdMembers(multi, &members, false);
+	nmembers = GetMultiXactIdMembers(multi, &members, false, isLockOnly);
 
-	if (nmembers < 0)
+	if (nmembers <= 0)
 	{
 		debug_elog2(DEBUG2, "IsRunning: no members");
 		return false;
@@ -703,7 +720,6 @@ MultiXactIdCreateFromMembers(int nmembers, MultiXactMember *members)
 {
 	MultiXactId multi;
 	MultiXactOffset offset;
-	XLogRecData rdata[2];
 	xl_multixact_create xlrec;
 
 	debug_elog3(DEBUG2, "Create: %s",
@@ -779,17 +795,11 @@ MultiXactIdCreateFromMembers(int nmembers, MultiXactMember *members)
 	 * the status flags in one XLogRecData, then all the xids in another one?
 	 * Not clear that it's worth the trouble though.
 	 */
-	rdata[0].data = (char *) (&xlrec);
-	rdata[0].len = SizeOfMultiXactCreate;
-	rdata[0].buffer = InvalidBuffer;
-	rdata[0].next = &(rdata[1]);
+	XLogBeginInsert();
+	XLogRegisterData((char *) (&xlrec), SizeOfMultiXactCreate);
+	XLogRegisterData((char *) members, nmembers * sizeof(MultiXactMember));
 
-	rdata[1].data = (char *) members;
-	rdata[1].len = nmembers * sizeof(MultiXactMember);
-	rdata[1].buffer = InvalidBuffer;
-	rdata[1].next = NULL;
-
-	(void) XLogInsert(RM_MULTIXACT_ID, XLOG_MULTIXACT_CREATE_ID, rdata);
+	(void) XLogInsert(RM_MULTIXACT_ID, XLOG_MULTIXACT_CREATE_ID);
 
 	/* Now enter the information into the OFFSETs and MEMBERs logs */
 	RecordNewMultiXact(multi, offset, nmembers, members);
@@ -1080,10 +1090,15 @@ GetNewMultiXactId(int nmembers, MultiXactOffset *offset)
  * the value currently known as the next to assign, raise an error.  Previously
  * these also returned -1, but since this can lead to the wrong visibility
  * results, it is dangerous to do that.
+ *
+ * onlyLock must be set to true if caller is certain that the given multi
+ * is used only to lock tuples; can be false without loss of correctness,
+ * but passing a true means we can return quickly without checking for
+ * old updates.
  */
 int
 GetMultiXactIdMembers(MultiXactId multi, MultiXactMember **members,
-					  bool allow_old)
+					  bool allow_old, bool onlyLock)
 {
 	int			pageno;
 	int			prev_pageno;
@@ -1118,11 +1133,24 @@ GetMultiXactIdMembers(MultiXactId multi, MultiXactMember **members,
 	MultiXactIdSetOldestVisible();
 
 	/*
+	 * If we know the multi is used only for locking and not for updates,
+	 * then we can skip checking if the value is older than our oldest
+	 * visible multi.  It cannot possibly still be running.
+	 */
+	if (onlyLock &&
+		MultiXactIdPrecedes(multi, OldestVisibleMXactId[MyBackendId]))
+	{
+		debug_elog2(DEBUG2, "GetMembers: a locker-only multi is too old");
+		*members = NULL;
+		return -1;
+	}
+
+	/*
 	 * We check known limits on MultiXact before resorting to the SLRU area.
 	 *
 	 * An ID older than MultiXactState->oldestMultiXactId cannot possibly be
-	 * useful; it should have already been removed by vacuum.  We've truncated
-	 * the on-disk structures anyway.  Returning the wrong values could lead
+	 * useful; it has already been removed, or will be removed shortly, by
+	 * truncation.  Returning the wrong values could lead
 	 * to an incorrect visibility result.  However, to support pg_upgrade we
 	 * need to allow an empty set to be returned regardless, if the caller is
 	 * willing to accept it; the caller is expected to check that it's an
@@ -1243,6 +1271,7 @@ retry:
 		{
 			/* Corner case 2: next multixact is still being filled in */
 			LWLockRelease(MultiXactOffsetControlLock);
+			CHECK_FOR_INTERRUPTS();
 			pg_usleep(1000L);
 			goto retry;
 		}
@@ -1306,39 +1335,6 @@ retry:
 	debug_elog3(DEBUG2, "GetMembers: no cache for %s",
 				mxid_to_string(multi, truelength, ptr));
 	return truelength;
-}
-
-/*
- * MultiXactHasRunningRemoteMembers
- *		Does the given multixact have still-live members from
- *		transactions other than our own?
- */
-bool
-MultiXactHasRunningRemoteMembers(MultiXactId multi)
-{
-	MultiXactMember *members;
-	int			nmembers;
-	int			i;
-
-	nmembers = GetMultiXactIdMembers(multi, &members, true);
-	if (nmembers <= 0)
-		return false;
-
-	for (i = 0; i < nmembers; i++)
-	{
-		/* not interested in our own members */
-		if (TransactionIdIsCurrentTransactionId(members[i].xid))
-			continue;
-
-		if (TransactionIdIsInProgress(members[i].xid))
-		{
-			pfree(members);
-			return true;
-		}
-	}
-
-	pfree(members);
-	return false;
 }
 
 /*
@@ -1715,8 +1711,9 @@ MultiXactShmemSize(void)
 {
 	Size		size;
 
+	/* We need 2*MaxOldestSlot + 1 perBackendXactIds[] entries */
 #define SHARED_MULTIXACT_STATE_SIZE \
-	add_size(sizeof(MultiXactStateData), \
+	add_size(offsetof(MultiXactStateData, perBackendXactIds) + sizeof(MultiXactId), \
 			 mul_size(sizeof(MultiXactId) * 2, MaxOldestSlot))
 
 	size = SHARED_MULTIXACT_STATE_SIZE;
@@ -1932,14 +1929,14 @@ TrimMultiXact(void)
 	LWLockAcquire(MultiXactOffsetControlLock, LW_EXCLUSIVE);
 
 	/*
-	 * (Re-)Initialize our idea of the latest page number.
+	 * (Re-)Initialize our idea of the latest page number for offsets.
 	 */
 	pageno = MultiXactIdToOffsetPage(multi);
 	MultiXactOffsetCtl->shared->latest_page_number = pageno;
 
 	/*
 	 * Zero out the remainder of the current offsets page.  See notes in
-	 * StartupCLOG() for motivation.
+	 * TrimCLOG() for motivation.
 	 */
 	entryno = MultiXactIdToOffsetEntry(multi);
 	if (entryno != 0)
@@ -1962,7 +1959,7 @@ TrimMultiXact(void)
 	LWLockAcquire(MultiXactMemberControlLock, LW_EXCLUSIVE);
 
 	/*
-	 * (Re-)Initialize our idea of the latest page number.
+	 * (Re-)Initialize our idea of the latest page number for members.
 	 */
 	pageno = MXOffsetToMemberPage(offset);
 	MultiXactMemberCtl->shared->latest_page_number = pageno;
@@ -2241,6 +2238,18 @@ MultiXactAdvanceOldest(MultiXactId oldestMulti, Oid oldestMultiDB)
 }
 
 /*
+ * Update the "safe truncation point".  This is the newest value of oldestMulti
+ * that is known to be flushed as part of a checkpoint record.
+ */
+void
+MultiXactSetSafeTruncate(MultiXactId safeTruncateMulti)
+{
+	LWLockAcquire(MultiXactGenLock, LW_EXCLUSIVE);
+	MultiXactState->lastCheckpointedOldest = safeTruncateMulti;
+	LWLockRelease(MultiXactGenLock);
+}
+
+/*
  * Make sure that MultiXactOffset has room for a newly-allocated MultiXactId.
  *
  * NB: this is called while holding MultiXactGenLock.  We want it to be very
@@ -2478,24 +2487,30 @@ SlruScanDirCbFindEarliest(SlruCtl ctl, char *filename, int segpage, void *data)
  * Remove all MultiXactOffset and MultiXactMember segments before the oldest
  * ones still of interest.
  *
- * On a primary, this is called by vacuum after it has successfully advanced a
- * database's datminmxid value; the cutoff value we're passed is the minimum of
- * all databases' datminmxid values.
- *
- * During crash recovery, it's called from CreateRestartPoint() instead.  We
- * rely on the fact that xlog_redo() will already have called
- * MultiXactAdvanceOldest().  Our latest_page_number will already have been
- * initialized by StartupMultiXact() and kept up to date as new pages are
- * zeroed.
+ * On a primary, this is called by the checkpointer process after a checkpoint
+ * has been flushed; during crash recovery, it's called from
+ * CreateRestartPoint().  In the latter case, we rely on the fact that
+ * xlog_redo() will already have called MultiXactAdvanceOldest().  Our
+ * latest_page_number will already have been initialized by StartupMultiXact()
+ * and kept up to date as new pages are zeroed.
  */
 void
-TruncateMultiXact(MultiXactId oldestMXact)
+TruncateMultiXact(void)
 {
+	MultiXactId		oldestMXact;
 	MultiXactOffset oldestOffset;
 	MultiXactOffset nextOffset;
 	mxtruncinfo trunc;
 	MultiXactId earliest;
 	MembersLiveRange range;
+
+	Assert(AmCheckpointerProcess() || AmStartupProcess() ||
+		   !IsPostmasterEnvironment);
+
+	LWLockAcquire(MultiXactGenLock, LW_SHARED);
+	oldestMXact = MultiXactState->lastCheckpointedOldest;
+	LWLockRelease(MultiXactGenLock);
+	Assert(MultiXactIdIsValid(oldestMXact));
 
 	/*
 	 * Note we can't just plow ahead with the truncation; it's possible that
@@ -2507,6 +2522,8 @@ TruncateMultiXact(MultiXactId oldestMXact)
 	trunc.earliestExistingPage = -1;
 	SlruScanDirectory(MultiXactOffsetCtl, SlruScanDirCbFindEarliest, &trunc);
 	earliest = trunc.earliestExistingPage * MULTIXACT_OFFSETS_PER_PAGE;
+	if (earliest < FirstMultiXactId)
+		earliest = FirstMultiXactId;
 
 	/* nothing to do */
 	if (MultiXactIdPrecedes(oldestMXact, earliest))
@@ -2514,8 +2531,7 @@ TruncateMultiXact(MultiXactId oldestMXact)
 
 	/*
 	 * First, compute the safe truncation point for MultiXactMember. This is
-	 * the starting offset of the multixact we were passed as MultiXactOffset
-	 * cutoff.
+	 * the starting offset of the oldest multixact.
 	 */
 	{
 		int			pageno;
@@ -2538,10 +2554,6 @@ TruncateMultiXact(MultiXactId oldestMXact)
 		LWLockRelease(MultiXactOffsetControlLock);
 	}
 
-	/* truncate MultiXactOffset */
-	SimpleLruTruncate(MultiXactOffsetCtl,
-					  MultiXactIdToOffsetPage(oldestMXact));
-
 	/*
 	 * To truncate MultiXactMembers, we need to figure out the active page
 	 * range and delete all files outside that range.  The start point is the
@@ -2559,6 +2571,11 @@ TruncateMultiXact(MultiXactId oldestMXact)
 	range.rangeEnd = MXOffsetToMemberPage(nextOffset);
 
 	SlruScanDirectory(MultiXactMemberCtl, SlruScanDirCbRemoveMembers, &range);
+
+	/* Now we can truncate MultiXactOffset */
+	SimpleLruTruncate(MultiXactOffsetCtl,
+					  MultiXactIdToOffsetPage(oldestMXact));
+
 }
 
 /*
@@ -2649,25 +2666,21 @@ MultiXactOffsetPrecedes(MultiXactOffset offset1, MultiXactOffset offset2)
 static void
 WriteMZeroPageXlogRec(int pageno, uint8 info)
 {
-	XLogRecData rdata;
-
-	rdata.data = (char *) (&pageno);
-	rdata.len = sizeof(int);
-	rdata.buffer = InvalidBuffer;
-	rdata.next = NULL;
-	(void) XLogInsert(RM_MULTIXACT_ID, info, &rdata);
+	XLogBeginInsert();
+	XLogRegisterData((char *) (&pageno), sizeof(int));
+	(void) XLogInsert(RM_MULTIXACT_ID, info);
 }
 
 /*
  * MULTIXACT resource manager's routines
  */
 void
-multixact_redo(XLogRecPtr lsn, XLogRecord *record)
+multixact_redo(XLogReaderState *record)
 {
-	uint8		info = record->xl_info & ~XLR_INFO_MASK;
+	uint8		info = XLogRecGetInfo(record) & ~XLR_INFO_MASK;
 
 	/* Backup blocks are not used in multixact records */
-	Assert(!(record->xl_info & XLR_BKP_BLOCK_MASK));
+	Assert(!XLogRecHasAnyBlockRefs(record));
 
 	if (info == XLOG_MULTIXACT_ZERO_OFF_PAGE)
 	{
@@ -2719,7 +2732,7 @@ multixact_redo(XLogRecPtr lsn, XLogRecord *record)
 		 * should be unnecessary, since any XID found here ought to have other
 		 * evidence in the XLOG, but let's be safe.
 		 */
-		max_xid = record->xl_xid;
+		max_xid = XLogRecGetXid(record);
 		for (i = 0; i < xlrec->nmembers; i++)
 		{
 			if (TransactionIdPrecedes(max_xid, xlrec->members[i].xid))
@@ -2772,7 +2785,8 @@ pg_get_multixact_members(PG_FUNCTION_ARGS)
 
 		multi = palloc(sizeof(mxact));
 		/* no need to allow for old values here */
-		multi->nmembers = GetMultiXactIdMembers(mxid, &multi->members, false);
+		multi->nmembers = GetMultiXactIdMembers(mxid, &multi->members, false,
+												false);
 		multi->iter = 0;
 
 		tupdesc = CreateTemplateTupleDesc(2, false);

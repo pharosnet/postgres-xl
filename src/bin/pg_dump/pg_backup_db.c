@@ -9,11 +9,12 @@
  *
  *-------------------------------------------------------------------------
  */
+#include "postgres_fe.h"
 
+#include "dumputils.h"
+#include "pg_backup_archiver.h"
 #include "pg_backup_db.h"
 #include "pg_backup_utils.h"
-#include "dumputils.h"
-#include "parallel.h"
 
 #include <unistd.h>
 #include <ctype.h>
@@ -217,7 +218,7 @@ ConnectDatabase(Archive *AHX,
 				const char *pghost,
 				const char *pgport,
 				const char *username,
-				enum trivalue prompt_password)
+				trivalue prompt_password)
 {
 	ArchiveHandle *AH = (ArchiveHandle *) AHX;
 	char	   *password = AH->savedPassword;
@@ -398,7 +399,7 @@ ExecuteSqlCommand(ArchiveHandle *AH, const char *qry, const char *desc)
 			break;
 		default:
 			/* trouble */
-			strncpy(errStmt, qry, DB_MAX_ERR_STMT);
+			strncpy(errStmt, qry, DB_MAX_ERR_STMT);		/* strncpy required here */
 			if (errStmt[DB_MAX_ERR_STMT - 1] != '\0')
 			{
 				errStmt[DB_MAX_ERR_STMT - 4] = '.';
@@ -428,9 +429,14 @@ ExecuteSqlCommand(ArchiveHandle *AH, const char *qry, const char *desc)
  * identifiers, so that we can recognize statement-terminating semicolons.
  * We assume that INSERT data will not contain SQL comments, E'' literals,
  * or dollar-quoted strings, so this is much simpler than a full SQL lexer.
+ *
+ * Note: when restoring from a pre-9.0 dump file, this code is also used to
+ * process BLOB COMMENTS data, which has the same problem of containing
+ * multiple SQL commands that might be split across bufferloads.  Fortunately,
+ * that data won't contain anything complicated to lex either.
  */
 static void
-ExecuteInsertCommands(ArchiveHandle *AH, const char *buf, size_t bufLen)
+ExecuteSimpleCommands(ArchiveHandle *AH, const char *buf, size_t bufLen)
 {
 	const char *qry = buf;
 	const char *eos = buf + bufLen;
@@ -495,8 +501,10 @@ ExecuteInsertCommands(ArchiveHandle *AH, const char *buf, size_t bufLen)
  * Implement ahwrite() for direct-to-DB restore
  */
 int
-ExecuteSqlCommandBuf(ArchiveHandle *AH, const char *buf, size_t bufLen)
+ExecuteSqlCommandBuf(Archive *AHX, const char *buf, size_t bufLen)
 {
+	ArchiveHandle *AH = (ArchiveHandle *) AHX;
+
 	if (AH->outputKind == OUTPUT_COPYDATA)
 	{
 		/*
@@ -514,9 +522,10 @@ ExecuteSqlCommandBuf(ArchiveHandle *AH, const char *buf, size_t bufLen)
 	else if (AH->outputKind == OUTPUT_OTHERDATA)
 	{
 		/*
-		 * Table data expressed as INSERT commands.
+		 * Table data expressed as INSERT commands; or, in old dump files,
+		 * BLOB COMMENTS data (which is expressed as COMMENT ON commands).
 		 */
-		ExecuteInsertCommands(AH, buf, bufLen);
+		ExecuteSimpleCommands(AH, buf, bufLen);
 	}
 	else
 	{
@@ -547,8 +556,10 @@ ExecuteSqlCommandBuf(ArchiveHandle *AH, const char *buf, size_t bufLen)
  * Terminate a COPY operation during direct-to-DB restore
  */
 void
-EndDBCopyMode(ArchiveHandle *AH, TocEntry *te)
+EndDBCopyMode(Archive *AHX, const char *tocEntryTag)
 {
+	ArchiveHandle *AH = (ArchiveHandle *) AHX;
+
 	if (AH->pgCopyIn)
 	{
 		PGresult   *res;
@@ -561,7 +572,7 @@ EndDBCopyMode(ArchiveHandle *AH, TocEntry *te)
 		res = PQgetResult(AH->connection);
 		if (PQresultStatus(res) != PGRES_COMMAND_OK)
 			warn_or_exit_horribly(AH, modulename, "COPY failed for table \"%s\": %s",
-								  te->tag, PQerrorMessage(AH->connection));
+								tocEntryTag, PQerrorMessage(AH->connection));
 		PQclear(res);
 
 		AH->pgCopyIn = false;
@@ -569,14 +580,18 @@ EndDBCopyMode(ArchiveHandle *AH, TocEntry *te)
 }
 
 void
-StartTransaction(ArchiveHandle *AH)
+StartTransaction(Archive *AHX)
 {
+	ArchiveHandle *AH = (ArchiveHandle *) AHX;
+
 	ExecuteSqlCommand(AH, "BEGIN", "could not start database transaction");
 }
 
 void
-CommitTransaction(ArchiveHandle *AH)
+CommitTransaction(Archive *AHX)
 {
+	ArchiveHandle *AH = (ArchiveHandle *) AHX;
+
 	ExecuteSqlCommand(AH, "COMMIT", "could not commit database transaction");
 }
 

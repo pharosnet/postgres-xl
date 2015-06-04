@@ -4,7 +4,7 @@
  *	  prototypes for tablecmds.c.
  *
  *
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/commands/tablecmds.h
@@ -16,12 +16,14 @@
 
 #include "access/htup.h"
 #include "catalog/dependency.h"
+#include "catalog/objectaddress.h"
 #include "nodes/parsenodes.h"
 #include "storage/lock.h"
 #include "utils/relcache.h"
 
 
-extern Oid	DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId);
+extern ObjectAddress DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
+			   ObjectAddress *typaddress);
 
 extern void RemoveRelations(DropStmt *drop);
 
@@ -35,7 +37,10 @@ extern void ATExecChangeOwner(Oid relationOid, Oid newOwnerId, bool recursing, L
 
 extern void AlterTableInternal(Oid relid, List *cmds, bool recurse);
 
-extern Oid	AlterTableNamespace(AlterObjectSchemaStmt *stmt);
+extern Oid	AlterTableMoveAll(AlterTableMoveAllStmt *stmt);
+
+extern ObjectAddress AlterTableNamespace(AlterObjectSchemaStmt *stmt,
+					Oid *oldschema);
 
 extern void AlterTableNamespaceInternal(Relation rel, Oid oldNspOid,
 							Oid nspOid, ObjectAddresses *objsMoved);
@@ -51,11 +56,13 @@ extern void ExecuteTruncate(TruncateStmt *stmt);
 
 extern void SetRelationHasSubclass(Oid relationId, bool relhassubclass);
 
-extern Oid	renameatt(RenameStmt *stmt);
+extern ObjectAddress renameatt(RenameStmt *stmt);
 
-extern Oid	RenameConstraint(RenameStmt *stmt);
+extern ObjectAddress renameatt_type(RenameStmt *stmt);
 
-extern Oid	RenameRelation(RenameStmt *stmt);
+extern ObjectAddress RenameConstraint(RenameStmt *stmt);
+
+extern ObjectAddress RenameRelation(RenameStmt *stmt);
 
 extern void RenameRelationInternal(Oid myrelid,
 					   const char *newrelname, bool is_internal);

@@ -15,7 +15,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/utils/tuplesort.h
@@ -103,7 +103,9 @@ extern void tuplesort_set_bound(Tuplesortstate *state, int64 bound);
 extern void tuplesort_puttupleslot(Tuplesortstate *state,
 					   TupleTableSlot *slot);
 extern void tuplesort_putheaptuple(Tuplesortstate *state, HeapTuple tup);
-extern void tuplesort_putindextuple(Tuplesortstate *state, IndexTuple tuple);
+extern void tuplesort_putindextuplevalues(Tuplesortstate *state,
+							  Relation rel, ItemPointer self,
+							  Datum *values, bool *isnull);
 extern void tuplesort_putdatum(Tuplesortstate *state, Datum val,
 				   bool isNull);
 

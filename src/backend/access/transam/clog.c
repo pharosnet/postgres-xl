@@ -28,7 +28,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  * Portions Copyright (c) 2010-2012 Postgres-XC Development Group
  *
@@ -41,6 +41,9 @@
 #include "access/clog.h"
 #include "access/slru.h"
 #include "access/transam.h"
+#include "access/xlog.h"
+#include "access/xloginsert.h"
+#include "access/xlogutils.h"
 #include "miscadmin.h"
 #include "pg_trace.h"
 
@@ -443,7 +446,7 @@ TransactionIdGetStatus(TransactionId xid, XLogRecPtr *lsn)
  *
  * Testing during the PostgreSQL 9.2 development cycle revealed that on a
  * large multi-processor system, it was possible to have more CLOG page
- * requests in flight at one time than the numebr of CLOG buffers which existed
+ * requests in flight at one time than the number of CLOG buffers which existed
  * at that time, which was hardcoded to 8.  Further testing revealed that
  * performance dropped off with more than 32 CLOG buffers, possibly because
  * the linear buffer search algorithm doesn't scale well.
@@ -759,13 +762,9 @@ CLOGPagePrecedes(int page1, int page2)
 static void
 WriteZeroPageXlogRec(int pageno)
 {
-	XLogRecData rdata;
-
-	rdata.data = (char *) (&pageno);
-	rdata.len = sizeof(int);
-	rdata.buffer = InvalidBuffer;
-	rdata.next = NULL;
-	(void) XLogInsert(RM_CLOG_ID, CLOG_ZEROPAGE, &rdata);
+	XLogBeginInsert();
+	XLogRegisterData((char *) (&pageno), sizeof(int));
+	(void) XLogInsert(RM_CLOG_ID, CLOG_ZEROPAGE);
 }
 
 /*
@@ -777,14 +776,11 @@ WriteZeroPageXlogRec(int pageno)
 static void
 WriteTruncateXlogRec(int pageno)
 {
-	XLogRecData rdata;
 	XLogRecPtr	recptr;
 
-	rdata.data = (char *) (&pageno);
-	rdata.len = sizeof(int);
-	rdata.buffer = InvalidBuffer;
-	rdata.next = NULL;
-	recptr = XLogInsert(RM_CLOG_ID, CLOG_TRUNCATE, &rdata);
+	XLogBeginInsert();
+	XLogRegisterData((char *) (&pageno), sizeof(int));
+	recptr = XLogInsert(RM_CLOG_ID, CLOG_TRUNCATE);
 	XLogFlush(recptr);
 }
 
@@ -792,12 +788,12 @@ WriteTruncateXlogRec(int pageno)
  * CLOG resource manager's routines
  */
 void
-clog_redo(XLogRecPtr lsn, XLogRecord *record)
+clog_redo(XLogReaderState *record)
 {
-	uint8		info = record->xl_info & ~XLR_INFO_MASK;
+	uint8		info = XLogRecGetInfo(record) & ~XLR_INFO_MASK;
 
 	/* Backup blocks are not used in clog records */
-	Assert(!(record->xl_info & XLR_BKP_BLOCK_MASK));
+	Assert(!XLogRecHasAnyBlockRefs(record));
 
 	if (info == CLOG_ZEROPAGE)
 	{

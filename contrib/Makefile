@@ -16,7 +16,6 @@ SUBDIRS = \
 		dblink		\
 		dict_int	\
 		dict_xsyn	\
-		dummy_seclabel	\
 		earthdistance	\
 		file_fdw	\
 		fuzzystrmatch	\
@@ -29,7 +28,6 @@ SUBDIRS = \
 		oid2name	\
 		pageinspect	\
 		passwordcheck	\
-		pg_archivecleanup \
 		pg_buffercache	\
 		pg_freespacemap \
 		pg_prewarm	\
@@ -38,9 +36,6 @@ SUBDIRS = \
 		pg_test_fsync	\
 		pg_test_timing	\
 		pg_trgm		\
-		pg_upgrade	\
-		pg_upgrade_support \
-		pgbench		\
 		pgcrypto	\
 		pgrowlocks	\
 		pgstattuple	\
@@ -53,13 +48,10 @@ SUBDIRS = \
 		tablefunc	\
 		tcn		\
 		test_decoding	\
-		test_parser	\
-		test_shm_mq	\
 		tsearch2	\
 		unaccent	\
 		vacuumlo	\
-		stormstats \
-		worker_spi
+		stormstats
 
 ifeq ($(with_openssl),yes)
 SUBDIRS += sslinfo

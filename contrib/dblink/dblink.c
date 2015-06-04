@@ -9,7 +9,7 @@
  * Shridhar Daithankar <shridhar_daithankar@persistent.co.in>
  *
  * contrib/dblink/dblink.c
- * Copyright (c) 2001-2014, PostgreSQL Global Development Group
+ * Copyright (c) 2001-2015, PostgreSQL Global Development Group
  * ALL RIGHTS RESERVED;
  *
  * Permission to use, copy, modify, and distribute this software and its
@@ -94,8 +94,8 @@ static void materializeQueryResult(FunctionCallInfo fcinfo,
 					   const char *conname,
 					   const char *sql,
 					   bool fail);
-static PGresult *storeQueryResult(storeInfo *sinfo, PGconn *conn, const char *sql);
-static void storeRow(storeInfo *sinfo, PGresult *res, bool first);
+static PGresult *storeQueryResult(volatile storeInfo *sinfo, PGconn *conn, const char *sql);
+static void storeRow(volatile storeInfo *sinfo, PGresult *res, bool first);
 static remoteConn *getConnectionByName(const char *name);
 static HTAB *createConnHash(void);
 static void createNewConnection(const char *name, remoteConn *rconn);
@@ -966,17 +966,24 @@ materializeQueryResult(FunctionCallInfo fcinfo,
 {
 	ReturnSetInfo *rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
 	PGresult   *volatile res = NULL;
-	storeInfo	sinfo;
+	volatile storeInfo sinfo;
 
 	/* prepTuplestoreResult must have been called previously */
 	Assert(rsinfo->returnMode == SFRM_Materialize);
 
 	/* initialize storeInfo to empty */
-	memset(&sinfo, 0, sizeof(sinfo));
+	memset((void *) &sinfo, 0, sizeof(sinfo));
 	sinfo.fcinfo = fcinfo;
 
 	PG_TRY();
 	{
+		/* Create short-lived memory context for data conversions */
+		sinfo.tmpcontext = AllocSetContextCreate(CurrentMemoryContext,
+												 "dblink temporary context",
+												 ALLOCSET_DEFAULT_MINSIZE,
+												 ALLOCSET_DEFAULT_INITSIZE,
+												 ALLOCSET_DEFAULT_MAXSIZE);
+
 		/* execute query, collecting any tuples into the tuplestore */
 		res = storeQueryResult(&sinfo, conn, sql);
 
@@ -1041,6 +1048,12 @@ materializeQueryResult(FunctionCallInfo fcinfo,
 			PQclear(res);
 			res = NULL;
 		}
+
+		/* clean up data conversion short-lived memory context */
+		if (sinfo.tmpcontext != NULL)
+			MemoryContextDelete(sinfo.tmpcontext);
+		sinfo.tmpcontext = NULL;
+
 		PQclear(sinfo.last_res);
 		sinfo.last_res = NULL;
 		PQclear(sinfo.cur_res);
@@ -1064,7 +1077,7 @@ materializeQueryResult(FunctionCallInfo fcinfo,
  * Execute query, and send any result rows to sinfo->tuplestore.
  */
 static PGresult *
-storeQueryResult(storeInfo *sinfo, PGconn *conn, const char *sql)
+storeQueryResult(volatile storeInfo *sinfo, PGconn *conn, const char *sql)
 {
 	bool		first = true;
 	int			nestlevel = -1;
@@ -1132,7 +1145,7 @@ storeQueryResult(storeInfo *sinfo, PGconn *conn, const char *sql)
  * (in this case the PGresult might contain either zero or one row).
  */
 static void
-storeRow(storeInfo *sinfo, PGresult *res, bool first)
+storeRow(volatile storeInfo *sinfo, PGresult *res, bool first)
 {
 	int			nfields = PQnfields(res);
 	HeapTuple	tuple;
@@ -1204,15 +1217,6 @@ storeRow(storeInfo *sinfo, PGresult *res, bool first)
 		if (sinfo->cstrs)
 			pfree(sinfo->cstrs);
 		sinfo->cstrs = (char **) palloc(nfields * sizeof(char *));
-
-		/* Create short-lived memory context for data conversions */
-		if (!sinfo->tmpcontext)
-			sinfo->tmpcontext =
-				AllocSetContextCreate(CurrentMemoryContext,
-									  "dblink temporary context",
-									  ALLOCSET_DEFAULT_MINSIZE,
-									  ALLOCSET_DEFAULT_INITSIZE,
-									  ALLOCSET_DEFAULT_MAXSIZE);
 	}
 
 	/* Should have a single-row result if we get here */
@@ -2976,7 +2980,7 @@ applyRemoteGucs(PGconn *conn)
 		/* Apply the option (this will throw error on failure) */
 		(void) set_config_option(gucName, remoteVal,
 								 PGC_USERSET, PGC_S_SESSION,
-								 GUC_ACTION_SAVE, true, 0);
+								 GUC_ACTION_SAVE, true, 0, false);
 	}
 
 	return nestlevel;

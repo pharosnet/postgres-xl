@@ -1,7 +1,7 @@
 # contrib/test_decoding/Makefile
 
 MODULES = test_decoding
-OBJS = test_decoding.o
+PGFILEDESC = "test_decoding - example of a logical decoding output plugin"
 
 # Note: because we don't tell the Makefile there are any regression tests,
 # we have to clean those result files explicitly
@@ -37,7 +37,7 @@ submake-isolation:
 submake-test_decoding:
 	$(MAKE) -C $(top_builddir)/contrib/test_decoding
 
-REGRESSCHECKS=ddl rewrite toast permissions decoding_in_xact binary prepared
+REGRESSCHECKS=ddl rewrite toast permissions decoding_in_xact decoding_into_rel binary prepared
 
 regresscheck: all | submake-regress submake-test_decoding
 	$(MKDIR_P) regression_output
@@ -53,7 +53,7 @@ regresscheck-install-force: | submake-regress submake-test_decoding
 	    --extra-install=contrib/test_decoding \
 	    $(REGRESSCHECKS)
 
-ISOLATIONCHECKS=mxact delayed_startup concurrent_ddl_dml
+ISOLATIONCHECKS=mxact delayed_startup ondisk_startup concurrent_ddl_dml
 
 isolationcheck: all | submake-isolation submake-test_decoding
 	$(MKDIR_P) isolation_output

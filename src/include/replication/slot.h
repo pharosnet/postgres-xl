@@ -2,7 +2,7 @@
  * slot.h
  *	   Replication slot management.
  *
- * Copyright (c) 2012-2014, PostgreSQL Global Development Group
+ * Copyright (c) 2012-2015, PostgreSQL Global Development Group
  *
  *-------------------------------------------------------------------------
  */
@@ -130,6 +130,10 @@ typedef struct ReplicationSlot
  */
 typedef struct ReplicationSlotCtlData
 {
+	/*
+	 * This array should be declared [FLEXIBLE_ARRAY_MEMBER], but for some
+	 * reason you can't do that in an otherwise-empty struct.
+	 */
 	ReplicationSlot replication_slots[1];
 } ReplicationSlotCtlData;
 
@@ -164,7 +168,7 @@ extern void ReplicationSlotsComputeRequiredLSN(void);
 extern XLogRecPtr ReplicationSlotsComputeLogicalRestartLSN(void);
 extern bool ReplicationSlotsCountDBSlots(Oid dboid, int *nslots, int *nactive);
 
-extern void StartupReplicationSlots(XLogRecPtr checkPointRedo);
+extern void StartupReplicationSlots(void);
 extern void CheckPointReplicationSlots(void);
 
 extern void CheckSlotRequirements(void);

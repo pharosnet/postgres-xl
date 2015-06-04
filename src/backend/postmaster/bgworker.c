@@ -2,7 +2,7 @@
  * bgworker.c
  *		POSTGRES pluggable background workers implementation
  *
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *	  src/backend/postmaster/bgworker.c
@@ -13,7 +13,6 @@
 #include "postgres.h"
 
 #include <unistd.h>
-#include <time.h>
 
 #include "miscadmin.h"
 #include "libpq/pqsignal.h"
@@ -245,14 +244,37 @@ BackgroundWorkerStateChange(void)
 				rw->rw_terminate = true;
 				if (rw->rw_pid != 0)
 					kill(rw->rw_pid, SIGTERM);
+				else
+				{
+					/* Report never-started, now-terminated worker as dead. */
+					ReportBackgroundWorkerPID(rw);
+				}
 			}
 			continue;
 		}
 
-		/* If it's already flagged as do not restart, just release the slot. */
+		/*
+		 * If the worker is marked for termination, we don't need to add it
+		 * to the registered workers list; we can just free the slot.
+		 * However, if bgw_notify_pid is set, the process that registered the
+		 * worker may need to know that we've processed the terminate request,
+		 * so be sure to signal it.
+		 */
 		if (slot->terminate)
 		{
+			int	notify_pid;
+
+			/*
+			 * We need a memory barrier here to make sure that the load of
+			 * bgw_notify_pid completes before the store to in_use.
+			 */
+			notify_pid = slot->worker.bgw_notify_pid;
+			pg_memory_barrier();
+			slot->pid = 0;
 			slot->in_use = false;
+			if (notify_pid != 0)
+				kill(notify_pid, SIGUSR1);
+
 			continue;
 		}
 
@@ -397,9 +419,9 @@ BackgroundWorkerStopNotifications(pid_t pid)
 /*
  * Reset background worker crash state.
  *
- * We assume that, after a crash-and-restart cycle, background workers should
- * be restarted immediately, instead of waiting for bgw_restart_time to
- * elapse.
+ * We assume that, after a crash-and-restart cycle, background workers without
+ * the never-restart flag should be restarted immediately, instead of waiting
+ * for bgw_restart_time to elapse.
  */
 void
 ResetBackgroundWorkerCrashTimes(void)
@@ -411,7 +433,14 @@ ResetBackgroundWorkerCrashTimes(void)
 		RegisteredBgWorker *rw;
 
 		rw = slist_container(RegisteredBgWorker, rw_lnode, iter.cur);
-		rw->rw_crashed_at = 0;
+
+		/*
+		 * For workers that should not be restarted, we don't want to lose
+		 * the information that they have crashed; otherwise, they would be
+		 * restarted, which is wrong.
+		 */
+		if (rw->rw_worker.bgw_restart_time != BGW_NEVER_RESTART)
+			rw->rw_crashed_at = 0;
 	}
 }
 
@@ -556,15 +585,7 @@ StartBackgroundWorker(void)
 	if (worker == NULL)
 		elog(FATAL, "unable to find bgworker entry");
 
-	/* we are a postmaster subprocess now */
-	IsUnderPostmaster = true;
 	IsBackgroundWorker = true;
-
-	/* reset MyProcPid */
-	MyProcPid = getpid();
-
-	/* record Start Time for logging */
-	MyStartTime = time(NULL);
 
 	/* Identify myself via ps */
 	snprintf(buf, MAXPGPATH, "bgworker: %s", worker->bgw_name);
@@ -589,15 +610,6 @@ StartBackgroundWorker(void)
 	/* Apply PostAuthDelay */
 	if (PostAuthDelay > 0)
 		pg_usleep(PostAuthDelay * 1000000L);
-
-	/*
-	 * If possible, make this process a group leader, so that the postmaster
-	 * can signal any child processes too.
-	 */
-#ifdef HAVE_SETSID
-	if (setsid() < 0)
-		elog(FATAL, "setsid() failed: %m");
-#endif
 
 	/*
 	 * Set up signal handlers.
@@ -960,7 +972,7 @@ WaitForBackgroundWorkerStartup(BackgroundWorkerHandle *handle, pid_t *pidp)
 			if (status != BGWH_NOT_YET_STARTED)
 				break;
 
-			rc = WaitLatch(&MyProc->procLatch,
+			rc = WaitLatch(MyLatch,
 						   WL_LATCH_SET | WL_POSTMASTER_DEATH, 0);
 
 			if (rc & WL_POSTMASTER_DEATH)
@@ -969,7 +981,7 @@ WaitForBackgroundWorkerStartup(BackgroundWorkerHandle *handle, pid_t *pidp)
 				break;
 			}
 
-			ResetLatch(&MyProc->procLatch);
+			ResetLatch(MyLatch);
 		}
 	}
 	PG_CATCH();

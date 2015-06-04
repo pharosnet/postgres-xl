@@ -168,7 +168,7 @@ ambuild (Relation heapRelation,
 void
 ambuildempty (Relation indexRelation);
 </programlisting>
-   Build an empty index, and write it to the initialization fork (INIT_FORKNUM)
+   Build an empty index, and write it to the initialization fork (<symbol>INIT_FORKNUM</symbol>)
    of the given relation.  This method is called only for unlogged tables; the
    empty index written to the initialization fork will be copied over the main
    relation fork on each server restart.
@@ -274,14 +274,15 @@ amvacuumcleanup (IndexVacuumInfo *info,
   <para>
 <programlisting>
 bool
-amcanreturn (Relation indexRelation);
+amcanreturn (Relation indexRelation, int attno);
 </programlisting>
-   Check whether the index can support <firstterm>index-only scans</> by
-   returning the indexed column values for an index entry in the form of an
-   IndexTuple.  Return TRUE if so, else FALSE.  If the index AM can never
-   support index-only scans (an example is hash, which stores only
-   the hash values not the original data), it is sufficient to set its
-   <structfield>amcanreturn</> field to zero in <structname>pg_am</>.
+   Check whether the index can support <firstterm>index-only scans</> on the
+   given column, by returning the indexed column values for an index entry in
+   the form of an <structname>IndexTuple</structname>.  The attribute number
+   is 1-based, i.e. the first columns attno is 1. Returns TRUE if supported,
+   else FALSE.  If the access method does not support index-only scans at all,
+   the <structfield>amcanreturn</> field in its <structname>pg_am</> row can
+   be set to zero.
   </para>
 
   <para>

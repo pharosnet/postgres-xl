@@ -4,7 +4,7 @@
  *	  Display type names "nicely".
  *
  *
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -305,7 +305,7 @@ format_type_internal(Oid type_oid, int32 typemod,
 		if (!force_qualify && TypeIsVisible(type_oid))
 			nspname = NULL;
 		else
-			nspname = get_namespace_name(typeform->typnamespace);
+			nspname = get_namespace_name_or_temp(typeform->typnamespace);
 
 		typname = NameStr(typeform->typname);
 

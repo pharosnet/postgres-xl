@@ -3,7 +3,7 @@
  * pl_handler.c		- Handler for the PL/pgSQL
  *			  procedural language
  *
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -43,6 +43,8 @@ static const struct config_enum_entry variable_conflict_options[] = {
 int			plpgsql_variable_conflict = PLPGSQL_RESOLVE_ERROR;
 
 bool		plpgsql_print_strict_params = false;
+
+bool		plpgsql_check_asserts = true;
 
 char	   *plpgsql_extra_warnings_string = NULL;
 char	   *plpgsql_extra_errors_string = NULL;
@@ -153,15 +155,23 @@ _PG_init(void)
 							 NULL, NULL, NULL);
 
 	DefineCustomBoolVariable("plpgsql.print_strict_params",
-							 gettext_noop("Print information about parameters in the DETAIL part of the error messages generated on INTO .. STRICT failures."),
+							 gettext_noop("Print information about parameters in the DETAIL part of the error messages generated on INTO ... STRICT failures."),
 							 NULL,
 							 &plpgsql_print_strict_params,
 							 false,
 							 PGC_USERSET, 0,
 							 NULL, NULL, NULL);
 
+	DefineCustomBoolVariable("plpgsql.check_asserts",
+				  gettext_noop("Perform checks given in ASSERT statements."),
+							 NULL,
+							 &plpgsql_check_asserts,
+							 true,
+							 PGC_USERSET, 0,
+							 NULL, NULL, NULL);
+
 	DefineCustomStringVariable("plpgsql.extra_warnings",
-							   gettext_noop("List of programming constructs which should produce a warning."),
+							   gettext_noop("List of programming constructs that should produce a warning."),
 							   NULL,
 							   &plpgsql_extra_warnings_string,
 							   "none",
@@ -171,7 +181,7 @@ _PG_init(void)
 							   NULL);
 
 	DefineCustomStringVariable("plpgsql.extra_errors",
-							   gettext_noop("List of programming constructs which should produce an error."),
+							   gettext_noop("List of programming constructs that should produce an error."),
 							   NULL,
 							   &plpgsql_extra_errors_string,
 							   "none",

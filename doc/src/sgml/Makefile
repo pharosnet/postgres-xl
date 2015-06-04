@@ -27,26 +27,32 @@ all: html man
 distprep: html distprep-man
 
 
+ifndef DBTOEPUB
+DBTOEPUB = $(missing) dbtoepub
+endif
+
 ifndef JADE
-JADE = jade
+JADE = $(missing) jade
 endif
 SGMLINCLUDE = -D . -D $(srcdir)
 
 ifndef NSGMLS
-NSGMLS = nsgmls
+NSGMLS = $(missing) nsgmls
 endif
 
 ifndef OSX
-OSX = osx
+OSX = $(missing) osx
+endif
+
+ifndef XMLLINT
+XMLLINT = $(missing) xmllint
 endif
 
 ifndef XSLTPROC
-XSLTPROC = xsltproc
+XSLTPROC = $(missing) xsltproc
 endif
 
 override XSLTPROCFLAGS += --stringparam pg.version '$(VERSION)'
-
-DBTOEPUB ?= dbtoepub
 
 
 GENERATED_SGML = bookindex.sgml version.sgml \
@@ -76,6 +82,7 @@ override SPFLAGS += -wall -wno-unused-param -wno-empty -wfully-tagged
 man distprep-man: man-stamp
 
 man-stamp: stylesheet-man.xsl postgres.xml
+	$(XMLLINT) --noout --valid postgres.xml
 	$(XSLTPROC) $(XSLTPROCFLAGS) $(XSLTPROC_MAN_FLAGS) $^
 	touch $@
 
@@ -252,11 +259,13 @@ endif
 xslthtml: xslthtml-stamp
 
 xslthtml-stamp: stylesheet.xsl postgres.xml
+	$(XMLLINT) --noout --valid postgres.xml
 	$(XSLTPROC) $(XSLTPROCFLAGS) $(XSLTPROC_HTML_FLAGS) $^
 	cp $(srcdir)/stylesheet.css html/
 	touch $@
 
 htmlhelp: stylesheet-hh.xsl postgres.xml
+	$(XMLLINT) --noout --valid postgres.xml
 	$(XSLTPROC) $(XSLTPROCFLAGS) $^
 
 %-A4.fo.tmp: stylesheet-fo.xsl %.xml
@@ -266,7 +275,6 @@ htmlhelp: stylesheet-hh.xsl postgres.xml
 	$(XSLTPROC) $(XSLTPROCFLAGS) --stringparam paper.type USletter -o $@ $^
 
 FOP = fop
-XMLLINT = xmllint
 
 # reformat FO output so that locations of errors are easier to find
 %.fo: %.fo.tmp
@@ -279,6 +287,7 @@ XMLLINT = xmllint
 
 epub: postgres.epub
 postgres.epub: postgres.xml
+	$(XMLLINT) --noout --valid $<
 	$(DBTOEPUB) $<
 
 

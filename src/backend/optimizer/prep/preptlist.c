@@ -19,7 +19,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -218,9 +218,9 @@ preprocess_targetlist(PlannerInfo *root, List *tlist)
 		if (rc->rti != rc->prti)
 			continue;
 
-		if (rc->markType != ROW_MARK_COPY)
+		if (rc->allMarkTypes & ~(1 << ROW_MARK_COPY))
 		{
-			/* It's a regular table, so fetch its TID */
+			/* Need to fetch TID */
 			var = makeVar(rc->rti,
 						  SelfItemPointerAttributeNumber,
 						  TIDOID,
@@ -251,9 +251,9 @@ preprocess_targetlist(PlannerInfo *root, List *tlist)
 				tlist = lappend(tlist, tle);
 			}
 		}
-		else
+		if (rc->allMarkTypes & (1 << ROW_MARK_COPY))
 		{
-			/* Not a table, so we need the whole row as a junk var */
+			/* Need the whole row as a junk var */
 			var = makeWholeRowVar(rt_fetch(rc->rti, range_table),
 								  rc->rti,
 								  0,

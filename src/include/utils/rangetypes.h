@@ -4,7 +4,7 @@
  *	  Declarations for Postgres range types.
  *
  *
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/utils/rangetypes.h
@@ -209,6 +209,7 @@ extern RangeType *make_empty_range(TypeCacheEntry *typcache);
 extern Datum range_gist_consistent(PG_FUNCTION_ARGS);
 extern Datum range_gist_compress(PG_FUNCTION_ARGS);
 extern Datum range_gist_decompress(PG_FUNCTION_ARGS);
+extern Datum range_gist_fetch(PG_FUNCTION_ARGS);
 extern Datum range_gist_union(PG_FUNCTION_ARGS);
 extern Datum range_gist_penalty(PG_FUNCTION_ARGS);
 extern Datum range_gist_picksplit(PG_FUNCTION_ARGS);

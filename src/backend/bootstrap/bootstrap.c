@@ -9,7 +9,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  * Portions Copyright (c) 2010-2012 Postgres-XC Development Group
  *
@@ -20,7 +20,6 @@
  */
 #include "postgres.h"
 
-#include <time.h>
 #include <unistd.h>
 #include <signal.h>
 
@@ -202,19 +201,11 @@ AuxiliaryProcessMain(int argc, char *argv[])
 	char	   *userDoption = NULL;
 
 	/*
-	 * initialize globals
+	 * Initialize process environment (already done if under postmaster, but
+	 * not if standalone).
 	 */
-	MyProcPid = getpid();
-
-	MyStartTime = time(NULL);
-
-	/* Compute paths, if we didn't inherit them from postmaster */
-	if (my_exec_path[0] == '\0')
-	{
-		if (find_my_exec(progname, my_exec_path) < 0)
-			elog(FATAL, "%s: could not locate my own executable path",
-				 progname);
-	}
+	if (!IsUnderPostmaster)
+		InitStandaloneProcess(argv[0]);
 
 	/*
 	 * process command arguments
@@ -505,7 +496,7 @@ BootstrapModeMain(void)
 	 */
 	InitProcess();
 
-	InitPostgres(NULL, InvalidOid, NULL, NULL);
+	InitPostgres(NULL, InvalidOid, NULL, InvalidOid, NULL);
 
 	/* Initialize stuff for bootstrap-file processing */
 	for (i = 0; i < MAXATTR; i++)
@@ -542,51 +533,13 @@ BootstrapModeMain(void)
 static void
 bootstrap_signals(void)
 {
-	if (IsUnderPostmaster)
-	{
-		/*
-		 * If possible, make this process a group leader, so that the
-		 * postmaster can signal any child processes too.
-		 */
-#ifdef HAVE_SETSID
-		if (setsid() < 0)
-			elog(FATAL, "setsid() failed: %m");
-#endif
+	Assert(!IsUnderPostmaster);
 
-		/*
-		 * Properly accept or ignore signals the postmaster might send us
-		 */
-		pqsignal(SIGHUP, SIG_IGN);
-		pqsignal(SIGINT, SIG_IGN);		/* ignore query-cancel */
-		pqsignal(SIGTERM, die);
-		pqsignal(SIGQUIT, quickdie);
-		pqsignal(SIGALRM, SIG_IGN);
-		pqsignal(SIGPIPE, SIG_IGN);
-		pqsignal(SIGUSR1, SIG_IGN);
-		pqsignal(SIGUSR2, SIG_IGN);
-
-		/*
-		 * Reset some signals that are accepted by postmaster but not here
-		 */
-		pqsignal(SIGCHLD, SIG_DFL);
-		pqsignal(SIGTTIN, SIG_DFL);
-		pqsignal(SIGTTOU, SIG_DFL);
-		pqsignal(SIGCONT, SIG_DFL);
-		pqsignal(SIGWINCH, SIG_DFL);
-
-		/*
-		 * Unblock signals (they were blocked when the postmaster forked us)
-		 */
-		PG_SETMASK(&UnBlockSig);
-	}
-	else
-	{
-		/* Set up appropriately for interactive use */
-		pqsignal(SIGHUP, die);
-		pqsignal(SIGINT, die);
-		pqsignal(SIGTERM, die);
-		pqsignal(SIGQUIT, die);
-	}
+	/* Set up appropriately for interactive use */
+	pqsignal(SIGHUP, die);
+	pqsignal(SIGINT, die);
+	pqsignal(SIGTERM, die);
+	pqsignal(SIGQUIT, die);
 }
 
 /*
@@ -718,7 +671,7 @@ closerel(char *name)
  * ----------------
  */
 void
-DefineAttr(char *name, char *type, int attnum)
+DefineAttr(char *name, char *type, int attnum, int nullness)
 {
 	Oid			typeoid;
 
@@ -773,30 +726,44 @@ DefineAttr(char *name, char *type, int attnum)
 	attrtypes[attnum]->atttypmod = -1;
 	attrtypes[attnum]->attislocal = true;
 
-	/*
-	 * Mark as "not null" if type is fixed-width and prior columns are too.
-	 * This corresponds to case where column can be accessed directly via C
-	 * struct declaration.
-	 *
-	 * oidvector and int2vector are also treated as not-nullable, even though
-	 * they are no longer fixed-width.
-	 */
-#define MARKNOTNULL(att) \
-	((att)->attlen > 0 || \
-	 (att)->atttypid == OIDVECTOROID || \
-	 (att)->atttypid == INT2VECTOROID)
-
-	if (MARKNOTNULL(attrtypes[attnum]))
+	if (nullness == BOOTCOL_NULL_FORCE_NOT_NULL)
 	{
-		int			i;
+		attrtypes[attnum]->attnotnull = true;
+	}
+	else if (nullness == BOOTCOL_NULL_FORCE_NULL)
+	{
+		attrtypes[attnum]->attnotnull = false;
+	}
+	else
+	{
+		Assert(nullness == BOOTCOL_NULL_AUTO);
 
-		for (i = 0; i < attnum; i++)
+		/*
+		 * Mark as "not null" if type is fixed-width and prior columns are
+		 * too.  This corresponds to case where column can be accessed
+		 * directly via C struct declaration.
+		 *
+		 * oidvector and int2vector are also treated as not-nullable, even
+		 * though they are no longer fixed-width.
+		 */
+#define MARKNOTNULL(att) \
+		((att)->attlen > 0 || \
+		 (att)->atttypid == OIDVECTOROID || \
+		 (att)->atttypid == INT2VECTOROID)
+
+		if (MARKNOTNULL(attrtypes[attnum]))
 		{
-			if (!MARKNOTNULL(attrtypes[i]))
-				break;
+			int			i;
+
+			/* check earlier attributes */
+			for (i = 0; i < attnum; i++)
+			{
+				if (!attrtypes[i]->attnotnull)
+					break;
+			}
+			if (i == attnum)
+				attrtypes[attnum]->attnotnull = true;
 		}
-		if (i == attnum)
-			attrtypes[attnum]->attnotnull = true;
 	}
 }
 
@@ -1061,38 +1028,33 @@ AllocateAttribute(void)
 	return attribute;
 }
 
-/* ----------------
+/*
  *		MapArrayTypeName
- * XXX arrays of "basetype" are always "_basetype".
- *	   this is an evil hack inherited from rel. 3.1.
- * XXX array dimension is thrown away because we
- *	   don't support fixed-dimension arrays.  again,
- *	   sickness from 3.1.
  *
- * the string passed in must have a '[' character in it
+ * Given a type name, produce the corresponding array type name by prepending
+ * '_' and truncating as needed to fit in NAMEDATALEN-1 bytes.  This is only
+ * used in bootstrap mode, so we can get away with assuming that the input is
+ * ASCII and we don't need multibyte-aware truncation.
  *
- * the string returned is a pointer to static storage and should NOT
- * be freed by the CALLER.
- * ----------------
+ * The given string normally ends with '[]' or '[digits]'; we discard that.
+ *
+ * The result is a palloc'd string.
  */
 char *
-MapArrayTypeName(char *s)
+MapArrayTypeName(const char *s)
 {
 	int			i,
 				j;
-	static char newStr[NAMEDATALEN];	/* array type names < NAMEDATALEN long */
+	char		newStr[NAMEDATALEN];
 
-	if (s == NULL || s[0] == '\0')
-		return s;
-
-	j = 1;
 	newStr[0] = '_';
-	for (i = 0; i < NAMEDATALEN - 1 && s[i] != '['; i++, j++)
+	j = 1;
+	for (i = 0; i < NAMEDATALEN - 2 && s[i] != '['; i++, j++)
 		newStr[j] = s[i];
 
 	newStr[j] = '\0';
 
-	return newStr;
+	return pstrdup(newStr);
 }
 
 

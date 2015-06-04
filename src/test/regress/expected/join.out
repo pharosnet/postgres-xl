@@ -2261,6 +2261,12 @@ select * from t1 left join t2 on (t1.a = t2.a) order by 1,2,3,4;
  200 | 1000 | 200 | 2001
 (5 rows)
 
+-- Test matching of column name with wrong alias
+select t1.x from t1 join t3 on (t1.a = t3.x);
+ERROR:  column t1.x does not exist
+LINE 1: select t1.x from t1 join t3 on (t1.a = t3.x);
+               ^
+HINT:  Perhaps you meant to reference the column "t3"."x".
 --
 -- regression test for 8.1 merge right join bug
 --
@@ -2583,19 +2589,17 @@ SELECT qq, unique1
   ( SELECT COALESCE(q2, -1) AS qq FROM int8_tbl b ) AS ss2
   USING (qq)
   INNER JOIN tenk1 c ON qq = unique2;
-                                               QUERY PLAN                                               
---------------------------------------------------------------------------------------------------------
- Remote Subquery Scan on all
-   ->  Hash Join
-         Hash Cond: (c.unique2 = COALESCE((COALESCE(a.q1, 0::bigint)), (COALESCE(b.q2, (-1)::bigint))))
-         ->  Seq Scan on tenk1 c
+                                               QUERY PLAN                                                
+---------------------------------------------------------------------------------------------------------
+ Nested Loop
+   ->  Hash Full Join
+         Hash Cond: (COALESCE(a.q1, '0'::bigint) = COALESCE(b.q2, '-1'::bigint))
+         ->  Seq Scan on int8_tbl a
          ->  Hash
-               ->  Hash Full Join
-                     Hash Cond: (COALESCE(a.q1, 0::bigint) = COALESCE(b.q2, (-1)::bigint))
-                     ->  Seq Scan on int8_tbl a
-                     ->  Hash
-                           ->  Seq Scan on int8_tbl b
-(10 rows)
+               ->  Seq Scan on int8_tbl b
+   ->  Index Scan using tenk1_unique2 on tenk1 c
+         Index Cond: (unique2 = COALESCE((COALESCE(a.q1, '0'::bigint)), (COALESCE(b.q2, '-1'::bigint))))
+(8 rows)
 
 SELECT qq, unique1
   FROM
@@ -2907,6 +2911,25 @@ where thousand = (q1 + q2);
 (13 rows)
 
 --
+-- test ability to generate a suitable plan for a star-schema query
+--
+explain (costs off)
+select * from
+  tenk1, int8_tbl a, int8_tbl b
+where thousand = a.q1 and tenthous = b.q1 and a.q2 = 1 and b.q2 = 2;
+                             QUERY PLAN                              
+---------------------------------------------------------------------
+ Nested Loop
+   ->  Seq Scan on int8_tbl b
+         Filter: (q2 = 2)
+   ->  Nested Loop
+         ->  Seq Scan on int8_tbl a
+               Filter: (q2 = 1)
+         ->  Index Scan using tenk1_thous_tenthous on tenk1
+               Index Cond: ((thousand = a.q1) AND (tenthous = b.q1))
+(8 rows)
+
+--
 -- test extraction of restriction OR clauses from join OR clause
 -- (we used to only do this for indexable clauses)
 --
@@ -2952,6 +2975,33 @@ select * from tenk1 a join tenk1 b on
                      ->  Bitmap Index Scan on tenk1_unique2
                            Index Cond: (unique2 = 3)
 (12 rows)
+
+explain (costs off)
+select * from tenk1 a join tenk1 b on
+  (a.unique1 = 1 and b.unique1 = 2) or
+  ((a.unique2 = 3 or a.unique2 = 7) and b.hundred = 4);
+                                                      QUERY PLAN                                                      
+----------------------------------------------------------------------------------------------------------------------
+ Nested Loop
+   Join Filter: (((a.unique1 = 1) AND (b.unique1 = 2)) OR (((a.unique2 = 3) OR (a.unique2 = 7)) AND (b.hundred = 4)))
+   ->  Bitmap Heap Scan on tenk1 b
+         Recheck Cond: ((unique1 = 2) OR (hundred = 4))
+         ->  BitmapOr
+               ->  Bitmap Index Scan on tenk1_unique1
+                     Index Cond: (unique1 = 2)
+               ->  Bitmap Index Scan on tenk1_hundred
+                     Index Cond: (hundred = 4)
+   ->  Materialize
+         ->  Bitmap Heap Scan on tenk1 a
+               Recheck Cond: ((unique1 = 1) OR (unique2 = 3) OR (unique2 = 7))
+               ->  BitmapOr
+                     ->  Bitmap Index Scan on tenk1_unique1
+                           Index Cond: (unique1 = 1)
+                     ->  Bitmap Index Scan on tenk1_unique2
+                           Index Cond: (unique2 = 3)
+                     ->  Bitmap Index Scan on tenk1_unique2
+                           Index Cond: (unique2 = 7)
+(19 rows)
 
 --
 -- test placement of movable quals in a parameterized join tree
@@ -3095,10 +3145,10 @@ select * from
 ) ss
 where fault = 122
 order by fault;
-                           QUERY PLAN                            
------------------------------------------------------------------
+                                QUERY PLAN                                
+--------------------------------------------------------------------------
  Nested Loop Left Join
-   Filter: ((COALESCE(tenk1.unique1, (-1)) + int8_tbl.q1) = 122)
+   Filter: ((COALESCE(tenk1.unique1, '-1'::integer) + int8_tbl.q1) = 122)
    ->  Seq Scan on int8_tbl
    ->  Index Scan using tenk1_unique2 on tenk1
          Index Cond: (int8_tbl.q2 = unique2)
@@ -3166,14 +3216,14 @@ select f1, unique2, case when unique2 is null then f1 else 0 end
 explain (costs off)
 select a.unique1, b.unique1, c.unique1, coalesce(b.twothousand, a.twothousand)
   from tenk1 a left join tenk1 b on b.thousand = a.unique1                        left join tenk1 c on c.unique2 = coalesce(b.twothousand, a.twothousand)
-  where a.unique2 = 5530 and coalesce(b.twothousand, a.twothousand) = 44;
+  where a.unique2 < 10 and coalesce(b.twothousand, a.twothousand) = 44;
                                          QUERY PLAN                                          
 ---------------------------------------------------------------------------------------------
  Nested Loop Left Join
    ->  Nested Loop Left Join
          Filter: (COALESCE(b.twothousand, a.twothousand) = 44)
          ->  Index Scan using tenk1_unique2 on tenk1 a
-               Index Cond: (unique2 = 5530)
+               Index Cond: (unique2 < 10)
          ->  Bitmap Heap Scan on tenk1 b
                Recheck Cond: (thousand = a.unique1)
                ->  Bitmap Index Scan on tenk1_thous_tenthous
@@ -3184,7 +3234,7 @@ select a.unique1, b.unique1, c.unique1, coalesce(b.twothousand, a.twothousand)
 
 select a.unique1, b.unique1, c.unique1, coalesce(b.twothousand, a.twothousand)
   from tenk1 a left join tenk1 b on b.thousand = a.unique1                        left join tenk1 c on c.unique2 = coalesce(b.twothousand, a.twothousand)
-  where a.unique2 = 5530 and coalesce(b.twothousand, a.twothousand) = 44;
+  where a.unique2 < 10 and coalesce(b.twothousand, a.twothousand) = 44;
  unique1 | unique1 | unique1 | coalesce 
 ---------+---------+---------+----------
 (0 rows)
@@ -3269,15 +3319,65 @@ explain (costs off)
 (6 rows)
 
 --
+-- test that quals attached to an outer join have correct semantics,
+-- specifically that they don't re-use expressions computed below the join;
+-- we force a mergejoin so that coalesce(b.q1, 1) appears as a join input
+--
+set enable_hashjoin to off;
+set enable_nestloop to off;
+explain (verbose, costs off)
+  select a.q2, b.q1
+    from int8_tbl a left join int8_tbl b on a.q2 = coalesce(b.q1, 1)
+    where coalesce(b.q1, 1) > 0;
+                       QUERY PLAN                        
+---------------------------------------------------------
+ Merge Left Join
+   Output: a.q2, b.q1
+   Merge Cond: (a.q2 = (COALESCE(b.q1, '1'::bigint)))
+   Filter: (COALESCE(b.q1, '1'::bigint) > 0)
+   ->  Sort
+         Output: a.q2
+         Sort Key: a.q2
+         ->  Seq Scan on public.int8_tbl a
+               Output: a.q2
+   ->  Sort
+         Output: b.q1, (COALESCE(b.q1, '1'::bigint))
+         Sort Key: (COALESCE(b.q1, '1'::bigint))
+         ->  Seq Scan on public.int8_tbl b
+               Output: b.q1, COALESCE(b.q1, '1'::bigint)
+(14 rows)
+
+select a.q2, b.q1
+  from int8_tbl a left join int8_tbl b on a.q2 = coalesce(b.q1, 1)
+  where coalesce(b.q1, 1) > 0;
+        q2         |        q1        
+-------------------+------------------
+ -4567890123456789 |                 
+               123 |              123
+               123 |              123
+               456 |                 
+  4567890123456789 | 4567890123456789
+  4567890123456789 | 4567890123456789
+  4567890123456789 | 4567890123456789
+  4567890123456789 | 4567890123456789
+  4567890123456789 | 4567890123456789
+  4567890123456789 | 4567890123456789
+(10 rows)
+
+reset enable_hashjoin;
+reset enable_nestloop;
+--
 -- test join removal
 --
 begin;
 CREATE TEMP TABLE a (id int PRIMARY KEY, b_id int);
 CREATE TEMP TABLE b (id int PRIMARY KEY, c_id int);
 CREATE TEMP TABLE c (id int PRIMARY KEY);
+CREATE TEMP TABLE d (a int, b int);
 INSERT INTO a VALUES (0, 0), (1, NULL);
 INSERT INTO b VALUES (0, 0), (1, NULL);
 INSERT INTO c VALUES (0), (1);
+INSERT INTO d VALUES (1,3), (2,2), (3,1);
 -- all three cases should be optimizable into a simple seqscan
 explain (verbose true, costs false, nodes false) SELECT a.* FROM a LEFT JOIN b ON a.b_id = b.id;
           QUERY PLAN           
@@ -3327,6 +3427,83 @@ select id from a where id in (
                ->  Seq Scan on pg_temp_2.b
                      Output: b.id
 (11 rows)
+
+-- check that join removal works for a left join when joining a subquery
+-- that is guaranteed to be unique by its GROUP BY clause
+explain (costs off)
+select d.* from d left join (select * from b group by b.id, b.c_id) s
+  on d.a = s.id and d.b = s.c_id;
+  QUERY PLAN   
+---------------
+ Seq Scan on d
+(1 row)
+
+-- similarly, but keying off a DISTINCT clause
+explain (costs off)
+select d.* from d left join (select distinct * from b) s
+  on d.a = s.id and d.b = s.c_id;
+  QUERY PLAN   
+---------------
+ Seq Scan on d
+(1 row)
+
+-- join removal is not possible when the GROUP BY contains a column that is
+-- not in the join condition
+explain (costs off)
+select d.* from d left join (select * from b group by b.id, b.c_id) s
+  on d.a = s.id;
+                 QUERY PLAN                  
+---------------------------------------------
+ Merge Left Join
+   Merge Cond: (d.a = s.id)
+   ->  Sort
+         Sort Key: d.a
+         ->  Seq Scan on d
+   ->  Sort
+         Sort Key: s.id
+         ->  Subquery Scan on s
+               ->  HashAggregate
+                     Group Key: b.id, b.c_id
+                     ->  Seq Scan on b
+(11 rows)
+
+-- similarly, but keying off a DISTINCT clause
+explain (costs off)
+select d.* from d left join (select distinct * from b) s
+  on d.a = s.id;
+                 QUERY PLAN                  
+---------------------------------------------
+ Merge Left Join
+   Merge Cond: (d.a = s.id)
+   ->  Sort
+         Sort Key: d.a
+         ->  Seq Scan on d
+   ->  Sort
+         Sort Key: s.id
+         ->  Subquery Scan on s
+               ->  HashAggregate
+                     Group Key: b.id, b.c_id
+                     ->  Seq Scan on b
+(11 rows)
+
+-- check join removal works when uniqueness of the join condition is enforced
+-- by a UNION
+explain (costs off)
+select d.* from d left join (select id from a union select id from b) s
+  on d.a = s.id;
+  QUERY PLAN   
+---------------
+ Seq Scan on d
+(1 row)
+
+-- check join removal with a cross-type comparison operator
+explain (costs off)
+select i8.* from int8_tbl i8 left join (select f1 from int4_tbl group by f1) i4
+  on i8.q1 = i4.f1;
+       QUERY PLAN        
+-------------------------
+ Seq Scan on int8_tbl i8
+(1 row)
 
 rollback;
 create temp table parent (k int primary key, pd int);
@@ -3482,6 +3659,38 @@ select * from
 ----+----+----+----
 (0 rows)
 
+--
+-- Test hints given on incorrect column references are useful
+--
+select t1.uunique1 from
+  tenk1 t1 join tenk2 t2 on t1.two = t2.two; -- error, prefer "t1" suggestipn
+ERROR:  column t1.uunique1 does not exist
+LINE 1: select t1.uunique1 from
+               ^
+HINT:  Perhaps you meant to reference the column "t1"."unique1".
+select t2.uunique1 from
+  tenk1 t1 join tenk2 t2 on t1.two = t2.two; -- error, prefer "t2" suggestion
+ERROR:  column t2.uunique1 does not exist
+LINE 1: select t2.uunique1 from
+               ^
+HINT:  Perhaps you meant to reference the column "t2"."unique1".
+select uunique1 from
+  tenk1 t1 join tenk2 t2 on t1.two = t2.two; -- error, suggest both at once
+ERROR:  column "uunique1" does not exist
+LINE 1: select uunique1 from
+               ^
+HINT:  Perhaps you meant to reference the column "t1"."unique1" or the column "t2"."unique1".
+--
+-- Take care to reference the correct RTE
+--
+select atts.relid::regclass, s.* from pg_stats s join
+    pg_attribute a on s.attname = a.attname and s.tablename =
+    a.attrelid::regclass::text join (select unnest(indkey) attnum,
+    indexrelid from pg_index i) atts on atts.attnum = a.attnum where
+    schemaname != 'pg_catalog';
+ERROR:  column atts.relid does not exist
+LINE 1: select atts.relid::regclass, s.* from pg_stats s join
+               ^
 --
 -- Test LATERAL
 --
@@ -3644,6 +3853,26 @@ select * from generate_series(100,200) g,
 explain (costs off)
   select count(*) from tenk1 a,
     tenk1 b join lateral (values(a.unique1)) ss(x) on b.unique2 = ss.x;
+                         QUERY PLAN                         
+------------------------------------------------------------
+ Aggregate
+   ->  Merge Join
+         Merge Cond: (a.unique1 = b.unique2)
+         ->  Index Only Scan using tenk1_unique1 on tenk1 a
+         ->  Index Only Scan using tenk1_unique2 on tenk1 b
+(5 rows)
+
+select count(*) from tenk1 a,
+  tenk1 b join lateral (values(a.unique1)) ss(x) on b.unique2 = ss.x;
+ count 
+-------
+ 10000
+(1 row)
+
+-- lateral with VALUES, no flattening possible
+explain (costs off)
+  select count(*) from tenk1 a,
+    tenk1 b join lateral (values(a.unique1),(-1)) ss(x) on b.unique2 = ss.x;
                             QUERY PLAN                            
 ------------------------------------------------------------------
  Aggregate
@@ -3657,7 +3886,7 @@ explain (costs off)
 (8 rows)
 
 select count(*) from tenk1 a,
-  tenk1 b join lateral (values(a.unique1)) ss(x) on b.unique2 = ss.x;
+  tenk1 b join lateral (values(a.unique1),(-1)) ss(x) on b.unique2 = ss.x;
  count 
 -------
  10000
@@ -4003,14 +4232,14 @@ explain (verbose, costs off)
 select * from
   int8_tbl a left join
   lateral (select *, coalesce(a.q2, 42) as x from int8_tbl b) ss on a.q2 = ss.q1;
-                           QUERY PLAN                           
-----------------------------------------------------------------
+                            QUERY PLAN                            
+------------------------------------------------------------------
  Nested Loop Left Join
-   Output: a.q1, a.q2, b.q1, b.q2, (COALESCE(a.q2, 42::bigint))
+   Output: a.q1, a.q2, b.q1, b.q2, (COALESCE(a.q2, '42'::bigint))
    ->  Seq Scan on public.int8_tbl a
          Output: a.q1, a.q2
    ->  Seq Scan on public.int8_tbl b
-         Output: b.q1, b.q2, COALESCE(a.q2, 42::bigint)
+         Output: b.q1, b.q2, COALESCE(a.q2, '42'::bigint)
          Filter: (a.q2 = b.q1)
 (7 rows)
 
@@ -4225,33 +4454,33 @@ select * from
     cross join
     lateral (select q1, coalesce(ss1.x,q2) as y from int8_tbl d) ss2
   ) on c.q2 = ss2.q1,
-  lateral (select ss2.y) ss3;
-                                                                                  QUERY PLAN                                                                                  
-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+  lateral (select ss2.y offset 0) ss3;
+                                                                                     QUERY PLAN                                                                                     
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Nested Loop
-   Output: c.q1, c.q2, a.q1, a.q2, b.q1, (COALESCE(b.q2, 42::bigint)), d.q1, (COALESCE((COALESCE(b.q2, 42::bigint)), d.q2)), ((COALESCE((COALESCE(b.q2, 42::bigint)), d.q2)))
+   Output: c.q1, c.q2, a.q1, a.q2, b.q1, (COALESCE(b.q2, '42'::bigint)), d.q1, (COALESCE((COALESCE(b.q2, '42'::bigint)), d.q2)), ((COALESCE((COALESCE(b.q2, '42'::bigint)), d.q2)))
    ->  Hash Right Join
-         Output: c.q1, c.q2, a.q1, a.q2, b.q1, d.q1, (COALESCE(b.q2, 42::bigint)), (COALESCE((COALESCE(b.q2, 42::bigint)), d.q2))
+         Output: c.q1, c.q2, a.q1, a.q2, b.q1, d.q1, (COALESCE(b.q2, '42'::bigint)), (COALESCE((COALESCE(b.q2, '42'::bigint)), d.q2))
          Hash Cond: (d.q1 = c.q2)
          ->  Nested Loop
-               Output: a.q1, a.q2, b.q1, d.q1, (COALESCE(b.q2, 42::bigint)), (COALESCE((COALESCE(b.q2, 42::bigint)), d.q2))
+               Output: a.q1, a.q2, b.q1, d.q1, (COALESCE(b.q2, '42'::bigint)), (COALESCE((COALESCE(b.q2, '42'::bigint)), d.q2))
                ->  Hash Left Join
-                     Output: a.q1, a.q2, b.q1, (COALESCE(b.q2, 42::bigint))
+                     Output: a.q1, a.q2, b.q1, (COALESCE(b.q2, '42'::bigint))
                      Hash Cond: (a.q2 = b.q1)
                      ->  Seq Scan on public.int8_tbl a
                            Output: a.q1, a.q2
                      ->  Hash
-                           Output: b.q1, (COALESCE(b.q2, 42::bigint))
+                           Output: b.q1, (COALESCE(b.q2, '42'::bigint))
                            ->  Seq Scan on public.int8_tbl b
-                                 Output: b.q1, COALESCE(b.q2, 42::bigint)
+                                 Output: b.q1, COALESCE(b.q2, '42'::bigint)
                ->  Seq Scan on public.int8_tbl d
-                     Output: d.q1, COALESCE((COALESCE(b.q2, 42::bigint)), d.q2)
+                     Output: d.q1, COALESCE((COALESCE(b.q2, '42'::bigint)), d.q2)
          ->  Hash
                Output: c.q1, c.q2
                ->  Seq Scan on public.int8_tbl c
                      Output: c.q1, c.q2
    ->  Result
-         Output: (COALESCE((COALESCE(b.q2, 42::bigint)), d.q2))
+         Output: (COALESCE((COALESCE(b.q2, '42'::bigint)), d.q2))
 (24 rows)
 
 -- case that breaks the old ph_may_need optimization
@@ -4307,9 +4536,9 @@ select c.*,a.*,ss1.q1,ss2.q1,ss3.* from
 -- check processing of postponed quals (bug #9041)
 explain (verbose, costs off)
 select * from
-  (select 1 as x) x cross join (select 2 as y) y
+  (select 1 as x offset 0) x cross join (select 2 as y offset 0) y
   left join lateral (
-    select * from (select 3 as z) z where z.z = x.x
+    select * from (select 3 as z offset 0) z where z.z = x.x
   ) zz on zz.z = y.y;
                   QUERY PLAN                  
 ----------------------------------------------

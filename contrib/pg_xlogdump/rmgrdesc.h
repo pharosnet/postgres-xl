@@ -13,7 +13,8 @@
 typedef struct RmgrDescData
 {
 	const char *rm_name;
-	void		(*rm_desc) (StringInfo buf, uint8 xl_info, char *rec);
+	void		(*rm_desc) (StringInfo buf, XLogReaderState *record);
+	const char *(*rm_identify) (uint8 info);
 } RmgrDescData;
 
 extern const RmgrDescData RmgrDescTable[];

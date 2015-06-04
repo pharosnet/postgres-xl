@@ -9,7 +9,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  * Portions Copyright (c) 2010-2012 Postgres-XC Development Group
  *
@@ -49,6 +49,7 @@
 #include "catalog/pg_opclass.h"
 #include "catalog/pg_operator.h"
 #include "catalog/pg_opfamily.h"
+#include "catalog/pg_policy.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_rewrite.h"
 #include "catalog/pg_tablespace.h"
@@ -72,6 +73,7 @@
 #include "commands/defrem.h"
 #include "commands/event_trigger.h"
 #include "commands/extension.h"
+#include "commands/policy.h"
 #include "commands/proclang.h"
 #include "commands/schemacmds.h"
 #include "commands/seclabel.h"
@@ -172,7 +174,8 @@ static const Oid object_classes[MAX_OCLASS] = {
 #ifdef PGXC
 	PgxcClassRelationId,		/* OCLASS_PGXCCLASS */
 #endif
-	EventTriggerRelationId		/* OCLASS_EVENT_TRIGGER */
+	EventTriggerRelationId,		/* OCLASS_EVENT_TRIGGER */
+	PolicyRelationId			/* OCLASS_POLICY */
 };
 
 
@@ -221,16 +224,25 @@ deleteObjectsInList(ObjectAddresses *targetObjects, Relation *depRel,
 	/*
 	 * Keep track of objects for event triggers, if necessary.
 	 */
-	if (trackDroppedObjectsNeeded())
+	if (trackDroppedObjectsNeeded() && !(flags & PERFORM_DELETION_INTERNAL))
 	{
 		for (i = 0; i < targetObjects->numrefs; i++)
 		{
-			ObjectAddress *thisobj = targetObjects->refs + i;
+			const ObjectAddress *thisobj = &targetObjects->refs[i];
+			const ObjectAddressExtra *extra = &targetObjects->extras[i];
+			bool	original = false;
+			bool	normal = false;
 
-			if ((!(flags & PERFORM_DELETION_INTERNAL)) &&
-				EventTriggerSupportsObjectClass(getObjectClass(thisobj)))
+			if (extra->flags & DEPFLAG_ORIGINAL)
+				original = true;
+			if (extra->flags & DEPFLAG_NORMAL)
+				normal = true;
+			if (extra->flags & DEPFLAG_REVERSE)
+				normal = true;
+
+			if (EventTriggerSupportsObjectClass(getObjectClass(thisobj)))
 			{
-				EventTriggerSQLDropAddObject(thisobj);
+				EventTriggerSQLDropAddObject(thisobj, original, normal);
 			}
 		}
 	}
@@ -262,7 +274,7 @@ deleteObjectsInList(ObjectAddresses *targetObjects, Relation *depRel,
  * not the direct result of a user-initiated action.  For example, when a
  * temporary schema is cleaned out so that a new backend can use it, or when
  * a column default is dropped as an intermediate step while adding a new one,
- * that's an internal operation.  On the other hand, when the we drop something
+ * that's an internal operation.  On the other hand, when we drop something
  * because the user issued a DROP statement against it, that's not internal.
  */
 void
@@ -1429,6 +1441,10 @@ doDeletion(const ObjectAddress *object, int flags)
 			RemoveEventTriggerById(object->objectId);
 			break;
 
+		case OCLASS_POLICY:
+			RemovePolicyById(object->objectId);
+			break;
+
 		default:
 			elog(ERROR, "unrecognized object class: %u",
 				 object->classId);
@@ -2290,6 +2306,7 @@ object_address_present_add_flags(const ObjectAddress *object,
 								 int flags,
 								 ObjectAddresses *addrs)
 {
+	bool		result = false;
 	int			i;
 
 	for (i = addrs->numrefs - 1; i >= 0; i--)
@@ -2304,22 +2321,48 @@ object_address_present_add_flags(const ObjectAddress *object,
 				ObjectAddressExtra *thisextra = addrs->extras + i;
 
 				thisextra->flags |= flags;
-				return true;
+				result = true;
 			}
-			if (thisobj->objectSubId == 0)
+			else if (thisobj->objectSubId == 0)
 			{
 				/*
 				 * We get here if we find a need to delete a column after
 				 * having already decided to drop its whole table.  Obviously
-				 * we no longer need to drop the column.  But don't plaster
-				 * its flags on the table.
+				 * we no longer need to drop the subobject, so report that we
+				 * found the subobject in the array.  But don't plaster its
+				 * flags on the whole object.
 				 */
-				return true;
+				result = true;
+			}
+			else if (object->objectSubId == 0)
+			{
+				/*
+				 * We get here if we find a need to delete a whole table after
+				 * having already decided to drop one of its columns.  We
+				 * can't report that the whole object is in the array, but we
+				 * should mark the subobject with the whole object's flags.
+				 *
+				 * It might seem attractive to physically delete the column's
+				 * array entry, or at least mark it as no longer needing
+				 * separate deletion.  But that could lead to, e.g., dropping
+				 * the column's datatype before we drop the table, which does
+				 * not seem like a good idea.  This is a very rare situation
+				 * in practice, so we just take the hit of doing a separate
+				 * DROP COLUMN action even though we know we're gonna delete
+				 * the table later.
+				 *
+				 * Because there could be other subobjects of this object in
+				 * the array, this case means we always have to loop through
+				 * the whole array; we cannot exit early on a match.
+				 */
+				ObjectAddressExtra *thisextra = addrs->extras + i;
+
+				thisextra->flags |= flags;
 			}
 		}
 	}
 
-	return false;
+	return result;
 }
 
 /*
@@ -2330,6 +2373,7 @@ stack_address_present_add_flags(const ObjectAddress *object,
 								int flags,
 								ObjectAddressStack *stack)
 {
+	bool		result = false;
 	ObjectAddressStack *stackptr;
 
 	for (stackptr = stack; stackptr; stackptr = stackptr->next)
@@ -2342,21 +2386,31 @@ stack_address_present_add_flags(const ObjectAddress *object,
 			if (object->objectSubId == thisobj->objectSubId)
 			{
 				stackptr->flags |= flags;
-				return true;
+				result = true;
 			}
-
-			/*
-			 * Could visit column with whole table already on stack; this is
-			 * the same case noted in object_address_present_add_flags(), and
-			 * as in that case, we don't propagate flags for the component to
-			 * the whole object.
-			 */
-			if (thisobj->objectSubId == 0)
-				return true;
+			else if (thisobj->objectSubId == 0)
+			{
+				/*
+				 * We're visiting a column with whole table already on stack.
+				 * As in object_address_present_add_flags(), we can skip
+				 * further processing of the subobject, but we don't want to
+				 * propagate flags for the subobject to the whole object.
+				 */
+				result = true;
+			}
+			else if (object->objectSubId == 0)
+			{
+				/*
+				 * We're visiting a table with column already on stack.  As in
+				 * object_address_present_add_flags(), we should propagate
+				 * flags for the whole object to each of its subobjects.
+				 */
+				stackptr->flags |= flags;
+			}
 		}
 	}
 
-	return false;
+	return result;
 }
 
 /*
@@ -2501,6 +2555,9 @@ getObjectClass(const ObjectAddress *object)
 #endif
 		case EventTriggerRelationId:
 			return OCLASS_EVENT_TRIGGER;
+
+		case PolicyRelationId:
+			return OCLASS_POLICY;
 	}
 
 	/* shouldn't get here */

@@ -8,7 +8,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -317,15 +317,13 @@ _outList(StringInfo str, const List *node)
 static void
 _outBitmapset(StringInfo str, const Bitmapset *bms)
 {
-	Bitmapset  *tmpset;
 	int			x;
 
 	appendStringInfoChar(str, '(');
 	appendStringInfoChar(str, 'b');
-	tmpset = bms_copy(bms);
-	while ((x = bms_first_member(tmpset)) >= 0)
+	x = -1;
+	while ((x = bms_next_member(bms, x)) >= 0)
 		appendStringInfo(str, " %d", x);
-	bms_free(tmpset);
 	appendStringInfoChar(str, ')');
 }
 
@@ -432,6 +430,7 @@ _outPlannedStmt(StringInfo str, const PlannedStmt *node)
 	WRITE_NODE_FIELD(relationOids);
 	WRITE_NODE_FIELD(invalItems);
 	WRITE_INT_FIELD(nParamExec);
+	WRITE_BOOL_FIELD(hasRowSecurity);
 }
 
 /*
@@ -504,6 +503,7 @@ _outModifyTable(StringInfo str, const ModifyTable *node)
 
 	WRITE_ENUM_FIELD(operation, CmdType);
 	WRITE_BOOL_FIELD(canSetTag);
+	WRITE_UINT_FIELD(nominalRelation);
 	WRITE_NODE_FIELD(resultRelations);
 	WRITE_INT_FIELD(resultRelIndex);
 	WRITE_NODE_FIELD(plans);
@@ -870,6 +870,22 @@ _outForeignScan(StringInfo str, const ForeignScan *node)
 	WRITE_NODE_FIELD(fdw_exprs);
 	WRITE_NODE_FIELD(fdw_private);
 	WRITE_BOOL_FIELD(fsSystemCol);
+}
+
+static void
+_outCustomScan(StringInfo str, const CustomScan *node)
+{
+	WRITE_NODE_TYPE("CUSTOMSCAN");
+
+	_outScanInfo(str, (const Scan *) node);
+
+	WRITE_UINT_FIELD(flags);
+	WRITE_NODE_FIELD(custom_exprs);
+	WRITE_NODE_FIELD(custom_private);
+	appendStringInfoString(str, " :methods ");
+	_outToken(str, node->methods->CustomName);
+	if (node->methods->TextOutCustomScan)
+		node->methods->TextOutCustomScan(str, node);
 }
 
 static void
@@ -1502,7 +1518,9 @@ _outPlanRowMark(StringInfo str, const PlanRowMark *node)
 	WRITE_UINT_FIELD(prti);
 	WRITE_UINT_FIELD(rowmarkId);
 	WRITE_ENUM_FIELD(markType, RowMarkType);
-	WRITE_BOOL_FIELD(noWait);
+	WRITE_INT_FIELD(allMarkTypes);
+	WRITE_ENUM_FIELD(strength, LockClauseStrength);
+	WRITE_ENUM_FIELD(waitPolicy, LockWaitPolicy);
 	WRITE_BOOL_FIELD(isParent);
 }
 
@@ -1987,6 +2005,7 @@ _outSubLink(StringInfo str, const SubLink *node)
 	WRITE_NODE_TYPE("SUBLINK");
 
 	WRITE_ENUM_FIELD(subLinkType, SubLinkType);
+	WRITE_INT_FIELD(subLinkId);
 	WRITE_NODE_FIELD(testexpr);
 	WRITE_NODE_FIELD(operName);
 	WRITE_NODE_FIELD(subselect);
@@ -2361,6 +2380,7 @@ _outNullTest(StringInfo str, const NullTest *node)
 	WRITE_NODE_FIELD(arg);
 	WRITE_ENUM_FIELD(nulltesttype, NullTestType);
 	WRITE_BOOL_FIELD(argisrow);
+	WRITE_LOCATION_FIELD(location);
 }
 
 static void
@@ -2370,6 +2390,7 @@ _outBooleanTest(StringInfo str, const BooleanTest *node)
 
 	WRITE_NODE_FIELD(arg);
 	WRITE_ENUM_FIELD(booltesttype, BoolTestType);
+	WRITE_LOCATION_FIELD(location);
 }
 
 static void
@@ -2518,7 +2539,10 @@ _outPathInfo(StringInfo str, const Path *node)
 {
 	WRITE_ENUM_FIELD(pathtype, NodeTag);
 	appendStringInfoString(str, " :parent_relids ");
-	_outBitmapset(str, node->parent->relids);
+	if (node->parent)
+		_outBitmapset(str, node->parent->relids);
+	else
+		_outBitmapset(str, NULL);
 	appendStringInfoString(str, " :required_outer ");
 	if (node->param_info)
 		_outBitmapset(str, node->param_info->ppi_req_outer);
@@ -2620,6 +2644,21 @@ _outForeignPath(StringInfo str, const ForeignPath *node)
 	_outPathInfo(str, (const Path *) node);
 
 	WRITE_NODE_FIELD(fdw_private);
+}
+
+static void
+_outCustomPath(StringInfo str, const CustomPath *node)
+{
+	WRITE_NODE_TYPE("CUSTOMPATH");
+
+	_outPathInfo(str, (const Path *) node);
+
+	WRITE_UINT_FIELD(flags);
+	WRITE_NODE_FIELD(custom_private);
+	appendStringInfoString(str, " :methods ");
+	_outToken(str, node->methods->CustomName);
+	if (node->methods->TextOutCustomPath)
+		node->methods->TextOutCustomPath(str, node);
 }
 
 static void
@@ -2725,6 +2764,7 @@ _outPlannerGlobal(StringInfo str, const PlannerGlobal *node)
 	WRITE_UINT_FIELD(lastPHId);
 	WRITE_UINT_FIELD(lastRowMarkId);
 	WRITE_BOOL_FIELD(transientPlan);
+	WRITE_BOOL_FIELD(hasRowSecurity);
 }
 
 static void
@@ -2743,6 +2783,7 @@ _outPlannerInfo(StringInfo str, const PlannerInfo *node)
 	WRITE_INT_FIELD(join_cur_level);
 	WRITE_NODE_FIELD(init_plans);
 	WRITE_NODE_FIELD(cte_plan_ids);
+	WRITE_NODE_FIELD(multiexpr_params);
 	WRITE_NODE_FIELD(eq_classes);
 	WRITE_NODE_FIELD(canon_pathkeys);
 	WRITE_NODE_FIELD(left_join_clauses);
@@ -2765,6 +2806,7 @@ _outPlannerInfo(StringInfo str, const PlannerInfo *node)
 	WRITE_BOOL_FIELD(hasInheritedTarget);
 	WRITE_BOOL_FIELD(hasJoinRTEs);
 	WRITE_BOOL_FIELD(hasLateralRTEs);
+	WRITE_BOOL_FIELD(hasDeletedRTEs);
 	WRITE_BOOL_FIELD(hasHavingQual);
 	WRITE_BOOL_FIELD(hasPseudoConstantQuals);
 	WRITE_BOOL_FIELD(hasRecursion);
@@ -2798,7 +2840,7 @@ _outRelOptInfo(StringInfo str, const RelOptInfo *node)
 	WRITE_NODE_FIELD(cheapest_unique_path);
 	WRITE_NODE_FIELD(cheapest_parameterized_paths);
 	WRITE_UINT_FIELD(relid);
-	WRITE_UINT_FIELD(reltablespace);
+	WRITE_OID_FIELD(reltablespace);
 	WRITE_ENUM_FIELD(rtekind, RTEKind);
 	WRITE_INT_FIELD(min_attr);
 	WRITE_INT_FIELD(max_attr);
@@ -2959,7 +3001,10 @@ _outSpecialJoinInfo(StringInfo str, const SpecialJoinInfo *node)
 	WRITE_ENUM_FIELD(jointype, JoinType);
 	WRITE_BOOL_FIELD(lhs_strict);
 	WRITE_BOOL_FIELD(delay_upper_joins);
-	WRITE_NODE_FIELD(join_quals);
+	WRITE_BOOL_FIELD(semi_can_btree);
+	WRITE_BOOL_FIELD(semi_can_hash);
+	WRITE_NODE_FIELD(semi_operators);
+	WRITE_NODE_FIELD(semi_rhs_exprs);
 }
 
 static void
@@ -3068,6 +3113,19 @@ _outCreateForeignTableStmt(StringInfo str, const CreateForeignTableStmt *node)
 }
 
 static void
+_outImportForeignSchemaStmt(StringInfo str, const ImportForeignSchemaStmt *node)
+{
+	WRITE_NODE_TYPE("IMPORTFOREIGNSCHEMASTMT");
+
+	WRITE_STRING_FIELD(server_name);
+	WRITE_STRING_FIELD(remote_schema);
+	WRITE_STRING_FIELD(local_schema);
+	WRITE_ENUM_FIELD(list_type, ImportForeignSchemaType);
+	WRITE_NODE_FIELD(table_list);
+	WRITE_NODE_FIELD(options);
+}
+
+static void
 _outIndexStmt(StringInfo str, const IndexStmt *node)
 {
 	WRITE_NODE_TYPE("INDEXSTMT");
@@ -3088,7 +3146,9 @@ _outIndexStmt(StringInfo str, const IndexStmt *node)
 	WRITE_BOOL_FIELD(isconstraint);
 	WRITE_BOOL_FIELD(deferrable);
 	WRITE_BOOL_FIELD(initdeferred);
+	WRITE_BOOL_FIELD(transformed);
 	WRITE_BOOL_FIELD(concurrent);
+	WRITE_BOOL_FIELD(if_not_exists);
 }
 
 static void
@@ -3179,7 +3239,7 @@ _outLockingClause(StringInfo str, const LockingClause *node)
 
 	WRITE_NODE_FIELD(lockedRels);
 	WRITE_ENUM_FIELD(strength, LockClauseStrength);
-	WRITE_BOOL_FIELD(noWait);
+	WRITE_ENUM_FIELD(waitPolicy, LockWaitPolicy);
 }
 
 static void
@@ -3306,6 +3366,7 @@ _outQuery(StringInfo str, const Query *node)
 	WRITE_BOOL_FIELD(hasRecursive);
 	WRITE_BOOL_FIELD(hasModifyingCTE);
 	WRITE_BOOL_FIELD(hasForUpdate);
+	WRITE_BOOL_FIELD(hasRowSecurity);
 	WRITE_NODE_FIELD(cteList);
 	WRITE_NODE_FIELD(rtable);
 	WRITE_NODE_FIELD(jointree);
@@ -3379,7 +3440,7 @@ _outRowMarkClause(StringInfo str, const RowMarkClause *node)
 
 	WRITE_UINT_FIELD(rti);
 	WRITE_ENUM_FIELD(strength, LockClauseStrength);
-	WRITE_BOOL_FIELD(noWait);
+	WRITE_ENUM_FIELD(waitPolicy, LockWaitPolicy);
 	WRITE_BOOL_FIELD(pushedDown);
 }
 
@@ -3526,15 +3587,6 @@ _outAExpr(StringInfo str, const A_Expr *node)
 			appendStringInfoChar(str, ' ');
 			WRITE_NODE_FIELD(name);
 			break;
-		case AEXPR_AND:
-			appendStringInfoString(str, " AND");
-			break;
-		case AEXPR_OR:
-			appendStringInfoString(str, " OR");
-			break;
-		case AEXPR_NOT:
-			appendStringInfoString(str, " NOT");
-			break;
 		case AEXPR_OP_ANY:
 			appendStringInfoChar(str, ' ');
 			WRITE_NODE_FIELD(name);
@@ -3560,6 +3612,37 @@ _outAExpr(StringInfo str, const A_Expr *node)
 		case AEXPR_IN:
 			appendStringInfoString(str, " IN ");
 			WRITE_NODE_FIELD(name);
+			break;
+		case AEXPR_LIKE:
+			appendStringInfoString(str, " LIKE ");
+			WRITE_NODE_FIELD(name);
+			break;
+		case AEXPR_ILIKE:
+			appendStringInfoString(str, " ILIKE ");
+			WRITE_NODE_FIELD(name);
+			break;
+		case AEXPR_SIMILAR:
+			appendStringInfoString(str, " SIMILAR ");
+			WRITE_NODE_FIELD(name);
+			break;
+		case AEXPR_BETWEEN:
+			appendStringInfoString(str, " BETWEEN ");
+			WRITE_NODE_FIELD(name);
+			break;
+		case AEXPR_NOT_BETWEEN:
+			appendStringInfoString(str, " NOT_BETWEEN ");
+			WRITE_NODE_FIELD(name);
+			break;
+		case AEXPR_BETWEEN_SYM:
+			appendStringInfoString(str, " BETWEEN_SYM ");
+			WRITE_NODE_FIELD(name);
+			break;
+		case AEXPR_NOT_BETWEEN_SYM:
+			appendStringInfoString(str, " NOT_BETWEEN_SYM ");
+			WRITE_NODE_FIELD(name);
+			break;
+		case AEXPR_PAREN:
+			appendStringInfoString(str, " PAREN");
 			break;
 		default:
 			appendStringInfoString(str, " ??");
@@ -3588,8 +3671,14 @@ _outValue(StringInfo str, const Value *value)
 			appendStringInfoString(str, value->val.str);
 			break;
 		case T_String:
+
+			/*
+			 * We use _outToken to provide escaping of the string's content,
+			 * but we don't want it to do anything with an empty string.
+			 */
 			appendStringInfoChar(str, '"');
-			_outToken(str, value->val.str);
+			if (value->val.str[0] != '\0')
+				_outToken(str, value->val.str);
 			appendStringInfoChar(str, '"');
 			break;
 		case T_BitString:
@@ -3676,6 +3765,16 @@ _outResTarget(StringInfo str, const ResTarget *node)
 	WRITE_NODE_FIELD(indirection);
 	WRITE_NODE_FIELD(val);
 	WRITE_LOCATION_FIELD(location);
+}
+
+static void
+_outMultiAssignRef(StringInfo str, const MultiAssignRef *node)
+{
+	WRITE_NODE_TYPE("MULTIASSIGNREF");
+
+	WRITE_NODE_FIELD(source);
+	WRITE_INT_FIELD(colno);
+	WRITE_INT_FIELD(ncolumns);
 }
 
 static void
@@ -3923,6 +4022,9 @@ _outNode(StringInfo str, const void *obj)
 			case T_ForeignScan:
 				_outForeignScan(str, obj);
 				break;
+			case T_CustomScan:
+				_outCustomScan(str, obj);
+				break;
 			case T_Join:
 				_outJoin(str, obj);
 				break;
@@ -4142,6 +4244,9 @@ _outNode(StringInfo str, const void *obj)
 			case T_ForeignPath:
 				_outForeignPath(str, obj);
 				break;
+			case T_CustomPath:
+				_outCustomPath(str, obj);
+				break;
 			case T_AppendPath:
 				_outAppendPath(str, obj);
 				break;
@@ -4220,6 +4325,9 @@ _outNode(StringInfo str, const void *obj)
 				break;
 			case T_CreateForeignTableStmt:
 				_outCreateForeignTableStmt(str, obj);
+				break;
+			case T_ImportForeignSchemaStmt:
+				_outImportForeignSchemaStmt(str, obj);
 				break;
 			case T_IndexStmt:
 				_outIndexStmt(str, obj);
@@ -4304,6 +4412,9 @@ _outNode(StringInfo str, const void *obj)
 				break;
 			case T_ResTarget:
 				_outResTarget(str, obj);
+				break;
+			case T_MultiAssignRef:
+				_outMultiAssignRef(str, obj);
 				break;
 			case T_SortBy:
 				_outSortBy(str, obj);

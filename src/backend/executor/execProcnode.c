@@ -12,7 +12,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -90,6 +90,7 @@
 #include "executor/nodeBitmapIndexscan.h"
 #include "executor/nodeBitmapOr.h"
 #include "executor/nodeCtescan.h"
+#include "executor/nodeCustom.h"
 #include "executor/nodeForeignscan.h"
 #include "executor/nodeFunctionscan.h"
 #include "executor/nodeGroup.h"
@@ -249,6 +250,11 @@ ExecInitNode(Plan *node, EState *estate, int eflags)
 		case T_ForeignScan:
 			result = (PlanState *) ExecInitForeignScan((ForeignScan *) node,
 													   estate, eflags);
+			break;
+
+		case T_CustomScan:
+			result = (PlanState *) ExecInitCustomScan((CustomScan *) node,
+													  estate, eflags);
 			break;
 
 			/*
@@ -546,6 +552,10 @@ ExecProcNode(PlanState *node)
 			result = ExecForeignScan((ForeignScanState *) node);
 			break;
 
+		case T_CustomScanState:
+			result = ExecCustomScan((CustomScanState *) node);
+			break;
+
 			/*
 			 * join nodes
 			 */
@@ -791,6 +801,10 @@ ExecEndNode(PlanState *node)
 
 		case T_ForeignScanState:
 			ExecEndForeignScan((ForeignScanState *) node);
+			break;
+
+		case T_CustomScanState:
+			ExecEndCustomScan((CustomScanState *) node);
 			break;
 
 			/*

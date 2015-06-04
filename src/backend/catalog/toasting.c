@@ -4,7 +4,7 @@
  *	  This file contains routines to support creation of toast tables
  *
  *
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -32,7 +32,7 @@
 #include "utils/rel.h"
 #include "utils/syscache.h"
 
-/* Potentially set by contrib/pg_upgrade_support functions */
+/* Potentially set by pg_upgrade_support functions */
 Oid			binary_upgrade_next_toast_pg_type_oid = InvalidOid;
 
 static void CheckAndCreateToastTable(Oid relOid, Datum reloptions,
@@ -165,16 +165,51 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 	if (rel->rd_rel->reltoastrelid != InvalidOid)
 		return false;
 
-	/*
-	 * Check to see whether the table actually needs a TOAST table.
-	 *
-	 * If an update-in-place toast relfilenode is specified, force toast file
-	 * creation even if it seems not to need one.
-	 */
-	if (!needs_toast_table(rel) &&
-		(!IsBinaryUpgrade ||
-		 !OidIsValid(binary_upgrade_next_toast_pg_class_oid)))
-		return false;
+	if (!IsBinaryUpgrade)
+	{
+		if (!needs_toast_table(rel))
+			return false;
+	}
+	else
+	{
+		/*
+		 * Check to see whether the table needs a TOAST table.
+		 *
+		 * If an update-in-place TOAST relfilenode is specified, force TOAST file
+		 * creation even if it seems not to need one.  This handles the case
+		 * where the old cluster needed a TOAST table but the new cluster
+		 * would not normally create one.
+		 */
+
+		/*
+		 * If a TOAST oid is not specified, skip TOAST creation as we will do
+		 * it later so we don't create a TOAST table whose OID later conflicts
+		 * with a user-supplied OID.  This handles cases where the old cluster
+		 * didn't need a TOAST table, but the new cluster does.
+		 */
+		if (!OidIsValid(binary_upgrade_next_toast_pg_class_oid))
+			return false;
+
+		/*
+		 * If a special TOAST value has been passed in, it means we are in
+		 * cleanup mode --- we are creating needed TOAST tables after all user
+		 * tables with specified OIDs have been created.  We let the system
+		 * assign a TOAST oid for us.  The tables are empty so the missing
+		 * TOAST tables were not a problem.
+		 */
+		if (binary_upgrade_next_toast_pg_class_oid == OPTIONALLY_CREATE_TOAST_OID)
+		{
+			/* clear as it is not to be used; it is just a flag */
+			binary_upgrade_next_toast_pg_class_oid = InvalidOid;
+
+			if (!needs_toast_table(rel))
+				return false;
+		}
+
+		/* both should be set, or not set */
+		Assert(OidIsValid(binary_upgrade_next_toast_pg_class_oid) ==
+			   OidIsValid(binary_upgrade_next_toast_pg_type_oid));
+	}
 
 	/*
 	 * If requested check lockmode is sufficient. This is a cross check in
@@ -219,12 +254,16 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 	 * Toast tables for regular relations go in pg_toast; those for temp
 	 * relations go into the per-backend temp-toast-table namespace.
 	 */
-	if (isTempOrToastNamespace(rel->rd_rel->relnamespace))
+	if (isTempOrTempToastNamespace(rel->rd_rel->relnamespace))
 		namespaceid = GetTempToastNamespace();
 	else
 		namespaceid = PG_TOAST_NAMESPACE;
 
-	/* Use binary-upgrade override for pg_type.oid, if supplied. */
+	/*
+	 * Use binary-upgrade override for pg_type.oid, if supplied.  We might
+	 * be in the post-schema-restore phase where we are doing ALTER TABLE
+	 * to create TOAST tables that didn't exist in the old cluster.
+	 */
 	if (IsBinaryUpgrade && OidIsValid(binary_upgrade_next_toast_pg_type_oid))
 	{
 		toast_typid = binary_upgrade_next_toast_pg_type_oid;
@@ -250,7 +289,8 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 										   reloptions,
 										   false,
 										   true,
-										   true);
+										   true,
+										   NULL);
 	Assert(toast_relid != InvalidOid);
 
 	/* make the toast relation visible, else heap_open will fail */
@@ -303,7 +343,7 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 				 rel->rd_rel->reltablespace,
 				 collationObjectId, classObjectId, coloptions, (Datum) 0,
 				 true, false, false, false,
-				 true, false, false, true);
+				 true, false, false, true, false);
 
 	heap_close(toast_rel, NoLock);
 
@@ -408,7 +448,7 @@ needs_toast_table(Relation rel)
 		return false;			/* nothing to toast? */
 	if (maxlength_unknown)
 		return true;			/* any unlimited-length attrs? */
-	tuple_length = MAXALIGN(offsetof(HeapTupleHeaderData, t_bits) +
+	tuple_length = MAXALIGN(SizeofHeapTupleHeader +
 							BITMAPLEN(tupdesc->natts)) +
 		MAXALIGN(data_length);
 	return (tuple_length > TOAST_TUPLE_THRESHOLD);

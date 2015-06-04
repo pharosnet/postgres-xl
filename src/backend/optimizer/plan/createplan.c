@@ -10,7 +10,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -25,6 +25,7 @@
 #include <math.h>
 
 #include "access/skey.h"
+#include "access/sysattr.h"
 #include "catalog/pg_class.h"
 #include "foreign/fdwapi.h"
 #include "miscadmin.h"
@@ -39,6 +40,7 @@
 #include "optimizer/planmain.h"
 #include "optimizer/planner.h"
 #include "optimizer/predtest.h"
+#include "optimizer/prep.h"
 #include "optimizer/restrictinfo.h"
 #include "optimizer/subselect.h"
 #include "optimizer/tlist.h"
@@ -140,6 +142,9 @@ static Oid *pgxc_build_rowmark_entries(List *rowMarks, List *rtable, Oid *types,
 #endif /* PGXC */
 static ForeignScan *create_foreignscan_plan(PlannerInfo *root, ForeignPath *best_path,
 						List *tlist, List *scan_clauses);
+static CustomScan *create_customscan_plan(PlannerInfo *root,
+					   CustomPath *best_path,
+					   List *tlist, List *scan_clauses);
 static NestLoop *create_nestloop_plan(PlannerInfo *root, NestPath *best_path,
 					 Plan *outer_plan, Plan *inner_plan);
 static MergeJoin *create_mergejoin_plan(PlannerInfo *root, MergePath *best_path,
@@ -327,6 +332,7 @@ create_plan_recurse(PlannerInfo *root, Path *best_path)
 		case T_RemoteQuery:
 #endif /* XCP */
 #endif /* PGXC */
+		case T_CustomScan:
 			plan = create_scan_plan(root, best_path);
 			break;
 #ifdef XCP
@@ -522,6 +528,13 @@ create_scan_plan(PlannerInfo *root, Path *best_path)
 													scan_clauses);
 			break;
 
+		case T_CustomScan:
+			plan = (Plan *) create_customscan_plan(root,
+												   (CustomPath *) best_path,
+												   tlist,
+												   scan_clauses);
+			break;
+
 		default:
 			elog(ERROR, "unrecognized node type: %d",
 				 (int) best_path->pathtype);
@@ -656,6 +669,7 @@ disuse_physical_tlist(PlannerInfo *root, Plan *plan, Path *path)
 		case T_CteScan:
 		case T_WorkTableScan:
 		case T_ForeignScan:
+		case T_CustomScan:
 			plan->targetlist = build_path_tlist(root, path);
 			break;
 		default:
@@ -2127,6 +2141,9 @@ create_indexscan_plan(PlannerInfo *root,
 	 * predicate, but only in a plain SELECT; when scanning a target relation
 	 * of UPDATE/DELETE/SELECT FOR UPDATE, we must leave such quals in the
 	 * plan so that they'll be properly rechecked by EvalPlanQual testing.
+	 *
+	 * Note: if you change this bit of code you should also look at
+	 * extract_nonindex_conditions() in costsize.c.
 	 */
 	qpqual = NIL;
 	foreach(l, scan_clauses)
@@ -2149,7 +2166,7 @@ create_indexscan_plan(PlannerInfo *root,
 			if (best_path->indexinfo->indpred)
 			{
 				if (baserelid != root->parse->resultRelation &&
-					get_parse_rowmark(root->parse, baserelid) == NULL)
+					get_plan_rowmark(root->rowMarks, baserelid) == NULL)
 					if (predicate_implied_by(clausel,
 											 best_path->indexinfo->indpred))
 						continue;		/* implied by index predicate */
@@ -3205,6 +3222,8 @@ create_foreignscan_plan(PlannerInfo *root, ForeignPath *best_path,
 	RelOptInfo *rel = best_path->path.parent;
 	Index		scan_relid = rel->relid;
 	RangeTblEntry *rte;
+	Bitmapset  *attrs_used = NULL;
+	ListCell   *lc;
 	int			i;
 
 	/* it should be a base rel... */
@@ -3252,19 +3271,96 @@ create_foreignscan_plan(PlannerInfo *root, ForeignPath *best_path,
 	 * Detect whether any system columns are requested from rel.  This is a
 	 * bit of a kluge and might go away someday, so we intentionally leave it
 	 * out of the API presented to FDWs.
+	 *
+	 * First, examine all the attributes needed for joins or final output.
+	 * Note: we must look at reltargetlist, not the attr_needed data, because
+	 * attr_needed isn't computed for inheritance child rels.
 	 */
-	scan_plan->fsSystemCol = false;
-	for (i = rel->min_attr; i < 0; i++)
+	pull_varattnos((Node *) rel->reltargetlist, rel->relid, &attrs_used);
+
+	/* Add all the attributes used by restriction clauses. */
+	foreach(lc, rel->baserestrictinfo)
 	{
-		if (!bms_is_empty(rel->attr_needed[i - rel->min_attr]))
+		RestrictInfo *rinfo = (RestrictInfo *) lfirst(lc);
+
+		pull_varattnos((Node *) rinfo->clause, rel->relid, &attrs_used);
+	}
+
+	/* Now, are any system columns requested from rel? */
+	scan_plan->fsSystemCol = false;
+	for (i = FirstLowInvalidHeapAttributeNumber + 1; i < 0; i++)
+	{
+		if (bms_is_member(i - FirstLowInvalidHeapAttributeNumber, attrs_used))
 		{
 			scan_plan->fsSystemCol = true;
 			break;
 		}
 	}
 
+	bms_free(attrs_used);
+
 	return scan_plan;
 }
+
+/*
+ * create_custom_plan
+ *
+ * Transform a CustomPath into a Plan.
+ */
+static CustomScan *
+create_customscan_plan(PlannerInfo *root, CustomPath *best_path,
+					   List *tlist, List *scan_clauses)
+{
+	CustomScan *cplan;
+	RelOptInfo *rel = best_path->path.parent;
+
+	/*
+	 * Right now, all we can support is CustomScan node which is associated
+	 * with a particular base relation to be scanned.
+	 */
+	Assert(rel && rel->reloptkind == RELOPT_BASEREL);
+
+	/*
+	 * Sort clauses into the best execution order, although custom-scan
+	 * provider can reorder them again.
+	 */
+	scan_clauses = order_qual_clauses(root, scan_clauses);
+
+	/*
+	 * Invoke custom plan provider to create the Plan node represented by the
+	 * CustomPath.
+	 */
+	cplan = (CustomScan *) best_path->methods->PlanCustomPath(root,
+															  rel,
+															  best_path,
+															  tlist,
+															  scan_clauses);
+	Assert(IsA(cplan, CustomScan));
+
+	/*
+	 * Copy cost data from Path to Plan; no need to make custom-plan providers
+	 * do this
+	 */
+	copy_path_costsize(&cplan->scan.plan, &best_path->path);
+
+	/*
+	 * Replace any outer-relation variables with nestloop params in the qual
+	 * and custom_exprs expressions.  We do this last so that the custom-plan
+	 * provider doesn't have to be involved.  (Note that parts of custom_exprs
+	 * could have come from join clauses, so doing this beforehand on the
+	 * scan_clauses wouldn't work.)
+	 */
+	if (best_path->path.param_info)
+	{
+		cplan->scan.plan.qual = (List *)
+			replace_nestloop_params(root, (Node *) cplan->scan.plan.qual);
+		cplan->custom_exprs = (List *)
+			replace_nestloop_params(root, (Node *) cplan->custom_exprs);
+	}
+
+	return cplan;
+}
+
 
 /*****************************************************************************
  *
@@ -6974,6 +7070,7 @@ make_result(PlannerInfo *root,
 ModifyTable *
 make_modifytable(PlannerInfo *root,
 				 CmdType operation, bool canSetTag,
+				 Index nominalRelation,
 				 List *resultRelations, List *subplans,
 				 List *withCheckOptionLists, List *returningLists,
 				 List *rowMarks, int epqParam)
@@ -7022,6 +7119,7 @@ make_modifytable(PlannerInfo *root,
 
 	node->operation = operation;
 	node->canSetTag = canSetTag;
+	node->nominalRelation = nominalRelation;
 	node->resultRelations = resultRelations;
 	node->resultRelIndex = -1;	/* will be set correctly in setrefs.c */
 	node->plans = subplans;

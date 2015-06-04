@@ -3,7 +3,7 @@
  *
  * repl_gram.y				- Parser for the replication commands
  *
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -226,7 +226,7 @@ start_logical_replication:
 				{
 					StartReplicationCmd *cmd;
 					cmd = makeNode(StartReplicationCmd);
-					cmd->kind = REPLICATION_KIND_LOGICAL;;
+					cmd->kind = REPLICATION_KIND_LOGICAL;
 					cmd->slotname = $3;
 					cmd->startpoint = $5;
 					cmd->options = $6;

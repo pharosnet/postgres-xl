@@ -19,7 +19,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *	src/backend/parser/analyze.c
@@ -39,7 +39,6 @@
 #include "catalog/pg_inherits.h"
 #include "catalog/pg_inherits_fn.h"
 #include "catalog/indexing.h"
-#include "utils/fmgroids.h"
 #include "utils/tqual.h"
 #endif
 #include "catalog/pg_type.h"
@@ -339,16 +338,12 @@ transformStmt(ParseState *pstate, Node *parseTree)
  *		Returns true if a snapshot must be set before doing parse analysis
  *		on the given raw parse tree.
  *
- * Classification here should match transformStmt(); but we also have to
- * allow a NULL input (for Parse/Bind of an empty query string).
+ * Classification here should match transformStmt().
  */
 bool
 analyze_requires_snapshot(Node *parseTree)
 {
 	bool		result;
-
-	if (parseTree == NULL)
-		return false;
 
 	switch (nodeTag(parseTree))
 	{
@@ -2666,11 +2661,18 @@ is_rel_child_of_rel(RangeTblEntry *child_rte, RangeTblEntry *parent_rte)
 #endif
 #endif
 
-char *
+/*
+ * Produce a string representation of a LockClauseStrength value.
+ * This should only be applied to valid values (not LCS_NONE).
+ */
+const char *
 LCS_asString(LockClauseStrength strength)
 {
 	switch (strength)
 	{
+		case LCS_NONE:
+			Assert(false);
+			break;
 		case LCS_FORKEYSHARE:
 			return "FOR KEY SHARE";
 		case LCS_FORSHARE:
@@ -2691,6 +2693,8 @@ LCS_asString(LockClauseStrength strength)
 void
 CheckSelectLocking(Query *qry, LockClauseStrength strength)
 {
+	Assert(strength != LCS_NONE);		/* else caller error */
+
 	if (qry->setOperations)
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
@@ -2766,7 +2770,7 @@ transformLockingClause(ParseState *pstate, Query *qry, LockingClause *lc,
 	allrels = makeNode(LockingClause);
 	allrels->lockedRels = NIL;	/* indicates all rels */
 	allrels->strength = lc->strength;
-	allrels->noWait = lc->noWait;
+	allrels->waitPolicy = lc->waitPolicy;
 
 	if (lockedRels == NIL)
 	{
@@ -2780,13 +2784,13 @@ transformLockingClause(ParseState *pstate, Query *qry, LockingClause *lc,
 			switch (rte->rtekind)
 			{
 				case RTE_RELATION:
-					applyLockingClause(qry, i,
-									   lc->strength, lc->noWait, pushedDown);
+					applyLockingClause(qry, i, lc->strength, lc->waitPolicy,
+									   pushedDown);
 					rte->requiredPerms |= ACL_SELECT_FOR_UPDATE;
 					break;
 				case RTE_SUBQUERY:
-					applyLockingClause(qry, i,
-									   lc->strength, lc->noWait, pushedDown);
+					applyLockingClause(qry, i, lc->strength, lc->waitPolicy,
+									   pushedDown);
 
 					/*
 					 * FOR UPDATE/SHARE of subquery is propagated to all of
@@ -2832,15 +2836,13 @@ transformLockingClause(ParseState *pstate, Query *qry, LockingClause *lc,
 					switch (rte->rtekind)
 					{
 						case RTE_RELATION:
-							applyLockingClause(qry, i,
-											   lc->strength, lc->noWait,
-											   pushedDown);
+							applyLockingClause(qry, i, lc->strength,
+											   lc->waitPolicy, pushedDown);
 							rte->requiredPerms |= ACL_SELECT_FOR_UPDATE;
 							break;
 						case RTE_SUBQUERY:
-							applyLockingClause(qry, i,
-											   lc->strength, lc->noWait,
-											   pushedDown);
+							applyLockingClause(qry, i, lc->strength,
+											   lc->waitPolicy, pushedDown);
 							/* see comment above */
 							transformLockingClause(pstate, rte->subquery,
 												   allrels, true);
@@ -2907,9 +2909,12 @@ transformLockingClause(ParseState *pstate, Query *qry, LockingClause *lc,
  */
 void
 applyLockingClause(Query *qry, Index rtindex,
-				   LockClauseStrength strength, bool noWait, bool pushedDown)
+				   LockClauseStrength strength, LockWaitPolicy waitPolicy,
+				   bool pushedDown)
 {
 	RowMarkClause *rc;
+
+	Assert(strength != LCS_NONE);		/* else caller error */
 
 	/* If it's an explicit clause, make sure hasForUpdate gets set */
 	if (!pushedDown)
@@ -2919,20 +2924,26 @@ applyLockingClause(Query *qry, Index rtindex,
 	if ((rc = get_parse_rowmark(qry, rtindex)) != NULL)
 	{
 		/*
-		 * If the same RTE is specified for more than one locking strength,
-		 * treat is as the strongest.  (Reasonable, since you can't take both
-		 * a shared and exclusive lock at the same time; it'll end up being
-		 * exclusive anyway.)
+		 * If the same RTE is specified with more than one locking strength,
+		 * use the strongest.  (Reasonable, since you can't take both a shared
+		 * and exclusive lock at the same time; it'll end up being exclusive
+		 * anyway.)
 		 *
-		 * We also consider that NOWAIT wins if it's specified both ways. This
-		 * is a bit more debatable but raising an error doesn't seem helpful.
-		 * (Consider for instance SELECT FOR UPDATE NOWAIT from a view that
-		 * internally contains a plain FOR UPDATE spec.)
+		 * Similarly, if the same RTE is specified with more than one lock
+		 * wait policy, consider that NOWAIT wins over SKIP LOCKED, which in
+		 * turn wins over waiting for the lock (the default).  This is a bit
+		 * more debatable but raising an error doesn't seem helpful. (Consider
+		 * for instance SELECT FOR UPDATE NOWAIT from a view that internally
+		 * contains a plain FOR UPDATE spec.)  Having NOWAIT win over SKIP
+		 * LOCKED is reasonable since the former throws an error in case of
+		 * coming across a locked tuple, which may be undesirable in some
+		 * cases but it seems better than silently returning inconsistent
+		 * results.
 		 *
 		 * And of course pushedDown becomes false if any clause is explicit.
 		 */
 		rc->strength = Max(rc->strength, strength);
-		rc->noWait |= noWait;
+		rc->waitPolicy = Max(rc->waitPolicy, waitPolicy);
 		rc->pushedDown &= pushedDown;
 		return;
 	}
@@ -2941,7 +2952,7 @@ applyLockingClause(Query *qry, Index rtindex,
 	rc = makeNode(RowMarkClause);
 	rc->rti = rtindex;
 	rc->strength = strength;
-	rc->noWait = noWait;
+	rc->waitPolicy = waitPolicy;
 	rc->pushedDown = pushedDown;
 	qry->rowMarks = lappend(qry->rowMarks, rc);
 }

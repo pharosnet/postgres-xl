@@ -95,7 +95,7 @@ hmac(data bytea, key text, type text) returns bytea
   </para>
 
   <para>
-   The algorithms in <function>crypt()</> differ from the usual 
+   The algorithms in <function>crypt()</> differ from the usual
    MD5 or SHA1 hashing algorithms in the following respects:
   </para>
 
@@ -592,7 +592,7 @@ pgp_pub_encrypt_bytea(data bytea, key bytea [, options text ]) returns bytea
 </synopsis>
    <para>
     Encrypt <parameter>data</> with a public PGP key <parameter>key</>.
-    Giving this function a secret key will produce a error.
+    Giving this function a secret key will produce an error.
    </para>
    <para>
     The <parameter>options</> parameter can contain option settings,
@@ -691,12 +691,38 @@ pgp_key_id(bytea) returns text
    </indexterm>
 
 <synopsis>
-armor(data bytea) returns text
+armor(data bytea [ , keys text[], values text[] ]) returns text
 dearmor(data text) returns bytea
 </synopsis>
    <para>
     These functions wrap/unwrap binary data into PGP ASCII-armor format,
     which is basically Base64 with CRC and additional formatting.
+   </para>
+
+   <para>
+    If the <parameter>keys</> and <parameter>values</> arrays are specified,
+    an <firstterm>armor header</> is added to the armored format for each
+    key/value pair. Both arrays must be single-dimensional, and they must
+    be of the same length.  The keys and values cannot contain any non-ASCII
+    characters.
+   </para>
+  </sect3>
+
+  <sect3>
+   <title><function>pgp_armor_headers</function></title>
+
+   <indexterm>
+    <primary>pgp_armor_headers</primary>
+   </indexterm>
+
+<synopsis>
+pgp_armor_headers(data text, key out text, value out text) returns setof record
+</synopsis>
+   <para>
+    <function>pgp_armor_headers()</> extracts the armor headers from
+    <parameter>data</>.  The return value is a set of rows with two columns,
+    key and value.  If the keys or values contain any non-ASCII characters,
+    they are treated as UTF-8.
    </para>
   </sect3>
 
@@ -802,11 +828,11 @@ Applies to: pgp_sym_encrypt, pgp_pub_encrypt
   </sect4>
 
   <sect4>
-   <title>enable-session-key</title>
+   <title>sess-key</title>
 
    <para>
     Use separate session key.  Public-key encryption always uses a separate
-    session key; this is for symmetric-key encryption, which by default
+    session key; this option is for symmetric-key encryption, which by default
     uses the S2K key directly.
    </para>
 <literallayout>
@@ -1298,10 +1324,6 @@ gen_random_uuid() returns uuid
       <ulink url="http://www.usenix.org/events/usenix99/provos.html"></ulink>
      </para>
      <para>Comparison of crypt-des, crypt-md5 and bcrypt algorithms.</para>
-    </listitem>
-    <listitem>
-     <para><ulink url="http://csrc.nist.gov/cryptval/des.htm"></ulink></para>
-     <para>Standards for DES, 3DES and AES.</para>
     </listitem>
     <listitem>
      <para>

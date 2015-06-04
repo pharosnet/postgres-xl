@@ -6,7 +6,7 @@
  * These routines represent a fairly thin layer on top of SysV shared
  * memory functionality.
  *
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -391,8 +391,8 @@ CreateAnonymousSegment(Size *size)
 				 (mmap_errno == ENOMEM) ?
 				 errhint("This error usually means that PostgreSQL's request "
 					"for a shared memory segment exceeded available memory, "
-					  "swap space or huge pages. To reduce the request size "
-						 "(currently  %zu bytes), reduce PostgreSQL's shared "
+					  "swap space, or huge pages. To reduce the request size "
+						 "(currently %zu bytes), reduce PostgreSQL's shared "
 					   "memory usage, perhaps by reducing shared_buffers or "
 						 "max_connections.",
 						 *size) : 0));

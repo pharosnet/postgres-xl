@@ -3,7 +3,7 @@
  * postgres_fdw.c
  *		  Foreign-data wrapper for remote PostgreSQL servers
  *
- * Portions Copyright (c) 2012-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 2012-2015, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *		  contrib/postgres_fdw/postgres_fdw.c
@@ -36,7 +36,7 @@
 #include "utils/guc.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
-
+#include "utils/rel.h"
 
 PG_MODULE_MAGIC;
 
@@ -286,6 +286,8 @@ static void postgresExplainForeignModify(ModifyTableState *mtstate,
 static bool postgresAnalyzeForeignTable(Relation relation,
 							AcquireSampleRowsFunc *func,
 							BlockNumber *totalpages);
+static List *postgresImportForeignSchema(ImportForeignSchemaStmt *stmt,
+							Oid serverOid);
 
 /*
  * Helper functions
@@ -362,6 +364,9 @@ postgres_fdw_handler(PG_FUNCTION_ARGS)
 
 	/* Support functions for ANALYZE */
 	routine->AnalyzeForeignTable = postgresAnalyzeForeignTable;
+
+	/* Support functions for IMPORT FOREIGN SCHEMA */
+	routine->ImportForeignSchema = postgresImportForeignSchema;
 
 	PG_RETURN_POINTER(routine);
 }
@@ -514,7 +519,7 @@ postgresGetForeignRelSize(PlannerInfo *root,
 		{
 			baserel->pages = 10;
 			baserel->tuples =
-				(10 * BLCKSZ) / (baserel->width + sizeof(HeapTupleHeaderData));
+				(10 * BLCKSZ) / (baserel->width + MAXALIGN(SizeofHeapTupleHeader));
 		}
 
 		/* Estimate baserel size as best we can with local statistics. */
@@ -817,13 +822,14 @@ postgresGetForeignPlan(PlannerInfo *root,
 	}
 	else
 	{
-		RowMarkClause *rc = get_parse_rowmark(root->parse, baserel->relid);
+		PlanRowMark *rc = get_plan_rowmark(root->rowMarks, baserel->relid);
 
 		if (rc)
 		{
 			/*
 			 * Relation is specified as a FOR UPDATE/SHARE target, so handle
-			 * that.
+			 * that.  (But we could also see LCS_NONE, meaning this isn't a
+			 * target relation after all.)
 			 *
 			 * For now, just ignore any [NO] KEY specification, since (a) it's
 			 * not clear what that means for a remote table that we don't have
@@ -832,6 +838,9 @@ postgresGetForeignPlan(PlannerInfo *root,
 			 */
 			switch (rc->strength)
 			{
+				case LCS_NONE:
+					/* No locking needed */
+					break;
 				case LCS_FORKEYSHARE:
 				case LCS_FORSHARE:
 					appendStringInfoString(&sql, " FOR SHARE");
@@ -1193,15 +1202,17 @@ postgresPlanForeignModify(PlannerInfo *root,
 	}
 	else if (operation == CMD_UPDATE)
 	{
-		Bitmapset  *tmpset = bms_copy(rte->modifiedCols);
-		AttrNumber	col;
+		int			col;
 
-		while ((col = bms_first_member(tmpset)) >= 0)
+		col = -1;
+		while ((col = bms_next_member(rte->modifiedCols, col)) >= 0)
 		{
-			col += FirstLowInvalidHeapAttributeNumber;
-			if (col <= InvalidAttrNumber)		/* shouldn't happen */
+			/* bit numbers are offset by FirstLowInvalidHeapAttributeNumber */
+			AttrNumber	attno = col + FirstLowInvalidHeapAttributeNumber;
+
+			if (attno <= InvalidAttrNumber)		/* shouldn't happen */
 				elog(ERROR, "system-column update is not supported");
-			targetAttrs = lappend_int(targetAttrs, col);
+			targetAttrs = lappend_int(targetAttrs, attno);
 		}
 	}
 
@@ -2099,15 +2110,15 @@ set_transmission_modes(void)
 	if (DateStyle != USE_ISO_DATES)
 		(void) set_config_option("datestyle", "ISO",
 								 PGC_USERSET, PGC_S_SESSION,
-								 GUC_ACTION_SAVE, true, 0);
+								 GUC_ACTION_SAVE, true, 0, false);
 	if (IntervalStyle != INTSTYLE_POSTGRES)
 		(void) set_config_option("intervalstyle", "postgres",
 								 PGC_USERSET, PGC_S_SESSION,
-								 GUC_ACTION_SAVE, true, 0);
+								 GUC_ACTION_SAVE, true, 0, false);
 	if (extra_float_digits < 3)
 		(void) set_config_option("extra_float_digits", "3",
 								 PGC_USERSET, PGC_S_SESSION,
-								 GUC_ACTION_SAVE, true, 0);
+								 GUC_ACTION_SAVE, true, 0, false);
 
 	return nestlevel;
 }
@@ -2257,7 +2268,6 @@ static void
 store_returning_result(PgFdwModifyState *fmstate,
 					   TupleTableSlot *slot, PGresult *res)
 {
-	/* PGresult must be released before leaving this function. */
 	PG_TRY();
 	{
 		HeapTuple	newtup;
@@ -2562,6 +2572,270 @@ analyze_row_processor(PGresult *res, int row, PgFdwAnalyzeState *astate)
 
 		MemoryContextSwitchTo(oldcontext);
 	}
+}
+
+/*
+ * Import a foreign schema
+ */
+static List *
+postgresImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
+{
+	List	   *commands = NIL;
+	bool		import_collate = true;
+	bool		import_default = false;
+	bool		import_not_null = true;
+	ForeignServer *server;
+	UserMapping *mapping;
+	PGconn	   *conn;
+	StringInfoData buf;
+	PGresult   *volatile res = NULL;
+	int			numrows,
+				i;
+	ListCell   *lc;
+
+	/* Parse statement options */
+	foreach(lc, stmt->options)
+	{
+		DefElem    *def = (DefElem *) lfirst(lc);
+
+		if (strcmp(def->defname, "import_collate") == 0)
+			import_collate = defGetBoolean(def);
+		else if (strcmp(def->defname, "import_default") == 0)
+			import_default = defGetBoolean(def);
+		else if (strcmp(def->defname, "import_not_null") == 0)
+			import_not_null = defGetBoolean(def);
+		else
+			ereport(ERROR,
+					(errcode(ERRCODE_FDW_INVALID_OPTION_NAME),
+					 errmsg("invalid option \"%s\"", def->defname)));
+	}
+
+	/*
+	 * Get connection to the foreign server.  Connection manager will
+	 * establish new connection if necessary.
+	 */
+	server = GetForeignServer(serverOid);
+	mapping = GetUserMapping(GetUserId(), server->serverid);
+	conn = GetConnection(server, mapping, false);
+
+	/* Don't attempt to import collation if remote server hasn't got it */
+	if (PQserverVersion(conn) < 90100)
+		import_collate = false;
+
+	/* Create workspace for strings */
+	initStringInfo(&buf);
+
+	/* In what follows, do not risk leaking any PGresults. */
+	PG_TRY();
+	{
+		/* Check that the schema really exists */
+		appendStringInfoString(&buf, "SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = ");
+		deparseStringLiteral(&buf, stmt->remote_schema);
+
+		res = PQexec(conn, buf.data);
+		if (PQresultStatus(res) != PGRES_TUPLES_OK)
+			pgfdw_report_error(ERROR, res, conn, false, buf.data);
+
+		if (PQntuples(res) != 1)
+			ereport(ERROR,
+					(errcode(ERRCODE_FDW_SCHEMA_NOT_FOUND),
+			  errmsg("schema \"%s\" is not present on foreign server \"%s\"",
+					 stmt->remote_schema, server->servername)));
+
+		PQclear(res);
+		res = NULL;
+		resetStringInfo(&buf);
+
+		/*
+		 * Fetch all table data from this schema, possibly restricted by
+		 * EXCEPT or LIMIT TO.
+		 *
+		 * Note: because we run the connection with search_path restricted to
+		 * pg_catalog, the format_type() and pg_get_expr() outputs will always
+		 * include a schema name for types/functions in other schemas, which
+		 * is what we want.
+		 */
+		if (import_collate)
+			appendStringInfoString(&buf,
+								   "SELECT relname, "
+								   "  attname, "
+								   "  format_type(atttypid, atttypmod), "
+								   "  attnotnull, "
+								   "  pg_get_expr(adbin, adrelid), "
+								   "  collname, "
+								   "  collnsp.nspname "
+								   "FROM pg_class c "
+								   "  JOIN pg_namespace n ON "
+								   "    relnamespace = n.oid "
+								   "  LEFT JOIN pg_attribute a ON "
+								   "    attrelid = c.oid AND attnum > 0 "
+								   "      AND NOT attisdropped "
+								   "  LEFT JOIN pg_attrdef ad ON "
+								   "    adrelid = c.oid AND adnum = attnum "
+								   "  LEFT JOIN pg_collation coll ON "
+								   "    coll.oid = attcollation "
+								   "  LEFT JOIN pg_namespace collnsp ON "
+								   "    collnsp.oid = collnamespace ");
+		else
+			appendStringInfoString(&buf,
+								   "SELECT relname, "
+								   "  attname, "
+								   "  format_type(atttypid, atttypmod), "
+								   "  attnotnull, "
+								   "  pg_get_expr(adbin, adrelid), "
+								   "  NULL, NULL "
+								   "FROM pg_class c "
+								   "  JOIN pg_namespace n ON "
+								   "    relnamespace = n.oid "
+								   "  LEFT JOIN pg_attribute a ON "
+								   "    attrelid = c.oid AND attnum > 0 "
+								   "      AND NOT attisdropped "
+								   "  LEFT JOIN pg_attrdef ad ON "
+								   "    adrelid = c.oid AND adnum = attnum ");
+
+		appendStringInfoString(&buf,
+							   "WHERE c.relkind IN ('r', 'v', 'f', 'm') "
+							   "  AND n.nspname = ");
+		deparseStringLiteral(&buf, stmt->remote_schema);
+
+		/* Apply restrictions for LIMIT TO and EXCEPT */
+		if (stmt->list_type == FDW_IMPORT_SCHEMA_LIMIT_TO ||
+			stmt->list_type == FDW_IMPORT_SCHEMA_EXCEPT)
+		{
+			bool		first_item = true;
+
+			appendStringInfoString(&buf, " AND c.relname ");
+			if (stmt->list_type == FDW_IMPORT_SCHEMA_EXCEPT)
+				appendStringInfoString(&buf, "NOT ");
+			appendStringInfoString(&buf, "IN (");
+
+			/* Append list of table names within IN clause */
+			foreach(lc, stmt->table_list)
+			{
+				RangeVar   *rv = (RangeVar *) lfirst(lc);
+
+				if (first_item)
+					first_item = false;
+				else
+					appendStringInfoString(&buf, ", ");
+				deparseStringLiteral(&buf, rv->relname);
+			}
+			appendStringInfoString(&buf, ")");
+		}
+
+		/* Append ORDER BY at the end of query to ensure output ordering */
+		appendStringInfo(&buf, " ORDER BY c.relname, a.attnum");
+
+		/* Fetch the data */
+		res = PQexec(conn, buf.data);
+		if (PQresultStatus(res) != PGRES_TUPLES_OK)
+			pgfdw_report_error(ERROR, res, conn, false, buf.data);
+
+		/* Process results */
+		numrows = PQntuples(res);
+		/* note: incrementation of i happens in inner loop's while() test */
+		for (i = 0; i < numrows;)
+		{
+			char	   *tablename = PQgetvalue(res, i, 0);
+			bool		first_item = true;
+
+			resetStringInfo(&buf);
+			appendStringInfo(&buf, "CREATE FOREIGN TABLE %s (\n",
+							 quote_identifier(tablename));
+
+			/* Scan all rows for this table */
+			do
+			{
+				char	   *attname;
+				char	   *typename;
+				char	   *attnotnull;
+				char	   *attdefault;
+				char	   *collname;
+				char	   *collnamespace;
+
+				/* If table has no columns, we'll see nulls here */
+				if (PQgetisnull(res, i, 1))
+					continue;
+
+				attname = PQgetvalue(res, i, 1);
+				typename = PQgetvalue(res, i, 2);
+				attnotnull = PQgetvalue(res, i, 3);
+				attdefault = PQgetisnull(res, i, 4) ? (char *) NULL :
+					PQgetvalue(res, i, 4);
+				collname = PQgetisnull(res, i, 5) ? (char *) NULL :
+					PQgetvalue(res, i, 5);
+				collnamespace = PQgetisnull(res, i, 6) ? (char *) NULL :
+					PQgetvalue(res, i, 6);
+
+				if (first_item)
+					first_item = false;
+				else
+					appendStringInfoString(&buf, ",\n");
+
+				/* Print column name and type */
+				appendStringInfo(&buf, "  %s %s",
+								 quote_identifier(attname),
+								 typename);
+
+				/*
+				 * Add column_name option so that renaming the foreign table's
+				 * column doesn't break the association to the underlying
+				 * column.
+				 */
+				appendStringInfoString(&buf, " OPTIONS (column_name ");
+				deparseStringLiteral(&buf, attname);
+				appendStringInfoString(&buf, ")");
+
+				/* Add COLLATE if needed */
+				if (import_collate && collname != NULL && collnamespace != NULL)
+					appendStringInfo(&buf, " COLLATE %s.%s",
+									 quote_identifier(collnamespace),
+									 quote_identifier(collname));
+
+				/* Add DEFAULT if needed */
+				if (import_default && attdefault != NULL)
+					appendStringInfo(&buf, " DEFAULT %s", attdefault);
+
+				/* Add NOT NULL if needed */
+				if (import_not_null && attnotnull[0] == 't')
+					appendStringInfoString(&buf, " NOT NULL");
+			}
+			while (++i < numrows &&
+				   strcmp(PQgetvalue(res, i, 0), tablename) == 0);
+
+			/*
+			 * Add server name and table-level options.  We specify remote
+			 * schema and table name as options (the latter to ensure that
+			 * renaming the foreign table doesn't break the association).
+			 */
+			appendStringInfo(&buf, "\n) SERVER %s\nOPTIONS (",
+							 quote_identifier(server->servername));
+
+			appendStringInfoString(&buf, "schema_name ");
+			deparseStringLiteral(&buf, stmt->remote_schema);
+			appendStringInfoString(&buf, ", table_name ");
+			deparseStringLiteral(&buf, tablename);
+
+			appendStringInfoString(&buf, ");");
+
+			commands = lappend(commands, pstrdup(buf.data));
+		}
+
+		/* Clean up */
+		PQclear(res);
+		res = NULL;
+	}
+	PG_CATCH();
+	{
+		if (res)
+			PQclear(res);
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
+
+	ReleaseConnection(conn);
+
+	return commands;
 }
 
 /*

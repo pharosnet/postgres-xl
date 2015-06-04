@@ -9,7 +9,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/nodes/execnodes.h
@@ -427,22 +427,25 @@ typedef struct EState
  * ExecRowMark -
  *	   runtime representation of FOR [KEY] UPDATE/SHARE clauses
  *
- * When doing UPDATE, DELETE, or SELECT FOR [KEY] UPDATE/SHARE, we should have an
+ * When doing UPDATE, DELETE, or SELECT FOR [KEY] UPDATE/SHARE, we will have an
  * ExecRowMark for each non-target relation in the query (except inheritance
- * parent RTEs, which can be ignored at runtime).  See PlanRowMark for details
- * about most of the fields.  In addition to fields directly derived from
- * PlanRowMark, we store curCtid, which is used by the WHERE CURRENT OF code.
+ * parent RTEs, which can be ignored at runtime).  Virtual relations such as
+ * subqueries-in-FROM will have an ExecRowMark with relation == NULL.  See
+ * PlanRowMark for details about most of the fields.  In addition to fields
+ * directly derived from PlanRowMark, we store curCtid, which is used by the
+ * WHERE CURRENT OF code.
  *
  * EState->es_rowMarks is a list of these structs.
  */
 typedef struct ExecRowMark
 {
 	Relation	relation;		/* opened and suitably locked relation */
+	Oid			relid;			/* its OID (or InvalidOid, if subquery) */
 	Index		rti;			/* its range table index */
 	Index		prti;			/* parent range table index, if child */
 	Index		rowmarkId;		/* unique identifier for resjunk columns */
 	RowMarkType markType;		/* see enum in nodes/plannodes.h */
-	bool		noWait;			/* NOWAIT option */
+	LockWaitPolicy waitPolicy;	/* NOWAIT and SKIP LOCKED */
 	ItemPointerData curCtid;	/* ctid of currently locked tuple, if any */
 } ExecRowMark;
 
@@ -590,6 +593,7 @@ typedef struct WholeRowVarExprState
 {
 	ExprState	xprstate;
 	struct PlanState *parent;	/* parent PlanState, or NULL if none */
+	TupleDesc	wrv_tupdesc;	/* descriptor for resulting tuples */
 	JunkFilter *wrv_junkFilter; /* JunkFilter to remove resjunk cols */
 } WholeRowVarExprState;
 
@@ -741,6 +745,7 @@ typedef struct SubPlanState
 {
 	ExprState	xprstate;
 	struct PlanState *planstate;	/* subselect plan's state tree */
+	struct PlanState *parent;	/* parent plan node's state tree */
 	ExprState  *testexpr;		/* state of combining expression */
 	List	   *args;			/* states of argument expression(s) */
 	HeapTuple	curTuple;		/* copy of most recent tuple from subplan */
@@ -953,8 +958,9 @@ typedef struct CoerceToDomainState
 {
 	ExprState	xprstate;
 	ExprState  *arg;			/* input expression */
-	/* Cached list of constraints that need to be checked */
-	List	   *constraints;	/* list of DomainConstraintState nodes */
+	/* Cached set of constraints that need to be checked */
+	/* use struct pointer to avoid including typcache.h here */
+	struct DomainConstraintRef *constraint_ref;
 } CoerceToDomainState;
 
 /*
@@ -1391,7 +1397,6 @@ typedef struct TidScanState
 	bool		tss_isCurrentOf;
 	int			tss_NumTids;
 	int			tss_TidPtr;
-	int			tss_MarkTidPtr;
 	ItemPointerData *tss_TidList;
 	HeapTupleData tss_htup;
 } TidScanState;
@@ -1422,6 +1427,7 @@ typedef struct SubqueryScanState
  *		nfuncs				number of functions being executed
  *		funcstates			per-function execution states (private in
  *							nodeFunctionscan.c)
+ *		argcontext			memory context to evaluate function arguments in
  * ----------------
  */
 struct FunctionScanPerFuncState;
@@ -1436,6 +1442,7 @@ typedef struct FunctionScanState
 	int			nfuncs;
 	struct FunctionScanPerFuncState *funcstates;		/* array of length
 														 * nfuncs */
+	MemoryContext argcontext;
 } FunctionScanState;
 
 /* ----------------
@@ -1447,7 +1454,6 @@ typedef struct FunctionScanState
  *		exprlists			array of expression lists being evaluated
  *		array_len			size of array
  *		curr_idx			current array index (0-based)
- *		marked_idx			marked position (for mark/restore)
  *
  *	Note: ss.ps.ps_ExprContext is used to evaluate any qual or projection
  *	expressions attached to the node.  We create a second ExprContext,
@@ -1463,7 +1469,6 @@ typedef struct ValuesScanState
 	List	  **exprlists;
 	int			array_len;
 	int			curr_idx;
-	int			marked_idx;
 } ValuesScanState;
 
 /* ----------------
@@ -1516,6 +1521,49 @@ typedef struct ForeignScanState
 	struct FdwRoutine *fdwroutine;
 	void	   *fdw_state;		/* foreign-data wrapper can keep state here */
 } ForeignScanState;
+
+/* ----------------
+ *	 CustomScanState information
+ *
+ *		CustomScan nodes are used to execute custom code within executor.
+ *
+ * Core code must avoid assuming that the CustomScanState is only as large as
+ * the structure declared here; providers are allowed to make it the first
+ * element in a larger structure, and typically would need to do so.  The
+ * struct is actually allocated by the CreateCustomScanState method associated
+ * with the plan node.  Any additional fields can be initialized there, or in
+ * the BeginCustomScan method.
+ * ----------------
+ */
+struct ExplainState;			/* avoid including explain.h here */
+struct CustomScanState;
+
+typedef struct CustomExecMethods
+{
+	const char *CustomName;
+
+	/* Executor methods: mark/restore are optional, the rest are required */
+	void		(*BeginCustomScan) (struct CustomScanState *node,
+												EState *estate,
+												int eflags);
+	TupleTableSlot *(*ExecCustomScan) (struct CustomScanState *node);
+	void		(*EndCustomScan) (struct CustomScanState *node);
+	void		(*ReScanCustomScan) (struct CustomScanState *node);
+	void		(*MarkPosCustomScan) (struct CustomScanState *node);
+	void		(*RestrPosCustomScan) (struct CustomScanState *node);
+
+	/* Optional: print additional information in EXPLAIN */
+	void		(*ExplainCustomScan) (struct CustomScanState *node,
+												  List *ancestors,
+												  struct ExplainState *es);
+} CustomExecMethods;
+
+typedef struct CustomScanState
+{
+	ScanState	ss;
+	uint32		flags;			/* mask of CUSTOMPATH_* flags, see relation.h */
+	const CustomExecMethods *methods;
+} CustomScanState;
 
 /* ----------------------------------------------------------------
  *				 Join State Information

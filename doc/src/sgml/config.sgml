@@ -10,8 +10,8 @@
 
   <para>
    There are many configuration parameters that affect the behavior of
-   the database system. In the first section of this chapter, we
-   describe how to set configuration parameters. The subsequent sections
+   the database system. In the first section of this chapter we
+   describe how to interact with configuration parameters. The subsequent sections
    discuss each parameter in detail.
   </para>
 
@@ -23,47 +23,104 @@
 
     <para>
      All parameter names are case-insensitive. Every parameter takes a
-     value of one of five types: Boolean, integer, floating point,
-     string or enum. Boolean values can be written as <literal>on</literal>,
-     <literal>off</literal>, <literal>true</literal>,
-     <literal>false</literal>, <literal>yes</literal>,
-     <literal>no</literal>, <literal>1</literal>, <literal>0</literal>
-     (all case-insensitive) or any unambiguous prefix of these.
+     value of one of five types: boolean, string, integer, floating point,
+     or enumerated (enum).  The type determines the syntax for setting the
+     parameter:
     </para>
 
-    <para>
-     Some settings specify a memory or time value.  Each of these has an
-     implicit unit, which is either kilobytes, blocks (typically eight
-     kilobytes), milliseconds, seconds, or minutes.  Default units can be
-     found by referencing <structname>pg_settings</>.<structfield>unit</>.
-     For convenience,
-     a different unit can also be specified explicitly.  Valid memory units
-     are <literal>kB</literal> (kilobytes), <literal>MB</literal>
-     (megabytes), <literal>GB</literal> (gigabytes), and <literal>TB</literal> (terabytes); valid time units
-     are <literal>ms</literal> (milliseconds), <literal>s</literal>
-     (seconds), <literal>min</literal> (minutes), <literal>h</literal>
-     (hours), and <literal>d</literal> (days).  Note that the multiplier
-     for memory units is 1024, not 1000.
-    </para>
+    <itemizedlist>
+     <listitem>
+      <para>
+       <emphasis>Boolean:</emphasis>
+       Values can be written as
+       <literal>on</literal>,
+       <literal>off</literal>,
+       <literal>true</literal>,
+       <literal>false</literal>,
+       <literal>yes</literal>,
+       <literal>no</literal>,
+       <literal>1</literal>,
+       <literal>0</literal>
+       (all case-insensitive) or any unambiguous prefix of one of these.
+      </para>
+     </listitem>
 
-    <para>
-     Parameters of type <quote>enum</> are specified in the same way as string
-     parameters, but are restricted to a limited set of values.  The allowed
-     values can be found
-     from <structname>pg_settings</>.<structfield>enumvals</>.
-     Enum parameter values are case-insensitive.
-    </para>
+     <listitem>
+      <para>
+       <emphasis>String:</emphasis>
+       In general, enclose the value in single quotes, doubling any single
+       quotes within the value.  Quotes can usually be omitted if the value
+       is a simple number or identifier, however.
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       <emphasis>Numeric (integer and floating point):</emphasis>
+       A decimal point is permitted only for floating-point parameters.
+       Do not use thousands separators.  Quotes are not required.
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       <emphasis>Numeric with Unit:</emphasis>
+       Some numeric parameters have an implicit unit, because they describe
+       quantities of memory or time. The unit might be kilobytes, blocks
+       (typically eight kilobytes), milliseconds, seconds, or minutes.
+       An unadorned numeric value for one of these settings will use the
+       setting's default unit, which can be learned from
+       <structname>pg_settings</>.<structfield>unit</>.
+       For convenience, settings can be given with a unit specified explicitly,
+       for example <literal>'120 ms'</> for a time value, and they will be
+       converted to whatever the parameter's actual unit is.  Note that the
+       value must be written as a string (with quotes) to use this feature.
+       The unit name is case-sensitive, and there can be whitespace between
+       the numeric value and the unit.
+
+       <itemizedlist>
+        <listitem>
+         <para>
+          Valid memory units are <literal>kB</literal> (kilobytes),
+          <literal>MB</literal> (megabytes), <literal>GB</literal>
+          (gigabytes), and <literal>TB</literal> (terabytes).
+          The multiplier for memory units is 1024, not 1000.
+         </para>
+        </listitem>
+
+        <listitem>
+         <para>
+          Valid time units are <literal>ms</literal> (milliseconds),
+          <literal>s</literal> (seconds), <literal>min</literal> (minutes),
+          <literal>h</literal> (hours), and <literal>d</literal> (days).
+         </para>
+        </listitem>
+       </itemizedlist>
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       <emphasis>Enumerated:</emphasis>
+       Enumerated-type parameters are written in the same way as string
+       parameters, but are restricted to have one of a limited set of
+       values.  The values allowable for such a parameter can be found from
+       <structname>pg_settings</>.<structfield>enumvals</>.
+       Enum parameter values are case-insensitive.
+      </para>
+     </listitem>
+    </itemizedlist>
    </sect2>
 
    <sect2 id="config-setting-configuration-file">
-    <title>Setting Parameters via the Configuration File</title>
+    <title>Parameter Interaction via the Configuration File</title>
 
     <para>
-     One way to set these parameters is to edit the file
+     The most fundamental way to set these parameters is to edit the file
      <filename>postgresql.conf</><indexterm><primary>postgresql.conf</></>,
-     which is normally kept in the data directory.  (A default copy is
-     installed there when the database cluster directory is
-     initialized.)  An example of what this file might look like is:
+     which is normally kept in the data directory.  A default copy is
+     installed when the database cluster directory is initialized.
+     An example of what this file might look like is:
 <programlisting>
 # This is a comment
 log_connections = yes
@@ -72,11 +129,20 @@ search_path = '"$user", public'
 shared_buffers = 128MB
 </programlisting>
      One parameter is specified per line. The equal sign between name and
-     value is optional. Whitespace is insignificant and blank lines are
-     ignored. Hash marks (<literal>#</literal>) designate the remainder of the
-     line as a comment.  Parameter values that are not simple identifiers or
-     numbers must be single-quoted.  To embed a single quote in a parameter
-     value, write either two quotes (preferred) or backslash-quote.
+     value is optional. Whitespace is insignificant (except within a quoted
+     parameter value) and blank lines are
+     ignored. Hash marks (<literal>#</literal>) designate the remainder
+     of the line as a comment.  Parameter values that are not simple
+     identifiers or numbers must be single-quoted.  To embed a single
+     quote in a parameter value, write either two quotes (preferred)
+     or backslash-quote.
+    </para>
+
+    <para>
+     Parameters set in this way provide default values for the cluster.
+     The settings seen by active sessions will be these values unless they
+     are overridden.  The following sections describe ways in which the
+     administrator or user can override these defaults.
     </para>
 
     <para>
@@ -84,137 +150,209 @@ shared_buffers = 128MB
       <primary>SIGHUP</primary>
      </indexterm>
      The configuration file is reread whenever the main server process
-     receives a <systemitem>SIGHUP</> signal;  this is most easily done by
-     running <literal>pg_ctl reload</> from the command-line or by calling
-     the SQL function <function>pg_reload_conf()</function>. The main
-     server process
-     also propagates this signal to all currently running server
-     processes so that existing sessions also get the new
-     value. Alternatively, you can send the signal to a single server
-     process directly.  Some parameters can only be set at server start;
-     any changes to their entries in the configuration file will be ignored
-     until the server is restarted.  Invalid parameter settings in the
-     configuration file are likewise ignored (but logged) during
-     <systemitem>SIGHUP</> processing.
+     receives a <systemitem>SIGHUP</> signal; this signal is most easily
+     sent by running <literal>pg_ctl reload</> from the command line or by
+     calling the SQL function <function>pg_reload_conf()</function>. The main
+     server process also propagates this signal to all currently running
+     server processes, so that existing sessions also adopt the new values
+     (this will happen after they complete any currently-executing client
+     command).  Alternatively, you can
+     send the signal to a single server process directly.  Some parameters
+     can only be set at server start; any changes to their entries in the
+     configuration file will be ignored until the server is restarted.
+     Invalid parameter settings in the configuration file are likewise
+     ignored (but logged) during <systemitem>SIGHUP</> processing.
+    </para>
+
+    <para>
+     In addition to <filename>postgresql.conf</>,
+     a <productname>PostgreSQL</productname> data directory contains a file
+     <filename>postgresql.auto.conf</><indexterm><primary>postgresql.auto.conf</></>,
+     which has the same format as <filename>postgresql.conf</> but should
+     never be edited manually.  This file holds settings provided through
+     the <xref linkend="SQL-ALTERSYSTEM"> command.  This file is automatically
+     read whenever <filename>postgresql.conf</> is, and its settings take
+     effect in the same way.  Settings in <filename>postgresql.auto.conf</>
+     override those in <filename>postgresql.conf</>.
     </para>
    </sect2>
 
-   <sect2 id="config-setting-other-methods">
-    <title>Other Ways to Set Parameters</title>
+   <sect2 id="config-setting-sql-command-interaction">
+    <title>Parameter Interaction via SQL</title>
+
+     <para>
+      <productname>PostgreSQL</productname> provides three SQL
+      commands to establish configuration defaults.
+      The already-mentioned <xref linkend="SQL-ALTERSYSTEM"> command
+      provides a SQL-accessible means of changing global defaults; it is
+      functionally equivalent to editing <filename>postgresql.conf</>.
+      In addition, there are two commands that allow setting of defaults
+      on a per-database or per-role basis:
+     </para>
+
+     <itemizedlist>
+     <listitem>
+      <para>
+       The <xref linkend="sql-alterdatabase"> command allows global
+       settings to be overridden on a per-database basis.
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       The <xref linkend="sql-alterrole"> command allows both global and
+       per-database settings to be overridden with user-specific values.
+      </para>
+     </listitem>
+    </itemizedlist>
+
+     <para>
+      Values set with <command>ALTER DATABASE</> and <command>ALTER ROLE</>
+      are applied only when starting a fresh database session.  They
+      override values obtained from the configuration files or server
+      command line, and constitute defaults for the rest of the session.
+      Note that some settings cannot be changed after server start, and
+      so cannot be set with these commands (or the ones listed below).
+    </para>
+
+     <para>
+      Once a client is connected to the database, <productname>PostgreSQL</>
+      provides two additional SQL commands (and equivalent functions) to
+      interact with session-local configuration settings:
+    </para>
+
+    <itemizedlist>
+     <listitem>
+     <para>
+      The <xref linkend="SQL-SHOW"> command allows inspection of the
+      current value of all parameters.  The corresponding function is
+      <function>current_setting(setting_name text)</function>.
+     </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       The <xref linkend="SQL-SET"> command allows modification of the
+       current value of those parameters that can be set locally to a
+       session; it has no effect on other sessions.
+       The corresponding function is
+       <function>set_config(setting_name, new_value, is_local)</function>.
+      </para>
+     </listitem>
+    </itemizedlist>
 
     <para>
-     A second way to set these configuration parameters is to give them
-     as a command-line option to the <command>postgres</command> command,
-     such as:
+     In addition, the system view <link
+     linkend="view-pg-settings"><structname>pg_settings</></> can be
+     used to view and change session-local values:
+    </para>
+
+    <itemizedlist>
+     <listitem>
+      <para>
+       Querying this view is similar to using <command>SHOW ALL</> but
+       provides more detail.  It is also more flexible, since it's possible
+       to specify filter conditions or join against other relations.
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Using <xref linkend="SQL-UPDATE"> on this view, specifically
+       updating the <structname>setting</> column, is the equivalent
+       of issuing <command>SET</> commands.  For example, the equivalent of
+<programlisting>
+SET configuration_parameter TO DEFAULT;
+</programlisting>
+       is:
+<programlisting>
+UPDATE pg_settings SET setting = reset_val WHERE name = 'configuration_parameter';
+</programlisting>
+      </para>
+     </listitem>
+    </itemizedlist>
+
+   </sect2>
+
+   <sect2>
+    <title>Parameter Interaction via the Shell</title>
+
+     <para>
+      In addition to setting global defaults or attaching
+      overrides at the database or role level, you can pass settings to
+      <productname>PostgreSQL</productname> via shell facilities.
+      Both the server and <application>libpq</> client library
+      accept parameter values via the shell.
+     </para>
+
+     <itemizedlist>
+      <listitem>
+      <para>
+       During server startup, parameter settings can be
+       passed to the <command>postgres</command> command via the
+       <option>-c</> command-line parameter.  For example,
 <programlisting>
 postgres -c log_connections=yes -c log_destination='syslog'
 </programlisting>
-     Command-line options override any conflicting settings in
-     <filename>postgresql.conf</filename>.  Note that this means you won't
-     be able to change the value on-the-fly by editing
-     <filename>postgresql.conf</filename>, so while the command-line
-     method might be convenient, it can cost you flexibility later.
-    </para>
+       Settings provided in this way override those set via
+       <filename>postgresql.conf</> or <command>ALTER SYSTEM</>,
+       so they cannot be changed globally without restarting the server.
+     </para>
+    </listitem>
 
-    <para>
-     Occasionally it is useful to give a command line option to
-     one particular session only. The environment variable
-     <envar>PGOPTIONS</envar> can be used for this purpose on the
-     client side:
+    <listitem>
+     <para>
+      When starting a client session via <application>libpq</>,
+      parameter settings can be
+      specified using the <envar>PGOPTIONS</envar> environment variable.
+      Settings established in this way constitute defaults for the life
+      of the session, but do not affect other sessions.
+      For historical reasons, the format of <envar>PGOPTIONS</envar> is
+      similar to that used when launching the <command>postgres</command>
+      command; specifically, the <option>-c</> flag must be specified.
+      For example,
 <programlisting>
-env PGOPTIONS='-c geqo=off' psql
+env PGOPTIONS="-c geqo=off -c statement_timeout=5min" psql
 </programlisting>
-     (This works for any <application>libpq</>-based client application, not
-     just <application>psql</application>.) Note that this won't work for
-     parameters that are fixed when the server is started or that must be
-     specified in <filename>postgresql.conf</filename>.
-    </para>
+     </para>
 
-    <para>
-     Furthermore, it is possible to assign a set of parameter settings to
-     a user or a database.  Whenever a session is started, the default
-     settings for the user and database involved are loaded.  The
-     commands <xref linkend="sql-alterrole">
-     and <xref linkend="sql-alterdatabase">,
-     respectively, are used to configure these settings.  Per-database
-     settings override anything received from the
-     <command>postgres</command> command-line or the configuration
-     file, and in turn are overridden by per-user settings; both are
-     overridden by per-session settings.
-    </para>
-
-    <para>
-     Some parameters can be changed in individual <acronym>SQL</acronym>
-     sessions with the <xref linkend="SQL-SET">
-     command, for example:
-<screen>
-SET ENABLE_SEQSCAN TO OFF;
-</screen>
-     If <command>SET</> is allowed, it overrides all other sources of
-     values for the parameter. Some parameters cannot be changed via
-     <command>SET</command>: for example, if they control behavior that
-     cannot be changed without restarting the entire
-     <productname>PostgreSQL</productname> server.  Also, some parameters
-     require superuser permission to change via <command>SET</command> or
-     <command>ALTER</>.
-    </para>
-
-    <para>
-     Another way to change configuration parameters persistently is by
-     use of <xref linkend="SQL-ALTERSYSTEM">
-     command, for example:
-<screen>
-ALTER SYSTEM SET checkpoint_timeout TO 600;
-</screen>
-     This command will allow users to change values persistently
-     through SQL command. The values will be effective after reload of server configuration
-     (<acronym>SIGHUP</>) or server startup. The effect of this command is similar to when
-     user manually changes values in <filename>postgresql.conf</filename>.
-    </para>
-   </sect2>
-
-   <sect2 id="config-setting-examining">
-    <title>Examining Parameter Settings</title>
-
-    <para>
-     The <xref linkend="SQL-SHOW">
-     command allows inspection of the current values of all parameters.
-    </para>
-
-    <para>
-     The virtual table <structname>pg_settings</structname> also allows
-     displaying and updating session run-time parameters;  see <xref
-     linkend="view-pg-settings"> for details and a description of the
-     different variable types and when they can be changed.
-     <structname>pg_settings</structname> is equivalent to <command>SHOW</>
-     and <command>SET</>, but can be more convenient
-     to use because it can be joined with other tables, or selected from using
-     any desired selection condition. It also contains more information about
-     each parameter than is available from <command>SHOW</>.
-    </para>
+     <para>
+      Other clients and libraries might provide their own mechanisms,
+      via the shell or otherwise, that allow the user to alter session
+      settings without direct use of SQL commands.
+     </para>
+    </listitem>
+   </itemizedlist>
 
    </sect2>
 
    <sect2 id="config-includes">
-    <title>Configuration File Includes</title>
+    <title>Managing Configuration File Contents</title>
+
+     <para>
+      <productname>PostgreSQL</> provides several features for breaking
+      down complex <filename>postgresql.conf</> files into sub-files.
+      These features are especially useful when managing multiple servers
+      with related, but not identical, configurations.
+     </para>
 
      <para>
       <indexterm>
        <primary><literal>include</></primary>
        <secondary>in configuration file</secondary>
-       </indexterm>
-         In addition to parameter settings, the <filename>postgresql.conf</>
-         file can contain <firstterm>include directives</>, which specify
-         another file to read and process as if it were inserted into the
-         configuration file at this point.  This feature allows a configuration
-         file to be divided into physically separate parts.
-         Include directives simply look like:
+      </indexterm>
+      In addition to individual parameter settings,
+      the <filename>postgresql.conf</> file can contain <firstterm>include
+      directives</>, which specify another file to read and process as if
+      it were inserted into the configuration file at this point.  This
+      feature allows a configuration file to be divided into physically
+      separate parts.  Include directives simply look like:
 <programlisting>
 include 'filename'
 </programlisting>
-         If the file name is not an absolute path, it is taken as relative to
-         the directory containing the referencing configuration file.
-         Inclusions can be nested.
+      If the file name is not an absolute path, it is taken as relative to
+      the directory containing the referencing configuration file.
+      Inclusions can be nested.
      </para>
 
      <para>
@@ -222,12 +360,12 @@ include 'filename'
        <primary><literal>include_if_exists</></primary>
        <secondary>in configuration file</secondary>
       </indexterm>
-         There is also an <literal>include_if_exists</> directive, which acts
-         the same as the <literal>include</> directive, except for the behavior
-         when the referenced file does not exist or cannot be read.  A regular
-         <literal>include</> will consider this an error condition, but
-         <literal>include_if_exists</> merely logs a message and continues
-         processing the referencing configuration file.
+      There is also an <literal>include_if_exists</> directive, which acts
+      the same as the <literal>include</> directive, except
+      when the referenced file does not exist or cannot be read.  A regular
+      <literal>include</> will consider this an error condition, but
+      <literal>include_if_exists</> merely logs a message and continues
+      processing the referencing configuration file.
      </para>
 
      <para>
@@ -235,79 +373,83 @@ include 'filename'
        <primary><literal>include_dir</></primary>
        <secondary>in configuration file</secondary>
       </indexterm>
-        The <filename>postgresql.conf</> file can also contain
-        <literal>include_dir</literal> directives, which specify an entire directory
-        of configuration files to include.  It is used similarly:
- <programlisting>
- include_dir 'directory'
- </programlisting>
-        Non-absolute directory names follow the same rules as single file include
-        directives:  they are relative to the directory containing the referencing
-        configuration file.  Within that directory, only non-directory files whose
-        names end with the suffix <literal>.conf</literal> will be included.  File
-        names that start with the <literal>.</literal> character are also excluded,
-        to prevent mistakes as they are hidden on some platforms.  Multiple files
-        within an include directory are processed in file name order. The file names
-        are ordered by C locale rules, i.e. numbers before letters, and uppercase
-        letters before lowercase ones.
+      The <filename>postgresql.conf</> file can also contain
+      <literal>include_dir</literal> directives, which specify an entire
+      directory of configuration files to include.  These look like
+<programlisting>
+include_dir 'directory'
+</programlisting>
+      Non-absolute directory names are taken as relative to the directory
+      containing the referencing configuration file.  Within the specified
+      directory, only non-directory files whose names end with the
+      suffix <literal>.conf</literal> will be included.  File names that
+      start with the <literal>.</literal> character are also ignored, to
+      prevent mistakes since such files are hidden on some platforms.  Multiple
+      files within an include directory are processed in file name order
+      (according to C locale rules, i.e. numbers before letters, and
+      uppercase letters before lowercase ones).
      </para>
 
      <para>
-       Include files or directories can be used to logically separate portions
-       of the database configuration, rather than having a single large
-       <filename>postgresql.conf</> file.  Consider a company that has two
-       database servers, each with a different amount of memory.  There are likely
-       elements of the configuration both will share, for things such as logging.
-       But memory-related parameters on the server will vary between the two.  And
-       there might be server specific customizations, too.  One way to manage this
-       situation is to break the custom configuration changes for your site into
-       three files.  You could add this to the end of your
-       <filename>postgresql.conf</> file to include them:
- <programlisting>
- include 'shared.conf'
- include 'memory.conf'
- include 'server.conf'
- </programlisting>
-       All systems would have the same <filename>shared.conf</>.  Each server
-       with a particular amount of memory could share the same
-       <filename>memory.conf</>; you might have one for all servers with 8GB of RAM,
-       another for those having 16GB.  And finally <filename>server.conf</> could
-       have truly server-specific configuration information in it.
+      Include files or directories can be used to logically separate portions
+      of the database configuration, rather than having a single large
+      <filename>postgresql.conf</> file.  Consider a company that has two
+      database servers, each with a different amount of memory.  There are
+      likely elements of the configuration both will share, for things such
+      as logging.  But memory-related parameters on the server will vary
+      between the two.  And there might be server specific customizations,
+      too.  One way to manage this situation is to break the custom
+      configuration changes for your site into three files.  You could add
+      this to the end of your <filename>postgresql.conf</> file to include
+      them:
+<programlisting>
+include 'shared.conf'
+include 'memory.conf'
+include 'server.conf'
+</programlisting>
+      All systems would have the same <filename>shared.conf</>.  Each
+      server with a particular amount of memory could share the
+      same <filename>memory.conf</>; you might have one for all servers
+      with 8GB of RAM, another for those having 16GB.  And
+      finally <filename>server.conf</> could have truly server-specific
+      configuration information in it.
      </para>
 
      <para>
-       Another possibility is to create a configuration file directory and
-       put this information into files there. For example, a <filename>conf.d</>
-       directory could be referenced at the end of<filename>postgresql.conf</>:
- <screen>
- include_dir 'conf.d'
- </screen>
-       Then you could name the files in the <filename>conf.d</> directory like this:
- <screen>
- 00shared.conf
- 01memory.conf
- 02server.conf
- </screen>
-       This shows a clear order in which these files will be loaded.  This is
-       important because only the last setting encountered when the server is
-       reading its configuration will be used.  Something set in
-       <filename>conf.d/02server.conf</> in this example would override a value
-       set in <filename>conf.d/01memory.conf</>.
+      Another possibility is to create a configuration file directory and
+      put this information into files there. For example, a <filename>conf.d</>
+      directory could be referenced at the end of <filename>postgresql.conf</>:
+<programlisting>
+include_dir 'conf.d'
+</programlisting>
+      Then you could name the files in the <filename>conf.d</> directory
+      like this:
+<programlisting>
+00shared.conf
+01memory.conf
+02server.conf
+</programlisting>
+       This naming convention establishes a clear order in which these
+       files will be loaded.  This is important because only the last
+       setting encountered for a particular parameter while the server is
+       reading configuration files will be used.  In this example,
+       something set in <filename>conf.d/02server.conf</> would override a
+       value set in <filename>conf.d/01memory.conf</>.
      </para>
 
      <para>
-       You might instead use this configuration directory approach while naming
-       these files more descriptively:
- <screen>
- 00shared.conf
- 01memory-8GB.conf
- 02server-foo.conf
- </screen>
-       This sort of arrangement gives a unique name for each configuration file
-       variation.  This can help eliminate ambiguity when several servers have
-       their configurations all stored in one place, such as in a version
-       control repository.  (Storing database configuration files under version
-       control is another good practice to consider).
+      You might instead use this approach to naming the files
+      descriptively:
+<programlisting>
+00shared.conf
+01memory-8GB.conf
+02server-foo.conf
+</programlisting>
+      This sort of arrangement gives a unique name for each configuration file
+      variation.  This can help eliminate ambiguity when several servers have
+      their configurations all stored in one place, such as in a version
+      control repository.  (Storing database configuration files under version
+      control is another good practice to consider.)
      </para>
     </sect2>
    </sect1>
@@ -1183,7 +1325,7 @@ include 'filename'
         40% of RAM to <varname>shared_buffers</varname> will work better than a
         smaller amount.  Larger settings for <varname>shared_buffers</varname>
         usually require a corresponding increase in
-        <varname>checkpoint_segments</varname>, in order to spread out the
+        <varname>max_wal_size</varname>, in order to spread out the
         process of writing large quantities of new or changed data over a
         longer period of time.
        </para>
@@ -1778,6 +1920,10 @@ include 'filename'
          in an error.  On some operating systems (e.g., Solaris), the function
          is present but does not actually do anything.
         </para>
+
+        <para>
+         The default is 1 on supported systems, otherwise 0.
+        </para>
        </listitem>
       </varlistentry>
 
@@ -2136,6 +2282,30 @@ include 'filename'
       </listitem>
      </varlistentry>
 
+     <varlistentry id="guc-wal-compression" xreflabel="wal_compression">
+      <term><varname>wal_compression</varname> (<type>boolean</type>)
+      <indexterm>
+       <primary><varname>wal_compression</> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        When this parameter is <literal>on</>, the <productname>PostgreSQL</>
+        server compresses a full page image written to WAL when
+        <xref linkend="guc-full-page-writes"> is on or during a base backup.
+        A compressed page image will be decompressed during WAL replay.
+        The default value is <literal>off</>.
+       </para>
+
+       <para>
+        Turning this parameter on can reduce the WAL volume without
+        increasing the risk of unrecoverable data corruption,
+        but at the cost of some extra CPU spent on the compression during
+        WAL logging and on the decompression during WAL replay.
+       </para>
+      </listitem>
+     </varlistentry>
+
      <varlistentry id="guc-wal-buffers" xreflabel="wal_buffers">
       <term><varname>wal_buffers</varname> (<type>integer</type>)
       <indexterm>
@@ -2248,18 +2418,21 @@ include 'filename'
      <title>Checkpoints</title>
 
     <variablelist>
-     <varlistentry id="guc-checkpoint-segments" xreflabel="checkpoint_segments">
-      <term><varname>checkpoint_segments</varname> (<type>integer</type>)
+     <varlistentry id="guc-max-wal-size" xreflabel="max_wal_size">
+      <term><varname>max_wal_size</varname> (<type>integer</type>)
       <indexterm>
-       <primary><varname>checkpoint_segments</> configuration parameter</primary>
+       <primary><varname>max_wal_size</> configuration parameter</primary>
       </indexterm>
       </term>
       <listitem>
        <para>
-        Maximum number of log file segments between automatic WAL
-        checkpoints (each segment is normally 16 megabytes). The default
-        is three segments.  Increasing this parameter can increase the
-        amount of time needed for crash recovery.
+        Maximum size to let the WAL grow to between automatic WAL
+        checkpoints. This is a soft limit; WAL size can exceed
+        <varname>max_wal_size</> under special circumstances, like
+        under heavy load, a failing <varname>archive_command</>, or a high
+        <varname>wal_keep_segments</> setting. The default is 1 GB.
+        Increasing this parameter can increase the amount of time needed for
+        crash recovery.
         This parameter can only be set in the <filename>postgresql.conf</>
         file or on the server command line.
        </para>
@@ -2274,8 +2447,9 @@ include 'filename'
       </term>
       <listitem>
        <para>
-        Maximum time between automatic WAL checkpoints, in
-        seconds. The default is five minutes (<literal>5min</>).
+        Maximum time between automatic WAL checkpoints, in seconds.
+        The valid range is between 30 seconds and one hour.
+        The default is five minutes (<literal>5min</>).
         Increasing this parameter can increase the amount of time needed
         for crash recovery.
         This parameter can only be set in the <filename>postgresql.conf</>
@@ -2294,7 +2468,6 @@ include 'filename'
        <para>
         Specifies the target of checkpoint completion, as a fraction of
         total time between checkpoints. The default is 0.5.
-
         This parameter can only be set in the <filename>postgresql.conf</>
         file or on the server command line.
        </para>
@@ -2312,10 +2485,29 @@ include 'filename'
         Write a message to the server log if checkpoints caused by
         the filling of checkpoint segment files happen closer together
         than this many seconds (which suggests that
-        <varname>checkpoint_segments</> ought to be raised).  The default is
+        <varname>max_wal_size</> ought to be raised).  The default is
         30 seconds (<literal>30s</>).  Zero disables the warning.
         No warnings will be generated if <varname>checkpoint_timeout</varname>
         is less than <varname>checkpoint_warning</varname>.
+        This parameter can only be set in the <filename>postgresql.conf</>
+        file or on the server command line.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-min-wal-size" xreflabel="min_wal_size">
+      <term><varname>min_wal_size</varname> (<type>integer</type>)
+      <indexterm>
+       <primary><varname>min_wal_size</> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        As long as WAL disk usage stays below this setting, old WAL files are
+        always recycled for future use at a checkpoint, rather than removed.
+        This can be used to ensure that enough WAL space is reserved to
+        handle spikes in WAL usage, for example when running large batch
+        jobs. The default is 80 MB.
         This parameter can only be set in the <filename>postgresql.conf</>
         file or on the server command line.
        </para>
@@ -2489,7 +2681,7 @@ include 'filename'
        <listitem>
         <para>
          Specifies the maximum number of replication slots
-         (see <xref linkend="streaming-replication-slots"> that the server
+         (see <xref linkend="streaming-replication-slots">) that the server
          can support. The default is zero.  This parameter can only be set at
          server start.
          <varname>wal_level</varname> must be set
@@ -2555,6 +2747,21 @@ include 'filename'
       </listitem>
      </varlistentry>
 
+     <varlistentry id="guc-track-commit-timestamp" xreflabel="track_commit_timestamp">
+      <term><varname>track_commit_timestamp</varname> (<type>bool</type>)
+      <indexterm>
+       <primary><varname>track_commit_timestamp</> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Record commit time of transactions. This parameter
+        can only be set in <filename>postgresql.conf</> file or on the server
+        command line. The default value is <literal>off</literal>.
+       </para>
+      </listitem>
+     </varlistentry>
+
      </variablelist>
     </sect2>
 
@@ -2603,7 +2810,7 @@ include 'filename'
        <para>
         The name of a standby server for this purpose is the
         <varname>application_name</> setting of the standby, as set in the
-        <varname>primary_conninfo</> of the standby's walreceiver.  There is
+        <varname>primary_conninfo</> of the standby's WAL receiver.  There is
         no mechanism to enforce uniqueness. In case of duplicates one of the
         matching standbys will be chosen to be the synchronous standby, though
         exactly which one is indeterminate.
@@ -2778,7 +2985,7 @@ include 'filename'
       </listitem>
      </varlistentry>
 
-     <varlistentry id="guc-hot-standby-feedback" xreflabel="hot_standby">
+     <varlistentry id="guc-hot-standby-feedback" xreflabel="hot_standby_feedback">
       <term><varname>hot_standby_feedback</varname> (<type>boolean</type>)
       <indexterm>
        <primary><varname>hot_standby_feedback</> configuration parameter</primary>
@@ -2820,6 +3027,24 @@ include 'filename'
         can only be set in
         the <filename>postgresql.conf</> file or on the server command line.
         The default value is 60 seconds.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-wal-retrieve-retry-interval" xreflabel="wal_retrieve_retry_interval">
+      <term><varname>wal_retrieve_retry_interval</varname> (<type>integer</type>)
+      <indexterm>
+       <primary><varname>wal_retrieve_retry_interval</> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Specify how long the standby server should wait when WAL data is not
+        available from any sources (streaming replication,
+        local <filename>pg_xlog</> or WAL archive) before retrying to
+        retrieve WAL data.  This parameter can only be set in the
+        <filename>postgresql.conf</> file or on the server command line.
+        The default value is 5 seconds. Units are milliseconds if not specified.
        </para>
       </listitem>
      </varlistentry>
@@ -3667,6 +3892,7 @@ local0.*    /var/log/postgresql
         cluster data directory.
         This parameter can only be set in the <filename>postgresql.conf</>
         file or on the server command line.
+        The default is <literal>pg_log</literal>.
        </para>
       </listitem>
      </varlistentry>
@@ -3693,6 +3919,7 @@ local0.*    /var/log/postgresql
         </ulink> specification.
         Note that the system's <systemitem>strftime</systemitem> is not used
         directly, so platform-specific (nonstandard) extensions do not work.
+        The default is <literal>postgresql-%Y-%m-%d_%H%M%S.log</literal>.
        </para>
        <para>
         If you specify a file name without escapes, you should plan to
@@ -3709,8 +3936,6 @@ local0.*    /var/log/postgresql
         log file name to create the file name for CSV-format output.
         (If <varname>log_filename</> ends in <literal>.log</>, the suffix is
         replaced instead.)
-        In the case of the example above, the CSV
-        file name will be <literal>server_log.1093827753.csv</literal>.
        </para>
        <para>
         This parameter can only be set in the <filename>postgresql.conf</>
@@ -4131,6 +4356,30 @@ local0.*    /var/log/postgresql
       </listitem>
      </varlistentry>
 
+     <varlistentry id="guc-cluster-name" xreflabel="cluster_name">
+      <term><varname>cluster_name</varname> (<type>string</type>)
+      <indexterm>
+       <primary><varname>cluster_name</> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Sets the cluster name that appears in the process title for all
+        processes in this cluster. The name can be any string of less than
+        <symbol>NAMEDATALEN</> characters (64 characters in a standard
+        build). Only printable ASCII characters may be used in the
+        <varname>cluster_name</varname> value. Other characters will be
+        replaced with question marks (<literal>?</literal>).  No name is shown
+        if this parameter is set to the empty string <literal>''</> (which is
+        the default). This parameter can only be set at server start.
+       </para>
+       <para>
+        The process title is typically viewed using programs like
+        <application>ps</> or, on Windows, <application>Process Explorer</>.
+       </para>
+      </listitem>
+     </varlistentry>
+
      <varlistentry>
       <term><varname>debug_print_parse</varname> (<type>boolean</type>)
       <indexterm>
@@ -4207,8 +4456,9 @@ local0.*    /var/log/postgresql
        <para>
         Causes each attempted connection to the server to be logged,
         as well as successful completion of client authentication.
-        This parameter cannot be changed after session start.
-        The default is off.
+        Only superusers can change this parameter at session start,
+        and it cannot be changed at all within a session.
+        The default is <literal>off</>.
        </para>
 
        <note>
@@ -4230,11 +4480,12 @@ local0.*    /var/log/postgresql
       </term>
       <listitem>
        <para>
-        This outputs a line in the server log similar to
-        <varname>log_connections</varname> but at session termination,
-        and includes the duration of the session.  This is off by
-        default.
-        This parameter cannot be changed after session start.
+        Causes session terminations to be logged.  The log output
+        provides information similar to <varname>log_connections</varname>,
+        plus the duration of the session.
+        Only superusers can change this parameter at session start,
+        and it cannot be changed at all within a session.
+        The default is <literal>off</>.
        </para>
       </listitem>
      </varlistentry>
@@ -4531,6 +4782,22 @@ FROM pg_stat_activity;
          <literal>ERROR</> (or lower) to log such statements.
         </para>
        </note>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-log-replication-commands" xreflabel="log_replication_commands">
+      <term><varname>log_replication_commands</varname> (<type>boolean</type>)
+      <indexterm>
+       <primary><varname>log_replication_commands</> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Causes each replication command to be logged in the server log.
+        See <xref linkend="protocol-replication"> for more information about
+        replication command. The default value is <literal>off</>.
+        Only superusers can change this setting.
+       </para>
       </listitem>
      </varlistentry>
 
@@ -5273,6 +5540,46 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
       </listitem>
      </varlistentry>
 
+     <varlistentry id="guc-row-security" xreflabel="row_security">
+      <term><varname>row_security</varname> (<type>enum</type>)
+      <indexterm>
+       <primary><varname>row_security</> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        This variable controls if row security policies are to be applied
+        to queries which are run against tables that have row security enabled.
+        The default is 'on'.  When set to 'on', all users, except superusers
+        and the owner of the table, will have the row policies for the table
+        applied to their queries.  The table owner and superuser can request
+        that row policies be applied to their queries by setting this to
+        'force'.  Lastly, this can also be set to 'off' which will bypass row
+        policies for the table, if possible, and error if not.
+       </para>
+
+       <para>
+        For a user who is not a superuser and not the table owner to bypass
+        row policies for the table, they must have the BYPASSRLS role attribute.
+        If this is set to 'off' and the user queries a table which has row
+        policies enabled and the user does not have the right to bypass
+        row policies then a permission denied error will be returned.
+       </para>
+
+       <para>
+        The allowed values of <varname>row_security</> are
+        <literal>on</> (apply normally - not to superuser or table owner),
+        <literal>off</> (fail if row security would be applied), and
+        <literal>force</> (apply always - even to superuser and table owner).
+       </para>
+
+       <para>
+        For more information on row security policies,
+        see <xref linkend="SQL-CREATEPOLICY">.
+       </para>
+      </listitem>
+     </varlistentry>
+
      <varlistentry id="guc-default-tablespace" xreflabel="default_tablespace">
       <term><varname>default_tablespace</varname> (<type>string</type>)
       <indexterm>
@@ -5711,6 +6018,27 @@ SET XML OPTION { DOCUMENT | CONTENT };
       </listitem>
      </varlistentry>
 
+     <varlistentry id="guc-gin-pending-list-limit" xreflabel="gin_pending_list_limit">
+      <term><varname>gin_pending_list_limit</varname> (<type>integer</type>)
+      <indexterm>
+       <primary><varname>gin_pending_list_limit</> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Sets the maximum size of the GIN pending list which is used
+        when <literal>fastupdate</> is enabled. If the list grows
+        larger than this maximum size, it is cleaned up by moving
+        the entries in it to the main GIN data structure in bulk.
+        The default is four megabytes (<literal>4MB</>). This setting
+        can be overridden for individual GIN indexes by changing
+        storage parameters.
+         See <xref linkend="gin-fast-update"> and <xref linkend="gin-tips">
+         for more information.
+       </para>
+      </listitem>
+     </varlistentry>
+
      </variablelist>
     </sect2>
      <sect2 id="runtime-config-client-format">
@@ -5807,9 +6135,9 @@ SET XML OPTION { DOCUMENT | CONTENT };
         Sets the collection of time zone abbreviations that will be accepted
         by the server for datetime input.  The default is <literal>'Default'</>,
         which is a collection that works in most of the world; there are
-        also <literal>'Australia'</literal> and <literal>'India'</literal>, and other collections can be defined
-        for a particular installation.  See <xref
-        linkend="datetime-appendix"> for more information.
+        also <literal>'Australia'</literal> and <literal>'India'</literal>,
+        and other collections can be defined for a particular installation.
+        See <xref linkend="datetime-config-files"> for more information.
        </para>
       </listitem>
      </varlistentry>
@@ -6028,8 +6356,9 @@ SET XML OPTION { DOCUMENT | CONTENT };
       <listitem>
        <para>
         This variable specifies one or more shared libraries that are to be
-        preloaded at connection start.  This parameter cannot be changed after
-        the start of a particular session.  If a specified library is not
+        preloaded at connection start.
+        The parameter value only takes effect at the start of the connection.
+        Subsequent changes have no effect.  If a specified library is not
         found, the connection attempt will fail.
        </para>
 
@@ -6047,7 +6376,17 @@ SET XML OPTION { DOCUMENT | CONTENT };
        </para>
 
        <para>
-        Unless a module is specifically designed to be used in this way by
+        The intent of this feature is to allow unprivileged users to load
+        debugging or performance-measurement libraries into specific sessions
+        without requiring an explicit <command>LOAD</> command.  To that end,
+        it would be typical to set this parameter using
+        the <envar>PGOPTIONS</envar> environment variable on the client or by
+        using
+        <command>ALTER ROLE SET</>.
+       </para>
+
+       <para>
+        However, unless a module is specifically designed to be used in this way by
         non-superusers, this is usually not the right setting to use.  Look
         at <xref linkend="guc-session-preload-libraries"> instead.
        </para>
@@ -6101,7 +6440,7 @@ SET XML OPTION { DOCUMENT | CONTENT };
       <listitem>
        <para>
         This variable specifies one or more shared libraries to be preloaded at
-        server start.  with commas.  This parameter can only be set at server
+        server start.  This parameter can only be set at server
         start.  If a specified library is not found, the server will fail to
         start.
        </para>
@@ -6477,6 +6816,29 @@ dynamic_library_path = 'C:\tools\postgresql;H:\my_project\lib;$libdir'
       </listitem>
      </varlistentry>
 
+     <varlistentry id="guc-operator-precedence-warning" xreflabel="operator_precedence_warning">
+      <term><varname>operator_precedence_warning</varname> (<type>boolean</type>)
+      <indexterm>
+       <primary><varname>operator_precedence_warning</> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        When on, the parser will emit a warning for any construct that might
+        have changed meanings since <productname>PostgreSQL</> 9.4 as a result
+        of changes in operator precedence.  This is useful for auditing
+        applications to see if precedence changes have broken anything; but it
+        is not meant to be kept turned on in production, since it will warn
+        about some perfectly valid, standard-compliant SQL code.
+        The default is <literal>off</>.
+       </para>
+
+       <para>
+        See <xref linkend="sql-precedence"> for more information.
+       </para>
+      </listitem>
+     </varlistentry>
+
     <varlistentry id="guc-quote-all-identifiers" xreflabel="quote-all-identifiers">
       <term><varname>quote_all_identifiers</varname> (<type>boolean</type>)
       <indexterm>
@@ -6718,6 +7080,26 @@ dynamic_library_path = 'C:\tools\postgresql;H:\my_project\lib;$libdir'
        <para>
         Reports whether data checksums are enabled for this cluster.
         See <xref linkend="app-initdb-data-checksums"> for more information.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-debug-assertions" xreflabel="debug_assertions">
+      <term><varname>debug_assertions</varname> (<type>boolean</type>)
+      <indexterm>
+       <primary><varname>debug_assertions</> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Reports whether <productname>PostgreSQL</productname> has been built
+        with assertions enabled. That is the case if the
+        macro <symbol>USE_ASSERT_CHECKING</symbol> is defined
+        when <productname>PostgreSQL</productname> is built (accomplished
+        e.g. by the <command>configure</command> option
+        <option>--enable-cassert</option>). By
+        default <productname>PostgreSQL</productname> is built without
+        assertions.
        </para>
       </listitem>
      </varlistentry>
@@ -6969,28 +7351,6 @@ dynamic_library_path = 'C:\tools\postgresql;H:\my_project\lib;$libdir'
         Allows modification of the structure of system tables.
         This is used by <command>initdb</command>.
         This parameter can only be set at server start.
-       </para>
-      </listitem>
-     </varlistentry>
-
-     <varlistentry id="guc-debug-assertions" xreflabel="debug_assertions">
-      <term><varname>debug_assertions</varname> (<type>boolean</type>)
-      <indexterm>
-       <primary><varname>debug_assertions</> configuration parameter</primary>
-      </indexterm>
-      </term>
-      <listitem>
-       <para>
-        Turns on various assertion checks. This is a debugging aid. If
-        you are experiencing strange problems or crashes you might want
-        to turn this on, as it might expose programming mistakes. To use
-        this parameter, the macro <symbol>USE_ASSERT_CHECKING</symbol>
-        must be defined when <productname>PostgreSQL</productname> is
-        built (accomplished by the <command>configure</command> option
-        <option>--enable-cassert</option>). Note that
-        <varname>debug_assertions</varname> defaults to <literal>on</>
-        if <productname>PostgreSQL</productname> has been built with
-        assertions enabled.
        </para>
       </listitem>
      </varlistentry>
@@ -7354,10 +7714,6 @@ LOG:  CleanUpLock: deleting: lock(0xb7acd844) id(24688,24696,0,0,0,1)
       </thead>
 
       <tbody>
-       <row>
-        <entry><option>-A <replaceable>x</replaceable></option></entry>
-        <entry><literal>debug_assertions = <replaceable>x</replaceable></></entry>
-       </row>
        <row>
         <entry><option>-B <replaceable>x</replaceable></option></entry>
         <entry><literal>shared_buffers = <replaceable>x</replaceable></></entry>

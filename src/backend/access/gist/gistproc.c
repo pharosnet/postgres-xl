@@ -7,7 +7,7 @@
  * This gives R-tree behavior, with Guttman's poly-time split algorithm.
  *
  *
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -147,6 +147,16 @@ gist_box_compress(PG_FUNCTION_ARGS)
  */
 Datum
 gist_box_decompress(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_POINTER(PG_GETARG_POINTER(0));
+}
+
+/*
+ * GiST Fetch method for boxes
+ * do not do anything --- we just return the stored box as is.
+ */
+Datum
+gist_box_fetch(PG_FUNCTION_ARGS)
 {
 	PG_RETURN_POINTER(PG_GETARG_POINTER(0));
 }
@@ -1039,25 +1049,16 @@ gist_poly_compress(PG_FUNCTION_ARGS)
 
 	if (entry->leafkey)
 	{
-		retval = palloc(sizeof(GISTENTRY));
-		if (DatumGetPointer(entry->key) != NULL)
-		{
-			POLYGON    *in = DatumGetPolygonP(entry->key);
-			BOX		   *r;
+		POLYGON    *in = DatumGetPolygonP(entry->key);
+		BOX		   *r;
 
-			r = (BOX *) palloc(sizeof(BOX));
-			memcpy((void *) r, (void *) &(in->boundbox), sizeof(BOX));
-			gistentryinit(*retval, PointerGetDatum(r),
-						  entry->rel, entry->page,
-						  entry->offset, FALSE);
+		r = (BOX *) palloc(sizeof(BOX));
+		memcpy((void *) r, (void *) &(in->boundbox), sizeof(BOX));
 
-		}
-		else
-		{
-			gistentryinit(*retval, (Datum) 0,
-						  entry->rel, entry->page,
-						  entry->offset, FALSE);
-		}
+		retval = (GISTENTRY *) palloc(sizeof(GISTENTRY));
+		gistentryinit(*retval, PointerGetDatum(r),
+					  entry->rel, entry->page,
+					  entry->offset, FALSE);
 	}
 	else
 		retval = entry;
@@ -1113,28 +1114,19 @@ gist_circle_compress(PG_FUNCTION_ARGS)
 
 	if (entry->leafkey)
 	{
-		retval = palloc(sizeof(GISTENTRY));
-		if (DatumGetCircleP(entry->key) != NULL)
-		{
-			CIRCLE	   *in = DatumGetCircleP(entry->key);
-			BOX		   *r;
+		CIRCLE	   *in = DatumGetCircleP(entry->key);
+		BOX		   *r;
 
-			r = (BOX *) palloc(sizeof(BOX));
-			r->high.x = in->center.x + in->radius;
-			r->low.x = in->center.x - in->radius;
-			r->high.y = in->center.y + in->radius;
-			r->low.y = in->center.y - in->radius;
-			gistentryinit(*retval, PointerGetDatum(r),
-						  entry->rel, entry->page,
-						  entry->offset, FALSE);
+		r = (BOX *) palloc(sizeof(BOX));
+		r->high.x = in->center.x + in->radius;
+		r->low.x = in->center.x - in->radius;
+		r->high.y = in->center.y + in->radius;
+		r->low.y = in->center.y - in->radius;
 
-		}
-		else
-		{
-			gistentryinit(*retval, (Datum) 0,
-						  entry->rel, entry->page,
-						  entry->offset, FALSE);
-		}
+		retval = (GISTENTRY *) palloc(sizeof(GISTENTRY));
+		gistentryinit(*retval, PointerGetDatum(r),
+					  entry->rel, entry->page,
+					  entry->offset, FALSE);
 	}
 	else
 		retval = entry;
@@ -1203,6 +1195,33 @@ gist_point_compress(PG_FUNCTION_ARGS)
 
 	PG_RETURN_POINTER(entry);
 }
+
+/*
+ * GiST Fetch method for point
+ *
+ * Get point coordinates from its bounding box coordinates and form new
+ * gistentry.
+ */
+Datum
+gist_point_fetch(PG_FUNCTION_ARGS)
+{
+	GISTENTRY  *entry = (GISTENTRY *) PG_GETARG_POINTER(0);
+	BOX		   *in = DatumGetBoxP(entry->key);
+	Point	   *r;
+	GISTENTRY  *retval;
+
+	retval = palloc(sizeof(GISTENTRY));
+
+	r = (Point *) palloc(sizeof(Point));
+	r->x = in->high.x;
+	r->y = in->high.y;
+	gistentryinit(*retval, PointerGetDatum(r),
+				  entry->rel, entry->page,
+				  entry->offset, FALSE);
+
+	PG_RETURN_POINTER(retval);
+}
+
 
 #define point_point_distance(p1,p2) \
 	DatumGetFloat8(DirectFunctionCall2(point_distance, \

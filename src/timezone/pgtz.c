@@ -3,7 +3,7 @@
  * pgtz.c
  *	  Timezone Library Integration Functions
  *
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *	  src/timezone/pgtz.c
@@ -296,6 +296,9 @@ pg_tzset(const char *name)
  * The GMT offset is specified in seconds, positive values meaning west of
  * Greenwich (ie, POSIX not ISO sign convention).  However, we use ISO
  * sign convention in the displayable abbreviation for the zone.
+ *
+ * Caution: this can fail (return NULL) if the specified offset is outside
+ * the range allowed by the zic library.
  */
 pg_tz *
 pg_tzset_offset(long gmtoffset)

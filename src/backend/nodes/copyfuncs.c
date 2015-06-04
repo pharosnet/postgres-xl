@@ -16,7 +16,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  * Portions Copyright (c) 2010-2012 Postgres-XC Development Group
  *
@@ -116,6 +116,8 @@ _copyPlannedStmt(const PlannedStmt *from)
 	COPY_NODE_FIELD(distributionNodes);
 	COPY_NODE_FIELD(distributionRestrict);
 #endif
+	COPY_SCALAR_FIELD(hasRowSecurity);
+
 	return newnode;
 }
 
@@ -197,6 +199,7 @@ _copyModifyTable(const ModifyTable *from)
 	 */
 	COPY_SCALAR_FIELD(operation);
 	COPY_SCALAR_FIELD(canSetTag);
+	COPY_SCALAR_FIELD(nominalRelation);
 	COPY_NODE_FIELD(resultRelations);
 	COPY_SCALAR_FIELD(resultRelIndex);
 	COPY_NODE_FIELD(plans);
@@ -625,6 +628,36 @@ _copyForeignScan(const ForeignScan *from)
 }
 
 /*
+ * _copyCustomScan
+ */
+static CustomScan *
+_copyCustomScan(const CustomScan *from)
+{
+	CustomScan *newnode = makeNode(CustomScan);
+
+	/*
+	 * copy node superclass fields
+	 */
+	CopyScanFields((const Scan *) from, (Scan *) newnode);
+
+	/*
+	 * copy remainder of node
+	 */
+	COPY_SCALAR_FIELD(flags);
+	COPY_NODE_FIELD(custom_exprs);
+	COPY_NODE_FIELD(custom_private);
+
+	/*
+	 * NOTE: The method field of CustomScan is required to be a pointer to a
+	 * static table of callback functions.  So we don't copy the table itself,
+	 * just reference the original one.
+	 */
+	COPY_SCALAR_FIELD(methods);
+
+	return newnode;
+}
+
+/*
  * CopyJoinFields
  *
  *		This function copies the fields of the Join node.  It is used by
@@ -989,7 +1022,9 @@ _copyPlanRowMark(const PlanRowMark *from)
 	COPY_SCALAR_FIELD(prti);
 	COPY_SCALAR_FIELD(rowmarkId);
 	COPY_SCALAR_FIELD(markType);
-	COPY_SCALAR_FIELD(noWait);
+	COPY_SCALAR_FIELD(allMarkTypes);
+	COPY_SCALAR_FIELD(strength);
+	COPY_SCALAR_FIELD(waitPolicy);
 	COPY_SCALAR_FIELD(isParent);
 
 	return newnode;
@@ -1520,6 +1555,7 @@ _copySubLink(const SubLink *from)
 	SubLink    *newnode = makeNode(SubLink);
 
 	COPY_SCALAR_FIELD(subLinkType);
+	COPY_SCALAR_FIELD(subLinkId);
 	COPY_NODE_FIELD(testexpr);
 	COPY_NODE_FIELD(operName);
 	COPY_NODE_FIELD(subselect);
@@ -1854,6 +1890,7 @@ _copyNullTest(const NullTest *from)
 	COPY_NODE_FIELD(arg);
 	COPY_SCALAR_FIELD(nulltesttype);
 	COPY_SCALAR_FIELD(argisrow);
+	COPY_LOCATION_FIELD(location);
 
 	return newnode;
 }
@@ -1868,6 +1905,7 @@ _copyBooleanTest(const BooleanTest *from)
 
 	COPY_NODE_FIELD(arg);
 	COPY_SCALAR_FIELD(booltesttype);
+	COPY_LOCATION_FIELD(location);
 
 	return newnode;
 }
@@ -2100,7 +2138,10 @@ _copySpecialJoinInfo(const SpecialJoinInfo *from)
 	COPY_SCALAR_FIELD(jointype);
 	COPY_SCALAR_FIELD(lhs_strict);
 	COPY_SCALAR_FIELD(delay_upper_joins);
-	COPY_NODE_FIELD(join_quals);
+	COPY_SCALAR_FIELD(semi_can_btree);
+	COPY_SCALAR_FIELD(semi_can_hash);
+	COPY_NODE_FIELD(semi_operators);
+	COPY_NODE_FIELD(semi_rhs_exprs);
 
 	return newnode;
 }
@@ -2270,7 +2311,7 @@ _copyRowMarkClause(const RowMarkClause *from)
 
 	COPY_SCALAR_FIELD(rti);
 	COPY_SCALAR_FIELD(strength);
-	COPY_SCALAR_FIELD(noWait);
+	COPY_SCALAR_FIELD(waitPolicy);
 	COPY_SCALAR_FIELD(pushedDown);
 
 	return newnode;
@@ -2443,6 +2484,18 @@ _copyResTarget(const ResTarget *from)
 	COPY_NODE_FIELD(indirection);
 	COPY_NODE_FIELD(val);
 	COPY_LOCATION_FIELD(location);
+
+	return newnode;
+}
+
+static MultiAssignRef *
+_copyMultiAssignRef(const MultiAssignRef *from)
+{
+	MultiAssignRef *newnode = makeNode(MultiAssignRef);
+
+	COPY_NODE_FIELD(source);
+	COPY_SCALAR_FIELD(colno);
+	COPY_SCALAR_FIELD(ncolumns);
 
 	return newnode;
 }
@@ -2639,7 +2692,7 @@ _copyLockingClause(const LockingClause *from)
 
 	COPY_NODE_FIELD(lockedRels);
 	COPY_SCALAR_FIELD(strength);
-	COPY_SCALAR_FIELD(noWait);
+	COPY_SCALAR_FIELD(waitPolicy);
 
 	return newnode;
 }
@@ -2652,6 +2705,18 @@ _copyXmlSerialize(const XmlSerialize *from)
 	COPY_SCALAR_FIELD(xmloption);
 	COPY_NODE_FIELD(expr);
 	COPY_NODE_FIELD(typeName);
+	COPY_LOCATION_FIELD(location);
+
+	return newnode;
+}
+
+static RoleSpec *
+_copyRoleSpec(const RoleSpec *from)
+{
+	RoleSpec   *newnode = makeNode(RoleSpec);
+
+	COPY_SCALAR_FIELD(roletype);
+	COPY_STRING_FIELD(rolename);
 	COPY_LOCATION_FIELD(location);
 
 	return newnode;
@@ -2675,6 +2740,7 @@ _copyQuery(const Query *from)
 	COPY_SCALAR_FIELD(hasRecursive);
 	COPY_SCALAR_FIELD(hasModifyingCTE);
 	COPY_SCALAR_FIELD(hasForUpdate);
+	COPY_SCALAR_FIELD(hasRowSecurity);
 	COPY_NODE_FIELD(cteList);
 	COPY_NODE_FIELD(rtable);
 	COPY_NODE_FIELD(jointree);
@@ -2808,6 +2874,7 @@ _copyAlterTableCmd(const AlterTableCmd *from)
 
 	COPY_SCALAR_FIELD(subtype);
 	COPY_STRING_FIELD(name);
+	COPY_NODE_FIELD(newowner);
 	COPY_NODE_FIELD(def);
 	COPY_SCALAR_FIELD(behavior);
 	COPY_SCALAR_FIELD(missing_ok);
@@ -2847,16 +2914,6 @@ _copyGrantStmt(const GrantStmt *from)
 	return newnode;
 }
 
-static PrivGrantee *
-_copyPrivGrantee(const PrivGrantee *from)
-{
-	PrivGrantee *newnode = makeNode(PrivGrantee);
-
-	COPY_STRING_FIELD(rolname);
-
-	return newnode;
-}
-
 static FuncWithArgs *
 _copyFuncWithArgs(const FuncWithArgs *from)
 {
@@ -2888,7 +2945,7 @@ _copyGrantRoleStmt(const GrantRoleStmt *from)
 	COPY_NODE_FIELD(grantee_roles);
 	COPY_SCALAR_FIELD(is_grant);
 	COPY_SCALAR_FIELD(admin_opt);
-	COPY_STRING_FIELD(grantor);
+	COPY_NODE_FIELD(grantor);
 	COPY_SCALAR_FIELD(behavior);
 
 	return newnode;
@@ -3128,7 +3185,9 @@ _copyIndexStmt(const IndexStmt *from)
 	COPY_SCALAR_FIELD(isconstraint);
 	COPY_SCALAR_FIELD(deferrable);
 	COPY_SCALAR_FIELD(initdeferred);
+	COPY_SCALAR_FIELD(transformed);
 	COPY_SCALAR_FIELD(concurrent);
+	COPY_SCALAR_FIELD(if_not_exists);
 
 	return newnode;
 }
@@ -3224,7 +3283,7 @@ _copyAlterOwnerStmt(const AlterOwnerStmt *from)
 	COPY_NODE_FIELD(relation);
 	COPY_NODE_FIELD(object);
 	COPY_NODE_FIELD(objarg);
-	COPY_STRING_FIELD(newowner);
+	COPY_NODE_FIELD(newowner);
 
 	return newnode;
 }
@@ -3478,10 +3537,6 @@ _copyVacuumStmt(const VacuumStmt *from)
 	VacuumStmt *newnode = makeNode(VacuumStmt);
 
 	COPY_SCALAR_FIELD(options);
-	COPY_SCALAR_FIELD(freeze_min_age);
-	COPY_SCALAR_FIELD(freeze_table_age);
-	COPY_SCALAR_FIELD(multixact_freeze_min_age);
-	COPY_SCALAR_FIELD(multixact_freeze_table_age);
 	COPY_NODE_FIELD(relation);
 	COPY_NODE_FIELD(va_cols);
 
@@ -3511,6 +3566,7 @@ _copyCreateTableAsStmt(const CreateTableAsStmt *from)
 #ifdef PGXC	
 	COPY_SCALAR_FIELD(islocal);
 #endif
+	COPY_SCALAR_FIELD(if_not_exists);
 
 	return newnode;
 }
@@ -3556,6 +3612,7 @@ _copyCreateSeqStmt(const CreateSeqStmt *from)
 	COPY_NODE_FIELD(sequence);
 	COPY_NODE_FIELD(options);
 	COPY_SCALAR_FIELD(ownerId);
+	COPY_SCALAR_FIELD(if_not_exists);
 
 	return newnode;
 }
@@ -3611,7 +3668,7 @@ _copyCreateTableSpaceStmt(const CreateTableSpaceStmt *from)
 	CreateTableSpaceStmt *newnode = makeNode(CreateTableSpaceStmt);
 
 	COPY_STRING_FIELD(tablespacename);
-	COPY_STRING_FIELD(owner);
+	COPY_NODE_FIELD(owner);
 	COPY_STRING_FIELD(location);
 	COPY_NODE_FIELD(options);
 
@@ -3641,14 +3698,13 @@ _copyAlterTableSpaceOptionsStmt(const AlterTableSpaceOptionsStmt *from)
 	return newnode;
 }
 
-static AlterTableSpaceMoveStmt *
-_copyAlterTableSpaceMoveStmt(const AlterTableSpaceMoveStmt *from)
+static AlterTableMoveAllStmt *
+_copyAlterTableMoveAllStmt(const AlterTableMoveAllStmt *from)
 {
-	AlterTableSpaceMoveStmt *newnode = makeNode(AlterTableSpaceMoveStmt);
+	AlterTableMoveAllStmt *newnode = makeNode(AlterTableMoveAllStmt);
 
 	COPY_STRING_FIELD(orig_tablespacename);
 	COPY_SCALAR_FIELD(objtype);
-	COPY_SCALAR_FIELD(move_all);
 	COPY_NODE_FIELD(roles);
 	COPY_STRING_FIELD(new_tablespacename);
 	COPY_SCALAR_FIELD(nowait);
@@ -3749,7 +3805,7 @@ _copyCreateUserMappingStmt(const CreateUserMappingStmt *from)
 {
 	CreateUserMappingStmt *newnode = makeNode(CreateUserMappingStmt);
 
-	COPY_STRING_FIELD(username);
+	COPY_NODE_FIELD(user);
 	COPY_STRING_FIELD(servername);
 	COPY_NODE_FIELD(options);
 
@@ -3761,7 +3817,7 @@ _copyAlterUserMappingStmt(const AlterUserMappingStmt *from)
 {
 	AlterUserMappingStmt *newnode = makeNode(AlterUserMappingStmt);
 
-	COPY_STRING_FIELD(username);
+	COPY_NODE_FIELD(user);
 	COPY_STRING_FIELD(servername);
 	COPY_NODE_FIELD(options);
 
@@ -3773,7 +3829,7 @@ _copyDropUserMappingStmt(const DropUserMappingStmt *from)
 {
 	DropUserMappingStmt *newnode = makeNode(DropUserMappingStmt);
 
-	COPY_STRING_FIELD(username);
+	COPY_NODE_FIELD(user);
 	COPY_STRING_FIELD(servername);
 	COPY_SCALAR_FIELD(missing_ok);
 
@@ -3788,6 +3844,21 @@ _copyCreateForeignTableStmt(const CreateForeignTableStmt *from)
 	CopyCreateStmtFields((const CreateStmt *) from, (CreateStmt *) newnode);
 
 	COPY_STRING_FIELD(servername);
+	COPY_NODE_FIELD(options);
+
+	return newnode;
+}
+
+static ImportForeignSchemaStmt *
+_copyImportForeignSchemaStmt(const ImportForeignSchemaStmt *from)
+{
+	ImportForeignSchemaStmt *newnode = makeNode(ImportForeignSchemaStmt);
+
+	COPY_STRING_FIELD(server_name);
+	COPY_STRING_FIELD(remote_schema);
+	COPY_STRING_FIELD(local_schema);
+	COPY_SCALAR_FIELD(list_type);
+	COPY_NODE_FIELD(table_list);
 	COPY_NODE_FIELD(options);
 
 	return newnode;
@@ -3821,7 +3892,7 @@ _copyCreateEventTrigStmt(const CreateEventTrigStmt *from)
 	CreateEventTrigStmt *newnode = makeNode(CreateEventTrigStmt);
 
 	COPY_STRING_FIELD(trigname);
-	COPY_SCALAR_FIELD(eventname);
+	COPY_STRING_FIELD(eventname);
 	COPY_NODE_FIELD(whenclause);
 	COPY_NODE_FIELD(funcname);
 
@@ -3871,7 +3942,7 @@ _copyAlterRoleStmt(const AlterRoleStmt *from)
 {
 	AlterRoleStmt *newnode = makeNode(AlterRoleStmt);
 
-	COPY_STRING_FIELD(role);
+	COPY_NODE_FIELD(role);
 	COPY_NODE_FIELD(options);
 	COPY_SCALAR_FIELD(action);
 
@@ -3883,7 +3954,7 @@ _copyAlterRoleSetStmt(const AlterRoleSetStmt *from)
 {
 	AlterRoleSetStmt *newnode = makeNode(AlterRoleSetStmt);
 
-	COPY_STRING_FIELD(role);
+	COPY_NODE_FIELD(role);
 	COPY_STRING_FIELD(database);
 	COPY_NODE_FIELD(setstmt);
 
@@ -3932,8 +4003,6 @@ _copyReindexStmt(const ReindexStmt *from)
 	COPY_SCALAR_FIELD(kind);
 	COPY_NODE_FIELD(relation);
 	COPY_STRING_FIELD(name);
-	COPY_SCALAR_FIELD(do_system);
-	COPY_SCALAR_FIELD(do_user);
 
 	return newnode;
 }
@@ -3944,7 +4013,7 @@ _copyCreateSchemaStmt(const CreateSchemaStmt *from)
 	CreateSchemaStmt *newnode = makeNode(CreateSchemaStmt);
 
 	COPY_STRING_FIELD(schemaname);
-	COPY_STRING_FIELD(authid);
+	COPY_NODE_FIELD(authrole);
 	COPY_NODE_FIELD(schemaElts);
 	COPY_SCALAR_FIELD(if_not_exists);
 
@@ -4029,7 +4098,7 @@ _copyReassignOwnedStmt(const ReassignOwnedStmt *from)
 	ReassignOwnedStmt *newnode = makeNode(ReassignOwnedStmt);
 
 	COPY_NODE_FIELD(roles);
-	COPY_STRING_FIELD(newrole);
+	COPY_NODE_FIELD(newrole);
 
 	return newnode;
 }
@@ -4056,6 +4125,35 @@ _copyAlterTSConfigurationStmt(const AlterTSConfigurationStmt *from)
 	COPY_SCALAR_FIELD(override);
 	COPY_SCALAR_FIELD(replace);
 	COPY_SCALAR_FIELD(missing_ok);
+
+	return newnode;
+}
+
+static CreatePolicyStmt *
+_copyCreatePolicyStmt(const CreatePolicyStmt *from)
+{
+	CreatePolicyStmt *newnode = makeNode(CreatePolicyStmt);
+
+	COPY_STRING_FIELD(policy_name);
+	COPY_NODE_FIELD(table);
+	COPY_SCALAR_FIELD(cmd);
+	COPY_NODE_FIELD(roles);
+	COPY_NODE_FIELD(qual);
+	COPY_NODE_FIELD(with_check);
+
+	return newnode;
+}
+
+static AlterPolicyStmt *
+_copyAlterPolicyStmt(const AlterPolicyStmt *from)
+{
+	AlterPolicyStmt *newnode = makeNode(AlterPolicyStmt);
+
+	COPY_STRING_FIELD(policy_name);
+	COPY_NODE_FIELD(table);
+	COPY_NODE_FIELD(roles);
+	COPY_NODE_FIELD(qual);
+	COPY_NODE_FIELD(with_check);
 
 	return newnode;
 }
@@ -4328,6 +4426,9 @@ copyObject(const void *from)
 			break;
 		case T_ForeignScan:
 			retval = _copyForeignScan(from);
+			break;
+		case T_CustomScan:
+			retval = _copyCustomScan(from);
 			break;
 		case T_Join:
 			retval = _copyJoin(from);
@@ -4797,8 +4898,8 @@ copyObject(const void *from)
 		case T_AlterTableSpaceOptionsStmt:
 			retval = _copyAlterTableSpaceOptionsStmt(from);
 			break;
-		case T_AlterTableSpaceMoveStmt:
-			retval = _copyAlterTableSpaceMoveStmt(from);
+		case T_AlterTableMoveAllStmt:
+			retval = _copyAlterTableMoveAllStmt(from);
 			break;
 		case T_CreateExtensionStmt:
 			retval = _copyCreateExtensionStmt(from);
@@ -4832,6 +4933,9 @@ copyObject(const void *from)
 			break;
 		case T_CreateForeignTableStmt:
 			retval = _copyCreateForeignTableStmt(from);
+			break;
+		case T_ImportForeignSchemaStmt:
+			retval = _copyImportForeignSchemaStmt(from);
 			break;
 		case T_CreateTrigStmt:
 			retval = _copyCreateTrigStmt(from);
@@ -4927,7 +5031,12 @@ copyObject(const void *from)
 		case T_AlterTSConfigurationStmt:
 			retval = _copyAlterTSConfigurationStmt(from);
 			break;
-
+		case T_CreatePolicyStmt:
+			retval = _copyCreatePolicyStmt(from);
+			break;
+		case T_AlterPolicyStmt:
+			retval = _copyAlterPolicyStmt(from);
+			break;
 		case T_A_Expr:
 			retval = _copyAExpr(from);
 			break;
@@ -4957,6 +5066,9 @@ copyObject(const void *from)
 			break;
 		case T_ResTarget:
 			retval = _copyResTarget(from);
+			break;
+		case T_MultiAssignRef:
+			retval = _copyMultiAssignRef(from);
 			break;
 		case T_TypeCast:
 			retval = _copyTypeCast(from);
@@ -5018,9 +5130,6 @@ copyObject(const void *from)
 		case T_CommonTableExpr:
 			retval = _copyCommonTableExpr(from);
 			break;
-		case T_PrivGrantee:
-			retval = _copyPrivGrantee(from);
-			break;
 		case T_FuncWithArgs:
 			retval = _copyFuncWithArgs(from);
 			break;
@@ -5039,6 +5148,10 @@ copyObject(const void *from)
 			retval = _copyPGXCSubCluster(from);
 			break;
 #endif
+		case T_RoleSpec:
+			retval = _copyRoleSpec(from);
+			break;
+
 		default:
 			elog(ERROR, "unrecognized node type: %d", (int) nodeTag(from));
 			retval = 0;			/* keep compiler quiet */

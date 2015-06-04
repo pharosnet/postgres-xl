@@ -9,7 +9,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/catalog/namespace.h
@@ -39,8 +39,8 @@ typedef struct _FuncCandidateList
 	int			nvargs;			/* number of args to become variadic array */
 	int			ndargs;			/* number of defaulted args */
 	int		   *argnumbers;		/* args' positional indexes, if named call */
-	Oid			args[1];		/* arg types --- VARIABLE LENGTH ARRAY */
-}	*FuncCandidateList;	/* VARIABLE LENGTH STRUCT */
+	Oid			args[FLEXIBLE_ARRAY_MEMBER];	/* arg types */
+}	*FuncCandidateList;
 
 /*
  *	Structure for xxxOverrideSearchPath functions
@@ -126,7 +126,7 @@ extern char *NameListToQuotedString(List *names);
 
 extern bool isTempNamespace(Oid namespaceId);
 extern bool isTempToastNamespace(Oid namespaceId);
-extern bool isTempOrToastNamespace(Oid namespaceId);
+extern bool isTempOrTempToastNamespace(Oid namespaceId);
 extern bool isAnyTempNamespace(Oid namespaceId);
 extern bool isOtherTempNamespace(Oid namespaceId);
 extern int	GetTempNamespaceBackendId(Oid namespaceId);

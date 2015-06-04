@@ -3,7 +3,7 @@
  * file_fdw.c
  *		  foreign-data wrapper for server-side flat files.
  *
- * Copyright (c) 2010-2014, PostgreSQL Global Development Group
+ * Copyright (c) 2010-2015, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *		  contrib/file_fdw/file_fdw.c
@@ -932,7 +932,7 @@ estimate_size(PlannerInfo *root, RelOptInfo *baserel,
 		int			tuple_width;
 
 		tuple_width = MAXALIGN(baserel->width) +
-			MAXALIGN(sizeof(HeapTupleHeaderData));
+			MAXALIGN(SizeofHeapTupleHeader);
 		ntuples = clamp_row_est((double) stat_buf.st_size /
 								(double) tuple_width);
 	}

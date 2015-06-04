@@ -3,7 +3,7 @@
  * prepsecurity.c
  *	  Routines for preprocessing security barrier quals.
  *
- * Portions Copyright (c) 1996-2013, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -37,7 +37,7 @@ typedef struct
 } security_barrier_replace_vars_context;
 
 static void expand_security_qual(PlannerInfo *root, List *tlist, int rt_index,
-					 RangeTblEntry *rte, Node *qual);
+					 RangeTblEntry *rte, Node *qual, bool targetRelation);
 
 static void security_barrier_replace_vars(Node *node,
 							  security_barrier_replace_vars_context *context);
@@ -73,6 +73,7 @@ expand_security_quals(PlannerInfo *root, List *tlist)
 	rt_index = 0;
 	foreach(cell, parse->rtable)
 	{
+		bool		targetRelation = false;
 		RangeTblEntry *rte = (RangeTblEntry *) lfirst(cell);
 
 		rt_index++;
@@ -97,6 +98,15 @@ expand_security_quals(PlannerInfo *root, List *tlist)
 		if (rt_index == parse->resultRelation)
 		{
 			RangeTblEntry *newrte = copyObject(rte);
+
+			/*
+			 * We need to let expand_security_qual know if this is the target
+			 * relation, as it has additional work to do in that case.
+			 *
+			 * Capture that information here as we're about to replace
+			 * parse->resultRelation.
+			 */
+			targetRelation = true;
 
 			parse->rtable = lappend(parse->rtable, newrte);
 			parse->resultRelation = list_length(parse->rtable);
@@ -147,7 +157,8 @@ expand_security_quals(PlannerInfo *root, List *tlist)
 			rte->securityQuals = list_delete_first(rte->securityQuals);
 
 			ChangeVarNodes(qual, rt_index, 1, 0);
-			expand_security_qual(root, tlist, rt_index, rte, qual);
+			expand_security_qual(root, tlist, rt_index, rte, qual,
+								 targetRelation);
 		}
 	}
 }
@@ -160,7 +171,7 @@ expand_security_quals(PlannerInfo *root, List *tlist)
  */
 static void
 expand_security_qual(PlannerInfo *root, List *tlist, int rt_index,
-					 RangeTblEntry *rte, Node *qual)
+					 RangeTblEntry *rte, Node *qual, bool targetRelation)
 {
 	Query	   *parse = root->parse;
 	Oid			relid = rte->relid;
@@ -219,41 +230,32 @@ expand_security_qual(PlannerInfo *root, List *tlist, int rt_index,
 			 * Now deal with any PlanRowMark on this RTE by requesting a lock
 			 * of the same strength on the RTE copied down to the subquery.
 			 *
-			 * Note that we can't push the user-defined quals down since they
-			 * may included untrusted functions and that means that we will
-			 * end up locking all rows which pass the securityQuals, even if
-			 * those rows don't pass the user-defined quals.  This is
+			 * Note that we can only push down user-defined quals if they are
+			 * only using leakproof (and therefore trusted) functions and
+			 * operators.  As a result, we may end up locking more rows than
+			 * strictly necessary (and, in the worst case, we could end up
+			 * locking all rows which pass the securityQuals).  This is
 			 * currently documented behavior, but it'd be nice to come up with
 			 * a better solution some day.
 			 */
 			rc = get_plan_rowmark(root->rowMarks, rt_index);
 			if (rc != NULL)
 			{
-				switch (rc->markType)
-				{
-					case ROW_MARK_EXCLUSIVE:
-						applyLockingClause(subquery, 1, LCS_FORUPDATE,
-										   rc->noWait, false);
-						break;
-					case ROW_MARK_NOKEYEXCLUSIVE:
-						applyLockingClause(subquery, 1, LCS_FORNOKEYUPDATE,
-										   rc->noWait, false);
-						break;
-					case ROW_MARK_SHARE:
-						applyLockingClause(subquery, 1, LCS_FORSHARE,
-										   rc->noWait, false);
-						break;
-					case ROW_MARK_KEYSHARE:
-						applyLockingClause(subquery, 1, LCS_FORKEYSHARE,
-										   rc->noWait, false);
-						break;
-					case ROW_MARK_REFERENCE:
-					case ROW_MARK_COPY:
-						/* No locking needed */
-						break;
-				}
-				root->rowMarks = list_delete(root->rowMarks, rc);
+				if (rc->strength != LCS_NONE)
+					applyLockingClause(subquery, 1, rc->strength,
+									   rc->waitPolicy, false);
+				root->rowMarks = list_delete_ptr(root->rowMarks, rc);
 			}
+
+			/*
+			 * When we are replacing the target relation with a subquery, we
+			 * need to make sure to add a locking clause explicitly to the
+			 * generated subquery since there won't be any row marks against
+			 * the target relation itself.
+			 */
+			if (targetRelation)
+				applyLockingClause(subquery, 1, LCS_FORUPDATE,
+								   LockWaitBlock, false);
 
 			/*
 			 * Replace any variables in the outer query that refer to the
@@ -398,7 +400,9 @@ security_barrier_replace_vars_walker(Node *node,
 					((Var *) tle->expr)->varcollid == var->varcollid)
 				{
 					/* Map the variable onto this subquery targetlist entry */
-					var->varattno = attno;
+					var->varattno = var->varoattno = attno;
+					/* Mark this var as having been processed */
+					context->vars_processed = lappend(context->vars_processed, var);
 					return false;
 				}
 			}
@@ -430,7 +434,7 @@ security_barrier_replace_vars_walker(Node *node,
 
 			/* New variable for subquery targetlist */
 			newvar = copyObject(var);
-			newvar->varno = 1;
+			newvar->varno = newvar->varnoold = 1;
 
 			attno = list_length(context->targetlist) + 1;
 			tle = makeTargetEntry((Expr *) newvar,
@@ -444,7 +448,7 @@ security_barrier_replace_vars_walker(Node *node,
 										makeString(pstrdup(attname)));
 
 			/* Update the outer query's variable */
-			var->varattno = attno;
+			var->varattno = var->varoattno = attno;
 
 			/* Remember this Var so that we don't process it again */
 			context->vars_processed = lappend(context->vars_processed, var);

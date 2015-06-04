@@ -22,7 +22,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -850,7 +850,7 @@ choose_hashed_setop(PlannerInfo *root, List *groupClauses,
 	 * Don't do it if it doesn't look like the hashtable will fit into
 	 * work_mem.
 	 */
-	hashentrysize = MAXALIGN(input_plan->plan_width) + MAXALIGN(sizeof(MinimalTupleData));
+	hashentrysize = MAXALIGN(input_plan->plan_width) + MAXALIGN(SizeofMinimalTupleHeader);
 
 	if (hashentrysize * dNumGroups > work_mem * 1024L)
 		return false;
@@ -1355,12 +1355,13 @@ expand_inherited_rtentry(PlannerInfo *root, RangeTblEntry *rte, Index rti)
 
 		/*
 		 * Build an RTE for the child, and attach to query's rangetable list.
-		 * We copy most fields of the parent's RTE, but replace relation OID,
-		 * and set inh = false.  Also, set requiredPerms to zero since all
-		 * required permissions checks are done on the original RTE.
+		 * We copy most fields of the parent's RTE, but replace relation OID
+		 * and relkind, and set inh = false.  Also, set requiredPerms to zero
+		 * since all required permissions checks are done on the original RTE.
 		 */
 		childrte = copyObject(rte);
 		childrte->relid = childOID;
+		childrte->relkind = newrelation->rd_rel->relkind;
 		childrte->inh = false;
 		childrte->requiredPerms = 0;
 		parse->rtable = lappend(parse->rtable, childrte);
@@ -1406,9 +1407,15 @@ expand_inherited_rtentry(PlannerInfo *root, RangeTblEntry *rte, Index rti)
 			newrc->rti = childRTindex;
 			newrc->prti = rti;
 			newrc->rowmarkId = oldrc->rowmarkId;
-			newrc->markType = oldrc->markType;
-			newrc->noWait = oldrc->noWait;
+			/* Reselect rowmark type, because relkind might not match parent */
+			newrc->markType = select_rowmark_type(childrte, oldrc->strength);
+			newrc->allMarkTypes = (1 << newrc->markType);
+			newrc->strength = oldrc->strength;
+			newrc->waitPolicy = oldrc->waitPolicy;
 			newrc->isParent = false;
+
+			/* Include child's rowmark type in parent's allMarkTypes */
+			oldrc->allMarkTypes |= newrc->allMarkTypes;
 
 			root->rowMarks = lappend(root->rowMarks, newrc);
 		}
@@ -1996,4 +2003,27 @@ adjust_inherited_tlist(List *tlist, AppendRelInfo *context)
 	}
 
 	return new_tlist;
+}
+
+/*
+ * adjust_appendrel_attrs_multilevel
+ *	  Apply Var translations from a toplevel appendrel parent down to a child.
+ *
+ * In some cases we need to translate expressions referencing a baserel
+ * to reference an appendrel child that's multiple levels removed from it.
+ */
+Node *
+adjust_appendrel_attrs_multilevel(PlannerInfo *root, Node *node,
+								  RelOptInfo *child_rel)
+{
+	AppendRelInfo *appinfo = find_childrel_appendrelinfo(root, child_rel);
+	RelOptInfo *parent_rel = find_base_rel(root, appinfo->parent_relid);
+
+	/* If parent is also a child, first recurse to apply its translations */
+	if (parent_rel->reloptkind == RELOPT_OTHER_MEMBER_REL)
+		node = adjust_appendrel_attrs_multilevel(root, node, parent_rel);
+	else
+		Assert(parent_rel->reloptkind == RELOPT_BASEREL);
+	/* Now translate for this child */
+	return adjust_appendrel_attrs(root, node, appinfo);
 }

@@ -30,7 +30,12 @@
 (add-hook 'c-mode-hook
           (defun postgresql-c-mode-hook ()
             (when (string-match "/postgres\\(ql\\)?/" buffer-file-name)
-              (c-set-style "postgresql"))))
+              (c-set-style "postgresql")
+              ;; Don't override the style we just set with the style in
+              ;; `dir-locals-file'.  Emacs 23.4.1 needs this; it is obsolete,
+              ;; albeit harmless, by Emacs 24.3.1.
+              (set (make-local-variable 'ignored-local-variables)
+                   (append '(c-file-style) ignored-local-variables)))))
 
 
 ;;; Perl files
@@ -46,6 +51,7 @@
   (setq perl-continued-statement-offset 4)
   (setq perl-indent-level 4)
   (setq perl-label-offset -2)
+  (setq indent-tabs-mode t)
   (setq tab-width 4))
 
 (add-hook 'perl-mode-hook

@@ -9,7 +9,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/nodes/plannodes.h
@@ -20,7 +20,9 @@
 #define PLANNODES_H
 
 #include "access/sdir.h"
+#include "lib/stringinfo.h"
 #include "nodes/bitmapset.h"
+#include "nodes/lockoptions.h"
 #include "nodes/primnodes.h"
 
 
@@ -84,7 +86,10 @@ typedef struct PlannedStmt
 	AttrNumber  distributionKey;
 	List	   *distributionNodes;
 	List	   *distributionRestrict;
-#endif
+#endif	
+
+	bool		hasRowSecurity; /* row security applied? */
+
 } PlannedStmt;
 
 /* macro for fetching the Plan associated with a SubPlan node */
@@ -187,6 +192,7 @@ typedef struct ModifyTable
 	Plan		plan;
 	CmdType		operation;		/* INSERT, UPDATE, or DELETE */
 	bool		canSetTag;		/* do we set the command tag/es_processed? */
+	Index		nominalRelation;	/* Parent RT index for use of EXPLAIN */
 	List	   *resultRelations;	/* integer list of RT indexes */
 	int			resultRelIndex; /* index of first resultRel in plan's list */
 	List	   *plans;			/* plan(s) producing source data */
@@ -502,6 +508,36 @@ typedef struct ForeignScan
 	bool		fsSystemCol;	/* true if any "system column" is needed */
 } ForeignScan;
 
+/* ----------------
+ *	   CustomScan node
+ *
+ * The comments for ForeignScan's fdw_exprs and fdw_private fields apply
+ * equally to custom_exprs and custom_private.  Note that since Plan trees
+ * can be copied, custom scan providers *must* fit all plan data they need
+ * into those fields; embedding CustomScan in a larger struct will not work.
+ * ----------------
+ */
+struct CustomScan;
+
+typedef struct CustomScanMethods
+{
+	const char *CustomName;
+
+	/* Create execution state (CustomScanState) from a CustomScan plan node */
+	Node	   *(*CreateCustomScanState) (struct CustomScan *cscan);
+	/* Optional: print custom_xxx fields in some special way */
+	void		(*TextOutCustomScan) (StringInfo str,
+											  const struct CustomScan *node);
+} CustomScanMethods;
+
+typedef struct CustomScan
+{
+	Scan		scan;
+	uint32		flags;			/* mask of CUSTOMPATH_* flags, see relation.h */
+	List	   *custom_exprs;	/* expressions that custom code may evaluate */
+	List	   *custom_private; /* private data for custom code */
+	const CustomScanMethods *methods;
+} CustomScan;
 
 /*
  * ==========
@@ -827,7 +863,7 @@ typedef enum RowMarkType
 	ROW_MARK_NOKEYEXCLUSIVE,	/* obtain no-key exclusive tuple lock */
 	ROW_MARK_SHARE,				/* obtain shared tuple lock */
 	ROW_MARK_KEYSHARE,			/* obtain keyshare tuple lock */
-	ROW_MARK_REFERENCE,			/* just fetch the TID */
+	ROW_MARK_REFERENCE,			/* just fetch the TID, don't lock it */
 	ROW_MARK_COPY				/* physically copy the row value */
 } RowMarkType;
 
@@ -848,7 +884,9 @@ typedef enum RowMarkType
  * list for each child relation (including the target rel itself in its role
  * as a child).  The child entries have rti == child rel's RT index and
  * prti == parent's RT index, and can therefore be recognized as children by
- * the fact that prti != rti.
+ * the fact that prti != rti.  The parent's allMarkTypes field gets the OR
+ * of (1<<markType) across all its children (this definition allows children
+ * to use different markTypes).
  *
  * The planner also adds resjunk output columns to the plan that carry
  * information sufficient to identify the locked or fetched rows.  For
@@ -858,6 +896,8 @@ typedef enum RowMarkType
  * The tableoid column is only present for an inheritance hierarchy.
  * When markType == ROW_MARK_COPY, there is instead a single column named
  *		wholerow%u			whole-row value of relation
+ * (An inheritance hierarchy could have all three resjunk output columns,
+ * if some children use a different markType than others.)
  * In all three cases, %u represents the rowmark ID number (rowmarkId).
  * This number is unique within a plan tree, except that child relation
  * entries copy their parent's rowmarkId.  (Assigning unique numbers
@@ -874,7 +914,9 @@ typedef struct PlanRowMark
 	Index		prti;			/* range table index of parent relation */
 	Index		rowmarkId;		/* unique identifier for resjunk columns */
 	RowMarkType markType;		/* see enum above */
-	bool		noWait;			/* NOWAIT option */
+	int			allMarkTypes;	/* OR of (1<<markType) for all children */
+	LockClauseStrength strength;	/* LockingClause's strength, or LCS_NONE */
+	LockWaitPolicy waitPolicy;	/* NOWAIT and SKIP LOCKED options */
 	bool		isParent;		/* true if this is a "dummy" parent entry */
 } PlanRowMark;
 

@@ -92,7 +92,7 @@
  * heap's TOAST table will go through the normal bufmgr.
  *
  *
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994-5, Regents of the University of California
  *
  * IDENTIFICATION
@@ -113,6 +113,7 @@
 #include "access/transam.h"
 #include "access/tuptoaster.h"
 #include "access/xact.h"
+#include "access/xloginsert.h"
 
 #include "catalog/catalog.h"
 
@@ -282,13 +283,12 @@ begin_heap_rewrite(Relation old_heap, Relation new_heap, TransactionId oldest_xm
 	hash_ctl.keysize = sizeof(TidHashKey);
 	hash_ctl.entrysize = sizeof(UnresolvedTupData);
 	hash_ctl.hcxt = state->rs_cxt;
-	hash_ctl.hash = tag_hash;
 
 	state->rs_unresolved_tups =
 		hash_create("Rewrite / Unresolved ctids",
 					128,		/* arbitrary initial size */
 					&hash_ctl,
-					HASH_ELEM | HASH_FUNCTION | HASH_CONTEXT);
+					HASH_ELEM | HASH_BLOBS | HASH_CONTEXT);
 
 	hash_ctl.entrysize = sizeof(OldToNewMappingData);
 
@@ -296,7 +296,7 @@ begin_heap_rewrite(Relation old_heap, Relation new_heap, TransactionId oldest_xm
 		hash_create("Rewrite / Old to new tid map",
 					128,		/* arbitrary initial size */
 					&hash_ctl,
-					HASH_ELEM | HASH_FUNCTION | HASH_CONTEXT);
+					HASH_ELEM | HASH_BLOBS | HASH_CONTEXT);
 
 	MemoryContextSwitchTo(old_cxt);
 
@@ -833,13 +833,12 @@ logical_begin_heap_rewrite(RewriteState state)
 	hash_ctl.keysize = sizeof(TransactionId);
 	hash_ctl.entrysize = sizeof(RewriteMappingFile);
 	hash_ctl.hcxt = state->rs_cxt;
-	hash_ctl.hash = tag_hash;
 
 	state->rs_logical_mappings =
 		hash_create("Logical rewrite mapping",
 					128,		/* arbitrary initial size */
 					&hash_ctl,
-					HASH_ELEM | HASH_FUNCTION | HASH_CONTEXT);
+					HASH_ELEM | HASH_BLOBS | HASH_CONTEXT);
 }
 
 /*
@@ -864,7 +863,6 @@ logical_heap_rewrite_flush_mappings(RewriteState state)
 	hash_seq_init(&seq_status, state->rs_logical_mappings);
 	while ((src = (RewriteMappingFile *) hash_seq_search(&seq_status)) != NULL)
 	{
-		XLogRecData rdata[2];
 		char	   *waldata;
 		char	   *waldata_start;
 		xl_heap_rewrite_mapping xlrec;
@@ -887,11 +885,6 @@ logical_heap_rewrite_flush_mappings(RewriteState state)
 		xlrec.mapped_db = dboid;
 		xlrec.offset = src->off;
 		xlrec.start_lsn = state->rs_begin_lsn;
-
-		rdata[0].data = (char *) (&xlrec);
-		rdata[0].len = sizeof(xlrec);
-		rdata[0].buffer = InvalidBuffer;
-		rdata[0].next = &(rdata[1]);
 
 		/* write all mappings consecutively */
 		len = src->num_mappings * sizeof(LogicalRewriteMappingData);
@@ -933,13 +926,12 @@ logical_heap_rewrite_flush_mappings(RewriteState state)
 							written, len)));
 		src->off += len;
 
-		rdata[1].data = waldata_start;
-		rdata[1].len = len;
-		rdata[1].buffer = InvalidBuffer;
-		rdata[1].next = NULL;
+		XLogBeginInsert();
+		XLogRegisterData((char *) (&xlrec), sizeof(xlrec));
+		XLogRegisterData(waldata_start, len);
 
 		/* write xlog record */
-		XLogInsert(RM_HEAP2_ID, XLOG_HEAP2_REWRITE, rdata);
+		XLogInsert(RM_HEAP2_ID, XLOG_HEAP2_REWRITE);
 
 		pfree(waldata_start);
 	}
@@ -1009,7 +1001,7 @@ logical_rewrite_log_mapping(RewriteState state, TransactionId xid,
 			dboid = MyDatabaseId;
 
 		snprintf(path, MAXPGPATH,
-				 "pg_llog/mappings/" LOGICAL_REWRITE_FORMAT,
+				 "pg_logical/mappings/" LOGICAL_REWRITE_FORMAT,
 				 dboid, relid,
 				 (uint32) (state->rs_begin_lsn >> 32),
 				 (uint32) state->rs_begin_lsn,
@@ -1122,7 +1114,7 @@ logical_rewrite_heap_tuple(RewriteState state, ItemPointerData old_tid,
  * Replay XLOG_HEAP2_REWRITE records
  */
 void
-heap_xlog_logical_rewrite(XLogRecPtr lsn, XLogRecord *r)
+heap_xlog_logical_rewrite(XLogReaderState *r)
 {
 	char		path[MAXPGPATH];
 	int			fd;
@@ -1133,11 +1125,11 @@ heap_xlog_logical_rewrite(XLogRecPtr lsn, XLogRecord *r)
 	xlrec = (xl_heap_rewrite_mapping *) XLogRecGetData(r);
 
 	snprintf(path, MAXPGPATH,
-			 "pg_llog/mappings/" LOGICAL_REWRITE_FORMAT,
+			 "pg_logical/mappings/" LOGICAL_REWRITE_FORMAT,
 			 xlrec->mapped_db, xlrec->mapped_rel,
 			 (uint32) (xlrec->start_lsn >> 32),
 			 (uint32) xlrec->start_lsn,
-			 xlrec->mapped_xid, r->xl_xid);
+			 xlrec->mapped_xid, XLogRecGetXid(r));
 
 	fd = OpenTransientFile(path,
 						   O_CREAT | O_WRONLY | PG_BINARY,
@@ -1161,7 +1153,7 @@ heap_xlog_logical_rewrite(XLogRecPtr lsn, XLogRecord *r)
 	if (lseek(fd, xlrec->offset, SEEK_SET) != xlrec->offset)
 		ereport(ERROR,
 				(errcode_for_file_access(),
-				 errmsg("could not seek to the end of file \"%s\": %m",
+				 errmsg("could not seek to end of file \"%s\": %m",
 						path)));
 
 	data = XLogRecGetData(r) + sizeof(*xlrec);
@@ -1219,8 +1211,8 @@ CheckPointLogicalRewriteHeap(void)
 	if (cutoff != InvalidXLogRecPtr && redo < cutoff)
 		cutoff = redo;
 
-	mappings_dir = AllocateDir("pg_llog/mappings");
-	while ((mapping_de = ReadDir(mappings_dir, "pg_llog/mappings")) != NULL)
+	mappings_dir = AllocateDir("pg_logical/mappings");
+	while ((mapping_de = ReadDir(mappings_dir, "pg_logical/mappings")) != NULL)
 	{
 		struct stat statbuf;
 		Oid			dboid;
@@ -1235,7 +1227,7 @@ CheckPointLogicalRewriteHeap(void)
 			strcmp(mapping_de->d_name, "..") == 0)
 			continue;
 
-		snprintf(path, MAXPGPATH, "pg_llog/mappings/%s", mapping_de->d_name);
+		snprintf(path, MAXPGPATH, "pg_logical/mappings/%s", mapping_de->d_name);
 		if (lstat(path, &statbuf) == 0 && !S_ISREG(statbuf.st_mode))
 			continue;
 
@@ -1255,7 +1247,7 @@ CheckPointLogicalRewriteHeap(void)
 			if (unlink(path) < 0)
 				ereport(ERROR,
 						(errcode_for_file_access(),
-						 errmsg("could not unlink file \"%s\": %m", path)));
+						 errmsg("could not remove file \"%s\": %m", path)));
 		}
 		else
 		{

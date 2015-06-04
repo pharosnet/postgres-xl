@@ -8,7 +8,7 @@
  * or call fmgr-callable functions.
  *
  *
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/fmgr.h
@@ -23,7 +23,7 @@ typedef struct Node *fmNodePtr;
 typedef struct Aggref *fmAggrefPtr;
 
 /* Likewise, avoid including execnodes.h here */
-typedef struct ExprContext *fmExprContextPtr;
+typedef void (*fmExprContextCallbackFunction) (Datum arg);
 
 /* Likewise, avoid including stringinfo.h here */
 typedef struct StringInfoData *fmStringInfo;
@@ -298,6 +298,7 @@ extern struct varlena *pg_detoast_datum_packed(struct varlena * datum);
 #define PG_RETURN_INT32(x)	 return Int32GetDatum(x)
 #define PG_RETURN_UINT32(x)  return UInt32GetDatum(x)
 #define PG_RETURN_INT16(x)	 return Int16GetDatum(x)
+#define PG_RETURN_UINT16(x)	 return UInt16GetDatum(x)
 #define PG_RETURN_CHAR(x)	 return CharGetDatum(x)
 #define PG_RETURN_BOOL(x)	 return BoolGetDatum(x)
 #define PG_RETURN_OID(x)	 return ObjectIdGetDatum(x)
@@ -656,8 +657,10 @@ extern void **find_rendezvous_variable(const char *varName);
 extern int AggCheckCallContext(FunctionCallInfo fcinfo,
 					MemoryContext *aggcontext);
 extern fmAggrefPtr AggGetAggref(FunctionCallInfo fcinfo);
-extern fmExprContextPtr AggGetPerTupleEContext(FunctionCallInfo fcinfo);
-extern fmExprContextPtr AggGetPerAggEContext(FunctionCallInfo fcinfo);
+extern MemoryContext AggGetTempMemoryContext(FunctionCallInfo fcinfo);
+extern void AggRegisterCallback(FunctionCallInfo fcinfo,
+					fmExprContextCallbackFunction func,
+					Datum arg);
 
 /*
  * We allow plugin modules to hook function entry/exit.  This is intended

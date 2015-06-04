@@ -3,7 +3,7 @@
  * foreign.c
  *		  support for foreign-data wrappers, servers and user mappings.
  *
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *		  src/backend/foreign/foreign.c
@@ -396,6 +396,47 @@ GetFdwRoutineForRelation(Relation relation, bool makecopy)
 
 	/* Only a short-lived reference is needed, so just hand back cached copy */
 	return relation->rd_fdwroutine;
+}
+
+
+/*
+ * IsImportableForeignTable - filter table names for IMPORT FOREIGN SCHEMA
+ *
+ * Returns TRUE if given table name should be imported according to the
+ * statement's import filter options.
+ */
+bool
+IsImportableForeignTable(const char *tablename,
+						 ImportForeignSchemaStmt *stmt)
+{
+	ListCell   *lc;
+
+	switch (stmt->list_type)
+	{
+		case FDW_IMPORT_SCHEMA_ALL:
+			return true;
+
+		case FDW_IMPORT_SCHEMA_LIMIT_TO:
+			foreach(lc, stmt->table_list)
+			{
+				RangeVar   *rv = (RangeVar *) lfirst(lc);
+
+				if (strcmp(tablename, rv->relname) == 0)
+					return true;
+			}
+			return false;
+
+		case FDW_IMPORT_SCHEMA_EXCEPT:
+			foreach(lc, stmt->table_list)
+			{
+				RangeVar   *rv = (RangeVar *) lfirst(lc);
+
+				if (strcmp(tablename, rv->relname) == 0)
+					return false;
+			}
+			return true;
+	}
+	return false;				/* shouldn't get here */
 }
 
 

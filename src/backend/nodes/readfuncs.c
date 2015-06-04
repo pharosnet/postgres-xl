@@ -8,7 +8,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  * Portions Copyright (c) 2010-2012 Postgres-XC Development Group
  *
@@ -458,6 +458,7 @@ _readQuery(void)
 	READ_BOOL_FIELD(hasRecursive);
 	READ_BOOL_FIELD(hasModifyingCTE);
 	READ_BOOL_FIELD(hasForUpdate);
+	READ_BOOL_FIELD(hasRowSecurity);
 	READ_NODE_FIELD(cteList);
 	READ_NODE_FIELD(rtable);
 	READ_NODE_FIELD(jointree);
@@ -580,7 +581,7 @@ _readRowMarkClause(void)
 
 	READ_UINT_FIELD(rti);
 	READ_ENUM_FIELD(strength, LockClauseStrength);
-	READ_BOOL_FIELD(noWait);
+	READ_ENUM_FIELD(waitPolicy, LockWaitPolicy);
 	READ_BOOL_FIELD(pushedDown);
 
 	READ_DONE();
@@ -1220,6 +1221,7 @@ _readSubLink(void)
 	READ_LOCALS(SubLink);
 
 	READ_ENUM_FIELD(subLinkType, SubLinkType);
+	READ_INT_FIELD(subLinkId);
 	READ_NODE_FIELD(testexpr);
 	READ_NODE_FIELD(operName);
 	READ_NODE_FIELD(subselect);
@@ -1674,6 +1676,7 @@ _readNullTest(void)
 	READ_NODE_FIELD(arg);
 	READ_ENUM_FIELD(nulltesttype, NullTestType);
 	READ_BOOL_FIELD(argisrow);
+	READ_LOCATION_FIELD(location);
 
 	READ_DONE();
 }
@@ -1688,6 +1691,7 @@ _readBooleanTest(void)
 
 	READ_NODE_FIELD(arg);
 	READ_ENUM_FIELD(booltesttype, BoolTestType);
+	READ_LOCATION_FIELD(location);
 
 	READ_DONE();
 }
@@ -3249,7 +3253,9 @@ _readPlanRowMark(void)
 	READ_UINT_FIELD(prti);
 	READ_UINT_FIELD(rowmarkId);
 	READ_ENUM_FIELD(markType, RowMarkType);
-	READ_BOOL_FIELD(noWait);
+	READ_INT_FIELD(allMarkTypes);
+	READ_ENUM_FIELD(strength, LockClauseStrength);
+	READ_ENUM_FIELD(waitPolicy, LockWaitPolicy);
 	READ_BOOL_FIELD(isParent);
 
 	READ_DONE();

@@ -3,7 +3,7 @@
  * pg_shdepend.c
  *	  routines to support manipulation of the pg_shdepend relation
  *
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -40,6 +40,8 @@
 #include "catalog/pg_proc.h"
 #include "catalog/pg_shdepend.h"
 #include "catalog/pg_tablespace.h"
+#include "catalog/pg_ts_config.h"
+#include "catalog/pg_ts_dict.h"
 #include "catalog/pg_type.h"
 #include "commands/alter.h"
 #include "commands/dbcommands.h"
@@ -1394,6 +1396,8 @@ shdepReassignOwned(List *roleids, Oid newrole)
 				case ExtensionRelationId:
 				case TableSpaceRelationId:
 				case DatabaseRelationId:
+				case TSConfigRelationId:
+				case TSDictionaryRelationId:
 					{
 						Oid			classId = sdepForm->classid;
 						Relation	catalog;

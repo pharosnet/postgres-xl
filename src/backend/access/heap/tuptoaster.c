@@ -4,7 +4,7 @@
  *	  Support routines for external and compressed storage of
  *	  variable size attributes.
  *
- * Copyright (c) 2000-2014, PostgreSQL Global Development Group
+ * Copyright (c) 2000-2015, PostgreSQL Global Development Group
  *
  *
  * IDENTIFICATION
@@ -35,14 +35,35 @@
 #include "access/tuptoaster.h"
 #include "access/xact.h"
 #include "catalog/catalog.h"
+#include "common/pg_lzcompress.h"
+#include "miscadmin.h"
 #include "utils/fmgroids.h"
-#include "utils/pg_lzcompress.h"
 #include "utils/rel.h"
 #include "utils/typcache.h"
 #include "utils/tqual.h"
 
 
 #undef TOAST_DEBUG
+
+/*
+ *	The information at the start of the compressed toast data.
+ */
+typedef struct toast_compress_header
+{
+	int32		vl_len_;		/* varlena header (do not touch directly!) */
+	int32		rawsize;
+} toast_compress_header;
+
+/*
+ * Utilities for manipulation of header information for compressed
+ * toast entries.
+ */
+#define TOAST_COMPRESS_HDRSZ		((int32) sizeof(toast_compress_header))
+#define TOAST_COMPRESS_RAWSIZE(ptr) (((toast_compress_header *) (ptr))->rawsize)
+#define TOAST_COMPRESS_RAWDATA(ptr) \
+	(((char *) (ptr)) + TOAST_COMPRESS_HDRSZ)
+#define TOAST_COMPRESS_SET_RAWSIZE(ptr, len) \
+	(((toast_compress_header *) (ptr))->rawsize = (len))
 
 static void toast_delete_datum(Relation rel, Datum value);
 static Datum toast_save_datum(Relation rel, Datum value,
@@ -52,6 +73,7 @@ static bool toastid_valueid_exists(Oid toastrelid, Oid valueid);
 static struct varlena *toast_fetch_datum(struct varlena * attr);
 static struct varlena *toast_fetch_datum_slice(struct varlena * attr,
 						int32 sliceoffset, int32 length);
+static struct varlena *toast_decompress_datum(struct varlena * attr);
 static int toast_open_indexes(Relation toastrel,
 				   LOCKMODE lock,
 				   Relation **toastidxs,
@@ -68,8 +90,9 @@ static void toast_close_indexes(Relation *toastidxs, int num_indexes,
  *
  * This will return a datum that contains all the data internally, ie, not
  * relying on external storage or memory, but it can still be compressed or
- * have a short header.
- ----------
+ * have a short header.  Note some callers assume that if the input is an
+ * EXTERNAL datum, the result will be a pfree'able chunk.
+ * ----------
  */
 struct varlena *
 heap_tuple_fetch_attr(struct varlena * attr)
@@ -86,9 +109,7 @@ heap_tuple_fetch_attr(struct varlena * attr)
 	else if (VARATT_IS_EXTERNAL_INDIRECT(attr))
 	{
 		/*
-		 * copy into the caller's memory context. That's not required in all
-		 * cases but sufficient for now since this is mainly used when we need
-		 * to persist a Datum for unusually long time, like in a HOLD cursor.
+		 * This is an indirect pointer --- dereference it
 		 */
 		struct varatt_indirect redirect;
 
@@ -98,11 +119,14 @@ heap_tuple_fetch_attr(struct varlena * attr)
 		/* nested indirect Datums aren't allowed */
 		Assert(!VARATT_IS_EXTERNAL_INDIRECT(attr));
 
-		/* doesn't make much sense, but better handle it */
-		if (VARATT_IS_EXTERNAL_ONDISK(attr))
+		/* recurse if value is still external in some other way */
+		if (VARATT_IS_EXTERNAL(attr))
 			return heap_tuple_fetch_attr(attr);
 
-		/* copy datum verbatim */
+		/*
+		 * Copy into the caller's memory context, in case caller tries to
+		 * pfree the result.
+		 */
 		result = (struct varlena *) palloc(VARSIZE_ANY(attr));
 		memcpy(result, attr, VARSIZE_ANY(attr));
 	}
@@ -122,7 +146,10 @@ heap_tuple_fetch_attr(struct varlena * attr)
  * heap_tuple_untoast_attr -
  *
  *	Public entry point to get back a toasted value from compression
- *	or external storage.
+ *	or external storage.  The result is always non-extended varlena form.
+ *
+ * Note some callers assume that if the input is an EXTERNAL or COMPRESSED
+ * datum, the result will be a pfree'able chunk.
  * ----------
  */
 struct varlena *
@@ -137,16 +164,17 @@ heap_tuple_untoast_attr(struct varlena * attr)
 		/* If it's compressed, decompress it */
 		if (VARATT_IS_COMPRESSED(attr))
 		{
-			PGLZ_Header *tmp = (PGLZ_Header *) attr;
+			struct varlena *tmp = attr;
 
-			attr = (struct varlena *) palloc(PGLZ_RAW_SIZE(tmp) + VARHDRSZ);
-			SET_VARSIZE(attr, PGLZ_RAW_SIZE(tmp) + VARHDRSZ);
-			pglz_decompress(tmp, VARDATA(attr));
+			attr = toast_decompress_datum(tmp);
 			pfree(tmp);
 		}
 	}
 	else if (VARATT_IS_EXTERNAL_INDIRECT(attr))
 	{
+		/*
+		 * This is an indirect pointer --- dereference it
+		 */
 		struct varatt_indirect redirect;
 
 		VARATT_EXTERNAL_GET_POINTER(redirect, attr);
@@ -155,18 +183,25 @@ heap_tuple_untoast_attr(struct varlena * attr)
 		/* nested indirect Datums aren't allowed */
 		Assert(!VARATT_IS_EXTERNAL_INDIRECT(attr));
 
+		/* recurse in case value is still extended in some other way */
 		attr = heap_tuple_untoast_attr(attr);
+
+		/* if it isn't, we'd better copy it */
+		if (attr == (struct varlena *) redirect.pointer)
+		{
+			struct varlena *result;
+
+			result = (struct varlena *) palloc(VARSIZE_ANY(attr));
+			memcpy(result, attr, VARSIZE_ANY(attr));
+			attr = result;
+		}
 	}
 	else if (VARATT_IS_COMPRESSED(attr))
 	{
 		/*
 		 * This is a compressed value inside of the main tuple
 		 */
-		PGLZ_Header *tmp = (PGLZ_Header *) attr;
-
-		attr = (struct varlena *) palloc(PGLZ_RAW_SIZE(tmp) + VARHDRSZ);
-		SET_VARSIZE(attr, PGLZ_RAW_SIZE(tmp) + VARHDRSZ);
-		pglz_decompress(tmp, VARDATA(attr));
+		attr = toast_decompress_datum(attr);
 	}
 	else if (VARATT_IS_SHORT(attr))
 	{
@@ -231,16 +266,15 @@ heap_tuple_untoast_attr_slice(struct varlena * attr,
 	else
 		preslice = attr;
 
+	Assert(!VARATT_IS_EXTERNAL(preslice));
+
 	if (VARATT_IS_COMPRESSED(preslice))
 	{
-		PGLZ_Header *tmp = (PGLZ_Header *) preslice;
-		Size		size = PGLZ_RAW_SIZE(tmp) + VARHDRSZ;
+		struct varlena *tmp = preslice;
 
-		preslice = (struct varlena *) palloc(size);
-		SET_VARSIZE(preslice, size);
-		pglz_decompress(tmp, VARDATA(preslice));
+		preslice = toast_decompress_datum(tmp);
 
-		if (tmp != (PGLZ_Header *) attr)
+		if (tmp != attr)
 			pfree(tmp);
 	}
 
@@ -437,8 +471,6 @@ toast_delete(Relation rel, HeapTuple oldtup)
 				continue;
 			else if (VARATT_IS_EXTERNAL_ONDISK(PointerGetDatum(value)))
 				toast_delete_datum(rel, value);
-			else if (VARATT_IS_EXTERNAL_INDIRECT(PointerGetDatum(value)))
-				elog(ERROR, "attempt to delete tuple containing indirect datums");
 		}
 	}
 }
@@ -600,7 +632,8 @@ toast_insert_or_update(Relation rel, HeapTuple newtup, HeapTuple oldtup,
 
 			/*
 			 * We took care of UPDATE above, so any external value we find
-			 * still in the tuple must be someone else's we cannot reuse.
+			 * still in the tuple must be someone else's that we cannot reuse
+			 * (this includes the case of an out-of-line in-memory datum).
 			 * Fetch it back (without decompression, unless we are forcing
 			 * PLAIN storage).  If necessary, we'll push it out as a new
 			 * external value below.
@@ -644,7 +677,7 @@ toast_insert_or_update(Relation rel, HeapTuple newtup, HeapTuple oldtup,
 	 */
 
 	/* compute header overhead --- this should match heap_form_tuple() */
-	hoff = offsetof(HeapTupleHeaderData, t_bits);
+	hoff = SizeofHeapTupleHeader;
 	if (has_nulls)
 		hoff += BITMAPLEN(numAttrs);
 	if (newtup->t_data->t_infomask & HEAP_HASOID)
@@ -930,7 +963,7 @@ toast_insert_or_update(Relation rel, HeapTuple newtup, HeapTuple oldtup,
 		 * different conclusion about the size of the null bitmap, or even
 		 * whether there needs to be one at all.
 		 */
-		new_header_len = offsetof(HeapTupleHeaderData, t_bits);
+		new_header_len = SizeofHeapTupleHeader;
 		if (has_nulls)
 			new_header_len += BITMAPLEN(numAttrs);
 		if (olddata->t_infomask & HEAP_HASOID)
@@ -957,7 +990,7 @@ toast_insert_or_update(Relation rel, HeapTuple newtup, HeapTuple oldtup,
 		/*
 		 * Copy the existing tuple header, but adjust natts and t_hoff.
 		 */
-		memcpy(new_data, olddata, offsetof(HeapTupleHeaderData, t_bits));
+		memcpy(new_data, olddata, SizeofHeapTupleHeader);
 		HeapTupleHeaderSetNatts(new_data, numAttrs);
 		new_data->t_hoff = new_header_len;
 		if (olddata->t_infomask & HEAP_HASOID)
@@ -1036,7 +1069,7 @@ toast_flatten_tuple(HeapTuple tup, TupleDesc tupleDesc)
 			new_value = (struct varlena *) DatumGetPointer(toast_values[i]);
 			if (VARATT_IS_EXTERNAL(new_value))
 			{
-				new_value = toast_fetch_datum(new_value);
+				new_value = heap_tuple_fetch_attr(new_value);
 				toast_values[i] = PointerGetDatum(new_value);
 				toast_free[i] = true;
 			}
@@ -1170,7 +1203,7 @@ toast_flatten_tuple_to_datum(HeapTupleHeader tup,
 	 *
 	 * This should match the reconstruction code in toast_insert_or_update.
 	 */
-	new_header_len = offsetof(HeapTupleHeaderData, t_bits);
+	new_header_len = SizeofHeapTupleHeader;
 	if (has_nulls)
 		new_header_len += BITMAPLEN(numAttrs);
 	if (tup->t_infomask & HEAP_HASOID)
@@ -1185,7 +1218,7 @@ toast_flatten_tuple_to_datum(HeapTupleHeader tup,
 	/*
 	 * Copy the existing tuple header, but adjust natts and t_hoff.
 	 */
-	memcpy(new_data, tup, offsetof(HeapTupleHeaderData, t_bits));
+	memcpy(new_data, tup, SizeofHeapTupleHeader);
 	HeapTupleHeaderSetNatts(new_data, numAttrs);
 	new_data->t_hoff = new_header_len;
 	if (tup->t_infomask & HEAP_HASOID)
@@ -1234,6 +1267,7 @@ toast_compress_datum(Datum value)
 {
 	struct varlena *tmp;
 	int32		valsize = VARSIZE_ANY_EXHDR(DatumGetPointer(value));
+	int32		len;
 
 	Assert(!VARATT_IS_EXTERNAL(DatumGetPointer(value)));
 	Assert(!VARATT_IS_COMPRESSED(DatumGetPointer(value)));
@@ -1246,7 +1280,8 @@ toast_compress_datum(Datum value)
 		valsize > PGLZ_strategy_default->max_input_size)
 		return PointerGetDatum(NULL);
 
-	tmp = (struct varlena *) palloc(PGLZ_MAX_OUTPUT(valsize));
+	tmp = (struct varlena *) palloc(PGLZ_MAX_OUTPUT(valsize) +
+									TOAST_COMPRESS_HDRSZ);
 
 	/*
 	 * We recheck the actual size even if pglz_compress() reports success,
@@ -1258,10 +1293,15 @@ toast_compress_datum(Datum value)
 	 * only one header byte and no padding if the value is short enough.  So
 	 * we insist on a savings of more than 2 bytes to ensure we have a gain.
 	 */
-	if (pglz_compress(VARDATA_ANY(DatumGetPointer(value)), valsize,
-					  (PGLZ_Header *) tmp, PGLZ_strategy_default) &&
-		VARSIZE(tmp) < valsize - 2)
+	len = pglz_compress(VARDATA_ANY(DatumGetPointer(value)),
+						valsize,
+						TOAST_COMPRESS_RAWDATA(tmp),
+						PGLZ_strategy_default);
+	if (len >= 0 &&
+		len + TOAST_COMPRESS_HDRSZ < valsize - 2)
 	{
+		TOAST_COMPRESS_SET_RAWSIZE(tmp, valsize);
+		SET_VARSIZE_COMPRESSED(tmp, len + TOAST_COMPRESS_HDRSZ);
 		/* successful compression */
 		return PointerGetDatum(tmp);
 	}
@@ -1332,11 +1372,13 @@ toast_save_datum(Relation rel, Datum value,
 	CommandId	mycid = GetCurrentCommandId(true);
 	struct varlena *result;
 	struct varatt_external toast_pointer;
-	struct
+	union
 	{
 		struct varlena hdr;
-		char		data[TOAST_MAX_CHUNK_SIZE]; /* make struct big enough */
-		int32		align_it;	/* ensure struct is aligned well enough */
+		/* this is to make the union big enough for a chunk: */
+		char		data[TOAST_MAX_CHUNK_SIZE + VARHDRSZ];
+		/* ensure union is aligned well enough: */
+		int32		align_it;
 	}			chunk_data;
 	int32		chunk_size;
 	int32		chunk_seq = 0;
@@ -1501,6 +1543,8 @@ toast_save_datum(Relation rel, Datum value,
 	while (data_todo > 0)
 	{
 		int			i;
+
+		CHECK_FOR_INTERRUPTS();
 
 		/*
 		 * Calculate the size of this chunk
@@ -1733,8 +1777,8 @@ toast_fetch_datum(struct varlena * attr)
 	int			num_indexes;
 	int			validIndex;
 
-	if (VARATT_IS_EXTERNAL_INDIRECT(attr))
-		elog(ERROR, "shouldn't be called for indirect tuples");
+	if (!VARATT_IS_EXTERNAL_ONDISK(attr))
+		elog(ERROR, "toast_fetch_datum shouldn't be called for non-ondisk datums");
 
 	/* Must copy to access aligned fields */
 	VARATT_EXTERNAL_GET_POINTER(toast_pointer, attr);
@@ -1910,7 +1954,8 @@ toast_fetch_datum_slice(struct varlena * attr, int32 sliceoffset, int32 length)
 	int			num_indexes;
 	int			validIndex;
 
-	Assert(VARATT_IS_EXTERNAL_ONDISK(attr));
+	if (!VARATT_IS_EXTERNAL_ONDISK(attr))
+		elog(ERROR, "toast_fetch_datum_slice shouldn't be called for non-ondisk datums");
 
 	/* Must copy to access aligned fields */
 	VARATT_EXTERNAL_GET_POINTER(toast_pointer, attr);
@@ -2105,6 +2150,32 @@ toast_fetch_datum_slice(struct varlena * attr, int32 sliceoffset, int32 length)
 }
 
 /* ----------
+ * toast_decompress_datum -
+ *
+ * Decompress a compressed version of a varlena datum
+ */
+static struct varlena *
+toast_decompress_datum(struct varlena * attr)
+{
+	struct varlena *result;
+
+	Assert(VARATT_IS_COMPRESSED(attr));
+
+	result = (struct varlena *)
+		palloc(TOAST_COMPRESS_RAWSIZE(attr) + VARHDRSZ);
+	SET_VARSIZE(result, TOAST_COMPRESS_RAWSIZE(attr) + VARHDRSZ);
+
+	if (pglz_decompress(TOAST_COMPRESS_RAWDATA(attr),
+						VARSIZE(attr) - TOAST_COMPRESS_HDRSZ,
+						VARDATA(result),
+						TOAST_COMPRESS_RAWSIZE(attr)) < 0)
+		elog(ERROR, "compressed data is corrupted");
+
+	return result;
+}
+
+
+/* ----------
  * toast_open_indexes
  *
  *	Get an array of the indexes associated to the given toast relation
@@ -2159,7 +2230,7 @@ toast_open_indexes(Relation toastrel,
 	 * wrong if there is nothing.
 	 */
 	if (!found)
-		elog(ERROR, "no valid index found for toast relation with Oid %d",
+		elog(ERROR, "no valid index found for toast relation with Oid %u",
 			 RelationGetRelid(toastrel));
 
 	return res;

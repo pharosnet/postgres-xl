@@ -89,7 +89,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -329,9 +329,9 @@ typedef struct AggHashEntryData *AggHashEntry;
 typedef struct AggHashEntryData
 {
 	TupleHashEntryData shared;	/* common header for hash table entries */
-	/* per-aggregate transition status array - must be last! */
-	AggStatePerGroupData pergroup[1];	/* VARIABLE LENGTH ARRAY */
-}	AggHashEntryData;	/* VARIABLE LENGTH STRUCT */
+	/* per-aggregate transition status array */
+	AggStatePerGroupData pergroup[FLEXIBLE_ARRAY_MEMBER];
+}	AggHashEntryData;
 
 
 static void initialize_aggregates(AggState *aggstate,
@@ -395,6 +395,10 @@ initialize_aggregates(AggState *aggstate,
 			 * We use a plain Datum sorter when there's a single input column;
 			 * otherwise sort the full tuple.  (See comments for
 			 * process_ordered_aggregate_single.)
+			 *
+			 * In the future, we should consider forcing the
+			 * tuplesort_begin_heap() case when the abbreviated key
+			 * optimization can thereby be used, even when numInputs is 1.
 			 */
 			peraggstate->sortstate =
 				(peraggstate->numInputs == 1) ?
@@ -1189,8 +1193,8 @@ build_hash_table(AggState *aggstate)
 	Assert(node->aggstrategy == AGG_HASHED);
 	Assert(node->numGroups > 0);
 
-	entrysize = sizeof(AggHashEntryData) +
-		(aggstate->numaggs - 1) * sizeof(AggStatePerGroupData);
+	entrysize = offsetof(AggHashEntryData, pergroup) +
+		aggstate->numaggs * sizeof(AggStatePerGroupData);
 
 	aggstate->hashtable = BuildTupleHashTable(node->numCols,
 											  node->grpColIdx,
@@ -1261,8 +1265,8 @@ hash_agg_entry_size(int numAggs)
 	Size		entrysize;
 
 	/* This must match build_hash_table */
-	entrysize = sizeof(AggHashEntryData) +
-		(numAggs - 1) * sizeof(AggStatePerGroupData);
+	entrysize = offsetof(AggHashEntryData, pergroup) +
+		numAggs * sizeof(AggStatePerGroupData);
 	entrysize = MAXALIGN(entrysize);
 	/* Account for hashtable overhead (assuming fill factor = 1) */
 	entrysize += 3 * sizeof(void *);
@@ -2634,44 +2638,56 @@ AggGetAggref(FunctionCallInfo fcinfo)
 }
 
 /*
- * AggGetPerTupleEContext - fetch per-input-tuple ExprContext
+ * AggGetTempMemoryContext - fetch short-term memory context for aggregates
  *
- * This is useful in agg final functions; the econtext returned is the
- * same per-tuple context that the transfn was called in (which can
- * safely get reset during the final function).
+ * This is useful in agg final functions; the context returned is one that
+ * the final function can safely reset as desired.  This isn't useful for
+ * transition functions, since the context returned MAY (we don't promise)
+ * be the same as the context those are called in.
  *
  * As above, this is currently not useful for aggs called as window functions.
  */
-ExprContext *
-AggGetPerTupleEContext(FunctionCallInfo fcinfo)
+MemoryContext
+AggGetTempMemoryContext(FunctionCallInfo fcinfo)
 {
 	if (fcinfo->context && IsA(fcinfo->context, AggState))
 	{
 		AggState   *aggstate = (AggState *) fcinfo->context;
 
-		return aggstate->tmpcontext;
+		return aggstate->tmpcontext->ecxt_per_tuple_memory;
 	}
 	return NULL;
 }
 
 /*
- * AggGetPerAggEContext - fetch per-output-tuple ExprContext
+ * AggRegisterCallback - register a cleanup callback for an aggregate
  *
  * This is useful for aggs to register shutdown callbacks, which will ensure
- * that non-memory resources are freed.
+ * that non-memory resources are freed.  The callback will occur just before
+ * the associated aggcontext (as returned by AggCheckCallContext) is reset,
+ * either between groups or as a result of rescanning the query.  The callback
+ * will NOT be called on error paths.  The typical use-case is for freeing of
+ * tuplestores or tuplesorts maintained in aggcontext, or pins held by slots
+ * created by the agg functions.  (The callback will not be called until after
+ * the result of the finalfn is no longer needed, so it's safe for the finalfn
+ * to return data that will be freed by the callback.)
  *
  * As above, this is currently not useful for aggs called as window functions.
  */
-ExprContext *
-AggGetPerAggEContext(FunctionCallInfo fcinfo)
+void
+AggRegisterCallback(FunctionCallInfo fcinfo,
+					ExprContextCallbackFunction func,
+					Datum arg)
 {
 	if (fcinfo->context && IsA(fcinfo->context, AggState))
 	{
 		AggState   *aggstate = (AggState *) fcinfo->context;
 
-		return aggstate->ss.ps.ps_ExprContext;
+		RegisterExprContextCallback(aggstate->ss.ps.ps_ExprContext, func, arg);
+
+		return;
 	}
-	return NULL;
+	elog(ERROR, "aggregate function cannot register a callback in this context");
 }
 
 

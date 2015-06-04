@@ -8,7 +8,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *	src/backend/executor/execCurrent.c
@@ -116,7 +116,7 @@ execCurrentOf(CurrentOfExpr *cexpr,
 			if (!RowMarkRequiresRowShareLock(thiserm->markType))
 				continue;		/* ignore non-FOR UPDATE/SHARE items */
 
-			if (RelationGetRelid(thiserm->relation) == table_oid)
+			if (thiserm->relid == table_oid)
 			{
 				if (erm)
 					ereport(ERROR,
@@ -283,13 +283,15 @@ search_plan_tree(PlanState *node, Oid table_oid)
 #endif
 #endif
 			/*
-			 * scan nodes can all be treated alike
+			 * Relation scan nodes can all be treated alike
 			 */
 		case T_SeqScanState:
 		case T_IndexScanState:
 		case T_IndexOnlyScanState:
 		case T_BitmapHeapScanState:
 		case T_TidScanState:
+		case T_ForeignScanState:
+		case T_CustomScanState:
 			{
 				ScanState  *sstate = (ScanState *) node;
 

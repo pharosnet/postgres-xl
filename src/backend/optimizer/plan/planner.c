@@ -8,7 +8,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -215,6 +215,7 @@ standard_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 	glob->lastPHId = 0;
 	glob->lastRowMarkId = 0;
 	glob->transientPlan = false;
+	glob->hasRowSecurity = false;
 
 	/* Determine what fraction of the plan is likely to be scanned */
 	if (cursorOptions & CURSOR_OPT_FAST_PLAN)
@@ -334,6 +335,7 @@ standard_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 	result->distributionNodes = NULL;
 #endif
 	result->nParamExec = glob->nParamExec;
+	result->hasRowSecurity = glob->hasRowSecurity;
 
 	return result;
 }
@@ -391,6 +393,7 @@ subquery_planner(PlannerGlobal *glob, Query *parse,
 	root->planner_cxt = CurrentMemoryContext;
 	root->init_plans = NIL;
 	root->cte_plan_ids = NIL;
+	root->multiexpr_params = NIL;
 	root->eq_classes = NIL;
 	root->append_rel_list = NIL;
 	root->rowMarks = NIL;
@@ -436,8 +439,7 @@ subquery_planner(PlannerGlobal *glob, Query *parse,
 	 * Check to see if any subqueries in the jointree can be merged into this
 	 * query.
 	 */
-	parse->jointree = (FromExpr *)
-		pull_up_subqueries(root, (Node *) parse->jointree);
+	pull_up_subqueries(root);
 
 	/*
 	 * If this is a simple UNION ALL query, flatten it into an appendrel. We
@@ -719,6 +721,7 @@ subquery_planner(PlannerGlobal *glob, Query *parse,
 			plan = (Plan *) make_modifytable(root,
 											 parse->commandType,
 											 parse->canSetTag,
+											 parse->resultRelation,
 									   list_make1_int(parse->resultRelation),
 											 list_make1(plan),
 											 withCheckOptionLists,
@@ -964,6 +967,7 @@ inheritance_planner(PlannerInfo *root)
 {
 	Query	   *parse = root->parse;
 	int			parentRTindex = parse->resultRelation;
+	int			nominalRelation = -1;
 	List	   *final_rtable = NIL;
 	int			save_rel_array_size = 0;
 	RelOptInfo **save_rel_array = NULL;
@@ -1097,6 +1101,20 @@ inheritance_planner(PlannerInfo *root)
 		 * security barrier quals on the result RTE).
 		 */
 		appinfo->child_relid = subroot.parse->resultRelation;
+
+		/*
+		 * We'll use the first child relation (even if it's excluded) as the
+		 * nominal target relation of the ModifyTable node.  Because of the
+		 * way expand_inherited_rtentry works, this should always be the RTE
+		 * representing the parent table in its role as a simple member of the
+		 * inheritance set.  (It would be logically cleaner to use the
+		 * inheritance parent RTE as the nominal target; but since that RTE
+		 * will not be otherwise referenced in the plan, doing so would give
+		 * rise to confusing use of multiple aliases in EXPLAIN output for
+		 * what the user will think is the "same" table.)
+		 */
+		if (nominalRelation < 0)
+			nominalRelation = appinfo->child_relid;
 
 		/*
 		 * If this child rel was excluded by constraint exclusion, exclude it
@@ -1258,6 +1276,7 @@ inheritance_planner(PlannerInfo *root)
 	return (Plan *) make_modifytable(root,
 									 parse->commandType,
 									 parse->canSetTag,
+									 nominalRelation,
 									 resultRelations,
 									 subplans,
 									 withCheckOptionLists,
@@ -1418,6 +1437,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 		 * This may add new security barrier subquery RTEs to the rangetable.
 		 */
 		expand_security_quals(root, tlist);
+		root->glob->hasRowSecurity = parse->hasRowSecurity;
 
 		/*
 		 * Locate any window functions in the tlist.  (We don't need to look
@@ -2684,36 +2704,15 @@ preprocess_rowmarks(PlannerInfo *root)
 		if (rte->rtekind != RTE_RELATION)
 			continue;
 
-		/*
-		 * Similarly, ignore RowMarkClauses for foreign tables; foreign tables
-		 * will instead get ROW_MARK_COPY items in the next loop.  (FDWs might
-		 * choose to do something special while fetching their rows, but that
-		 * is of no concern here.)
-		 */
-		if (rte->relkind == RELKIND_FOREIGN_TABLE)
-			continue;
-
 		rels = bms_del_member(rels, rc->rti);
 
 		newrc = makeNode(PlanRowMark);
 		newrc->rti = newrc->prti = rc->rti;
 		newrc->rowmarkId = ++(root->glob->lastRowMarkId);
-		switch (rc->strength)
-		{
-			case LCS_FORUPDATE:
-				newrc->markType = ROW_MARK_EXCLUSIVE;
-				break;
-			case LCS_FORNOKEYUPDATE:
-				newrc->markType = ROW_MARK_NOKEYEXCLUSIVE;
-				break;
-			case LCS_FORSHARE:
-				newrc->markType = ROW_MARK_SHARE;
-				break;
-			case LCS_FORKEYSHARE:
-				newrc->markType = ROW_MARK_KEYSHARE;
-				break;
-		}
-		newrc->noWait = rc->noWait;
+		newrc->markType = select_rowmark_type(rte, rc->strength);
+		newrc->allMarkTypes = (1 << newrc->markType);
+		newrc->strength = rc->strength;
+		newrc->waitPolicy = rc->waitPolicy;
 		newrc->isParent = false;
 
 		prowmarks = lappend(prowmarks, newrc);
@@ -2735,13 +2734,10 @@ preprocess_rowmarks(PlannerInfo *root)
 		newrc = makeNode(PlanRowMark);
 		newrc->rti = newrc->prti = i;
 		newrc->rowmarkId = ++(root->glob->lastRowMarkId);
-		/* real tables support REFERENCE, anything else needs COPY */
-		if (rte->rtekind == RTE_RELATION &&
-			rte->relkind != RELKIND_FOREIGN_TABLE)
-			newrc->markType = ROW_MARK_REFERENCE;
-		else
-			newrc->markType = ROW_MARK_COPY;
-		newrc->noWait = false;	/* doesn't matter */
+		newrc->markType = select_rowmark_type(rte, LCS_NONE);
+		newrc->allMarkTypes = (1 << newrc->markType);
+		newrc->strength = LCS_NONE;
+		newrc->waitPolicy = LockWaitBlock;		/* doesn't matter */
 		newrc->isParent = false;
 
 		prowmarks = lappend(prowmarks, newrc);
@@ -2788,6 +2784,49 @@ separate_rowmarks(PlannerInfo *root)
 }
 #endif /*XCP*/
 #endif /*PGXC*/
+
+/*
+ * Select RowMarkType to use for a given table
+ */
+RowMarkType
+select_rowmark_type(RangeTblEntry *rte, LockClauseStrength strength)
+{
+	if (rte->rtekind != RTE_RELATION)
+	{
+		/* If it's not a table at all, use ROW_MARK_COPY */
+		return ROW_MARK_COPY;
+	}
+	else if (rte->relkind == RELKIND_FOREIGN_TABLE)
+	{
+		/* For now, we force all foreign tables to use ROW_MARK_COPY */
+		return ROW_MARK_COPY;
+	}
+	else
+	{
+		/* Regular table, apply the appropriate lock type */
+		switch (strength)
+		{
+			case LCS_NONE:
+				/* don't need tuple lock, only ability to re-fetch the row */
+				return ROW_MARK_REFERENCE;
+				break;
+			case LCS_FORKEYSHARE:
+				return ROW_MARK_KEYSHARE;
+				break;
+			case LCS_FORSHARE:
+				return ROW_MARK_SHARE;
+				break;
+			case LCS_FORNOKEYUPDATE:
+				return ROW_MARK_NOKEYEXCLUSIVE;
+				break;
+			case LCS_FORUPDATE:
+				return ROW_MARK_EXCLUSIVE;
+				break;
+		}
+		elog(ERROR, "unrecognized LockClauseStrength %d", (int) strength);
+		return ROW_MARK_EXCLUSIVE;		/* keep compiler quiet */
+	}
+}
 
 /*
  * preprocess_limit - do pre-estimation for LIMIT and/or OFFSET clauses
@@ -2858,7 +2897,7 @@ preprocess_limit(PlannerInfo *root, double tuple_fraction,
 			{
 				*offset_est = DatumGetInt64(((Const *) est)->constvalue);
 				if (*offset_est < 0)
-					*offset_est = 0;	/* less than 0 is same as 0 */
+					*offset_est = 0;	/* treat as not present */
 			}
 		}
 		else
@@ -3019,9 +3058,8 @@ limit_needed(Query *parse)
 			{
 				int64		offset = DatumGetInt64(((Const *) node)->constvalue);
 
-				/* Executor would treat less-than-zero same as zero */
-				if (offset > 0)
-					return true;	/* OFFSET with a positive value */
+				if (offset != 0)
+					return true;	/* OFFSET with a nonzero value */
 			}
 		}
 		else
@@ -3259,7 +3297,7 @@ choose_hashed_grouping(PlannerInfo *root,
 	 */
 
 	/* Estimate per-hash-entry space at tuple width... */
-	hashentrysize = MAXALIGN(path_width) + MAXALIGN(sizeof(MinimalTupleData));
+	hashentrysize = MAXALIGN(path_width) + MAXALIGN(SizeofMinimalTupleHeader);
 	/* plus space for pass-by-ref transition values... */
 	hashentrysize += agg_costs->transitionSpace;
 	/* plus the per-hash-entry overhead */
@@ -3427,7 +3465,7 @@ choose_hashed_distinct(PlannerInfo *root,
 	 */
 
 	/* Estimate per-hash-entry space at tuple width... */
-	hashentrysize = MAXALIGN(path_width) + MAXALIGN(sizeof(MinimalTupleData));
+	hashentrysize = MAXALIGN(path_width) + MAXALIGN(SizeofMinimalTupleHeader);
 	/* plus the per-hash-entry overhead */
 	hashentrysize += hash_agg_entry_size(0);
 

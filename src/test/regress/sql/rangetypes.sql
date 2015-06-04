@@ -67,9 +67,13 @@ SELECT * FROM numrange_test WHERE 1.9 <@ nr ORDER BY nr;
 select * from numrange_test where nr = 'empty' ORDER BY nr;
 select * from numrange_test where nr = '(1.1, 2.2)' ORDER BY nr;
 select * from numrange_test where nr = '[1.1, 2.2)' ORDER BY nr;
+select * from numrange_test where nr < 'empty' ORDER BY nr;
 select * from numrange_test where nr < numrange(-1000.0, -1000.0,'[]') ORDER BY nr;
 select * from numrange_test where nr < numrange(0.0, 1.0,'[]') ORDER BY nr;
 select * from numrange_test where nr < numrange(1000.0, 1001.0,'[]') ORDER BY nr;
+select * from numrange_test where nr <= 'empty' ORDER BY nr;
+select * from numrange_test where nr >= 'empty' ORDER BY nr;
+select * from numrange_test where nr > 'empty' ORDER BY nr;
 select * from numrange_test where nr > numrange(-1001.0, -1000.0,'[]') ORDER BY nr;
 select * from numrange_test where nr > numrange(0.0, 1.0,'[]') ORDER BY nr;
 select * from numrange_test where nr > numrange(1000.0, 1000.0,'[]') ORDER BY nr;
@@ -281,6 +285,11 @@ select count(*) from test_range_spgist where ir >> int4range(100,500);
 select count(*) from test_range_spgist where ir &< int4range(100,500);
 select count(*) from test_range_spgist where ir &> int4range(100,500);
 select count(*) from test_range_spgist where ir -|- int4range(100,500);
+
+-- test index-only scans
+explain (costs off)
+select ir from test_range_spgist where ir -|- int4range(10,20) order by ir;
+select ir from test_range_spgist where ir -|- int4range(10,20) order by ir;
 
 RESET enable_seqscan;
 RESET enable_indexscan;

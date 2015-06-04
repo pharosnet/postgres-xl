@@ -10,7 +10,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  * Portions Copyright (c) 2010-2012 Postgres-XC Development Group
  *
@@ -40,11 +40,14 @@
 #include "libpq/pqformat.h"
 #include "libpq/libpq.h"
 #endif
+#include "access/commit_ts.h"
 #include "access/multixact.h"
 #include "access/subtrans.h"
 #include "access/transam.h"
 #include "access/twophase.h"
 #include "access/xact.h"
+#include "access/xlog.h"
+#include "access/xloginsert.h"
 #include "access/xlogutils.h"
 #include "catalog/catalog.h"
 #include "catalog/namespace.h"
@@ -721,7 +724,6 @@ AssignTransactionId(TransactionState s)
 		if (nUnreportedXids >= PGPROC_MAX_CACHED_SUBXIDS ||
 			log_unknown_top)
 		{
-			XLogRecData rdata[2];
 			xl_xact_assignment xlrec;
 
 			/*
@@ -732,17 +734,12 @@ AssignTransactionId(TransactionState s)
 			Assert(TransactionIdIsValid(xlrec.xtop));
 			xlrec.nsubxacts = nUnreportedXids;
 
-			rdata[0].data = (char *) &xlrec;
-			rdata[0].len = MinSizeOfXactAssignment;
-			rdata[0].buffer = InvalidBuffer;
-			rdata[0].next = &rdata[1];
+			XLogBeginInsert();
+			XLogRegisterData((char *) &xlrec, MinSizeOfXactAssignment);
+			XLogRegisterData((char *) unreportedXids,
+							 nUnreportedXids * sizeof(TransactionId));
 
-			rdata[1].data = (char *) unreportedXids;
-			rdata[1].len = nUnreportedXids * sizeof(TransactionId);
-			rdata[1].buffer = InvalidBuffer;
-			rdata[1].next = NULL;
-
-			(void) XLogInsert(RM_XACT_ID, XLOG_XACT_ASSIGNMENT, rdata);
+			(void) XLogInsert(RM_XACT_ID, XLOG_XACT_ASSIGNMENT);
 
 			nUnreportedXids = 0;
 			/* mark top, not current xact as having been logged */
@@ -1323,10 +1320,9 @@ RecordTransactionCommit(void)
 
 		/*
 		 * If we didn't create XLOG entries, we're done here; otherwise we
-		 * should flush those entries the same as a commit record.  (An
-		 * example of a possible record that wouldn't cause an XID to be
-		 * assigned is a sequence advance record due to nextval() --- we want
-		 * to flush that to disk before reporting commit.)
+		 * should trigger flushing those entries the same as a commit record
+		 * would.  This will primarily happen for HOT pruning and the like; we
+		 * want these to be flushed to disk in due time.
 		 */
 		if (!wrote_xlog)
 			goto cleanup;
@@ -1361,112 +1357,42 @@ RecordTransactionCommit(void)
 
 		SetCurrentTransactionStopTimestamp();
 
-		/*
-		 * Do we need the long commit record? If not, use the compact format.
-		 *
-		 * For now always use the non-compact version if wal_level=logical, so
-		 * we can hide commits from other databases. TODO: In the future we
-		 * should merge compact and non-compact commits and use a flags
-		 * variable to determine if it contains subxacts, relations or
-		 * invalidation messages, that's more extensible and degrades more
-		 * gracefully. Till then, it's just 20 bytes of overhead.
-		 */
-		if (nrels > 0 || nmsgs > 0 || RelcacheInitFileInval || forceSyncCommit ||
-			XLogLogicalInfoActive())
-		{
-			XLogRecData rdata[4];
-			int			lastrdata = 0;
-			xl_xact_commit xlrec;
-
-			/*
-			 * Set flags required for recovery processing of commits.
-			 */
-			xlrec.xinfo = 0;
-			if (RelcacheInitFileInval)
-				xlrec.xinfo |= XACT_COMPLETION_UPDATE_RELCACHE_FILE;
-			if (forceSyncCommit)
-				xlrec.xinfo |= XACT_COMPLETION_FORCE_SYNC_COMMIT;
-
-			xlrec.dbId = MyDatabaseId;
-			xlrec.tsId = MyDatabaseTableSpace;
-
-#ifdef PGXC
-			/* In Postgres-XC, stop timestamp has to follow the timeline of GTM */
-			xlrec.xact_time = xactStopTimestamp + GTMdeltaTimestamp;
+#ifdef XCP
+		XactLogCommitRecord(xactStopTimestamp + GTMdeltaTimestamp,
 #else
-			xlrec.xact_time = xactStopTimestamp;
+		XactLogCommitRecord(xactStopTimestamp,
 #endif
-			xlrec.nrels = nrels;
-			xlrec.nsubxacts = nchildren;
-			xlrec.nmsgs = nmsgs;
-			rdata[0].data = (char *) (&xlrec);
-			rdata[0].len = MinSizeOfXactCommit;
-			rdata[0].buffer = InvalidBuffer;
-			/* dump rels to delete */
-			if (nrels > 0)
-			{
-				rdata[0].next = &(rdata[1]);
-				rdata[1].data = (char *) rels;
-				rdata[1].len = nrels * sizeof(RelFileNode);
-				rdata[1].buffer = InvalidBuffer;
-				lastrdata = 1;
-			}
-			/* dump committed child Xids */
-			if (nchildren > 0)
-			{
-				rdata[lastrdata].next = &(rdata[2]);
-				rdata[2].data = (char *) children;
-				rdata[2].len = nchildren * sizeof(TransactionId);
-				rdata[2].buffer = InvalidBuffer;
-				lastrdata = 2;
-			}
-			/* dump shared cache invalidation messages */
-			if (nmsgs > 0)
-			{
-				rdata[lastrdata].next = &(rdata[3]);
-				rdata[3].data = (char *) invalMessages;
-				rdata[3].len = nmsgs * sizeof(SharedInvalidationMessage);
-				rdata[3].buffer = InvalidBuffer;
-				lastrdata = 3;
-			}
-			rdata[lastrdata].next = NULL;
+							nchildren, children, nrels, rels,
+							nmsgs, invalMessages,
+							RelcacheInitFileInval, forceSyncCommit,
+							InvalidTransactionId /* plain commit */);
+	}
 
-			(void) XLogInsert(RM_XACT_ID, XLOG_XACT_COMMIT, rdata);
-		}
-		else
-		{
-			XLogRecData rdata[2];
-			int			lastrdata = 0;
-			xl_xact_commit_compact xlrec;
+	/*
+	 * We only need to log the commit timestamp separately if the node
+	 * identifier is a valid value; the commit record above already contains
+	 * the timestamp info otherwise, and will be used to load it.
+	 */
+	if (markXidCommitted)
+	{
+		CommitTsNodeId		node_id;
 
-			xlrec.xact_time = xactStopTimestamp;
-			xlrec.nsubxacts = nchildren;
-			rdata[0].data = (char *) (&xlrec);
-			rdata[0].len = MinSizeOfXactCommitCompact;
-			rdata[0].buffer = InvalidBuffer;
-			/* dump committed child Xids */
-			if (nchildren > 0)
-			{
-				rdata[0].next = &(rdata[1]);
-				rdata[1].data = (char *) children;
-				rdata[1].len = nchildren * sizeof(TransactionId);
-				rdata[1].buffer = InvalidBuffer;
-				lastrdata = 1;
-			}
-			rdata[lastrdata].next = NULL;
-
-			(void) XLogInsert(RM_XACT_ID, XLOG_XACT_COMMIT_COMPACT, rdata);
-		}
+		node_id = CommitTsGetDefaultNodeId();
+		TransactionTreeSetCommitTsData(xid, nchildren, children,
+									   xactStopTimestamp,
+									   node_id, node_id != InvalidCommitTsNodeId);
 	}
 
 	/*
 	 * Check if we want to commit asynchronously.  We can allow the XLOG flush
 	 * to happen asynchronously if synchronous_commit=off, or if the current
-	 * transaction has not performed any WAL-logged operation.  The latter
-	 * case can arise if the current transaction wrote only to temporary
-	 * and/or unlogged tables.  In case of a crash, the loss of such a
-	 * transaction will be irrelevant since temp tables will be lost anyway,
-	 * and unlogged tables will be truncated.  (Given the foregoing, you might
+	 * transaction has not performed any WAL-logged operation or didn't assign
+	 * a xid.  The transaction can end up not writing any WAL, even if it has
+	 * a xid, if it only wrote to temporary and/or unlogged tables.  It can
+	 * end up having written WAL without an xid if it did HOT pruning.  In
+	 * case of a crash, the loss of such a transaction will be irrelevant;
+	 * temp tables will be lost anyway, unlogged tables will be truncated and
+	 * HOT pruning will be done again later. (Given the foregoing, you might
 	 * think that it would be unnecessary to emit the XLOG record at all in
 	 * this case, but we don't currently try to do that.  It would certainly
 	 * cause problems at least in Hot Standby mode, where the
@@ -1482,7 +1408,8 @@ RecordTransactionCommit(void)
 	 * if all to-be-deleted tables are temporary though, since they are lost
 	 * anyway if we crash.)
 	 */
-	if ((wrote_xlog && synchronous_commit > SYNCHRONOUS_COMMIT_OFF) ||
+	if ((wrote_xlog && markXidCommitted &&
+		 synchronous_commit > SYNCHRONOUS_COMMIT_OFF) ||
 		forceSyncCommit || nrels > 0)
 	{
 		XLogFlush(XactLastRecEnd);
@@ -1531,12 +1458,15 @@ RecordTransactionCommit(void)
 	latestXid = TransactionIdLatest(xid, nchildren, children);
 
 	/*
-	 * Wait for synchronous replication, if required.
+	 * Wait for synchronous replication, if required. Similar to the decision
+	 * above about using committing asynchronously we only want to wait if
+	 * this backend assigned a xid and wrote WAL.  No need to wait if a xid
+	 * was assigned due to temporary/unlogged tables or due to HOT pruning.
 	 *
 	 * Note that at this stage we have marked clog, but still show as running
 	 * in the procarray and continue to hold locks.
 	 */
-	if (wrote_xlog)
+	if (wrote_xlog && markXidCommitted)
 		SyncRepWaitForLSN(XactLastRecEnd);
 
 	/* Reset XactLastRecEnd until the next transaction writes something */
@@ -1743,9 +1673,7 @@ RecordTransactionAbort(bool isSubXact)
 	RelFileNode *rels;
 	int			nchildren;
 	TransactionId *children;
-	XLogRecData rdata[3];
-	int			lastrdata = 0;
-	xl_xact_abort xlrec;
+	TimestampTz	xact_time;
 
 	/*
 	 * If we haven't been assigned an XID, nobody will care whether we aborted
@@ -1785,43 +1713,21 @@ RecordTransactionAbort(bool isSubXact)
 
 	/* Write the ABORT record */
 	if (isSubXact)
-		xlrec.xact_time = GetCurrentTimestamp();
+		xact_time = GetCurrentTimestamp();
 	else
 	{
 		SetCurrentTransactionStopTimestamp();
-#ifdef PGXC
-		/* In Postgres-XC, stop timestamp has to follow the timeline of GTM */
-		xlrec.xact_time = xactStopTimestamp + GTMdeltaTimestamp;
+#ifdef XCP		
+		xact_time = xactStopTimestamp + GTMdeltaTimestamp;
 #else
-		xlrec.xact_time = xactStopTimestamp;
+		xact_time = xactStopTimestamp;
 #endif
 	}
-	xlrec.nrels = nrels;
-	xlrec.nsubxacts = nchildren;
-	rdata[0].data = (char *) (&xlrec);
-	rdata[0].len = MinSizeOfXactAbort;
-	rdata[0].buffer = InvalidBuffer;
-	/* dump rels to delete */
-	if (nrels > 0)
-	{
-		rdata[0].next = &(rdata[1]);
-		rdata[1].data = (char *) rels;
-		rdata[1].len = nrels * sizeof(RelFileNode);
-		rdata[1].buffer = InvalidBuffer;
-		lastrdata = 1;
-	}
-	/* dump committed child Xids */
-	if (nchildren > 0)
-	{
-		rdata[lastrdata].next = &(rdata[2]);
-		rdata[2].data = (char *) children;
-		rdata[2].len = nchildren * sizeof(TransactionId);
-		rdata[2].buffer = InvalidBuffer;
-		lastrdata = 2;
-	}
-	rdata[lastrdata].next = NULL;
 
-	(void) XLogInsert(RM_XACT_ID, XLOG_XACT_ABORT, rdata);
+	XactLogAbortRecord(xact_time,
+					   nchildren, children,
+					   nrels, rels,
+					   InvalidTransactionId);
 
 	/*
 	 * Report the latest async abort LSN, so that the WAL writer knows to
@@ -2185,7 +2091,6 @@ StartTransaction(void)
 	 * initialize other subsystems for new transaction
 	 */
 	AtStart_GUC();
-	AtStart_Inval();
 	AtStart_Cache();
 	AfterTriggerBeginXact();
 
@@ -3141,6 +3046,9 @@ AbortTransaction(void)
 	/* Clean up buffer I/O and buffer context locks, too */
 	AbortBufferIO();
 	UnlockBuffers();
+
+	/* Reset WAL record construction state */
+	XLogResetInsertion();
 
 	/*
 	 * Also clean up any open wait for lock, since the lock manager will choke
@@ -5046,7 +4954,6 @@ StartSubTransaction(void)
 	 */
 	AtSubStart_Memory();
 	AtSubStart_ResourceOwner();
-	AtSubStart_Inval();
 	AtSubStart_Notify();
 	AfterTriggerBeginSubXact();
 
@@ -5193,6 +5100,9 @@ AbortSubTransaction(void)
 
 	AbortBufferIO();
 	UnlockBuffers();
+
+	/* Reset WAL record construction state */
+	XLogResetInsertion();
 
 	/*
 	 * Also clean up any open wait for lock, since the lock manager will choke
@@ -5572,22 +5482,229 @@ xactGetCommittedChildren(TransactionId **ptr)
  *	XLOG support routines
  */
 
+
+/*
+ * Log the commit record for a plain or twophase transaction commit.
+ *
+ * A 2pc commit will be emitted when twophase_xid is valid, a plain one
+ * otherwise.
+ */
+XLogRecPtr
+XactLogCommitRecord(TimestampTz commit_time,
+					 int nsubxacts, TransactionId *subxacts,
+					 int nrels, RelFileNode *rels,
+					 int nmsgs, SharedInvalidationMessage *msgs,
+					 bool relcacheInval, bool forceSync,
+					 TransactionId twophase_xid)
+{
+	xl_xact_commit		xlrec;
+	xl_xact_xinfo		xl_xinfo;
+	xl_xact_dbinfo		xl_dbinfo;
+	xl_xact_subxacts	xl_subxacts;
+	xl_xact_relfilenodes xl_relfilenodes;
+	xl_xact_invals		xl_invals;
+	xl_xact_twophase	xl_twophase;
+
+	uint8				info;
+
+	Assert(CritSectionCount > 0);
+
+	xl_xinfo.xinfo = 0;
+
+	/* decide between a plain and 2pc commit */
+	if (!TransactionIdIsValid(twophase_xid))
+		info = XLOG_XACT_COMMIT;
+	else
+		info = XLOG_XACT_COMMIT_PREPARED;
+
+	/* First figure out and collect all the information needed */
+
+	xlrec.xact_time = commit_time;
+
+	if (relcacheInval)
+		xl_xinfo.xinfo |= XACT_COMPLETION_UPDATE_RELCACHE_FILE;
+	if (forceSyncCommit)
+		xl_xinfo.xinfo |= XACT_COMPLETION_FORCE_SYNC_COMMIT;
+
+	/*
+	 * Relcache invalidations requires information about the current database
+	 * and so does logical decoding.
+	 */
+	if (nmsgs > 0 || XLogLogicalInfoActive())
+	{
+		xl_xinfo.xinfo |= XACT_XINFO_HAS_DBINFO;
+		xl_dbinfo.dbId = MyDatabaseId;
+		xl_dbinfo.tsId = MyDatabaseTableSpace;
+	}
+
+	if (nsubxacts > 0)
+	{
+		xl_xinfo.xinfo |= XACT_XINFO_HAS_SUBXACTS;
+		xl_subxacts.nsubxacts = nsubxacts;
+	}
+
+	if (nrels > 0)
+	{
+		xl_xinfo.xinfo |= XACT_XINFO_HAS_RELFILENODES;
+		xl_relfilenodes.nrels = nrels;
+	}
+
+	if (nmsgs > 0)
+	{
+		xl_xinfo.xinfo |= XACT_XINFO_HAS_INVALS;
+		xl_invals.nmsgs = nmsgs;
+	}
+
+	if (TransactionIdIsValid(twophase_xid))
+	{
+		xl_xinfo.xinfo |= XACT_XINFO_HAS_TWOPHASE;
+		xl_twophase.xid = twophase_xid;
+	}
+
+	if (xl_xinfo.xinfo != 0)
+		info |= XLOG_XACT_HAS_INFO;
+
+	/* Then include all the collected data into the commit record. */
+
+	XLogBeginInsert();
+
+	XLogRegisterData((char *) (&xlrec), sizeof(xl_xact_commit));
+
+	if (xl_xinfo.xinfo != 0)
+		XLogRegisterData((char *) (&xl_xinfo.xinfo), sizeof(xl_xinfo.xinfo));
+
+	if (xl_xinfo.xinfo & XACT_XINFO_HAS_DBINFO)
+		XLogRegisterData((char *) (&xl_dbinfo), sizeof(xl_dbinfo));
+
+	if (xl_xinfo.xinfo & XACT_XINFO_HAS_SUBXACTS)
+	{
+		XLogRegisterData((char *) (&xl_subxacts),
+						 MinSizeOfXactSubxacts);
+		XLogRegisterData((char *) subxacts,
+						 nsubxacts * sizeof(TransactionId));
+	}
+
+	if (xl_xinfo.xinfo & XACT_XINFO_HAS_RELFILENODES)
+	{
+		XLogRegisterData((char *) (&xl_relfilenodes),
+						 MinSizeOfXactRelfilenodes);
+		XLogRegisterData((char *) rels,
+						 nrels * sizeof(RelFileNode));
+	}
+
+	if (xl_xinfo.xinfo & XACT_XINFO_HAS_INVALS)
+	{
+		XLogRegisterData((char *) (&xl_invals), MinSizeOfXactInvals);
+		XLogRegisterData((char *) msgs,
+						 nmsgs * sizeof(SharedInvalidationMessage));
+	}
+
+	if (xl_xinfo.xinfo & XACT_XINFO_HAS_TWOPHASE)
+		XLogRegisterData((char *) (&xl_twophase), sizeof(xl_xact_twophase));
+
+	return XLogInsert(RM_XACT_ID, info);
+}
+
+/*
+ * Log the commit record for a plain or twophase transaction abort.
+ *
+ * A 2pc abort will be emitted when twophase_xid is valid, a plain one
+ * otherwise.
+ */
+XLogRecPtr
+XactLogAbortRecord(TimestampTz abort_time,
+					int nsubxacts, TransactionId *subxacts,
+					int nrels, RelFileNode *rels,
+					TransactionId twophase_xid)
+{
+	xl_xact_abort		xlrec;
+	xl_xact_xinfo		xl_xinfo;
+	xl_xact_subxacts	xl_subxacts;
+	xl_xact_relfilenodes xl_relfilenodes;
+	xl_xact_twophase	xl_twophase;
+
+	uint8				info;
+
+	Assert(CritSectionCount > 0);
+
+	xl_xinfo.xinfo = 0;
+
+	/* decide between a plain and 2pc abort */
+	if (!TransactionIdIsValid(twophase_xid))
+		info = XLOG_XACT_ABORT;
+	else
+		info = XLOG_XACT_ABORT_PREPARED;
+
+
+	/* First figure out and collect all the information needed */
+
+	xlrec.xact_time = abort_time;
+
+	if (nsubxacts > 0)
+	{
+		xl_xinfo.xinfo |= XACT_XINFO_HAS_SUBXACTS;
+		xl_subxacts.nsubxacts = nsubxacts;
+	}
+
+	if (nrels > 0)
+	{
+		xl_xinfo.xinfo |= XACT_XINFO_HAS_RELFILENODES;
+		xl_relfilenodes.nrels = nrels;
+	}
+
+	if (TransactionIdIsValid(twophase_xid))
+	{
+		xl_xinfo.xinfo |= XACT_XINFO_HAS_TWOPHASE;
+		xl_twophase.xid = twophase_xid;
+	}
+
+	if (xl_xinfo.xinfo != 0)
+		info |= XLOG_XACT_HAS_INFO;
+
+	/* Then include all the collected data into the abort record. */
+
+	XLogBeginInsert();
+
+	XLogRegisterData((char *) (&xlrec), MinSizeOfXactAbort);
+
+	if (xl_xinfo.xinfo != 0)
+		XLogRegisterData((char *) (&xl_xinfo), sizeof(xl_xinfo));
+
+	if (xl_xinfo.xinfo & XACT_XINFO_HAS_SUBXACTS)
+	{
+		XLogRegisterData((char *) (&xl_subxacts),
+						 MinSizeOfXactSubxacts);
+		XLogRegisterData((char *) subxacts,
+						 nsubxacts * sizeof(TransactionId));
+	}
+
+	if (xl_xinfo.xinfo & XACT_XINFO_HAS_RELFILENODES)
+	{
+		XLogRegisterData((char *) (&xl_relfilenodes),
+						 MinSizeOfXactRelfilenodes);
+		XLogRegisterData((char *) rels,
+						 nrels * sizeof(RelFileNode));
+	}
+
+	if (xl_xinfo.xinfo & XACT_XINFO_HAS_TWOPHASE)
+		XLogRegisterData((char *) (&xl_twophase), sizeof(xl_xact_twophase));
+
+	return XLogInsert(RM_XACT_ID, info);
+}
+
 /*
  * Before 9.0 this was a fairly short function, but now it performs many
  * actions for which the order of execution is critical.
  */
 static void
-xact_redo_commit_internal(TransactionId xid, XLogRecPtr lsn,
-						  TransactionId *sub_xids, int nsubxacts,
-						  SharedInvalidationMessage *inval_msgs, int nmsgs,
-						  RelFileNode *xnodes, int nrels,
-						  Oid dbId, Oid tsId,
-						  uint32 xinfo)
+xact_redo_commit(xl_xact_parsed_commit *parsed,
+				 TransactionId xid,
+				 XLogRecPtr lsn)
 {
 	TransactionId max_xid;
 	int			i;
 
-	max_xid = TransactionIdLatest(xid, nsubxacts, sub_xids);
+	max_xid = TransactionIdLatest(xid, parsed->nsubxacts, parsed->subxacts);
 
 	/*
 	 * Make sure nextXid is beyond any XID mentioned in the record.
@@ -5605,12 +5722,17 @@ xact_redo_commit_internal(TransactionId xid, XLogRecPtr lsn,
 		LWLockRelease(XidGenLock);
 	}
 
+	/* Set the transaction commit timestamp and metadata */
+	TransactionTreeSetCommitTsData(xid, parsed->nsubxacts, parsed->subxacts,
+								   parsed->xact_time, InvalidCommitTsNodeId,
+								   false);
+
 	if (standbyState == STANDBY_DISABLED)
 	{
 		/*
 		 * Mark the transaction committed in pg_clog.
 		 */
-		TransactionIdCommitTree(xid, nsubxacts, sub_xids);
+		TransactionIdCommitTree(xid, parsed->nsubxacts, parsed->subxacts);
 	}
 	else
 	{
@@ -5634,21 +5756,24 @@ xact_redo_commit_internal(TransactionId xid, XLogRecPtr lsn,
 		 * bits set on changes made by transactions that haven't yet
 		 * recovered. It's unlikely but it's good to be safe.
 		 */
-		TransactionIdAsyncCommitTree(xid, nsubxacts, sub_xids, lsn);
+		TransactionIdAsyncCommitTree(
+			xid, parsed->nsubxacts, parsed->subxacts, lsn);
 
 		/*
 		 * We must mark clog before we update the ProcArray.
 		 */
-		ExpireTreeKnownAssignedTransactionIds(xid, nsubxacts, sub_xids, max_xid);
+		ExpireTreeKnownAssignedTransactionIds(
+			xid, parsed->nsubxacts, parsed->subxacts, max_xid);
 
 		/*
 		 * Send any cache invalidations attached to the commit. We must
 		 * maintain the same order of invalidation then release locks as
 		 * occurs in CommitTransaction().
 		 */
-		ProcessCommittedInvalidationMessages(inval_msgs, nmsgs,
-								  XactCompletionRelcacheInitFileInval(xinfo),
-											 dbId, tsId);
+		ProcessCommittedInvalidationMessages(
+			parsed->msgs, parsed->nmsgs,
+			XactCompletionRelcacheInitFileInval(parsed->xinfo),
+			parsed->dbId, parsed->tsId);
 
 		/*
 		 * Release locks, if any. We do this for both two phase and normal one
@@ -5661,7 +5786,7 @@ xact_redo_commit_internal(TransactionId xid, XLogRecPtr lsn,
 	}
 
 	/* Make sure files supposed to be dropped are dropped */
-	if (nrels > 0)
+	if (parsed->nrels > 0)
 	{
 		/*
 		 * First update minimum recovery point to cover this WAL record. Once
@@ -5680,13 +5805,13 @@ xact_redo_commit_internal(TransactionId xid, XLogRecPtr lsn,
 		 */
 		XLogFlush(lsn);
 
-		for (i = 0; i < nrels; i++)
+		for (i = 0; i < parsed->nrels; i++)
 		{
-			SMgrRelation srel = smgropen(xnodes[i], InvalidBackendId);
+			SMgrRelation srel = smgropen(parsed->xnodes[i], InvalidBackendId);
 			ForkNumber	fork;
 
 			for (fork = 0; fork <= MAX_FORKNUM; fork++)
-				XLogDropRelation(xnodes[i], fork);
+				XLogDropRelation(parsed->xnodes[i], fork);
 			smgrdounlink(srel, true);
 			smgrclose(srel);
 		}
@@ -5704,47 +5829,9 @@ xact_redo_commit_internal(TransactionId xid, XLogRecPtr lsn,
 	 * minRecoveryPoint during recovery) helps to reduce that problem window,
 	 * for any user that requested ForceSyncCommit().
 	 */
-	if (XactCompletionForceSyncCommit(xinfo))
+	if (XactCompletionForceSyncCommit(parsed->xinfo))
 		XLogFlush(lsn);
 
-}
-
-/*
- * Utility function to call xact_redo_commit_internal after breaking down xlrec
- */
-static void
-xact_redo_commit(xl_xact_commit *xlrec,
-				 TransactionId xid, XLogRecPtr lsn)
-{
-	TransactionId *subxacts;
-	SharedInvalidationMessage *inval_msgs;
-
-	/* subxid array follows relfilenodes */
-	subxacts = (TransactionId *) &(xlrec->xnodes[xlrec->nrels]);
-	/* invalidation messages array follows subxids */
-	inval_msgs = (SharedInvalidationMessage *) &(subxacts[xlrec->nsubxacts]);
-
-	xact_redo_commit_internal(xid, lsn, subxacts, xlrec->nsubxacts,
-							  inval_msgs, xlrec->nmsgs,
-							  xlrec->xnodes, xlrec->nrels,
-							  xlrec->dbId,
-							  xlrec->tsId,
-							  xlrec->xinfo);
-}
-
-/*
- * Utility function to call xact_redo_commit_internal  for compact form of message.
- */
-static void
-xact_redo_commit_compact(xl_xact_commit_compact *xlrec,
-						 TransactionId xid, XLogRecPtr lsn)
-{
-	xact_redo_commit_internal(xid, lsn, xlrec->subxacts, xlrec->nsubxacts,
-							  NULL, 0,	/* inval msgs */
-							  NULL, 0,	/* relfilenodes */
-							  InvalidOid,		/* dbId */
-							  InvalidOid,		/* tsId */
-							  0);		/* xinfo */
 }
 
 /*
@@ -5757,14 +5844,10 @@ xact_redo_commit_compact(xl_xact_commit_compact *xlrec,
  * because subtransaction commit is never WAL logged.
  */
 static void
-xact_redo_abort(xl_xact_abort *xlrec, TransactionId xid)
+xact_redo_abort(xl_xact_parsed_abort *parsed, TransactionId xid)
 {
-	TransactionId *sub_xids;
-	TransactionId max_xid;
-	int			i;
-
-	sub_xids = (TransactionId *) &(xlrec->xnodes[xlrec->nrels]);
-	max_xid = TransactionIdLatest(xid, xlrec->nsubxacts, sub_xids);
+	int				i;
+	TransactionId	max_xid;
 
 	/*
 	 * Make sure nextXid is beyond any XID mentioned in the record.
@@ -5773,6 +5856,10 @@ xact_redo_abort(xl_xact_abort *xlrec, TransactionId xid)
 	 * hold a lock while checking this. We still acquire the lock to modify
 	 * it, though.
 	 */
+	max_xid = TransactionIdLatest(xid,
+								  parsed->nsubxacts,
+								  parsed->subxacts);
+
 	if (TransactionIdFollowsOrEquals(max_xid,
 									 ShmemVariableCache->nextXid))
 	{
@@ -5785,7 +5872,7 @@ xact_redo_abort(xl_xact_abort *xlrec, TransactionId xid)
 	if (standbyState == STANDBY_DISABLED)
 	{
 		/* Mark the transaction aborted in pg_clog, no need for async stuff */
-		TransactionIdAbortTree(xid, xlrec->nsubxacts, sub_xids);
+		TransactionIdAbortTree(xid, parsed->nsubxacts, parsed->subxacts);
 	}
 	else
 	{
@@ -5801,12 +5888,13 @@ xact_redo_abort(xl_xact_abort *xlrec, TransactionId xid)
 		RecordKnownAssignedTransactionIds(max_xid);
 
 		/* Mark the transaction aborted in pg_clog, no need for async stuff */
-		TransactionIdAbortTree(xid, xlrec->nsubxacts, sub_xids);
+		TransactionIdAbortTree(xid, parsed->nsubxacts, parsed->subxacts);
 
 		/*
 		 * We must update the ProcArray after we have marked clog.
 		 */
-		ExpireTreeKnownAssignedTransactionIds(xid, xlrec->nsubxacts, sub_xids, max_xid);
+		ExpireTreeKnownAssignedTransactionIds(
+			xid, parsed->nsubxacts, parsed->subxacts, max_xid);
 
 		/*
 		 * There are no flat files that need updating, nor invalidation
@@ -5816,67 +5904,77 @@ xact_redo_abort(xl_xact_abort *xlrec, TransactionId xid)
 		/*
 		 * Release locks, if any. There are no invalidations to send.
 		 */
-		StandbyReleaseLockTree(xid, xlrec->nsubxacts, sub_xids);
+		StandbyReleaseLockTree(xid, parsed->nsubxacts, parsed->subxacts);
 	}
 
 	/* Make sure files supposed to be dropped are dropped */
-	for (i = 0; i < xlrec->nrels; i++)
+	for (i = 0; i < parsed->nrels; i++)
 	{
-		SMgrRelation srel = smgropen(xlrec->xnodes[i], InvalidBackendId);
+		SMgrRelation srel = smgropen(parsed->xnodes[i], InvalidBackendId);
 		ForkNumber	fork;
 
 		for (fork = 0; fork <= MAX_FORKNUM; fork++)
-			XLogDropRelation(xlrec->xnodes[i], fork);
+			XLogDropRelation(parsed->xnodes[i], fork);
 		smgrdounlink(srel, true);
 		smgrclose(srel);
 	}
 }
 
 void
-xact_redo(XLogRecPtr lsn, XLogRecord *record)
+xact_redo(XLogReaderState *record)
 {
-	uint8		info = record->xl_info & ~XLR_INFO_MASK;
+	uint8		info = XLogRecGetInfo(record) & XLOG_XACT_OPMASK;
 
 	/* Backup blocks are not used in xact records */
-	Assert(!(record->xl_info & XLR_BKP_BLOCK_MASK));
+	Assert(!XLogRecHasAnyBlockRefs(record));
 
-	if (info == XLOG_XACT_COMMIT_COMPACT)
-	{
-		xl_xact_commit_compact *xlrec = (xl_xact_commit_compact *) XLogRecGetData(record);
-
-		xact_redo_commit_compact(xlrec, record->xl_xid, lsn);
-	}
-	else if (info == XLOG_XACT_COMMIT)
+	if (info == XLOG_XACT_COMMIT || info == XLOG_XACT_COMMIT_PREPARED)
 	{
 		xl_xact_commit *xlrec = (xl_xact_commit *) XLogRecGetData(record);
+		xl_xact_parsed_commit parsed;
 
-		xact_redo_commit(xlrec, record->xl_xid, lsn);
+		ParseCommitRecord(XLogRecGetInfo(record), xlrec,
+						  &parsed);
+
+		if (info == XLOG_XACT_COMMIT)
+		{
+			Assert(!TransactionIdIsValid(parsed.twophase_xid));
+			xact_redo_commit(&parsed, XLogRecGetXid(record),
+							 record->EndRecPtr);
+		}
+		else
+		{
+			Assert(TransactionIdIsValid(parsed.twophase_xid));
+			xact_redo_commit(&parsed, parsed.twophase_xid,
+							 record->EndRecPtr);
+			RemoveTwoPhaseFile(parsed.twophase_xid, false);
+		}
 	}
-	else if (info == XLOG_XACT_ABORT)
+	else if (info == XLOG_XACT_ABORT || info == XLOG_XACT_ABORT_PREPARED)
 	{
 		xl_xact_abort *xlrec = (xl_xact_abort *) XLogRecGetData(record);
+		xl_xact_parsed_abort parsed;
 
-		xact_redo_abort(xlrec, record->xl_xid);
+		ParseAbortRecord(XLogRecGetInfo(record), xlrec,
+						  &parsed);
+
+		if (info == XLOG_XACT_ABORT)
+		{
+			Assert(!TransactionIdIsValid(parsed.twophase_xid));
+			xact_redo_abort(&parsed, XLogRecGetXid(record));
+		}
+		else
+		{
+			Assert(TransactionIdIsValid(parsed.twophase_xid));
+			xact_redo_abort(&parsed, parsed.twophase_xid);
+			RemoveTwoPhaseFile(parsed.twophase_xid, false);
+		}
 	}
 	else if (info == XLOG_XACT_PREPARE)
 	{
 		/* the record contents are exactly the 2PC file */
-		RecreateTwoPhaseFile(record->xl_xid,
-							 XLogRecGetData(record), record->xl_len);
-	}
-	else if (info == XLOG_XACT_COMMIT_PREPARED)
-	{
-		xl_xact_commit_prepared *xlrec = (xl_xact_commit_prepared *) XLogRecGetData(record);
-
-		xact_redo_commit(&xlrec->crec, xlrec->xid, lsn);
-		RemoveTwoPhaseFile(xlrec->xid, false);
-	}
-	else if (info == XLOG_XACT_ABORT_PREPARED)
-	{
-		xl_xact_abort_prepared *xlrec = (xl_xact_abort_prepared *) XLogRecGetData(record);
-
-		xact_redo_abort(&xlrec->arec, xlrec->xid);
-		RemoveTwoPhaseFile(xlrec->xid, false);
+		RecreateTwoPhaseFile(XLogRecGetXid(record),
+						  XLogRecGetData(record), XLogRecGetDataLen(record));
 	}
 	else if (info == XLOG_XACT_ASSIGNMENT)
 	{

@@ -8,7 +8,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -98,9 +98,10 @@ static MemoryContext anl_context = NULL;
 static BufferAccessStrategy vac_strategy;
 
 
-static void do_analyze_rel(Relation onerel, VacuumStmt *vacstmt,
+static void do_analyze_rel(Relation onerel, int options,
+			   VacuumParams *params, List *va_cols,
 			   AcquireSampleRowsFunc acquirefunc, BlockNumber relpages,
-			   bool inh, int elevel);
+			   bool inh, bool in_outer_xact, int elevel);
 static void BlockSampler_Init(BlockSampler bs, BlockNumber nblocks,
 				  int samplesize);
 static bool BlockSampler_HasMore(BlockSampler bs);
@@ -132,7 +133,9 @@ static void analyze_rel_coordinator(Relation onerel, bool inh, int attr_cnt,
  *	analyze_rel() -- analyze one relation
  */
 void
-analyze_rel(Oid relid, VacuumStmt *vacstmt, BufferAccessStrategy bstrategy)
+analyze_rel(Oid relid, RangeVar *relation, int options,
+			VacuumParams *params, List *va_cols, bool in_outer_xact,
+			BufferAccessStrategy bstrategy)
 {
 	Relation	onerel;
 	int			elevel;
@@ -140,7 +143,7 @@ analyze_rel(Oid relid, VacuumStmt *vacstmt, BufferAccessStrategy bstrategy)
 	BlockNumber relpages = 0;
 
 	/* Select logging level */
-	if (vacstmt->options & VACOPT_VERBOSE)
+	if (options & VACOPT_VERBOSE)
 		elevel = INFO;
 	else
 		elevel = DEBUG2;
@@ -160,18 +163,18 @@ analyze_rel(Oid relid, VacuumStmt *vacstmt, BufferAccessStrategy bstrategy)
 	 * matter if we ever try to accumulate stats on dead tuples.) If the rel
 	 * has been dropped since we last saw it, we don't need to process it.
 	 */
-	if (!(vacstmt->options & VACOPT_NOWAIT))
+	if (!(options & VACOPT_NOWAIT))
 		onerel = try_relation_open(relid, ShareUpdateExclusiveLock);
 	else if (ConditionalLockRelationOid(relid, ShareUpdateExclusiveLock))
 		onerel = try_relation_open(relid, NoLock);
 	else
 	{
 		onerel = NULL;
-		if (IsAutoVacuumWorkerProcess() && Log_autovacuum_min_duration >= 0)
+		if (IsAutoVacuumWorkerProcess() && params->log_min_duration >= 0)
 			ereport(LOG,
 					(errcode(ERRCODE_LOCK_NOT_AVAILABLE),
 				  errmsg("skipping analyze of \"%s\" --- lock not available",
-						 vacstmt->relation->relname)));
+						 relation->relname)));
 	}
 	if (!onerel)
 		return;
@@ -183,7 +186,7 @@ analyze_rel(Oid relid, VacuumStmt *vacstmt, BufferAccessStrategy bstrategy)
 		  (pg_database_ownercheck(MyDatabaseId, GetUserId()) && !onerel->rd_rel->relisshared)))
 	{
 		/* No need for a WARNING if we already complained during VACUUM */
-		if (!(vacstmt->options & VACOPT_VACUUM))
+		if (!(options & VACOPT_VACUUM))
 		{
 			if (onerel->rd_rel->relisshared)
 				ereport(WARNING,
@@ -264,7 +267,7 @@ analyze_rel(Oid relid, VacuumStmt *vacstmt, BufferAccessStrategy bstrategy)
 	else
 	{
 		/* No need for a WARNING if we already complained during VACUUM */
-		if (!(vacstmt->options & VACOPT_VACUUM))
+		if (!(options & VACOPT_VACUUM))
 			ereport(WARNING,
 					(errmsg("skipping \"%s\" --- cannot analyze non-tables or special system tables",
 							RelationGetRelationName(onerel))));
@@ -282,13 +285,15 @@ analyze_rel(Oid relid, VacuumStmt *vacstmt, BufferAccessStrategy bstrategy)
 	/*
 	 * Do the normal non-recursive ANALYZE.
 	 */
-	do_analyze_rel(onerel, vacstmt, acquirefunc, relpages, false, elevel);
+	do_analyze_rel(onerel, options, params, va_cols, acquirefunc, relpages,
+				   false, in_outer_xact, elevel);
 
 	/*
 	 * If there are child tables, do recursive ANALYZE.
 	 */
 	if (onerel->rd_rel->relhassubclass)
-		do_analyze_rel(onerel, vacstmt, acquirefunc, relpages, true, elevel);
+		do_analyze_rel(onerel, options, params, va_cols, acquirefunc, relpages,
+					   true, in_outer_xact, elevel);
 
 	/*
 	 * Close source relation now, but keep lock so that no one deletes it
@@ -311,14 +316,14 @@ analyze_rel(Oid relid, VacuumStmt *vacstmt, BufferAccessStrategy bstrategy)
  *	do_analyze_rel() -- analyze one relation, recursively or not
  *
  * Note that "acquirefunc" is only relevant for the non-inherited case.
- * If we supported foreign tables in inheritance trees,
- * acquire_inherited_sample_rows would need to determine the appropriate
- * acquirefunc for each child table.
+ * For the inherited case, acquire_inherited_sample_rows() determines the
+ * appropriate acquirefunc for each child table.
  */
 static void
-do_analyze_rel(Relation onerel, VacuumStmt *vacstmt,
-			   AcquireSampleRowsFunc acquirefunc, BlockNumber relpages,
-			   bool inh, int elevel)
+do_analyze_rel(Relation onerel, int options, VacuumParams *params,
+			   List *va_cols, AcquireSampleRowsFunc acquirefunc,
+			   BlockNumber relpages, bool inh, bool in_outer_xact,
+			   int elevel)
 {
 	int			attr_cnt,
 				tcnt,
@@ -374,10 +379,10 @@ do_analyze_rel(Relation onerel, VacuumStmt *vacstmt,
 	save_nestlevel = NewGUCNestLevel();
 
 	/* measure elapsed time iff autovacuum logging requires it */
-	if (IsAutoVacuumWorkerProcess() && Log_autovacuum_min_duration >= 0)
+	if (IsAutoVacuumWorkerProcess() && params->log_min_duration >= 0)
 	{
 		pg_rusage_init(&ru0);
-		if (Log_autovacuum_min_duration > 0)
+		if (params->log_min_duration > 0)
 			starttime = GetCurrentTimestamp();
 	}
 
@@ -386,14 +391,14 @@ do_analyze_rel(Relation onerel, VacuumStmt *vacstmt,
 	 *
 	 * Note that system attributes are never analyzed.
 	 */
-	if (vacstmt->va_cols != NIL)
+	if (va_cols != NIL)
 	{
 		ListCell   *le;
 
-		vacattrstats = (VacAttrStats **) palloc(list_length(vacstmt->va_cols) *
+		vacattrstats = (VacAttrStats **) palloc(list_length(va_cols) *
 												sizeof(VacAttrStats *));
 		tcnt = 0;
-		foreach(le, vacstmt->va_cols)
+		foreach(le, va_cols)
 		{
 			char	   *col = strVal(lfirst(le));
 
@@ -431,13 +436,7 @@ do_analyze_rel(Relation onerel, VacuumStmt *vacstmt,
 		 * Fetch attribute statistics from remote nodes.
 		 */
 		analyze_rel_coordinator(onerel, inh, attr_cnt, vacattrstats);
-		/*
-		 * If it is a VACUUM or doing inherited relation precise values for
-		 * relpages and reltuples are set in other place. Otherwise request
-		 * doing it now.
-		 */
-		if (!inh && !(vacstmt->options & VACOPT_VACUUM))
-			vacuum_rel_coordinator(onerel);
+
 		/*
 		 * Skip acquiring local stats. Coordinator does not store data of
 		 * distributed tables.
@@ -475,7 +474,7 @@ do_analyze_rel(Relation onerel, VacuumStmt *vacstmt,
 
 			thisdata->indexInfo = indexInfo = BuildIndexInfo(Irel[ind]);
 			thisdata->tupleFract = 1.0; /* fix later if partial */
-			if (indexInfo->ii_Expressions != NIL && vacstmt->va_cols == NIL)
+			if (indexInfo->ii_Expressions != NIL && va_cols == NIL)
 			{
 				ListCell   *indexpr_item = list_head(indexInfo->ii_Expressions);
 
@@ -626,14 +625,15 @@ do_analyze_rel(Relation onerel, VacuumStmt *vacstmt,
 							visibilitymap_count(onerel),
 							hasindex,
 							InvalidTransactionId,
-							InvalidMultiXactId);
+							InvalidMultiXactId,
+							in_outer_xact);
 
 	/*
 	 * Same for indexes. Vacuum always scans all indexes, so if we're part of
 	 * VACUUM ANALYZE, don't overwrite the accurate count already inserted by
 	 * VACUUM.
 	 */
-	if (!inh && !(vacstmt->options & VACOPT_VACUUM))
+	if (!inh && !(options & VACOPT_VACUUM))
 	{
 		for (ind = 0; ind < nindexes; ind++)
 		{
@@ -647,7 +647,8 @@ do_analyze_rel(Relation onerel, VacuumStmt *vacstmt,
 								0,
 								false,
 								InvalidTransactionId,
-								InvalidMultiXactId);
+								InvalidMultiXactId,
+								in_outer_xact);
 		}
 	}
 
@@ -666,7 +667,7 @@ cleanup:
 		pgstat_report_analyze(onerel, totalrows, totaldeadrows);
 
 	/* If this isn't part of VACUUM ANALYZE, let index AMs do cleanup */
-	if (!(vacstmt->options & VACOPT_VACUUM))
+	if (!(options & VACOPT_VACUUM))
 	{
 		for (ind = 0; ind < nindexes; ind++)
 		{
@@ -691,11 +692,11 @@ cleanup:
 	vac_close_indexes(nindexes, Irel, NoLock);
 
 	/* Log the action if appropriate */
-	if (IsAutoVacuumWorkerProcess() && Log_autovacuum_min_duration >= 0)
+	if (IsAutoVacuumWorkerProcess() && params->log_min_duration >= 0)
 	{
-		if (Log_autovacuum_min_duration == 0 ||
+		if (params->log_min_duration == 0 ||
 			TimestampDifferenceExceeds(starttime, GetCurrentTimestamp(),
-									   Log_autovacuum_min_duration))
+									   params->log_min_duration))
 			ereport(LOG,
 					(errmsg("automatic analyze of table \"%s.%s.%s\" system usage: %s",
 							get_database_name(MyDatabaseId),
@@ -785,6 +786,8 @@ compute_index_stats(Relation onerel, double totalrows,
 		for (rowno = 0; rowno < numrows; rowno++)
 		{
 			HeapTuple	heapTuple = rows[rowno];
+
+			vacuum_delay_point();
 
 			/*
 			 * Reset the per-tuple context each time, to reclaim any cruft
@@ -1491,7 +1494,8 @@ compare_rows(const void *a, const void *b)
  *
  * This has the same API as acquire_sample_rows, except that rows are
  * collected from all inheritance children as well as the specified table.
- * We fail and return zero if there are no inheritance children.
+ * We fail and return zero if there are no inheritance children, or if all
+ * children are foreign tables that don't support ANALYZE.
  */
 static int
 acquire_inherited_sample_rows(Relation onerel, int elevel,
@@ -1500,6 +1504,7 @@ acquire_inherited_sample_rows(Relation onerel, int elevel,
 {
 	List	   *tableOIDs;
 	Relation   *rels;
+	AcquireSampleRowsFunc *acquirefuncs;
 	double	   *relblocks;
 	double		totalblocks;
 	int			numrows,
@@ -1526,14 +1531,20 @@ acquire_inherited_sample_rows(Relation onerel, int elevel,
 		/* CCI because we already updated the pg_class row in this command */
 		CommandCounterIncrement();
 		SetRelationHasSubclass(RelationGetRelid(onerel), false);
+		ereport(elevel,
+				(errmsg("skipping analyze of \"%s.%s\" inheritance tree --- this inheritance tree contains no child tables",
+						get_namespace_name(RelationGetNamespace(onerel)),
+						RelationGetRelationName(onerel))));
 		return 0;
 	}
 
 	/*
-	 * Count the blocks in all the relations.  The result could overflow
-	 * BlockNumber, so we use double arithmetic.
+	 * Identify acquirefuncs to use, and count blocks in all the relations.
+	 * The result could overflow BlockNumber, so we use double arithmetic.
 	 */
 	rels = (Relation *) palloc(list_length(tableOIDs) * sizeof(Relation));
+	acquirefuncs = (AcquireSampleRowsFunc *)
+		palloc(list_length(tableOIDs) * sizeof(AcquireSampleRowsFunc));
 	relblocks = (double *) palloc(list_length(tableOIDs) * sizeof(double));
 	totalblocks = 0;
 	nrels = 0;
@@ -1541,6 +1552,8 @@ acquire_inherited_sample_rows(Relation onerel, int elevel,
 	{
 		Oid			childOID = lfirst_oid(lc);
 		Relation	childrel;
+		AcquireSampleRowsFunc acquirefunc = NULL;
+		BlockNumber relpages = 0;
 
 		/* We already got the needed lock */
 		childrel = heap_open(childOID, NoLock);
@@ -1554,10 +1567,64 @@ acquire_inherited_sample_rows(Relation onerel, int elevel,
 			continue;
 		}
 
+		/* Check table type (MATVIEW can't happen, but might as well allow) */
+		if (childrel->rd_rel->relkind == RELKIND_RELATION ||
+			childrel->rd_rel->relkind == RELKIND_MATVIEW)
+		{
+			/* Regular table, so use the regular row acquisition function */
+			acquirefunc = acquire_sample_rows;
+			relpages = RelationGetNumberOfBlocks(childrel);
+		}
+		else if (childrel->rd_rel->relkind == RELKIND_FOREIGN_TABLE)
+		{
+			/*
+			 * For a foreign table, call the FDW's hook function to see
+			 * whether it supports analysis.
+			 */
+			FdwRoutine *fdwroutine;
+			bool		ok = false;
+
+			fdwroutine = GetFdwRoutineForRelation(childrel, false);
+
+			if (fdwroutine->AnalyzeForeignTable != NULL)
+				ok = fdwroutine->AnalyzeForeignTable(childrel,
+													 &acquirefunc,
+													 &relpages);
+
+			if (!ok)
+			{
+				/* ignore, but release the lock on it */
+				Assert(childrel != onerel);
+				heap_close(childrel, AccessShareLock);
+				continue;
+			}
+		}
+		else
+		{
+			/* ignore, but release the lock on it */
+			Assert(childrel != onerel);
+			heap_close(childrel, AccessShareLock);
+			continue;
+		}
+
+		/* OK, we'll process this child */
 		rels[nrels] = childrel;
-		relblocks[nrels] = (double) RelationGetNumberOfBlocks(childrel);
-		totalblocks += relblocks[nrels];
+		acquirefuncs[nrels] = acquirefunc;
+		relblocks[nrels] = (double) relpages;
+		totalblocks += (double) relpages;
 		nrels++;
+	}
+
+	/*
+	 * If we don't have at least two tables to consider, fail.
+	 */
+	if (nrels < 2)
+	{
+		ereport(elevel,
+				(errmsg("skipping analyze of \"%s.%s\" inheritance tree --- this inheritance tree contains no analyzable child tables",
+						get_namespace_name(RelationGetNamespace(onerel)),
+						RelationGetRelationName(onerel))));
+		return 0;
 	}
 
 	/*
@@ -1572,6 +1639,7 @@ acquire_inherited_sample_rows(Relation onerel, int elevel,
 	for (i = 0; i < nrels; i++)
 	{
 		Relation	childrel = rels[i];
+		AcquireSampleRowsFunc acquirefunc = acquirefuncs[i];
 		double		childblocks = relblocks[i];
 
 		if (childblocks > 0)
@@ -1588,12 +1656,9 @@ acquire_inherited_sample_rows(Relation onerel, int elevel,
 							tdrows;
 
 				/* Fetch a random sample of the child's rows */
-				childrows = acquire_sample_rows(childrel,
-												elevel,
-												rows + numrows,
-												childtargrows,
-												&trows,
-												&tdrows);
+				childrows = (*acquirefunc) (childrel, elevel,
+											rows + numrows, childtargrows,
+											&trows, &tdrows);
 
 				/* We may need to convert from child's rowtype to parent's */
 				if (childrows > 0 &&
@@ -2340,6 +2405,12 @@ compute_scalar_stats(VacAttrStatsP stats,
 	/* We always use the default collation for statistics */
 	ssup.ssup_collation = DEFAULT_COLLATION_OID;
 	ssup.ssup_nulls_first = false;
+	/*
+	 * For now, don't perform abbreviated key conversion, because full values
+	 * are required for MCV slot generation.  Supporting that optimization
+	 * would necessitate teaching compare_scalars() to call a tie-breaker.
+	 */
+	ssup.abbreviate = false;
 
 	PrepareSortSupportFromOrderingOp(mystats->ltopr, &ssup);
 

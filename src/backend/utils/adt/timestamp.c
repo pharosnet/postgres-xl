@@ -3,7 +3,7 @@
  * timestamp.c
  *	  Functions for the built-in SQL types "timestamp" and "interval".
  *
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -27,6 +27,7 @@
 #include "funcapi.h"
 #include "libpq/pqformat.h"
 #include "miscadmin.h"
+#include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
 #include "parser/scansup.h"
 #include "utils/array.h"
@@ -46,14 +47,6 @@
 #endif
 
 #define SAMESIGN(a,b)	(((a) < 0) == ((b) < 0))
-
-#ifndef INT64_MAX
-#define INT64_MAX	INT64CONST(0x7FFFFFFFFFFFFFFF)
-#endif
-
-#ifndef INT64_MIN
-#define INT64_MIN	(-INT64CONST(0x7FFFFFFFFFFFFFFF) - 1)
-#endif
 
 /* Set at postmaster start */
 TimestampTz PgStartTime;
@@ -490,6 +483,9 @@ timestamptz_in(PG_FUNCTION_ARGS)
 /*
  * Try to parse a timezone specification, and return its timezone offset value
  * if it's acceptable.  Otherwise, an error is thrown.
+ *
+ * Note: some code paths update tm->tm_isdst, and some don't; current callers
+ * don't care, so we don't bother being consistent.
  */
 static int
 parse_sane_timezone(struct pg_tm * tm, text *zone)
@@ -503,12 +499,12 @@ parse_sane_timezone(struct pg_tm * tm, text *zone)
 	/*
 	 * Look up the requested timezone.  First we try to interpret it as a
 	 * numeric timezone specification; if DecodeTimezone decides it doesn't
-	 * like the format, we look in the date token table (to handle cases like
-	 * "EST"), and if that also fails, we look in the timezone database (to
-	 * handle cases like "America/New_York").  (This matches the order in
-	 * which timestamp input checks the cases; it's important because the
-	 * timezone database unwisely uses a few zone names that are identical to
-	 * offset abbreviations.)
+	 * like the format, we look in the timezone abbreviation table (to handle
+	 * cases like "EST"), and if that also fails, we look in the timezone
+	 * database (to handle cases like "America/New_York").  (This matches the
+	 * order in which timestamp input checks the cases; it's important because
+	 * the timezone database unwisely uses a few zone names that are identical
+	 * to offset abbreviations.)
 	 *
 	 * Note pg_tzset happily parses numeric input that DecodeTimezone would
 	 * reject.  To avoid having it accept input that would otherwise be seen
@@ -528,6 +524,7 @@ parse_sane_timezone(struct pg_tm * tm, text *zone)
 		char	   *lowzone;
 		int			type,
 					val;
+		pg_tz	   *tzp;
 
 		if (rt == DTERR_TZDISP_OVERFLOW)
 			ereport(ERROR,
@@ -538,19 +535,26 @@ parse_sane_timezone(struct pg_tm * tm, text *zone)
 					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 					 errmsg("time zone \"%s\" not recognized", tzname)));
 
+		/* DecodeTimezoneAbbrev requires lowercase input */
 		lowzone = downcase_truncate_identifier(tzname,
 											   strlen(tzname),
 											   false);
-		type = DecodeSpecial(0, lowzone, &val);
+		type = DecodeTimezoneAbbrev(0, lowzone, &val, &tzp);
 
 		if (type == TZ || type == DTZ)
-			tz = val * MINS_PER_HOUR;
+		{
+			/* fixed-offset abbreviation */
+			tz = -val;
+		}
+		else if (type == DYNTZ)
+		{
+			/* dynamic-offset abbreviation, resolve using specified time */
+			tz = DetermineTimeZoneAbbrevOffset(tm, tzname, tzp);
+		}
 		else
 		{
-			pg_tz	   *tzp;
-
+			/* try it as a full zone name */
 			tzp = pg_tzset(tzname);
-
 			if (tzp)
 				tz = DetermineTimeZoneOffset(tm, tzp);
 			else
@@ -3309,7 +3313,7 @@ interval_mul(PG_FUNCTION_ARGS)
 	result->day += (int32) month_remainder_days;
 #ifdef HAVE_INT64_TIMESTAMP
 	result_double = rint(span->time * factor + sec_remainder * USECS_PER_SEC);
-	if (result_double > INT64_MAX || result_double < INT64_MIN)
+	if (result_double > PG_INT64_MAX || result_double < PG_INT64_MIN)
 		ereport(ERROR,
 				(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
 				 errmsg("interval out of range")));
@@ -4870,6 +4874,87 @@ interval_part(PG_FUNCTION_ARGS)
 }
 
 
+/* timestamp_zone_transform()
+ * If the zone argument of a timestamp_zone() or timestamptz_zone() call is a
+ * plan-time constant denoting a zone equivalent to UTC, the call will always
+ * return its second argument unchanged.  Simplify the expression tree
+ * accordingly.  Civil time zones almost never qualify, because jurisdictions
+ * that follow UTC today have not done so continuously.
+ */
+Datum
+timestamp_zone_transform(PG_FUNCTION_ARGS)
+{
+	Node	   *func_node = (Node *) PG_GETARG_POINTER(0);
+	FuncExpr   *expr = (FuncExpr *) func_node;
+	Node	   *ret = NULL;
+	Node	   *zone_node;
+
+	Assert(IsA(expr, FuncExpr));
+	Assert(list_length(expr->args) == 2);
+
+	zone_node = (Node *) linitial(expr->args);
+
+	if (IsA(zone_node, Const) &&!((Const *) zone_node)->constisnull)
+	{
+		text	   *zone = DatumGetTextPP(((Const *) zone_node)->constvalue);
+		char		tzname[TZ_STRLEN_MAX + 1];
+		char	   *lowzone;
+		int			type,
+					abbrev_offset;
+		pg_tz	   *tzp;
+		bool		noop = false;
+
+		/*
+		 * If the timezone is forever UTC+0, the FuncExpr function call is a
+		 * no-op for all possible timestamps.  This passage mirrors code in
+		 * timestamp_zone().
+		 */
+		text_to_cstring_buffer(zone, tzname, sizeof(tzname));
+		lowzone = downcase_truncate_identifier(tzname,
+											   strlen(tzname),
+											   false);
+		type = DecodeTimezoneAbbrev(0, lowzone, &abbrev_offset, &tzp);
+		if (type == TZ || type == DTZ)
+			noop = (abbrev_offset == 0);
+		else if (type == DYNTZ)
+		{
+			/*
+			 * An abbreviation of a single-offset timezone ought not to be
+			 * configured as a DYNTZ, so don't bother checking.
+			 */
+		}
+		else
+		{
+			long		tzname_offset;
+
+			tzp = pg_tzset(tzname);
+			if (tzp && pg_get_timezone_offset(tzp, &tzname_offset))
+				noop = (tzname_offset == 0);
+		}
+
+		if (noop)
+		{
+			Node	   *timestamp = (Node *) lsecond(expr->args);
+
+			/* Strip any existing RelabelType node(s) */
+			while (timestamp && IsA(timestamp, RelabelType))
+				timestamp = (Node *) ((RelabelType *) timestamp)->arg;
+
+			/*
+			 * Replace the FuncExpr with its timestamp argument, relabeled as
+			 * though the function call had computed it.
+			 */
+			ret = (Node *) makeRelabelType((Expr *) timestamp,
+										   exprType(func_node),
+										   exprTypmod(func_node),
+										   exprCollation(func_node),
+										   COERCE_EXPLICIT_CAST);
+		}
+	}
+
+	PG_RETURN_POINTER(ret);
+}
+
 /*	timestamp_zone()
  *	Encode timestamp type with specified time zone.
  *	This function is just timestamp2timestamptz() except instead of
@@ -4890,39 +4975,52 @@ timestamp_zone(PG_FUNCTION_ARGS)
 	int			type,
 				val;
 	pg_tz	   *tzp;
+	struct pg_tm tm;
+	fsec_t		fsec;
 
 	if (TIMESTAMP_NOT_FINITE(timestamp))
 		PG_RETURN_TIMESTAMPTZ(timestamp);
 
 	/*
-	 * Look up the requested timezone.  First we look in the date token table
-	 * (to handle cases like "EST"), and if that fails, we look in the
-	 * timezone database (to handle cases like "America/New_York").  (This
-	 * matches the order in which timestamp input checks the cases; it's
-	 * important because the timezone database unwisely uses a few zone names
-	 * that are identical to offset abbreviations.)
+	 * Look up the requested timezone.  First we look in the timezone
+	 * abbreviation table (to handle cases like "EST"), and if that fails, we
+	 * look in the timezone database (to handle cases like
+	 * "America/New_York").  (This matches the order in which timestamp input
+	 * checks the cases; it's important because the timezone database unwisely
+	 * uses a few zone names that are identical to offset abbreviations.)
 	 */
 	text_to_cstring_buffer(zone, tzname, sizeof(tzname));
+
+	/* DecodeTimezoneAbbrev requires lowercase input */
 	lowzone = downcase_truncate_identifier(tzname,
 										   strlen(tzname),
 										   false);
 
-	type = DecodeSpecial(0, lowzone, &val);
+	type = DecodeTimezoneAbbrev(0, lowzone, &val, &tzp);
 
 	if (type == TZ || type == DTZ)
 	{
-		tz = -(val * MINS_PER_HOUR);
+		/* fixed-offset abbreviation */
+		tz = val;
+		result = dt2local(timestamp, tz);
+	}
+	else if (type == DYNTZ)
+	{
+		/* dynamic-offset abbreviation, resolve using specified time */
+		if (timestamp2tm(timestamp, NULL, &tm, &fsec, NULL, tzp) != 0)
+			ereport(ERROR,
+					(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
+					 errmsg("timestamp out of range")));
+		tz = -DetermineTimeZoneAbbrevOffset(&tm, tzname, tzp);
 		result = dt2local(timestamp, tz);
 	}
 	else
 	{
+		/* try it as a full zone name */
 		tzp = pg_tzset(tzname);
 		if (tzp)
 		{
 			/* Apply the timezone change */
-			struct pg_tm tm;
-			fsec_t		fsec;
-
 			if (timestamp2tm(timestamp, NULL, &tm, &fsec, NULL, tzp) != 0)
 				ereport(ERROR,
 						(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
@@ -4944,6 +5042,52 @@ timestamp_zone(PG_FUNCTION_ARGS)
 	}
 
 	PG_RETURN_TIMESTAMPTZ(result);
+}
+
+/* timestamp_izone_transform()
+ * If we deduce at plan time that a particular timestamp_izone() or
+ * timestamptz_izone() call can only compute tz=0, the call will always return
+ * its second argument unchanged.  Simplify the expression tree accordingly.
+ */
+Datum
+timestamp_izone_transform(PG_FUNCTION_ARGS)
+{
+	Node	   *func_node = (Node *) PG_GETARG_POINTER(0);
+	FuncExpr   *expr = (FuncExpr *) func_node;
+	Node	   *ret = NULL;
+	Node	   *zone_node;
+
+	Assert(IsA(expr, FuncExpr));
+	Assert(list_length(expr->args) == 2);
+
+	zone_node = (Node *) linitial(expr->args);
+
+	if (IsA(zone_node, Const) &&!((Const *) zone_node)->constisnull)
+	{
+		Interval   *zone;
+
+		zone = DatumGetIntervalP(((Const *) zone_node)->constvalue);
+		if (zone->month == 0 && zone->day == 0 && zone->time == 0)
+		{
+			Node	   *timestamp = (Node *) lsecond(expr->args);
+
+			/* Strip any existing RelabelType node(s) */
+			while (timestamp && IsA(timestamp, RelabelType))
+				timestamp = (Node *) ((RelabelType *) timestamp)->arg;
+
+			/*
+			 * Replace the FuncExpr with its timestamp argument, relabeled as
+			 * though the function call had computed it.
+			 */
+			ret = (Node *) makeRelabelType((Expr *) timestamp,
+										   exprType(func_node),
+										   exprTypmod(func_node),
+										   exprCollation(func_node),
+										   COERCE_EXPLICIT_CAST);
+		}
+	}
+
+	PG_RETURN_POINTER(ret);
 }
 
 /* timestamp_izone()
@@ -5068,27 +5212,39 @@ timestamptz_zone(PG_FUNCTION_ARGS)
 		PG_RETURN_TIMESTAMP(timestamp);
 
 	/*
-	 * Look up the requested timezone.  First we look in the date token table
-	 * (to handle cases like "EST"), and if that fails, we look in the
-	 * timezone database (to handle cases like "America/New_York").  (This
-	 * matches the order in which timestamp input checks the cases; it's
-	 * important because the timezone database unwisely uses a few zone names
-	 * that are identical to offset abbreviations.)
+	 * Look up the requested timezone.  First we look in the timezone
+	 * abbreviation table (to handle cases like "EST"), and if that fails, we
+	 * look in the timezone database (to handle cases like
+	 * "America/New_York").  (This matches the order in which timestamp input
+	 * checks the cases; it's important because the timezone database unwisely
+	 * uses a few zone names that are identical to offset abbreviations.)
 	 */
 	text_to_cstring_buffer(zone, tzname, sizeof(tzname));
+
+	/* DecodeTimezoneAbbrev requires lowercase input */
 	lowzone = downcase_truncate_identifier(tzname,
 										   strlen(tzname),
 										   false);
 
-	type = DecodeSpecial(0, lowzone, &val);
+	type = DecodeTimezoneAbbrev(0, lowzone, &val, &tzp);
 
 	if (type == TZ || type == DTZ)
 	{
-		tz = val * MINS_PER_HOUR;
+		/* fixed-offset abbreviation */
+		tz = -val;
+		result = dt2local(timestamp, tz);
+	}
+	else if (type == DYNTZ)
+	{
+		/* dynamic-offset abbreviation, resolve using specified time */
+		int			isdst;
+
+		tz = DetermineTimeZoneAbbrevOffsetTS(timestamp, tzname, tzp, &isdst);
 		result = dt2local(timestamp, tz);
 	}
 	else
 	{
+		/* try it as a full zone name */
 		tzp = pg_tzset(tzname);
 		if (tzp)
 		{

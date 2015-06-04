@@ -12,6 +12,7 @@
 #include "libpq/pqformat.h"
 #include "utils/builtins.h"
 #include "utils/json.h"
+#include "utils/jsonapi.h"
 #include "utils/jsonb.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
@@ -746,7 +747,7 @@ typedef struct RecordIOData
 	Oid			record_type;
 	int32		record_typmod;
 	int			ncolumns;
-	ColumnIOData columns[1];	/* VARIABLE LENGTH ARRAY */
+	ColumnIOData columns[FLEXIBLE_ARRAY_MEMBER];
 } RecordIOData;
 
 PG_FUNCTION_INFO_V1(hstore_from_record);
@@ -804,8 +805,8 @@ hstore_from_record(PG_FUNCTION_ARGS)
 	{
 		fcinfo->flinfo->fn_extra =
 			MemoryContextAlloc(fcinfo->flinfo->fn_mcxt,
-							   sizeof(RecordIOData) - sizeof(ColumnIOData)
-							   + ncolumns * sizeof(ColumnIOData));
+							   offsetof(RecordIOData, columns) +
+							   ncolumns * sizeof(ColumnIOData));
 		my_extra = (RecordIOData *) fcinfo->flinfo->fn_extra;
 		my_extra->record_type = InvalidOid;
 		my_extra->record_typmod = 0;
@@ -815,8 +816,8 @@ hstore_from_record(PG_FUNCTION_ARGS)
 		my_extra->record_typmod != tupTypmod)
 	{
 		MemSet(my_extra, 0,
-			   sizeof(RecordIOData) - sizeof(ColumnIOData)
-			   + ncolumns * sizeof(ColumnIOData));
+			   offsetof(RecordIOData, columns) +
+			   ncolumns * sizeof(ColumnIOData));
 		my_extra->record_type = tupType;
 		my_extra->record_typmod = tupTypmod;
 		my_extra->ncolumns = ncolumns;
@@ -995,8 +996,8 @@ hstore_populate_record(PG_FUNCTION_ARGS)
 	{
 		fcinfo->flinfo->fn_extra =
 			MemoryContextAlloc(fcinfo->flinfo->fn_mcxt,
-							   sizeof(RecordIOData) - sizeof(ColumnIOData)
-							   + ncolumns * sizeof(ColumnIOData));
+							   offsetof(RecordIOData, columns) +
+							   ncolumns * sizeof(ColumnIOData));
 		my_extra = (RecordIOData *) fcinfo->flinfo->fn_extra;
 		my_extra->record_type = InvalidOid;
 		my_extra->record_typmod = 0;
@@ -1006,8 +1007,8 @@ hstore_populate_record(PG_FUNCTION_ARGS)
 		my_extra->record_typmod != tupTypmod)
 	{
 		MemSet(my_extra, 0,
-			   sizeof(RecordIOData) - sizeof(ColumnIOData)
-			   + ncolumns * sizeof(ColumnIOData));
+			   offsetof(RecordIOData, columns) +
+			   ncolumns * sizeof(ColumnIOData));
 		my_extra->record_type = tupType;
 		my_extra->record_typmod = tupTypmod;
 		my_extra->ncolumns = ncolumns;
@@ -1246,7 +1247,6 @@ hstore_to_json_loose(PG_FUNCTION_ARGS)
 	int			count = HS_COUNT(in);
 	char	   *base = STRPTR(in);
 	HEntry	   *entries = ARRPTR(in);
-	bool		is_number;
 	StringInfoData tmp,
 				dst;
 
@@ -1273,48 +1273,9 @@ hstore_to_json_loose(PG_FUNCTION_ARGS)
 			appendStringInfoString(&dst, "false");
 		else
 		{
-			is_number = false;
 			resetStringInfo(&tmp);
 			appendBinaryStringInfo(&tmp, HS_VAL(entries, base, i), HS_VALLEN(entries, i));
-
-			/*
-			 * don't treat something with a leading zero followed by another
-			 * digit as numeric - could be a zip code or similar
-			 */
-			if (tmp.len > 0 &&
-				!(tmp.data[0] == '0' &&
-				  isdigit((unsigned char) tmp.data[1])) &&
-				strspn(tmp.data, "+-0123456789Ee.") == tmp.len)
-			{
-				/*
-				 * might be a number. See if we can input it as a numeric
-				 * value. Ignore any actual parsed value.
-				 */
-				char	   *endptr = "junk";
-				long		lval;
-
-				lval = strtol(tmp.data, &endptr, 10);
-				(void) lval;
-				if (*endptr == '\0')
-				{
-					/*
-					 * strol man page says this means the whole string is
-					 * valid
-					 */
-					is_number = true;
-				}
-				else
-				{
-					/* not an int - try a double */
-					double		dval;
-
-					dval = strtod(tmp.data, &endptr);
-					(void) dval;
-					if (*endptr == '\0')
-						is_number = true;
-				}
-			}
-			if (is_number)
+			if (IsValidJsonNumber(tmp.data, tmp.len))
 				appendBinaryStringInfo(&dst, tmp.data, tmp.len);
 			else
 				escape_json(&dst, tmp.data);
@@ -1383,7 +1344,7 @@ hstore_to_jsonb(PG_FUNCTION_ARGS)
 	JsonbParseState *state = NULL;
 	JsonbValue *res;
 
-	res = pushJsonbValue(&state, WJB_BEGIN_OBJECT, NULL);
+	(void) pushJsonbValue(&state, WJB_BEGIN_OBJECT, NULL);
 
 	for (i = 0; i < count; i++)
 	{
@@ -1394,7 +1355,7 @@ hstore_to_jsonb(PG_FUNCTION_ARGS)
 		key.val.string.len = HS_KEYLEN(entries, i);
 		key.val.string.val = HS_KEY(entries, base, i);
 
-		res = pushJsonbValue(&state, WJB_KEY, &key);
+		(void) pushJsonbValue(&state, WJB_KEY, &key);
 
 		if (HS_VALISNULL(entries, i))
 		{
@@ -1406,7 +1367,7 @@ hstore_to_jsonb(PG_FUNCTION_ARGS)
 			val.val.string.len = HS_VALLEN(entries, i);
 			val.val.string.val = HS_VAL(entries, base, i);
 		}
-		res = pushJsonbValue(&state, WJB_VALUE, &val);
+		(void) pushJsonbValue(&state, WJB_VALUE, &val);
 	}
 
 	res = pushJsonbValue(&state, WJB_END_OBJECT, NULL);
@@ -1430,7 +1391,7 @@ hstore_to_jsonb_loose(PG_FUNCTION_ARGS)
 
 	initStringInfo(&tmp);
 
-	res = pushJsonbValue(&state, WJB_BEGIN_OBJECT, NULL);
+	(void) pushJsonbValue(&state, WJB_BEGIN_OBJECT, NULL);
 
 	for (i = 0; i < count; i++)
 	{
@@ -1441,7 +1402,7 @@ hstore_to_jsonb_loose(PG_FUNCTION_ARGS)
 		key.val.string.len = HS_KEYLEN(entries, i);
 		key.val.string.val = HS_KEY(entries, base, i);
 
-		res = pushJsonbValue(&state, WJB_KEY, &key);
+		(void) pushJsonbValue(&state, WJB_KEY, &key);
 
 		if (HS_VALISNULL(entries, i))
 		{
@@ -1516,7 +1477,7 @@ hstore_to_jsonb_loose(PG_FUNCTION_ARGS)
 				val.val.string.val = HS_VAL(entries, base, i);
 			}
 		}
-		res = pushJsonbValue(&state, WJB_VALUE, &val);
+		(void) pushJsonbValue(&state, WJB_VALUE, &val);
 	}
 
 	res = pushJsonbValue(&state, WJB_END_OBJECT, NULL);

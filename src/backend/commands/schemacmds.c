@@ -8,7 +8,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -26,6 +26,7 @@
 #include "catalog/dependency.h"
 #include "catalog/indexing.h"
 #include "catalog/namespace.h"
+#include "catalog/pg_authid.h"
 #include "catalog/objectaccess.h"
 #include "catalog/pg_namespace.h"
 #include "commands/dbcommands.h"
@@ -55,8 +56,7 @@ CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString, bool sentTo
 CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString)
 #endif
 {
-	const char *schemaName = stmt->schemaname;
-	const char *authId = stmt->authid;
+	const char	*schemaName = stmt->schemaname;
 	Oid			namespaceId;
 	OverrideSearchPath *overridePath;
 	List	   *parsetree_list;
@@ -71,10 +71,23 @@ CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString)
 	/*
 	 * Who is supposed to own the new schema?
 	 */
-	if (authId)
-		owner_uid = get_role_oid(authId, false);
+	if (stmt->authrole)
+		owner_uid = get_rolespec_oid(stmt->authrole, false);
 	else
 		owner_uid = saved_uid;
+
+	/* fill schema name with the user name if not specified */
+	if (!schemaName)
+	{
+		HeapTuple tuple;
+
+		tuple = SearchSysCache1(AUTHOID, ObjectIdGetDatum(owner_uid));
+		if (!HeapTupleIsValid(tuple))
+			elog(ERROR, "cache lookup failed for role %u", owner_uid);
+		schemaName =
+			pstrdup(NameStr(((Form_pg_authid) GETSTRUCT(tuple))->rolname));
+		ReleaseSysCache(tuple);
+	}
 
 	/*
 	 * To create a schema, must have schema-create privilege on the current
@@ -226,13 +239,14 @@ RemoveSchemaById(Oid schemaOid)
 /*
  * Rename schema
  */
-Oid
+ObjectAddress
 RenameSchema(const char *oldname, const char *newname)
 {
 	Oid			nspOid;
 	HeapTuple	tup;
 	Relation	rel;
 	AclResult	aclresult;
+	ObjectAddress address;
 
 	rel = heap_open(NamespaceRelationId, RowExclusiveLock);
 
@@ -274,6 +288,8 @@ RenameSchema(const char *oldname, const char *newname)
 
 	InvokeObjectPostAlterHook(NamespaceRelationId, HeapTupleGetOid(tup), 0);
 
+	ObjectAddressSet(address, NamespaceRelationId, nspOid);
+
 #ifdef PGXC
 	if (IS_PGXC_COORDINATOR)
 	{
@@ -297,7 +313,7 @@ RenameSchema(const char *oldname, const char *newname)
 	heap_close(rel, NoLock);
 	heap_freetuple(tup);
 
-	return nspOid;
+	return address;
 }
 
 void
@@ -323,12 +339,13 @@ AlterSchemaOwner_oid(Oid oid, Oid newOwnerId)
 /*
  * Change schema owner
  */
-Oid
+ObjectAddress
 AlterSchemaOwner(const char *name, Oid newOwnerId)
 {
 	Oid			nspOid;
 	HeapTuple	tup;
 	Relation	rel;
+	ObjectAddress address;
 
 	rel = heap_open(NamespaceRelationId, RowExclusiveLock);
 
@@ -342,11 +359,13 @@ AlterSchemaOwner(const char *name, Oid newOwnerId)
 
 	AlterSchemaOwner_internal(tup, rel, newOwnerId);
 
+	ObjectAddressSet(address, NamespaceRelationId, nspOid);
+
 	ReleaseSysCache(tup);
 
 	heap_close(rel, RowExclusiveLock);
 
-	return nspOid;
+	return address;
 }
 
 static void

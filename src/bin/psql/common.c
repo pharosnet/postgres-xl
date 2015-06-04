@@ -1,7 +1,7 @@
 /*
  * psql - the PostgreSQL interactive terminal
  *
- * Copyright (c) 2000-2014, PostgreSQL Global Development Group
+ * Copyright (c) 2000-2015, PostgreSQL Global Development Group
  *
  * src/bin/psql/common.c
  */
@@ -426,10 +426,6 @@ AcceptResult(const PGresult *result)
  * This is the way to send "backdoor" queries (those not directly entered
  * by the user). It is subject to -E but not -e.
  *
- * In autocommit-off mode, a new transaction block is started if start_xact
- * is true; nothing special is done when start_xact is false.  Typically,
- * start_xact = false is used for SELECTs and explicit BEGIN/COMMIT commands.
- *
  * Caller is responsible for handling the ensuing processing if a COPY
  * command is sent.
  *
@@ -437,7 +433,7 @@ AcceptResult(const PGresult *result)
  * caller uses this path to issue "SET CLIENT_ENCODING".
  */
 PGresult *
-PSQLexec(const char *query, bool start_xact)
+PSQLexec(const char *query)
 {
 	PGresult   *res;
 
@@ -468,21 +464,6 @@ PSQLexec(const char *query, bool start_xact)
 
 	SetCancelConn();
 
-	if (start_xact &&
-		!pset.autocommit &&
-		PQtransactionStatus(pset.db) == PQTRANS_IDLE)
-	{
-		res = PQexec(pset.db, "BEGIN");
-		if (PQresultStatus(res) != PGRES_COMMAND_OK)
-		{
-			psql_error("%s", PQerrorMessage(pset.db));
-			PQclear(res);
-			ResetCancelConn();
-			return NULL;
-		}
-		PQclear(res);
-	}
-
 	res = PQexec(pset.db, query);
 
 	ResetCancelConn();
@@ -496,6 +477,102 @@ PSQLexec(const char *query, bool start_xact)
 	return res;
 }
 
+
+/*
+ * PSQLexecWatch
+ *
+ * This function is used for \watch command to send the query to
+ * the server and print out the results.
+ *
+ * Returns 1 if the query executed successfully, 0 if it cannot be repeated,
+ * e.g., because of the interrupt, -1 on error.
+ */
+int
+PSQLexecWatch(const char *query, const printQueryOpt *opt)
+{
+	PGresult   *res;
+	double	elapsed_msec = 0;
+	instr_time	before;
+	instr_time	after;
+
+	if (!pset.db)
+	{
+		psql_error("You are currently not connected to a database.\n");
+		return 0;
+	}
+
+	SetCancelConn();
+
+	if (pset.timing)
+		INSTR_TIME_SET_CURRENT(before);
+
+	res = PQexec(pset.db, query);
+
+	ResetCancelConn();
+
+	if (!AcceptResult(res))
+	{
+		PQclear(res);
+		return 0;
+	}
+
+	if (pset.timing)
+	{
+		INSTR_TIME_SET_CURRENT(after);
+		INSTR_TIME_SUBTRACT(after, before);
+		elapsed_msec = INSTR_TIME_GET_MILLISEC(after);
+	}
+
+	/*
+	 * If SIGINT is sent while the query is processing, the interrupt
+	 * will be consumed.  The user's intention, though, is to cancel
+	 * the entire watch process, so detect a sent cancellation request and
+	 * exit in this case.
+	 */
+	if (cancel_pressed)
+	{
+		PQclear(res);
+		return 0;
+	}
+
+	switch (PQresultStatus(res))
+	{
+		case PGRES_TUPLES_OK:
+			printQuery(res, opt, pset.queryFout, pset.logfile);
+			break;
+
+		case PGRES_COMMAND_OK:
+			fprintf(pset.queryFout, "%s\n%s\n\n", opt->title, PQcmdStatus(res));
+			break;
+
+		case PGRES_EMPTY_QUERY:
+			psql_error(_("\\watch cannot be used with an empty query\n"));
+			PQclear(res);
+			return -1;
+
+		case PGRES_COPY_OUT:
+		case PGRES_COPY_IN:
+		case PGRES_COPY_BOTH:
+			psql_error(_("\\watch cannot be used with COPY\n"));
+			PQclear(res);
+			return -1;
+
+		default:
+			psql_error(_("unexpected result status for \\watch\n"));
+			PQclear(res);
+			return -1;
+	}
+
+	PQclear(res);
+
+	fflush(pset.queryFout);
+
+	/* Possible microtiming output */
+	if (pset.timing)
+		printf(_("Time: %.3f ms\n"), elapsed_msec);
+
+	return 1;
+}
 
 
 /*
@@ -995,6 +1072,9 @@ SendQuery(const char *query)
 		results = NULL;			/* PQclear(NULL) does nothing */
 	}
 
+	if (!OK && pset.echo == PSQL_ECHO_ERRORS)
+		psql_error("STATEMENT:  %s\n", query);
+
 	/* If we made a temporary savepoint, possibly release/rollback */
 	if (on_error_rollback_savepoint)
 	{
@@ -1257,7 +1337,7 @@ ExecQueryUsingCursor(const char *query, double *elapsed_msec)
 			 * If query requires multiple result sets, hack to ensure that
 			 * only one pager instance is used for the whole mess
 			 */
-			pset.queryFout = PageOutput(100000, my_popt.topt.pager);
+			pset.queryFout = PageOutput(100000, &(my_popt.topt));
 			did_pager = true;
 		}
 
@@ -1524,6 +1604,23 @@ command_no_begin(const char *query)
 		return false;
 	}
 
+	if (wordlen == 5 && pg_strncasecmp(query, "alter", 5) == 0)
+	{
+		query += wordlen;
+
+		query = skip_white_space(query);
+
+		wordlen = 0;
+		while (isalpha((unsigned char) query[wordlen]))
+			wordlen += PQmblen(&query[wordlen], pset.encoding);
+
+		/* ALTER SYSTEM isn't allowed in xacts */
+		if (wordlen == 6 && pg_strncasecmp(query, "system", 6) == 0)
+			return true;
+
+		return false;
+	}
+
 	/*
 	 * Note: these tests will match DROP SYSTEM and REINDEX TABLESPACE, which
 	 * aren't really valid commands so we don't care much. The other four
@@ -1546,6 +1643,24 @@ command_no_begin(const char *query)
 			return true;
 		if (wordlen == 10 && pg_strncasecmp(query, "tablespace", 10) == 0)
 			return true;
+
+		/* DROP INDEX CONCURRENTLY isn't allowed in xacts */
+		if (wordlen == 5 && pg_strncasecmp(query, "index", 5) == 0)
+		{
+			query += wordlen;
+
+			query = skip_white_space(query);
+
+			wordlen = 0;
+			while (isalpha((unsigned char) query[wordlen]))
+				wordlen += PQmblen(&query[wordlen], pset.encoding);
+
+			if (wordlen == 12 && pg_strncasecmp(query, "concurrently", 12) == 0)
+				return true;
+
+			return false;
+		}
+
 		return false;
 	}
 
@@ -1730,4 +1845,45 @@ expand_tilde(char **filename)
 #endif
 
 	return;
+}
+
+/*
+ * Checks if connection string starts with either of the valid URI prefix
+ * designators.
+ *
+ * Returns the URI prefix length, 0 if the string doesn't contain a URI prefix.
+ *
+ * XXX This is a duplicate of the eponymous libpq function.
+ */
+static int
+uri_prefix_length(const char *connstr)
+{
+	/* The connection URI must start with either of the following designators: */
+	static const char uri_designator[] = "postgresql://";
+	static const char short_uri_designator[] = "postgres://";
+
+	if (strncmp(connstr, uri_designator,
+				sizeof(uri_designator) - 1) == 0)
+		return sizeof(uri_designator) - 1;
+
+	if (strncmp(connstr, short_uri_designator,
+				sizeof(short_uri_designator) - 1) == 0)
+		return sizeof(short_uri_designator) - 1;
+
+	return 0;
+}
+
+/*
+ * Recognized connection string either starts with a valid URI prefix or
+ * contains a "=" in it.
+ *
+ * Must be consistent with parse_connection_string: anything for which this
+ * returns true should at least look like it's parseable by that routine.
+ *
+ * XXX This is a duplicate of the eponymous libpq function.
+ */
+bool
+recognized_connection_string(const char *connstr)
+{
+	return uri_prefix_length(connstr) != 0 || strchr(connstr, '=') != NULL;
 }

@@ -3,7 +3,7 @@
  * pgarch.h
  *	  Exports from postmaster/pgarch.c.
  *
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/postmaster/pgarch.h
@@ -33,7 +33,7 @@
 extern int	pgarch_start(void);
 
 #ifdef EXEC_BACKEND
-extern void PgArchiverMain(int argc, char *argv[]) __attribute__((noreturn));
+extern void PgArchiverMain(int argc, char *argv[]) pg_attribute_noreturn();
 #endif
 
 #endif   /* _PGARCH_H */

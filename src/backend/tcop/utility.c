@@ -10,7 +10,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  * Portions Copyright (c) 2010-2012 Postgres-XC Development Group
  *
@@ -26,6 +26,7 @@
 #include "access/reloptions.h"
 #include "access/twophase.h"
 #include "access/xact.h"
+#include "access/xlog.h"
 #include "catalog/catalog.h"
 #include "catalog/namespace.h"
 #include "catalog/toasting.h"
@@ -45,6 +46,7 @@
 #include "commands/extension.h"
 #include "commands/matview.h"
 #include "commands/lockcmds.h"
+#include "commands/policy.h"
 #include "commands/portalcmds.h"
 #include "commands/prepare.h"
 #include "commands/proclang.h"
@@ -198,6 +200,7 @@ check_xact_readonly(Node *parsetree)
 		case T_AlterObjectSchemaStmt:
 		case T_AlterOwnerStmt:
 		case T_AlterSeqStmt:
+		case T_AlterTableMoveAllStmt:
 		case T_AlterTableStmt:
 		case T_RenameStmt:
 		case T_CommentStmt:
@@ -251,8 +254,8 @@ check_xact_readonly(Node *parsetree)
 		case T_AlterUserMappingStmt:
 		case T_DropUserMappingStmt:
 		case T_AlterTableSpaceOptionsStmt:
-		case T_AlterTableSpaceMoveStmt:
 		case T_CreateForeignTableStmt:
+		case T_ImportForeignSchemaStmt:
 		case T_SecLabelStmt:
 			PreventCommandIfReadOnly(CreateCommandTag(parsetree));
 			break;
@@ -665,11 +668,6 @@ standard_ProcessUtility(Node *parsetree,
 #endif
 			break;
 
-		case T_AlterTableSpaceMoveStmt:
-			/* no event triggers for global objects */
-			AlterTableSpaceMove((AlterTableSpaceMoveStmt *) parsetree);
-			break;
-
 		case T_TruncateStmt:
 			ExecuteTruncate((TruncateStmt *) parsetree);
 #ifdef PGXC
@@ -702,25 +700,6 @@ standard_ProcessUtility(Node *parsetree,
 #endif
 			break;
 
-		case T_CommentStmt:
-			CommentObject((CommentStmt *) parsetree);
-
-#ifdef PGXC
-			/* Comment objects depending on their object and temporary types */
-			if (IS_PGXC_LOCAL_COORDINATOR)
-			{
-				bool is_temp = false;
-				CommentStmt *stmt = (CommentStmt *) parsetree;
-				RemoteQueryExecType exec_type = GetNodesForCommentUtility(stmt, &is_temp);
-				ExecUtilityStmtOnNodes(queryString, NULL, sentToRemote, false, exec_type, is_temp);
-			}
-#endif
-			break;
-
-		case T_SecLabelStmt:
-			ExecSecLabelStmt((SecLabelStmt *) parsetree);
-			break;
-
 		case T_CopyStmt:
 			{
 				uint64		processed;
@@ -746,61 +725,6 @@ standard_ProcessUtility(Node *parsetree,
 		case T_DeallocateStmt:
 			CheckRestrictedOperation("DEALLOCATE");
 			DeallocateQuery((DeallocateStmt *) parsetree);
-			break;
-
-		case T_GrantStmt:
-#ifdef PGXC
-			if (IS_PGXC_LOCAL_COORDINATOR)
-			{
-				RemoteQueryExecType remoteExecType = EXEC_ON_ALL_NODES;
-				GrantStmt *stmt = (GrantStmt *) parsetree;
-				bool is_temp = false;
-
-				/* Launch GRANT on Coordinator if object is a sequence */
-				if ((stmt->objtype == ACL_OBJECT_RELATION &&
-							stmt->targtype == ACL_TARGET_OBJECT))
-				{
-					/*
-					 * In case object is a relation, differenciate the case
-					 * of a sequence, a view and a table
-					 */
-					ListCell   *cell;
-					/* Check the list of objects */
-					bool		first = true;
-					RemoteQueryExecType type_local = remoteExecType;
-
-					foreach (cell, stmt->objects)
-					{
-						RangeVar   *relvar = (RangeVar *) lfirst(cell);
-						Oid			relid = RangeVarGetRelid(relvar, NoLock, true);
-
-						/* Skip if object does not exist */
-						if (!OidIsValid(relid))
-							continue;
-
-						remoteExecType = ExecUtilityFindNodesRelkind(relid, &is_temp);
-
-						/* Check if object node type corresponds to the first one */
-						if (first)
-						{
-							type_local = remoteExecType;
-							first = false;
-						}
-						else
-						{
-							if (type_local != remoteExecType)
-								ereport(ERROR,
-										(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-										 errmsg("PGXC does not support GRANT on multiple object types"),
-										 errdetail("Grant VIEW/TABLE with separate queries")));
-						}
-					}
-				}
-				ExecUtilityStmtOnNodes(queryString, NULL, sentToRemote, false, remoteExecType, is_temp);
-			}
-#endif
-			/* no event triggers for global objects */
-			ExecuteGrantStmt((GrantStmt *) parsetree);
 			break;
 
 		case T_GrantRoleStmt:
@@ -962,7 +886,7 @@ standard_ProcessUtility(Node *parsetree,
 				if (IS_PGXC_LOCAL_COORDINATOR)
 					ExecUtilityStmtOnNodes(queryString, NULL, sentToRemote, true, EXEC_ON_DATANODES, false);
 #endif
-				vacuum(stmt, InvalidOid, true, NULL, false, isTopLevel);
+				ExecVacuum(stmt, isTopLevel);
 			}
 			break;
 
@@ -1203,14 +1127,15 @@ standard_ProcessUtility(Node *parsetree,
 				PreventCommandDuringRecovery("REINDEX");
 				switch (stmt->kind)
 				{
-					case OBJECT_INDEX:
+					case REINDEX_OBJECT_INDEX:
 						ReindexIndex(stmt->relation);
 						break;
-					case OBJECT_TABLE:
-					case OBJECT_MATVIEW:
+					case REINDEX_OBJECT_TABLE:
 						ReindexTable(stmt->relation);
 						break;
-					case OBJECT_DATABASE:
+					case REINDEX_OBJECT_SCHEMA:
+					case REINDEX_OBJECT_SYSTEM:
+					case REINDEX_OBJECT_DATABASE:
 
 						/*
 						 * This cannot run inside a user transaction block; if
@@ -1219,9 +1144,10 @@ standard_ProcessUtility(Node *parsetree,
 						 * intended effect!
 						 */
 						PreventTransactionChain(isTopLevel,
+												(stmt->kind == REINDEX_OBJECT_SCHEMA) ? "REINDEX SCHEMA" :
+												(stmt->kind == REINDEX_OBJECT_SYSTEM) ? "REINDEX SYSTEM" :
 												"REINDEX DATABASE");
-						ReindexDatabase(stmt->name,
-										stmt->do_system, stmt->do_user);
+						ReindexMultipleTables(stmt->name, stmt->kind);
 						break;
 					default:
 						elog(ERROR, "unrecognized object type: %d",
@@ -1240,6 +1166,75 @@ standard_ProcessUtility(Node *parsetree,
 			 * The following statements are supported by Event Triggers only
 			 * in some cases, so we "fast path" them in the other cases.
 			 */
+
+		case T_GrantStmt:
+			{
+				GrantStmt  *stmt = (GrantStmt *) parsetree;
+
+				if (EventTriggerSupportsGrantObjectType(stmt->objtype))
+					ProcessUtilitySlow(parsetree, queryString,
+									   context, params,
+									   dest,
+#ifdef XCP
+									   sentToRemote,
+#endif
+									   completionTag);
+				else
+				{
+#ifdef PGXC
+					if (IS_PGXC_LOCAL_COORDINATOR)
+					{
+						RemoteQueryExecType remoteExecType = EXEC_ON_ALL_NODES;
+						GrantStmt *stmt = (GrantStmt *) parsetree;
+						bool is_temp = false;
+
+						/* Launch GRANT on Coordinator if object is a sequence */
+						if ((stmt->objtype == ACL_OBJECT_RELATION &&
+									stmt->targtype == ACL_TARGET_OBJECT))
+						{
+							/*
+							 * In case object is a relation, differenciate the case
+							 * of a sequence, a view and a table
+							 */
+							ListCell   *cell;
+							/* Check the list of objects */
+							bool		first = true;
+							RemoteQueryExecType type_local = remoteExecType;
+
+							foreach (cell, stmt->objects)
+							{
+								RangeVar   *relvar = (RangeVar *) lfirst(cell);
+								Oid			relid = RangeVarGetRelid(relvar, NoLock, true);
+
+								/* Skip if object does not exist */
+								if (!OidIsValid(relid))
+									continue;
+
+								remoteExecType = ExecUtilityFindNodesRelkind(relid, &is_temp);
+
+								/* Check if object node type corresponds to the first one */
+								if (first)
+								{
+									type_local = remoteExecType;
+									first = false;
+								}
+								else
+								{
+									if (type_local != remoteExecType)
+										ereport(ERROR,
+												(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+												 errmsg("PGXC does not support GRANT on multiple object types"),
+												 errdetail("Grant VIEW/TABLE with separate queries")));
+								}
+							}
+						}
+						ExecUtilityStmtOnNodes(queryString, NULL, sentToRemote, false, remoteExecType, is_temp);
+					}
+#endif
+					ExecuteGrantStmt((GrantStmt *) parsetree);
+				}
+			}
+			break;
 
 		case T_DropStmt:
 			{
@@ -1372,7 +1367,7 @@ standard_ProcessUtility(Node *parsetree,
 #endif				
 									   completionTag);
 				else
-					ExecAlterObjectSchemaStmt(stmt);
+					ExecAlterObjectSchemaStmt(stmt, NULL);
 			}
 			break;
 
@@ -1428,6 +1423,51 @@ standard_ProcessUtility(Node *parsetree,
 #endif
 				break;
 #endif
+		case T_CommentStmt:
+			{
+				CommentStmt *stmt = (CommentStmt *) parsetree;
+
+				if (EventTriggerSupportsObjectType(stmt->objtype))
+					ProcessUtilitySlow(parsetree, queryString,
+									   context, params,
+									   dest,
+#ifdef XCP
+									   sentToRemote,
+#endif
+									   completionTag);
+				else
+				{
+					CommentObject((CommentStmt *) parsetree);
+#ifdef PGXC
+					/* Comment objects depending on their object and temporary types */
+					if (IS_PGXC_LOCAL_COORDINATOR)
+					{
+						bool is_temp = false;
+						CommentStmt *stmt = (CommentStmt *) parsetree;
+						RemoteQueryExecType exec_type = GetNodesForCommentUtility(stmt, &is_temp);
+						ExecUtilityStmtOnNodes(queryString, NULL, sentToRemote, false, exec_type, is_temp);
+					}
+#endif
+				}
+				break;
+			}
+
+		case T_SecLabelStmt:
+			{
+				SecLabelStmt *stmt = (SecLabelStmt *) parsetree;
+
+				if (EventTriggerSupportsObjectType(stmt->objtype))
+					ProcessUtilitySlow(parsetree, queryString,
+									   context, params,
+									   dest,
+#ifdef XCP
+									   sentToRemote,
+#endif
+									   completionTag);
+				else
+					ExecSecLabelStmt(stmt);
+				break;
+			}
 
 		default:
 			/* All other statement types have event trigger support */
@@ -1461,6 +1501,7 @@ ProcessUtilitySlow(Node *parsetree,
 	bool		isTopLevel = (context == PROCESS_UTILITY_TOPLEVEL);
 	bool		isCompleteQuery = (context <= PROCESS_UTILITY_QUERY);
 	bool		needCleanup;
+	ObjectAddress address;
 
 	/* All event trigger calls are done only when isCompleteQuery is true */
 	needCleanup = isCompleteQuery && EventTriggerBeginCompleteQuery();
@@ -1491,7 +1532,6 @@ ProcessUtilitySlow(Node *parsetree,
 				{
 					List	   *stmts;
 					ListCell   *l;
-					Oid			relOid;
 #ifdef PGXC
 					bool		is_temp = false;
 					bool		is_local = ((CreateStmt *) parsetree)->islocal;
@@ -1598,9 +1638,9 @@ ProcessUtilitySlow(Node *parsetree,
 #endif
 
 							/* Create the table itself */
-							relOid = DefineRelation((CreateStmt *) stmt,
-													RELKIND_RELATION,
-													InvalidOid);
+							address = DefineRelation((CreateStmt *) stmt,
+													 RELKIND_RELATION,
+													 InvalidOid, NULL);
 
 							/*
 							 * Let NewRelationCreateToastTable decide if this
@@ -1622,16 +1662,17 @@ ProcessUtilitySlow(Node *parsetree,
 												   toast_options,
 												   true);
 
-							NewRelationCreateToastTable(relOid, toast_options);
+							NewRelationCreateToastTable(address.objectId,
+														toast_options);
 						}
 						else if (IsA(stmt, CreateForeignTableStmt))
 						{
 							/* Create the table itself */
-							relOid = DefineRelation((CreateStmt *) stmt,
-													RELKIND_FOREIGN_TABLE,
-													InvalidOid);
+							address = DefineRelation((CreateStmt *) stmt,
+													 RELKIND_FOREIGN_TABLE,
+													 InvalidOid, NULL);
 							CreateForeignTable((CreateForeignTableStmt *) stmt,
-											   relOid);
+											   address.objectId);
 						}
 						else
 						{
@@ -1770,7 +1811,8 @@ ProcessUtilitySlow(Node *parsetree,
 							break;
 						case 'C':		/* ADD CONSTRAINT */
 							AlterDomainAddConstraint(stmt->typeName,
-													 stmt->def);
+													 stmt->def,
+													 NULL);
 							break;
 						case 'X':		/* DROP CONSTRAINT */
 							AlterDomainDropConstraint(stmt->typeName,
@@ -1833,7 +1875,8 @@ ProcessUtilitySlow(Node *parsetree,
 						case OBJECT_TSCONFIGURATION:
 							Assert(stmt->args == NIL);
 							DefineTSConfiguration(stmt->defnames,
-												  stmt->definition);
+												  stmt->definition,
+												  NULL);
 							break;
 						case OBJECT_COLLATION:
 							Assert(stmt->args == NIL);
@@ -1935,7 +1978,8 @@ ProcessUtilitySlow(Node *parsetree,
 				break;
 
 			case T_AlterExtensionContentsStmt:
-				ExecAlterExtensionContentsStmt((AlterExtensionContentsStmt *) parsetree);
+				ExecAlterExtensionContentsStmt((AlterExtensionContentsStmt *) parsetree,
+											   NULL);
 #ifdef PGXC
 				if (IS_PGXC_LOCAL_COORDINATOR)
 					ExecUtilityStmtOnNodes(queryString, NULL, sentToRemote, false, EXEC_ON_ALL_NODES, false);
@@ -1998,6 +2042,10 @@ ProcessUtilitySlow(Node *parsetree,
 
 			case T_DropUserMappingStmt:
 				RemoveUserMapping((DropUserMappingStmt *) parsetree);
+				break;
+
+			case T_ImportForeignSchemaStmt:
+				ImportForeignSchema((ImportForeignSchemaStmt *) parsetree);
 				break;
 
 			case T_CompositeTypeStmt:	/* CREATE TYPE (composite) */
@@ -2265,6 +2313,10 @@ ProcessUtilitySlow(Node *parsetree,
 #endif
 				break;
 
+			case T_AlterTableMoveAllStmt:
+				AlterTableMoveAll((AlterTableMoveAllStmt *) parsetree);
+				break;
+
 			case T_DropStmt:
 #ifdef PGXC
 				ExecDropStmt((DropStmt *) parsetree, queryString, sentToRemote, isTopLevel);
@@ -2278,11 +2330,20 @@ ProcessUtilitySlow(Node *parsetree,
 				break;
 
 			case T_AlterObjectSchemaStmt:
-				ExecAlterObjectSchemaStmt((AlterObjectSchemaStmt *) parsetree);
+				ExecAlterObjectSchemaStmt((AlterObjectSchemaStmt *) parsetree,
+										  NULL);
 				break;
 
 			case T_AlterOwnerStmt:
 				ExecAlterOwnerStmt((AlterOwnerStmt *) parsetree);
+				break;
+
+			case T_CommentStmt:
+				CommentObject((CommentStmt *) parsetree);
+				break;
+
+			case T_GrantStmt:
+				ExecuteGrantStmt((GrantStmt *) parsetree);
 				break;
 
 			case T_DropOwnedStmt:
@@ -2300,6 +2361,18 @@ ProcessUtilitySlow(Node *parsetree,
 				if (IS_PGXC_LOCAL_COORDINATOR)
 					ExecUtilityStmtOnNodes(queryString, NULL, sentToRemote, false, EXEC_ON_ALL_NODES, false);
 #endif
+				break;
+
+			case T_CreatePolicyStmt:	/* CREATE POLICY */
+				CreatePolicy((CreatePolicyStmt *) parsetree);
+				break;
+
+			case T_AlterPolicyStmt:		/* ALTER POLICY */
+				AlterPolicy((AlterPolicyStmt *) parsetree);
+				break;
+
+			case T_SecLabelStmt:
+				ExecSecLabelStmt((SecLabelStmt *) parsetree);
 				break;
 
 			default:
@@ -2598,9 +2671,6 @@ AlterObjectTypeCommandTag(ObjectType objtype)
 		case OBJECT_COLUMN:
 			tag = "ALTER TABLE";
 			break;
-		case OBJECT_CONSTRAINT:
-			tag = "ALTER TABLE";
-			break;
 		case OBJECT_CONVERSION:
 			tag = "ALTER CONVERSION";
 			break;
@@ -2608,6 +2678,7 @@ AlterObjectTypeCommandTag(ObjectType objtype)
 			tag = "ALTER DATABASE";
 			break;
 		case OBJECT_DOMAIN:
+		case OBJECT_DOMCONSTRAINT:
 			tag = "ALTER DOMAIN";
 			break;
 		case OBJECT_EXTENSION:
@@ -2643,6 +2714,9 @@ AlterObjectTypeCommandTag(ObjectType objtype)
 		case OBJECT_OPFAMILY:
 			tag = "ALTER OPERATOR FAMILY";
 			break;
+		case OBJECT_POLICY:
+			tag = "ALTER POLICY";
+			break;
 		case OBJECT_ROLE:
 			tag = "ALTER ROLE";
 			break;
@@ -2656,6 +2730,7 @@ AlterObjectTypeCommandTag(ObjectType objtype)
 			tag = "ALTER SEQUENCE";
 			break;
 		case OBJECT_TABLE:
+		case OBJECT_TABCONSTRAINT:
 			tag = "ALTER TABLE";
 			break;
 		case OBJECT_TABLESPACE:
@@ -2829,10 +2904,6 @@ CreateCommandTag(Node *parsetree)
 			tag = "ALTER TABLESPACE";
 			break;
 
-		case T_AlterTableSpaceMoveStmt:
-			tag = "ALTER TABLESPACE";
-			break;
-
 		case T_CreateExtensionStmt:
 			tag = "CREATE EXTENSION";
 			break;
@@ -2875,6 +2946,10 @@ CreateCommandTag(Node *parsetree)
 
 		case T_CreateForeignTableStmt:
 			tag = "CREATE FOREIGN TABLE";
+			break;
+
+		case T_ImportForeignSchemaStmt:
+			tag = "IMPORT FOREIGN SCHEMA";
 			break;
 
 		case T_DropStmt:
@@ -2964,6 +3039,9 @@ CreateCommandTag(Node *parsetree)
 				case OBJECT_OPFAMILY:
 					tag = "DROP OPERATOR FAMILY";
 					break;
+				case OBJECT_POLICY:
+					tag = "DROP POLICY";
+					break;
 				default:
 					tag = "???";
 			}
@@ -2995,6 +3073,10 @@ CreateCommandTag(Node *parsetree)
 
 		case T_AlterOwnerStmt:
 			tag = AlterObjectTypeCommandTag(((AlterOwnerStmt *) parsetree)->objectType);
+			break;
+
+		case T_AlterTableMoveAllStmt:
+			tag = AlterObjectTypeCommandTag(((AlterTableMoveAllStmt *) parsetree)->objtype);
 			break;
 
 		case T_AlterTableStmt:
@@ -3342,6 +3424,14 @@ CreateCommandTag(Node *parsetree)
 			tag = "ALTER TEXT SEARCH CONFIGURATION";
 			break;
 
+		case T_CreatePolicyStmt:
+			tag = "CREATE POLICY";
+			break;
+
+		case T_AlterPolicyStmt:
+			tag = "ALTER POLICY";
+			break;
+
 		case T_PrepareStmt:
 			tag = "PREPARE";
 			break;
@@ -3383,26 +3473,22 @@ CreateCommandTag(Node *parsetree)
 						else if (stmt->rowMarks != NIL)
 						{
 							/* not 100% but probably close enough */
-							switch (((PlanRowMark *) linitial(stmt->rowMarks))->markType)
+							switch (((PlanRowMark *) linitial(stmt->rowMarks))->strength)
 							{
-								case ROW_MARK_EXCLUSIVE:
-									tag = "SELECT FOR UPDATE";
-									break;
-								case ROW_MARK_NOKEYEXCLUSIVE:
-									tag = "SELECT FOR NO KEY UPDATE";
-									break;
-								case ROW_MARK_SHARE:
-									tag = "SELECT FOR SHARE";
-									break;
-								case ROW_MARK_KEYSHARE:
+								case LCS_FORKEYSHARE:
 									tag = "SELECT FOR KEY SHARE";
 									break;
-								case ROW_MARK_REFERENCE:
-								case ROW_MARK_COPY:
-									tag = "SELECT";
+								case LCS_FORSHARE:
+									tag = "SELECT FOR SHARE";
+									break;
+								case LCS_FORNOKEYUPDATE:
+									tag = "SELECT FOR NO KEY UPDATE";
+									break;
+								case LCS_FORUPDATE:
+									tag = "SELECT FOR UPDATE";
 									break;
 								default:
-									tag = "???";
+									tag = "SELECT";
 									break;
 							}
 						}
@@ -3564,10 +3650,6 @@ GetCommandLogLevel(Node *parsetree)
 			lev = LOGSTMT_DDL;
 			break;
 
-		case T_AlterTableSpaceMoveStmt:
-			lev = LOGSTMT_DDL;
-			break;
-
 		case T_CreateExtensionStmt:
 		case T_AlterExtensionStmt:
 		case T_AlterExtensionContentsStmt:
@@ -3581,6 +3663,7 @@ GetCommandLogLevel(Node *parsetree)
 		case T_CreateUserMappingStmt:
 		case T_AlterUserMappingStmt:
 		case T_DropUserMappingStmt:
+		case T_ImportForeignSchemaStmt:
 			lev = LOGSTMT_DDL;
 			break;
 
@@ -3623,7 +3706,7 @@ GetCommandLogLevel(Node *parsetree)
 
 				/* Look through an EXECUTE to the referenced stmt */
 				ps = FetchPreparedStatement(stmt->name, false);
-				if (ps)
+				if (ps && ps->plansource->raw_parse_tree)
 					lev = GetCommandLogLevel(ps->plansource->raw_parse_tree);
 				else
 					lev = LOGSTMT_ALL;
@@ -3646,6 +3729,7 @@ GetCommandLogLevel(Node *parsetree)
 			lev = LOGSTMT_DDL;
 			break;
 
+		case T_AlterTableMoveAllStmt:
 		case T_AlterTableStmt:
 			lev = LOGSTMT_DDL;
 			break;
@@ -3790,7 +3874,7 @@ GetCommandLogLevel(Node *parsetree)
 			break;
 
 		case T_AlterSystemStmt:
-			lev = LOGSTMT_ALL;
+			lev = LOGSTMT_DDL;
 			break;
 
 		case T_VariableSetStmt:
@@ -3882,6 +3966,14 @@ GetCommandLogLevel(Node *parsetree)
 			break;
 
 		case T_AlterOpFamilyStmt:
+			lev = LOGSTMT_DDL;
+			break;
+
+		case T_CreatePolicyStmt:
+			lev = LOGSTMT_DDL;
+			break;
+
+		case T_AlterPolicyStmt:
 			lev = LOGSTMT_DDL;
 			break;
 

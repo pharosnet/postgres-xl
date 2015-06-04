@@ -7,7 +7,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Copyright (c) 2002-2014, PostgreSQL Global Development Group
+ * Copyright (c) 2002-2015, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *	  src/backend/utils/adt/dbsize.c
@@ -927,7 +927,7 @@ pg_relation_filepath(PG_FUNCTION_ARGS)
 			backend = InvalidBackendId;
 			break;
 		case RELPERSISTENCE_TEMP:
-			if (isTempOrToastNamespace(relform->relnamespace))
+			if (isTempOrTempToastNamespace(relform->relnamespace))
 #ifdef XCP
 				backend = OidIsValid(MyCoordId) ? InvalidBackendId : MyBackendId;
 #else

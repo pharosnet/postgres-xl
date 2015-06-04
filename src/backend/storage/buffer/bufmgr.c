@@ -8,7 +8,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -38,6 +38,7 @@
 #include <sys/file.h>
 #include <unistd.h>
 
+#include "access/xlog.h"
 #include "catalog/catalog.h"
 #include "catalog/storage.h"
 #include "executor/instrument.h"
@@ -70,6 +71,15 @@
 
 #define DROP_RELS_BSEARCH_THRESHOLD		20
 
+typedef struct PrivateRefCountEntry
+{
+	Buffer buffer;
+	int32 refcount;
+} PrivateRefCountEntry;
+
+/* 64 bytes, about the size of a cache line on common systems */
+#define REFCOUNT_ARRAY_ENTRIES 8
+
 /* GUC variables */
 bool		zero_damaged_pages = false;
 int			bgwriter_lru_maxpages = 100;
@@ -89,6 +99,296 @@ static bool IsForInput;
 
 /* local state for LockBufferForCleanup */
 static volatile BufferDesc *PinCountWaitBuf = NULL;
+
+/*
+ * Backend-Private refcount management:
+ *
+ * Each buffer also has a private refcount that keeps track of the number of
+ * times the buffer is pinned in the current process.  This is so that the
+ * shared refcount needs to be modified only once if a buffer is pinned more
+ * than once by a individual backend.  It's also used to check that no buffers
+ * are still pinned at the end of transactions and when exiting.
+ *
+ *
+ * To avoid - as we used to - requiring an array with NBuffers entries to keep
+ * track of local buffers, we use a small sequentially searched array
+ * (PrivateRefCountArray) and a overflow hash table (PrivateRefCountHash) to
+ * keep track of backend local pins.
+ *
+ * Until no more than REFCOUNT_ARRAY_ENTRIES buffers are pinned at once, all
+ * refcounts are kept track of in the array; after that, new array entries
+ * displace old ones into the hash table. That way a frequently used entry
+ * can't get "stuck" in the hashtable while infrequent ones clog the array.
+ *
+ * Note that in most scenarios the number of pinned buffers will not exceed
+ * REFCOUNT_ARRAY_ENTRIES.
+ *
+ *
+ * To enter a buffer into the refcount tracking mechanism first reserve a free
+ * entry using ReservePrivateRefCountEntry() and then later, if necessary,
+ * fill it with NewPrivateRefCountEntry(). That split lets us avoid doing
+ * memory allocations in NewPrivateRefCountEntry() which can be important
+ * because in some scenarios it's called with a spinlock held...
+ */
+static struct PrivateRefCountEntry PrivateRefCountArray[REFCOUNT_ARRAY_ENTRIES];
+static HTAB *PrivateRefCountHash = NULL;
+static int32 PrivateRefCountOverflowed = 0;
+static uint32 PrivateRefCountClock = 0;
+static PrivateRefCountEntry *ReservedRefCountEntry = NULL;
+
+static void ReservePrivateRefCountEntry(void);
+static PrivateRefCountEntry* NewPrivateRefCountEntry(Buffer buffer);
+static PrivateRefCountEntry* GetPrivateRefCountEntry(Buffer buffer, bool do_move);
+static inline int32 GetPrivateRefCount(Buffer buffer);
+static void ForgetPrivateRefCountEntry(PrivateRefCountEntry *ref);
+
+/*
+ * Ensure that the PrivateRefCountArray has sufficient space to store one more
+ * entry. This has to be called before using NewPrivateRefCountEntry() to fill
+ * a new entry - but it's perfectly fine to not use a reserved entry.
+ */
+static void
+ReservePrivateRefCountEntry(void)
+{
+	/* Already reserved (or freed), nothing to do */
+	if (ReservedRefCountEntry != NULL)
+		return;
+
+	/*
+	 * First search for a free entry the array, that'll be sufficient in the
+	 * majority of cases.
+	 */
+	{
+		int i;
+
+		for (i = 0; i < REFCOUNT_ARRAY_ENTRIES; i++)
+		{
+			PrivateRefCountEntry *res;
+
+			res = &PrivateRefCountArray[i];
+
+			if (res->buffer == InvalidBuffer)
+			{
+				ReservedRefCountEntry = res;
+				return;
+			}
+		}
+	}
+
+	/*
+	 * No luck. All array entries are full. Move one array entry into the hash
+	 * table.
+	 */
+	{
+		/*
+		 * Move entry from the current clock position in the array into the
+		 * hashtable. Use that slot.
+		 */
+		PrivateRefCountEntry *hashent;
+		bool found;
+
+		/* select victim slot */
+		ReservedRefCountEntry  =
+			&PrivateRefCountArray[PrivateRefCountClock++ % REFCOUNT_ARRAY_ENTRIES];
+
+		/* Better be used, otherwise we shouldn't get here. */
+		Assert(ReservedRefCountEntry->buffer != InvalidBuffer);
+
+		/* enter victim array entry into hashtable */
+		hashent = hash_search(PrivateRefCountHash,
+							  (void *) &(ReservedRefCountEntry->buffer),
+							  HASH_ENTER,
+							  &found);
+		Assert(!found);
+		hashent->refcount = ReservedRefCountEntry->refcount;
+
+		/* clear the now free array slot */
+		ReservedRefCountEntry->buffer = InvalidBuffer;
+		ReservedRefCountEntry->refcount = 0;
+
+		PrivateRefCountOverflowed++;
+	}
+}
+
+/*
+ * Fill a previously reserved refcount entry.
+ */
+static PrivateRefCountEntry*
+NewPrivateRefCountEntry(Buffer buffer)
+{
+	PrivateRefCountEntry *res;
+
+	/* only allowed to be called when a reservation has been made */
+	Assert(ReservedRefCountEntry != NULL);
+
+	/* use up the reserved entry */
+	res = ReservedRefCountEntry;
+	ReservedRefCountEntry = NULL;
+
+	/* and fill it */
+	res->buffer = buffer;
+	res->refcount = 0;
+
+	return res;
+}
+
+/*
+ * Return the PrivateRefCount entry for the passed buffer.
+ *
+ * Returns NULL if a buffer doesn't have a refcount entry. Otherwise, if
+ * do_move is true, and the entry resides in the hashtable the entry is
+ * optimized for frequent access by moving it to the array.
+ */
+static PrivateRefCountEntry*
+GetPrivateRefCountEntry(Buffer buffer, bool do_move)
+{
+	PrivateRefCountEntry *res;
+	int			i;
+
+	Assert(BufferIsValid(buffer));
+	Assert(!BufferIsLocal(buffer));
+
+	/*
+	 * First search for references in the array, that'll be sufficient in the
+	 * majority of cases.
+	 */
+	for (i = 0; i < REFCOUNT_ARRAY_ENTRIES; i++)
+	{
+		res = &PrivateRefCountArray[i];
+
+		if (res->buffer == buffer)
+			return res;
+	}
+
+	/*
+	 * By here we know that the buffer, if already pinned, isn't residing in
+	 * the array.
+	 *
+	 * Only look up the buffer in the hashtable if we've previously overflowed
+	 * into it.
+	 */
+	if (PrivateRefCountOverflowed == 0)
+		return NULL;
+
+	res = hash_search(PrivateRefCountHash,
+					  (void *) &buffer,
+					  HASH_FIND,
+					  NULL);
+
+	if (res == NULL)
+		return NULL;
+	else if (!do_move)
+	{
+		/* caller doesn't want us to move the hash entry into the array */
+		return res;
+	}
+	else
+	{
+		/* move buffer from hashtable into the free array slot */
+		bool found;
+		PrivateRefCountEntry *free;
+
+		/* Ensure there's a free array slot */
+		ReservePrivateRefCountEntry();
+
+		/* Use up the reserved slot */
+		Assert(ReservedRefCountEntry != NULL);
+		free = ReservedRefCountEntry;
+		ReservedRefCountEntry = NULL;
+		Assert(free->buffer == InvalidBuffer);
+
+		/* and fill it */
+		free->buffer = buffer;
+		free->refcount = res->refcount;
+
+		/* delete from hashtable */
+		hash_search(PrivateRefCountHash,
+					(void *) &buffer,
+					HASH_REMOVE,
+					&found);
+		Assert(found);
+		Assert(PrivateRefCountOverflowed > 0);
+		PrivateRefCountOverflowed--;
+
+		return free;
+	}
+}
+
+/*
+ * Returns how many times the passed buffer is pinned by this backend.
+ *
+ * Only works for shared memory buffers!
+ */
+static inline int32
+GetPrivateRefCount(Buffer buffer)
+{
+	PrivateRefCountEntry *ref;
+
+	Assert(BufferIsValid(buffer));
+	Assert(!BufferIsLocal(buffer));
+
+	/*
+	 * Not moving the entry - that's ok for the current users, but we might
+	 * want to change this one day.
+	 */
+	ref = GetPrivateRefCountEntry(buffer, false);
+
+	if (ref == NULL)
+		return 0;
+	return ref->refcount;
+}
+
+/*
+ * Release resources used to track the reference count of a buffer which we no
+ * longer have pinned and don't want to pin again immediately.
+ */
+static void
+ForgetPrivateRefCountEntry(PrivateRefCountEntry *ref)
+{
+	Assert(ref->refcount == 0);
+
+	if (ref >= &PrivateRefCountArray[0] &&
+		ref < &PrivateRefCountArray[REFCOUNT_ARRAY_ENTRIES])
+	{
+		ref->buffer = InvalidBuffer;
+		/*
+		 * Mark the just used entry as reserved - in many scenarios that
+		 * allows us to avoid ever having to search the array/hash for free
+		 * entries.
+		 */
+		ReservedRefCountEntry = ref;
+	}
+	else
+	{
+		bool found;
+		Buffer buffer = ref->buffer;
+		hash_search(PrivateRefCountHash,
+					(void *) &buffer,
+					HASH_REMOVE,
+					&found);
+		Assert(found);
+		Assert(PrivateRefCountOverflowed > 0);
+		PrivateRefCountOverflowed--;
+	}
+}
+
+/*
+ * BufferIsPinned
+ *		True iff the buffer is pinned (also checks for valid buffer number).
+ *
+ *		NOTE: what we check here is that *this* backend holds a pin on
+ *		the buffer.  We do not care whether some other backend does.
+ */
+#define BufferIsPinned(bufnum) \
+( \
+	!BufferIsValid(bufnum) ? \
+		false \
+	: \
+		BufferIsLocal(bufnum) ? \
+			(LocalRefCount[-(bufnum) - 1] > 0) \
+		: \
+	(GetPrivateRefCount(bufnum) > 0) \
+)
 
 
 static Buffer ReadBuffer_common(SMgrRelation reln, char relpersistence,
@@ -114,6 +414,7 @@ static volatile BufferDesc *BufferAlloc(SMgrRelation smgr,
 			bool *foundPtr);
 static void FlushBuffer(volatile BufferDesc *buf, SMgrRelation reln);
 static void AtProcExit_Buffers(int code, Datum arg);
+static void CheckForBufferLeaks(void);
 static int	rnode_comparator(const void *p1, const void *p2);
 
 
@@ -218,13 +519,18 @@ ReadBuffer(Relation reln, BlockNumber blockNum)
  * valid, the page is zeroed instead of throwing an error. This is intended
  * for non-critical data, where the caller is prepared to repair errors.
  *
- * In RBM_ZERO mode, if the page isn't in buffer cache already, it's filled
- * with zeros instead of reading it from disk.  Useful when the caller is
- * going to fill the page from scratch, since this saves I/O and avoids
+ * In RBM_ZERO_AND_LOCK mode, if the page isn't in buffer cache already, it's
+ * filled with zeros instead of reading it from disk.  Useful when the caller
+ * is going to fill the page from scratch, since this saves I/O and avoids
  * unnecessary failure if the page-on-disk has corrupt page headers.
+ * The page is returned locked to ensure that the caller has a chance to
+ * initialize the page before it's made visible to others.
  * Caution: do not use this mode to read a page that is beyond the relation's
  * current physical EOF; that is likely to cause problems in md.c when
  * the page is modified and written out. P_NEW is OK, though.
+ *
+ * RBM_ZERO_AND_CLEANUP_LOCK is the same as RBM_ZERO_AND_LOCK, but acquires
+ * a cleanup-strength lock on the page.
  *
  * RBM_NORMAL_NO_LOG mode is treated the same as RBM_NORMAL here.
  *
@@ -367,6 +673,18 @@ ReadBuffer_common(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 											  isExtend,
 											  found);
 
+			/*
+			 * In RBM_ZERO_AND_LOCK mode the caller expects the page to
+			 * be locked on return.
+			 */
+			if (!isLocalBuf)
+			{
+				if (mode == RBM_ZERO_AND_LOCK)
+					LWLockAcquire(bufHdr->content_lock, LW_EXCLUSIVE);
+				else if (mode == RBM_ZERO_AND_CLEANUP_LOCK)
+					LockBufferForCleanup(BufferDescriptorGetBuffer(bufHdr));
+			}
+
 			return BufferDescriptorGetBuffer(bufHdr);
 		}
 
@@ -448,7 +766,7 @@ ReadBuffer_common(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 		 * Read in the page, unless the caller intends to overwrite it and
 		 * just wants us to allocate a buffer.
 		 */
-		if (mode == RBM_ZERO)
+		if (mode == RBM_ZERO_AND_LOCK || mode == RBM_ZERO_AND_CLEANUP_LOCK)
 			MemSet((char *) bufBlock, 0, BLCKSZ);
 		else
 		{
@@ -488,6 +806,22 @@ ReadBuffer_common(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 									relpath(smgr->smgr_rnode, forkNum))));
 			}
 		}
+	}
+
+	/*
+	 * In RBM_ZERO_AND_LOCK mode, grab the buffer content lock before marking
+	 * the page as valid, to make sure that no other backend sees the zeroed
+	 * page before the caller has had a chance to initialize it.
+	 *
+	 * Since no-one else can be looking at the page contents yet, there is no
+	 * difference between an exclusive lock and a cleanup-strength lock.
+	 * (Note that we cannot use LockBuffer() of LockBufferForCleanup() here,
+	 * because they assert that the buffer is already valid.)
+	 */
+	if ((mode == RBM_ZERO_AND_LOCK || mode == RBM_ZERO_AND_CLEANUP_LOCK) &&
+		!isLocalBuf)
+	{
+		LWLockAcquire(bufHdr->content_lock, LW_EXCLUSIVE);
 	}
 
 	if (isLocalBuf)
@@ -569,7 +903,7 @@ BufferAlloc(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 		 * buffer pool, and check to see if the correct data has been loaded
 		 * into the buffer.
 		 */
-		buf = &BufferDescriptors[buf_id];
+		buf = GetBufferDescriptor(buf_id);
 
 		valid = PinBuffer(buf, strategy);
 
@@ -609,15 +943,17 @@ BufferAlloc(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 	/* Loop here in case we have to try another victim buffer */
 	for (;;)
 	{
-		bool		lock_held;
+		/*
+		 * Ensure, while the spinlock's not yet held, that there's a free refcount
+		 * entry.
+		 */
+		ReservePrivateRefCountEntry();
 
 		/*
 		 * Select a victim buffer.  The buffer is returned with its header
-		 * spinlock still held!  Also (in most cases) the BufFreelistLock is
-		 * still held, since it would be bad to hold the spinlock while
-		 * possibly waking up other processes.
+		 * spinlock still held!
 		 */
-		buf = StrategyGetBuffer(strategy, &lock_held);
+		buf = StrategyGetBuffer(strategy);
 
 		Assert(buf->refcount == 0);
 
@@ -626,10 +962,6 @@ BufferAlloc(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 
 		/* Pin the buffer and then release the buffer spinlock */
 		PinBuffer_Locked(buf);
-
-		/* Now it's safe to release the freelist lock */
-		if (lock_held)
-			LWLockRelease(BufFreelistLock);
 
 		/*
 		 * If the buffer was dirty, try to write it out.  There is a race
@@ -778,7 +1110,7 @@ BufferAlloc(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 
 			/* remaining code should match code at top of routine */
 
-			buf = &BufferDescriptors[buf_id];
+			buf = GetBufferDescriptor(buf_id);
 
 			valid = PinBuffer(buf, strategy);
 
@@ -944,7 +1276,7 @@ retry:
 		UnlockBufHdr(buf);
 		LWLockRelease(oldPartitionLock);
 		/* safety check: should definitely not be our *own* pin */
-		if (PrivateRefCount[buf->buf_id] != 0)
+		if (GetPrivateRefCount(buf->buf_id) > 0)
 			elog(ERROR, "buffer is pinned in InvalidateBuffer");
 		WaitIO(buf);
 		goto retry;
@@ -1001,9 +1333,9 @@ MarkBufferDirty(Buffer buffer)
 		return;
 	}
 
-	bufHdr = &BufferDescriptors[buffer - 1];
+	bufHdr = GetBufferDescriptor(buffer - 1);
 
-	Assert(PrivateRefCount[buffer - 1] > 0);
+	Assert(BufferIsPinned(buffer));
 	/* unfortunately we can't check if the lock is held exclusively */
 	Assert(LWLockHeldByMe(bufHdr->content_lock));
 
@@ -1050,10 +1382,10 @@ ReleaseAndReadBuffer(Buffer buffer,
 
 	if (BufferIsValid(buffer))
 	{
+		Assert(BufferIsPinned(buffer));
 		if (BufferIsLocal(buffer))
 		{
-			Assert(LocalRefCount[-buffer - 1] > 0);
-			bufHdr = &LocalBufferDescriptors[-buffer - 1];
+			bufHdr = GetLocalBufferDescriptor(-buffer - 1);
 			if (bufHdr->tag.blockNum == blockNum &&
 				RelFileNodeEquals(bufHdr->tag.rnode, relation->rd_node) &&
 				bufHdr->tag.forkNum == forkNum)
@@ -1063,8 +1395,7 @@ ReleaseAndReadBuffer(Buffer buffer,
 		}
 		else
 		{
-			Assert(PrivateRefCount[buffer - 1] > 0);
-			bufHdr = &BufferDescriptors[buffer - 1];
+			bufHdr = GetBufferDescriptor(buffer - 1);
 			/* we have pin, so it's ok to examine tag without spinlock */
 			if (bufHdr->tag.blockNum == blockNum &&
 				RelFileNodeEquals(bufHdr->tag.rnode, relation->rd_node) &&
@@ -1100,9 +1431,15 @@ PinBuffer(volatile BufferDesc *buf, BufferAccessStrategy strategy)
 {
 	int			b = buf->buf_id;
 	bool		result;
+	PrivateRefCountEntry *ref;
 
-	if (PrivateRefCount[b] == 0)
+	ref = GetPrivateRefCountEntry(b + 1, true);
+
+	if (ref == NULL)
 	{
+		ReservePrivateRefCountEntry();
+		ref = NewPrivateRefCountEntry(b + 1);
+
 		LockBufHdr(buf);
 		buf->refcount++;
 		if (strategy == NULL)
@@ -1123,8 +1460,9 @@ PinBuffer(volatile BufferDesc *buf, BufferAccessStrategy strategy)
 		/* If we previously pinned the buffer, it must surely be valid */
 		result = true;
 	}
-	PrivateRefCount[b]++;
-	Assert(PrivateRefCount[b] > 0);
+
+	ref->refcount++;
+	Assert(ref->refcount > 0);
 	ResourceOwnerRememberBuffer(CurrentResourceOwner,
 								BufferDescriptorGetBuffer(buf));
 	return result;
@@ -1134,10 +1472,18 @@ PinBuffer(volatile BufferDesc *buf, BufferAccessStrategy strategy)
  * PinBuffer_Locked -- as above, but caller already locked the buffer header.
  * The spinlock is released before return.
  *
+ * As this function is called with the spinlock held, the caller has to
+ * previously call ReservePrivateRefCountEntry().
+ *
  * Currently, no callers of this function want to modify the buffer's
  * usage_count at all, so there's no need for a strategy parameter.
  * Also we don't bother with a BM_VALID test (the caller could check that for
  * itself).
+ *
+ * Also all callers only ever use this function when it's known that the
+ * buffer can't have a preexisting pin by this backend. That allows us to skip
+ * searching the private refcount array & hash, which is a boon, because the
+ * spinlock is still held.
  *
  * Note: use of this routine is frequently mandatory, not just an optimization
  * to save a spin lock/unlock cycle, because we need to pin a buffer before
@@ -1147,12 +1493,20 @@ static void
 PinBuffer_Locked(volatile BufferDesc *buf)
 {
 	int			b = buf->buf_id;
+	PrivateRefCountEntry *ref;
 
-	if (PrivateRefCount[b] == 0)
-		buf->refcount++;
+	/*
+	 * As explained, We don't expect any preexisting pins. That allows us to
+	 * manipulate the PrivateRefCount after releasing the spinlock
+	 */
+	Assert(GetPrivateRefCountEntry(b + 1, false) == NULL);
+
+	buf->refcount++;
 	UnlockBufHdr(buf);
-	PrivateRefCount[b]++;
-	Assert(PrivateRefCount[b] > 0);
+
+	ref = NewPrivateRefCountEntry(b + 1);
+	ref->refcount++;
+
 	ResourceOwnerRememberBuffer(CurrentResourceOwner,
 								BufferDescriptorGetBuffer(buf));
 }
@@ -1168,15 +1522,19 @@ PinBuffer_Locked(volatile BufferDesc *buf)
 static void
 UnpinBuffer(volatile BufferDesc *buf, bool fixOwner)
 {
-	int			b = buf->buf_id;
+	PrivateRefCountEntry *ref;
+
+	/* not moving as we're likely deleting it soon anyway */
+	ref = GetPrivateRefCountEntry(buf->buf_id + 1, false);
+	Assert(ref != NULL);
 
 	if (fixOwner)
 		ResourceOwnerForgetBuffer(CurrentResourceOwner,
 								  BufferDescriptorGetBuffer(buf));
 
-	Assert(PrivateRefCount[b] > 0);
-	PrivateRefCount[b]--;
-	if (PrivateRefCount[b] == 0)
+	Assert(ref->refcount > 0);
+	ref->refcount--;
+	if (ref->refcount == 0)
 	{
 		/* I'd better not still hold any locks on the buffer */
 		Assert(!LWLockHeldByMe(buf->content_lock));
@@ -1201,6 +1559,8 @@ UnpinBuffer(volatile BufferDesc *buf, bool fixOwner)
 		}
 		else
 			UnlockBufHdr(buf);
+
+		ForgetPrivateRefCountEntry(ref);
 	}
 }
 
@@ -1209,9 +1569,10 @@ UnpinBuffer(volatile BufferDesc *buf, bool fixOwner)
  *
  * This is called at checkpoint time to write out all dirty shared buffers.
  * The checkpoint request flags should be passed in.  If CHECKPOINT_IMMEDIATE
- * is set, we disable delays between writes; if CHECKPOINT_IS_SHUTDOWN is
- * set, we write even unlogged buffers, which are otherwise skipped.  The
- * remaining flags currently have no effect here.
+ * is set, we disable delays between writes; if CHECKPOINT_IS_SHUTDOWN,
+ * CHECKPOINT_END_OF_RECOVERY or CHECKPOINT_FLUSH_ALL is set, we write even
+ * unlogged buffers, which are otherwise skipped.  The remaining flags
+ * currently have no effect here.
  */
 static void
 BufferSync(int flags)
@@ -1226,11 +1587,12 @@ BufferSync(int flags)
 	ResourceOwnerEnlargeBuffers(CurrentResourceOwner);
 
 	/*
-	 * Unless this is a shutdown checkpoint, we write only permanent, dirty
-	 * buffers.  But at shutdown or end of recovery, we write all dirty
-	 * buffers.
+	 * Unless this is a shutdown checkpoint or we have been explicitly told,
+	 * we write only permanent, dirty buffers.  But at shutdown or end of
+	 * recovery, we write all dirty buffers.
 	 */
-	if (!((flags & CHECKPOINT_IS_SHUTDOWN) || (flags & CHECKPOINT_END_OF_RECOVERY)))
+	if (!((flags & (CHECKPOINT_IS_SHUTDOWN | CHECKPOINT_END_OF_RECOVERY |
+					CHECKPOINT_FLUSH_ALL))))
 		mask |= BM_PERMANENT;
 
 	/*
@@ -1252,7 +1614,7 @@ BufferSync(int flags)
 	num_to_write = 0;
 	for (buf_id = 0; buf_id < NBuffers; buf_id++)
 	{
-		volatile BufferDesc *bufHdr = &BufferDescriptors[buf_id];
+		volatile BufferDesc *bufHdr = GetBufferDescriptor(buf_id);
 
 		/*
 		 * Header spinlock is enough to examine BM_DIRTY, see comment in
@@ -1287,7 +1649,7 @@ BufferSync(int flags)
 	num_written = 0;
 	while (num_to_scan-- > 0)
 	{
-		volatile BufferDesc *bufHdr = &BufferDescriptors[buf_id];
+		volatile BufferDesc *bufHdr = GetBufferDescriptor(buf_id);
 
 		/*
 		 * We don't need to acquire the lock here, because we're only looking
@@ -1659,8 +2021,10 @@ BgBufferSync(void)
 static int
 SyncOneBuffer(int buf_id, bool skip_recently_used)
 {
-	volatile BufferDesc *bufHdr = &BufferDescriptors[buf_id];
+	volatile BufferDesc *bufHdr = GetBufferDescriptor(buf_id);
 	int			result = 0;
+
+	ReservePrivateRefCountEntry();
 
 	/*
 	 * Check whether buffer needs writing.
@@ -1704,7 +2068,6 @@ SyncOneBuffer(int buf_id, bool skip_recently_used)
 	return result | BUF_WRITTEN;
 }
 
-
 /*
  *		AtEOXact_Buffers - clean up at end of transaction.
  *
@@ -1715,25 +2078,38 @@ SyncOneBuffer(int buf_id, bool skip_recently_used)
 void
 AtEOXact_Buffers(bool isCommit)
 {
-#ifdef USE_ASSERT_CHECKING
-	if (assert_enabled)
-	{
-		int			RefCountErrors = 0;
-		Buffer		b;
-
-		for (b = 1; b <= NBuffers; b++)
-		{
-			if (PrivateRefCount[b - 1] != 0)
-			{
-				PrintBufferLeakWarning(b);
-				RefCountErrors++;
-			}
-		}
-		Assert(RefCountErrors == 0);
-	}
-#endif
+	CheckForBufferLeaks();
 
 	AtEOXact_LocalBuffers(isCommit);
+
+	Assert(PrivateRefCountOverflowed == 0);
+}
+
+/*
+ * Initialize access to shared buffer pool
+ *
+ * This is called during backend startup (whether standalone or under the
+ * postmaster).  It sets up for this backend's access to the already-existing
+ * buffer pool.
+ *
+ * NB: this is called before InitProcess(), so we do not have a PGPROC and
+ * cannot do LWLockAcquire; hence we can't actually access stuff in
+ * shared memory yet.  We are only initializing local data here.
+ * (See also InitBufferPoolBackend)
+ */
+void
+InitBufferPoolAccess(void)
+{
+	HASHCTL		hash_ctl;
+
+	memset(&PrivateRefCountArray, 0, sizeof(PrivateRefCountArray));
+
+	MemSet(&hash_ctl, 0, sizeof(hash_ctl));
+	hash_ctl.keysize = sizeof(int32);
+	hash_ctl.entrysize = sizeof(PrivateRefCountArray);
+
+	PrivateRefCountHash = hash_create("PrivateRefCount", 100, &hash_ctl,
+									  HASH_ELEM | HASH_BLOBS);
 }
 
 /*
@@ -1761,26 +2137,54 @@ AtProcExit_Buffers(int code, Datum arg)
 	AbortBufferIO();
 	UnlockBuffers();
 
-#ifdef USE_ASSERT_CHECKING
-	if (assert_enabled)
-	{
-		int			RefCountErrors = 0;
-		Buffer		b;
-
-		for (b = 1; b <= NBuffers; b++)
-		{
-			if (PrivateRefCount[b - 1] != 0)
-			{
-				PrintBufferLeakWarning(b);
-				RefCountErrors++;
-			}
-		}
-		Assert(RefCountErrors == 0);
-	}
-#endif
+	CheckForBufferLeaks();
 
 	/* localbuf.c needs a chance too */
 	AtProcExit_LocalBuffers();
+}
+
+/*
+ *		CheckForBufferLeaks - ensure this backend holds no buffer pins
+ *
+ *		As of PostgreSQL 8.0, buffer pins should get released by the
+ *		ResourceOwner mechanism.  This routine is just a debugging
+ *		cross-check that no pins remain.
+ */
+static void
+CheckForBufferLeaks(void)
+{
+#ifdef USE_ASSERT_CHECKING
+	int			RefCountErrors = 0;
+	PrivateRefCountEntry *res;
+	int			i;
+
+	/* check the array */
+	for (i = 0; i < REFCOUNT_ARRAY_ENTRIES; i++)
+	{
+		res = &PrivateRefCountArray[i];
+
+		if (res->buffer != InvalidBuffer)
+		{
+			PrintBufferLeakWarning(res->buffer);
+			RefCountErrors++;
+		}
+	}
+
+	/* if neccessary search the hash */
+	if (PrivateRefCountOverflowed)
+	{
+		HASH_SEQ_STATUS hstat;
+		hash_seq_init(&hstat, PrivateRefCountHash);
+		while ((res = (PrivateRefCountEntry *) hash_seq_search(&hstat)) != NULL)
+		{
+			PrintBufferLeakWarning(res->buffer);
+			RefCountErrors++;
+		}
+
+	}
+
+	Assert(RefCountErrors == 0);
+#endif
 }
 
 /*
@@ -1797,14 +2201,14 @@ PrintBufferLeakWarning(Buffer buffer)
 	Assert(BufferIsValid(buffer));
 	if (BufferIsLocal(buffer))
 	{
-		buf = &LocalBufferDescriptors[-buffer - 1];
+		buf = GetLocalBufferDescriptor(-buffer - 1);
 		loccount = LocalRefCount[-buffer - 1];
 		backend = MyBackendId;
 	}
 	else
 	{
-		buf = &BufferDescriptors[buffer - 1];
-		loccount = PrivateRefCount[buffer - 1];
+		buf = GetBufferDescriptor(buffer - 1);
+		loccount = GetPrivateRefCount(buffer);
 		backend = InvalidBackendId;
 	}
 
@@ -1866,9 +2270,9 @@ BufferGetBlockNumber(Buffer buffer)
 	Assert(BufferIsPinned(buffer));
 
 	if (BufferIsLocal(buffer))
-		bufHdr = &(LocalBufferDescriptors[-buffer - 1]);
+		bufHdr = GetLocalBufferDescriptor(-buffer - 1);
 	else
-		bufHdr = &BufferDescriptors[buffer - 1];
+		bufHdr = GetBufferDescriptor(buffer - 1);
 
 	/* pinned, so OK to read tag without spinlock */
 	return bufHdr->tag.blockNum;
@@ -1889,9 +2293,9 @@ BufferGetTag(Buffer buffer, RelFileNode *rnode, ForkNumber *forknum,
 	Assert(BufferIsPinned(buffer));
 
 	if (BufferIsLocal(buffer))
-		bufHdr = &(LocalBufferDescriptors[-buffer - 1]);
+		bufHdr = GetLocalBufferDescriptor(-buffer - 1);
 	else
-		bufHdr = &BufferDescriptors[buffer - 1];
+		bufHdr = GetBufferDescriptor(buffer - 1);
 
 	/* pinned, so OK to read tag without spinlock */
 	*rnode = bufHdr->tag.rnode;
@@ -2037,8 +2441,8 @@ FlushBuffer(volatile BufferDesc *buf, SMgrRelation reln)
 }
 
 /*
- * RelationGetNumberOfBlocks
- *		Determines the current number of pages in the relation.
+ * RelationGetNumberOfBlocksInFork
+ *		Determines the current number of pages in the specified relation fork.
  */
 BlockNumber
 RelationGetNumberOfBlocksInFork(Relation relation, ForkNumber forkNum)
@@ -2074,7 +2478,7 @@ BufferIsPermanent(Buffer buffer)
 	 * changing an aligned 2-byte BufFlags value is atomic, so we'll read the
 	 * old value or the new value, but not random garbage.
 	 */
-	bufHdr = &BufferDescriptors[buffer - 1];
+	bufHdr = GetBufferDescriptor(buffer - 1);
 	return (bufHdr->flags & BM_PERMANENT) != 0;
 }
 
@@ -2087,7 +2491,7 @@ BufferIsPermanent(Buffer buffer)
 XLogRecPtr
 BufferGetLSNAtomic(Buffer buffer)
 {
-	volatile BufferDesc *bufHdr = &BufferDescriptors[buffer - 1];
+	volatile BufferDesc *bufHdr = GetBufferDescriptor(buffer - 1);
 	char	   *page = BufferGetPage(buffer);
 	XLogRecPtr	lsn;
 
@@ -2150,7 +2554,7 @@ DropRelFileNodeBuffers(RelFileNodeBackend rnode, ForkNumber forkNum,
 
 	for (i = 0; i < NBuffers; i++)
 	{
-		volatile BufferDesc *bufHdr = &BufferDescriptors[i];
+		volatile BufferDesc *bufHdr = GetBufferDescriptor(i);
 
 		/*
 		 * We can make this a tad faster by prechecking the buffer tag before
@@ -2240,7 +2644,7 @@ DropRelFileNodesAllBuffers(RelFileNodeBackend *rnodes, int nnodes)
 	for (i = 0; i < NBuffers; i++)
 	{
 		RelFileNode *rnode = NULL;
-		volatile BufferDesc *bufHdr = &BufferDescriptors[i];
+		volatile BufferDesc *bufHdr = GetBufferDescriptor(i);
 
 		/*
 		 * As in DropRelFileNodeBuffers, an unlocked precheck should be safe
@@ -2304,7 +2708,7 @@ DropDatabaseBuffers(Oid dbid)
 
 	for (i = 0; i < NBuffers; i++)
 	{
-		volatile BufferDesc *bufHdr = &BufferDescriptors[i];
+		volatile BufferDesc *bufHdr = GetBufferDescriptor(i);
 
 		/*
 		 * As in DropRelFileNodeBuffers, an unlocked precheck should be safe
@@ -2333,10 +2737,11 @@ void
 PrintBufferDescs(void)
 {
 	int			i;
-	volatile BufferDesc *buf = BufferDescriptors;
 
-	for (i = 0; i < NBuffers; ++i, ++buf)
+	for (i = 0; i < NBuffers; ++i)
 	{
+		volatile BufferDesc *buf = GetBufferDescriptor(i);
+
 		/* theoretically we should lock the bufhdr here */
 		elog(LOG,
 			 "[%02d] (freeNext=%d, rel=%s, "
@@ -2344,7 +2749,7 @@ PrintBufferDescs(void)
 			 i, buf->freeNext,
 		  relpathbackend(buf->tag.rnode, InvalidBackendId, buf->tag.forkNum),
 			 buf->tag.blockNum, buf->flags,
-			 buf->refcount, PrivateRefCount[i]);
+			 buf->refcount, GetPrivateRefCount(i));
 	}
 }
 #endif
@@ -2354,20 +2759,21 @@ void
 PrintPinnedBufs(void)
 {
 	int			i;
-	volatile BufferDesc *buf = BufferDescriptors;
 
-	for (i = 0; i < NBuffers; ++i, ++buf)
+	for (i = 0; i < NBuffers; ++i)
 	{
-		if (PrivateRefCount[i] > 0)
+		volatile BufferDesc *buf = GetBufferDescriptor(i);
+
+		if (GetPrivateRefCount(i + 1) > 0)
 		{
 			/* theoretically we should lock the bufhdr here */
 			elog(LOG,
 				 "[%02d] (freeNext=%d, rel=%s, "
 				 "blockNum=%u, flags=0x%x, refcount=%u %d)",
 				 i, buf->freeNext,
-				 relpath(buf->tag.rnode, buf->tag.forkNum),
+				 relpathperm(buf->tag.rnode, buf->tag.forkNum),
 				 buf->tag.blockNum, buf->flags,
-				 buf->refcount, PrivateRefCount[i]);
+				 buf->refcount, GetPrivateRefCount(i + 1));
 		}
 	}
 }
@@ -2405,7 +2811,7 @@ FlushRelationBuffers(Relation rel)
 	{
 		for (i = 0; i < NLocBuffer; i++)
 		{
-			bufHdr = &LocalBufferDescriptors[i];
+			bufHdr = GetLocalBufferDescriptor(i);
 			if (RelFileNodeEquals(bufHdr->tag.rnode, rel->rd_node) &&
 				(bufHdr->flags & BM_VALID) && (bufHdr->flags & BM_DIRTY))
 			{
@@ -2443,7 +2849,7 @@ FlushRelationBuffers(Relation rel)
 
 	for (i = 0; i < NBuffers; i++)
 	{
-		bufHdr = &BufferDescriptors[i];
+		bufHdr = GetBufferDescriptor(i);
 
 		/*
 		 * As in DropRelFileNodeBuffers, an unlocked precheck should be safe
@@ -2451,6 +2857,8 @@ FlushRelationBuffers(Relation rel)
 		 */
 		if (!RelFileNodeEquals(bufHdr->tag.rnode, rel->rd_node))
 			continue;
+
+		ReservePrivateRefCountEntry();
 
 		LockBufHdr(bufHdr);
 		if (RelFileNodeEquals(bufHdr->tag.rnode, rel->rd_node) &&
@@ -2493,7 +2901,7 @@ FlushDatabaseBuffers(Oid dbid)
 
 	for (i = 0; i < NBuffers; i++)
 	{
-		bufHdr = &BufferDescriptors[i];
+		bufHdr = GetBufferDescriptor(i);
 
 		/*
 		 * As in DropRelFileNodeBuffers, an unlocked precheck should be safe
@@ -2501,6 +2909,8 @@ FlushDatabaseBuffers(Oid dbid)
 		 */
 		if (bufHdr->tag.rnode.dbNode != dbid)
 			continue;
+
+		ReservePrivateRefCountEntry();
 
 		LockBufHdr(bufHdr);
 		if (bufHdr->tag.rnode.dbNode == dbid &&
@@ -2523,28 +2933,19 @@ FlushDatabaseBuffers(Oid dbid)
 void
 ReleaseBuffer(Buffer buffer)
 {
-	volatile BufferDesc *bufHdr;
-
 	if (!BufferIsValid(buffer))
 		elog(ERROR, "bad buffer ID: %d", buffer);
 
-	ResourceOwnerForgetBuffer(CurrentResourceOwner, buffer);
-
 	if (BufferIsLocal(buffer))
 	{
+		ResourceOwnerForgetBuffer(CurrentResourceOwner, buffer);
+
 		Assert(LocalRefCount[-buffer - 1] > 0);
 		LocalRefCount[-buffer - 1]--;
 		return;
 	}
 
-	bufHdr = &BufferDescriptors[buffer - 1];
-
-	Assert(PrivateRefCount[buffer - 1] > 0);
-
-	if (PrivateRefCount[buffer - 1] > 1)
-		PrivateRefCount[buffer - 1]--;
-	else
-		UnpinBuffer(bufHdr, false);
+	UnpinBuffer(GetBufferDescriptor(buffer - 1), true);
 }
 
 /*
@@ -2576,7 +2977,12 @@ IncrBufferRefCount(Buffer buffer)
 	if (BufferIsLocal(buffer))
 		LocalRefCount[-buffer - 1]++;
 	else
-		PrivateRefCount[buffer - 1]++;
+	{
+		PrivateRefCountEntry *ref;
+		ref = GetPrivateRefCountEntry(buffer, true);
+		Assert(ref != NULL);
+		ref->refcount++;
+	}
 }
 
 /*
@@ -2608,9 +3014,9 @@ MarkBufferDirtyHint(Buffer buffer, bool buffer_std)
 		return;
 	}
 
-	bufHdr = &BufferDescriptors[buffer - 1];
+	bufHdr = GetBufferDescriptor(buffer - 1);
 
-	Assert(PrivateRefCount[buffer - 1] > 0);
+	Assert(GetPrivateRefCount(buffer) > 0);
 	/* here, either share or exclusive lock is OK */
 	Assert(LWLockHeldByMe(bufHdr->content_lock));
 
@@ -2762,7 +3168,7 @@ LockBuffer(Buffer buffer, int mode)
 	if (BufferIsLocal(buffer))
 		return;					/* local buffers need no lock */
 
-	buf = &(BufferDescriptors[buffer - 1]);
+	buf = GetBufferDescriptor(buffer - 1);
 
 	if (mode == BUFFER_LOCK_UNLOCK)
 		LWLockRelease(buf->content_lock);
@@ -2788,7 +3194,7 @@ ConditionalLockBuffer(Buffer buffer)
 	if (BufferIsLocal(buffer))
 		return true;			/* act as though we got it */
 
-	buf = &(BufferDescriptors[buffer - 1]);
+	buf = GetBufferDescriptor(buffer - 1);
 
 	return LWLockConditionalAcquire(buf->content_lock, LW_EXCLUSIVE);
 }
@@ -2828,11 +3234,11 @@ LockBufferForCleanup(Buffer buffer)
 	}
 
 	/* There should be exactly one local pin */
-	if (PrivateRefCount[buffer - 1] != 1)
+	if (GetPrivateRefCount(buffer) != 1)
 		elog(ERROR, "incorrect local pin count: %d",
-			 PrivateRefCount[buffer - 1]);
+			 GetPrivateRefCount(buffer));
 
-	bufHdr = &BufferDescriptors[buffer - 1];
+	bufHdr = GetBufferDescriptor(buffer - 1);
 
 	for (;;)
 	{
@@ -2872,6 +3278,20 @@ LockBufferForCleanup(Buffer buffer)
 		else
 			ProcWaitForSignal();
 
+		/*
+		 * Remove flag marking us as waiter. Normally this will not be set
+		 * anymore, but ProcWaitForSignal() can return for other signals as
+		 * well.  We take care to only reset the flag if we're the waiter, as
+		 * theoretically another backend could have started waiting. That's
+		 * impossible with the current usages due to table level locking, but
+		 * better be safe.
+		 */
+		LockBufHdr(bufHdr);
+		if ((bufHdr->flags & BM_PIN_COUNT_WAITER) != 0 &&
+			bufHdr->wait_backend_pid == MyProcPid)
+			bufHdr->flags &= ~BM_PIN_COUNT_WAITER;
+		UnlockBufHdr(bufHdr);
+
 		PinCountWaitBuf = NULL;
 		/* Loop back and try again */
 	}
@@ -2895,7 +3315,7 @@ HoldingBufferPinThatDelaysRecovery(void)
 	if (bufid < 0)
 		return false;
 
-	if (PrivateRefCount[bufid] > 0)
+	if (GetPrivateRefCount(bufid + 1) > 0)
 		return true;
 
 	return false;
@@ -2925,15 +3345,15 @@ ConditionalLockBufferForCleanup(Buffer buffer)
 	}
 
 	/* There should be exactly one local pin */
-	Assert(PrivateRefCount[buffer - 1] > 0);
-	if (PrivateRefCount[buffer - 1] != 1)
+	Assert(GetPrivateRefCount(buffer) > 0);
+	if (GetPrivateRefCount(buffer) != 1)
 		return false;
 
 	/* Try to acquire lock */
 	if (!ConditionalLockBuffer(buffer))
 		return false;
 
-	bufHdr = &BufferDescriptors[buffer - 1];
+	bufHdr = GetBufferDescriptor(buffer - 1);
 	LockBufHdr(bufHdr);
 	Assert(bufHdr->refcount > 0);
 	if (bufHdr->refcount == 1)

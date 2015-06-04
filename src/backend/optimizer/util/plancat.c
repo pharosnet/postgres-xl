@@ -9,7 +9,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -214,6 +214,7 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 			info->indexcollations = (Oid *) palloc(sizeof(Oid) * ncolumns);
 			info->opfamily = (Oid *) palloc(sizeof(Oid) * ncolumns);
 			info->opcintype = (Oid *) palloc(sizeof(Oid) * ncolumns);
+			info->canreturn = (bool *) palloc(sizeof(bool) * ncolumns);
 
 			for (i = 0; i < ncolumns; i++)
 			{
@@ -221,11 +222,11 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 				info->indexcollations[i] = indexRelation->rd_indcollation[i];
 				info->opfamily[i] = indexRelation->rd_opfamily[i];
 				info->opcintype[i] = indexRelation->rd_opcintype[i];
+				info->canreturn[i] = index_can_return(indexRelation, i + 1);
 			}
 
 			info->relam = indexRelation->rd_rel->relam;
 			info->amcostestimate = indexRelation->rd_am->amcostestimate;
-			info->canreturn = index_can_return(indexRelation);
 			info->amcanorderbyop = indexRelation->rd_am->amcanorderbyop;
 			info->amoptionalkey = indexRelation->rd_am->amoptionalkey;
 			info->amsearcharray = indexRelation->rd_am->amsearcharray;
@@ -562,8 +563,8 @@ estimate_rel_size(Relation rel, int32 *attr_widths,
 				int32		tuple_width;
 
 				tuple_width = get_rel_data_width(rel, attr_widths);
-				tuple_width += sizeof(HeapTupleHeaderData);
-				tuple_width += sizeof(ItemPointerData);
+				tuple_width += MAXALIGN(SizeofHeapTupleHeader);
+				tuple_width += sizeof(ItemIdData);
 				/* note: integer division is intentional here */
 				density = (BLCKSZ - SizeOfPageHeaderData) / tuple_width;
 			}
@@ -774,6 +775,7 @@ get_relation_constraints(PlannerInfo *root,
 												  0);
 					ntest->nulltesttype = IS_NOT_NULL;
 					ntest->argisrow = type_is_rowtype(att->atttypid);
+					ntest->location = -1;
 					result = lappend(result, ntest);
 				}
 			}

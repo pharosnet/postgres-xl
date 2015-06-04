@@ -8,7 +8,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Copyright (c) 1998-2014, PostgreSQL Global Development Group
+ * Copyright (c) 1998-2015, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *

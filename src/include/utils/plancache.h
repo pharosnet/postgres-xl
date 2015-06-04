@@ -10,7 +10,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/utils/plancache.h
@@ -81,7 +81,7 @@
 typedef struct CachedPlanSource
 {
 	int			magic;			/* should equal CACHEDPLANSOURCE_MAGIC */
-	Node	   *raw_parse_tree; /* output of raw_parser() */
+	Node	   *raw_parse_tree; /* output of raw_parser(), or NULL */
 	const char *query_string;	/* source text of query */
 	const char *commandTag;		/* command tag (a constant!), or NULL */
 	Oid		   *param_types;	/* array of parameter type OIDs, or NULL */
@@ -98,6 +98,7 @@ typedef struct CachedPlanSource
 	List	   *invalItems;		/* other dependencies, as PlanInvalItems */
 	struct OverrideSearchPath *search_path;		/* search_path used for
 												 * parsing and planning */
+	Oid			planUserId;		/* User-id that the plan depends on */
 	MemoryContext query_context;	/* context holding the above, or NULL */
 	/* If we have a generic plan, this is a reference-counted link to it: */
 	struct CachedPlan *gplan;	/* generic plan, or NULL if not valid */
@@ -116,6 +117,9 @@ typedef struct CachedPlanSource
 #ifdef PGXC
 	char	   *stmt_name;		/* If set, this is a copy of prepared stmt name */
 #endif
+	bool		hasRowSecurity;			/* planned with row security? */
+	int			row_security_env;		/* row security setting when planned */
+	bool		rowSecurityDisabled;	/* is row security disabled? */
 } CachedPlanSource;
 
 /*

@@ -9,7 +9,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  * Portions Copyright (c) 2010-2012 Postgres-XC Development Group
  *
@@ -130,6 +130,12 @@ typedef struct VariableCacheData
 	TransactionId xidStopLimit; /* refuse to advance nextXid beyond here */
 	TransactionId xidWrapLimit; /* where the world ends */
 	Oid			oldestXidDB;	/* database with minimum datfrozenxid */
+
+	/*
+	 * These fields are protected by CommitTsLock
+	 */
+	TransactionId oldestCommitTs;
+	TransactionId newestCommitTs;
 
 	/*
 	 * These fields are protected by ProcArrayLock.

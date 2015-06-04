@@ -118,6 +118,7 @@ pg_opclass|t
 pg_operator|t
 pg_opfamily|t
 pg_pltemplate|t
+pg_policy|t
 pg_proc|t
 pg_range|t
 pg_rewrite|t

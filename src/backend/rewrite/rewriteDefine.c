@@ -3,7 +3,7 @@
  * rewriteDefine.c
  *	  routines for defining a rewrite rule
  *
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -191,7 +191,7 @@ InsertRule(char *rulname,
  * DefineRule
  *		Execute a CREATE RULE command.
  */
-Oid
+ObjectAddress
 DefineRule(RuleStmt *stmt, const char *queryString)
 {
 	List	   *actions;
@@ -225,7 +225,7 @@ DefineRule(RuleStmt *stmt, const char *queryString)
  * This is essentially the same as DefineRule() except that the rule's
  * action and qual have already been passed through parse analysis.
  */
-Oid
+ObjectAddress
 DefineQueryRewrite(char *rulename,
 				   Oid event_relid,
 				   Node *event_qual,
@@ -239,6 +239,7 @@ DefineQueryRewrite(char *rulename,
 	Query	   *query;
 	bool		RelisBecomingView = false;
 	Oid			ruleId = InvalidOid;
+	ObjectAddress address;
 
 	/*
 	 * If we are installing an ON SELECT rule, we had better grab
@@ -604,10 +605,12 @@ DefineQueryRewrite(char *rulename,
 		heap_close(relationRelation, RowExclusiveLock);
 	}
 
+	ObjectAddressSet(address, RewriteRelationId, ruleId);
+
 	/* Close rel, but keep lock till commit... */
 	heap_close(event_relation, NoLock);
 
-	return ruleId;
+	return address;
 }
 
 /*
@@ -633,6 +636,7 @@ checkRuleResultList(List *targetList, TupleDesc resultDesc, bool isSelect,
 	foreach(tllist, targetList)
 	{
 		TargetEntry *tle = (TargetEntry *) lfirst(tllist);
+		Oid			tletypid;
 		int32		tletypmod;
 		Form_pg_attribute attr;
 		char	   *attname;
@@ -664,19 +668,32 @@ checkRuleResultList(List *targetList, TupleDesc resultDesc, bool isSelect,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("cannot convert relation containing dropped columns to view")));
 
+		/* Check name match if required; no need for two error texts here */
 		if (requireColumnNameMatch && strcmp(tle->resname, attname) != 0)
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
-					 errmsg("SELECT rule's target entry %d has different column name from \"%s\"", i, attname)));
+					 errmsg("SELECT rule's target entry %d has different column name from column \"%s\"",
+							i, attname),
+					 errdetail("SELECT target entry is named \"%s\".",
+							   tle->resname)));
 
-		if (attr->atttypid != exprType((Node *) tle->expr))
+		/* Check type match. */
+		tletypid = exprType((Node *) tle->expr);
+		if (attr->atttypid != tletypid)
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
 					 isSelect ?
 					 errmsg("SELECT rule's target entry %d has different type from column \"%s\"",
 							i, attname) :
 					 errmsg("RETURNING list's entry %d has different type from column \"%s\"",
-							i, attname)));
+							i, attname),
+					 isSelect ?
+					 errdetail("SELECT target entry has type %s, but column has type %s.",
+							   format_type_be(tletypid),
+							   format_type_be(attr->atttypid)) :
+					 errdetail("RETURNING list entry has type %s, but column has type %s.",
+							   format_type_be(tletypid),
+							   format_type_be(attr->atttypid))));
 
 		/*
 		 * Allow typmods to be different only if one of them is -1, ie,
@@ -693,7 +710,16 @@ checkRuleResultList(List *targetList, TupleDesc resultDesc, bool isSelect,
 					 errmsg("SELECT rule's target entry %d has different size from column \"%s\"",
 							i, attname) :
 					 errmsg("RETURNING list's entry %d has different size from column \"%s\"",
-							i, attname)));
+							i, attname),
+					 isSelect ?
+					 errdetail("SELECT target entry has type %s, but column has type %s.",
+							   format_type_with_typemod(tletypid, tletypmod),
+							   format_type_with_typemod(attr->atttypid,
+														attr->atttypmod)) :
+					 errdetail("RETURNING list entry has type %s, but column has type %s.",
+							   format_type_with_typemod(tletypid, tletypmod),
+							   format_type_with_typemod(attr->atttypid,
+														attr->atttypmod))));
 	}
 
 	if (i != resultDesc->natts)
@@ -874,7 +900,7 @@ RangeVarCallbackForRenameRule(const RangeVar *rv, Oid relid, Oid oldrelid,
 /*
  * Rename an existing rewrite rule.
  */
-Oid
+ObjectAddress
 RenameRewriteRule(RangeVar *relation, const char *oldName,
 				  const char *newName)
 {
@@ -884,6 +910,7 @@ RenameRewriteRule(RangeVar *relation, const char *oldName,
 	HeapTuple	ruletup;
 	Form_pg_rewrite ruleform;
 	Oid			ruleOid;
+	ObjectAddress address;
 
 	/*
 	 * Look up name, check permissions, and acquire lock (which we will NOT
@@ -946,10 +973,12 @@ RenameRewriteRule(RangeVar *relation, const char *oldName,
 	 */
 	CacheInvalidateRelcache(targetrel);
 
+	ObjectAddressSet(address, RewriteRelationId, ruleOid);
+
 	/*
 	 * Close rel, but keep exclusive lock!
 	 */
 	relation_close(targetrel, NoLock);
 
-	return ruleOid;
+	return address;
 }

@@ -77,7 +77,7 @@ AlterSystemStmt
 AlterTSConfigurationStmt
 AlterTSDictionaryStmt
 AlterTableCmd
-AlterTableSpaceMoveStmt
+AlterTableMoveAllStmt
 AlterTableSpaceOptionsStmt
 AlterTableStmt
 AlterTableType
@@ -1125,7 +1125,6 @@ PGEventResultCreate
 PGEventResultDestroy
 PGFInfoFunction
 PGFunction
-PGLZ_Header
 PGLZ_HistEntry
 PGLZ_Strategy
 PGMessageField
@@ -1955,6 +1954,7 @@ VariableSpace
 VariableStatData
 Vfd
 ViewCheckOption
+ViewOptions
 ViewStmt
 VirtualTransactionId
 Vsrt

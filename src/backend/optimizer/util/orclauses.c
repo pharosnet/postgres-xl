@@ -3,7 +3,7 @@
  * orclauses.c
  *	  Routines to extract restriction OR clauses from join OR clauses
  *
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -178,6 +178,7 @@ extract_or_clause(RestrictInfo *or_rinfo, RelOptInfo *rel)
 	{
 		Node	   *orarg = (Node *) lfirst(lc);
 		List	   *subclauses = NIL;
+		Node	   *subclause;
 
 		/* OR arguments should be ANDs or sub-RestrictInfos */
 		if (and_clause(orarg))
@@ -226,9 +227,16 @@ extract_or_clause(RestrictInfo *or_rinfo, RelOptInfo *rel)
 
 		/*
 		 * OK, add subclause(s) to the result OR.  If we found more than one,
-		 * we need an AND node.
+		 * we need an AND node.  But if we found only one, and it is itself an
+		 * OR node, add its subclauses to the result instead; this is needed
+		 * to preserve AND/OR flatness (ie, no OR directly underneath OR).
 		 */
-		clauselist = lappend(clauselist, make_ands_explicit(subclauses));
+		subclause = (Node *) make_ands_explicit(subclauses);
+		if (or_clause(subclause))
+			clauselist = list_concat(clauselist,
+								  list_copy(((BoolExpr *) subclause)->args));
+		else
+			clauselist = lappend(clauselist, subclause);
 	}
 
 	/*
@@ -327,7 +335,10 @@ consider_new_or_clause(PlannerInfo *root, RelOptInfo *rel,
 		/* we don't bother trying to make the remaining fields valid */
 		sjinfo.lhs_strict = false;
 		sjinfo.delay_upper_joins = false;
-		sjinfo.join_quals = NIL;
+		sjinfo.semi_can_btree = false;
+		sjinfo.semi_can_hash = false;
+		sjinfo.semi_operators = NIL;
+		sjinfo.semi_rhs_exprs = NIL;
 
 		/* Compute inner-join size */
 		orig_selec = clause_selectivity(root, (Node *) join_or_rinfo,

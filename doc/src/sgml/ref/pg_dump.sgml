@@ -651,17 +651,6 @@ PostgreSQL documentation
      </varlistentry>
 
      <varlistentry>
-      <term><option>--if-exists</option></term>
-      <listitem>
-       <para>
-        Use conditional commands (i.e. add an <literal>IF EXISTS</literal>
-        clause) when cleaning database objects.  This option is not valid
-        unless <option>--clean</> is also specified.
-       </para>
-      </listitem>
-     </varlistentry>
-
-     <varlistentry>
       <term><option>--disable-dollar-quoting</></term>
       <listitem>
        <para>
@@ -699,6 +688,23 @@ PostgreSQL documentation
      </varlistentry>
 
      <varlistentry>
+      <term><option>--enable-row-security</></term>
+      <listitem>
+       <para>
+        This option is relevant only when dumping the contents of a table
+        which has row security.  By default, pg_dump will set
+        <literal>ROW_SECURITY</literal> to <literal>OFF</literal>, to ensure
+        that all data is dumped from the table.  If the user does not have
+        sufficient privileges to bypass row security, then an error is thrown.
+        This parameter instructs <application>pg_dump</application> to set
+        row_security to 'ON' instead, allowing the user to dump the contents
+        of the table which they have access to.
+       </para>
+
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
       <term><option>--exclude-table-data=<replaceable class="parameter">table</replaceable></option></term>
       <listitem>
        <para>
@@ -712,6 +718,17 @@ PostgreSQL documentation
        </para>
        <para>
         To exclude data for all tables in the database, see <option>--schema-only</>.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--if-exists</option></term>
+      <listitem>
+       <para>
+        Use conditional commands (i.e. add an <literal>IF EXISTS</literal>
+        clause) when cleaning database objects.  This option is not valid
+        unless <option>--clean</> is also specified.
        </para>
       </listitem>
      </varlistentry>
@@ -826,6 +843,27 @@ PostgreSQL documentation
           Post-data items include definitions of indexes, triggers, rules,
           and constraints other than validated check constraints.
           Pre-data items include all other data definition items.
+         </para>
+       </listitem>
+     </varlistentry>
+
+     <varlistentry>
+       <term><option>--snapshot=<replaceable class="parameter">snapshotname</replaceable></option></term>
+       <listitem>
+         <para>
+          Use the specifed synchronized snapshot when making a dump of the
+          database (see
+          <xref linkend="functions-snapshot-synchronization-table"> for more
+          details).
+         </para>
+         <para>
+          This option is useful when needing to synchronize the dump with
+          a logical replication slot (see <xref linkend="logicaldecoding">)
+          or with a concurrent session.
+         </para>
+         <para>
+          In the case of a parallel dump, the snapshot name defined by this
+          option is used rather than taking a new snapshot.
          </para>
        </listitem>
      </varlistentry>

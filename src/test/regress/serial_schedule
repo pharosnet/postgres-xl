@@ -71,6 +71,7 @@ test: typed_table
 test: vacuum
 test: drop_if_exists
 test: updatable_views
+test: rolenames
 test: sanity_check
 test: errors
 test: select
@@ -98,18 +99,23 @@ test: delete
 test: namespace
 # statement_timeout does not work if blocked in exec_bindplan (?)
 #test: prepared_xacts
+test: brin
+test: gin
+test: gist
+test: spgist
 test: privileges
 test: security_label
 test: collate
 test: matview
 test: lock
 test: replica_identity
+test: rowsecurity
+test: object_address
 test: alter_generic
 test: misc
 test: psql
 test: async
 test: rules
-test: event_trigger
 test: select_views
 test: portals_p2
 test: foreign_key
@@ -128,6 +134,7 @@ test: advisory_lock
 test: json
 test: jsonb
 test: indirect_toast
+test: equivclass
 test: plancache
 test: limit
 test: plpgsql
@@ -147,6 +154,7 @@ test: returning
 test: largeobject
 test: with
 test: xml
+test: event_trigger
 test: stats
 test: xc_create_function
 test: xc_groupby

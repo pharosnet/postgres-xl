@@ -9,7 +9,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  * Portions Copyright (c) 2010-2012 Postgres-XC Development Group
  *
@@ -68,6 +68,7 @@ typedef enum NodeTag
 	T_CteScan,
 	T_WorkTableScan,
 	T_ForeignScan,
+	T_CustomScan,
 	T_Join,
 	T_NestLoop,
 	T_MergeJoin,
@@ -134,6 +135,7 @@ typedef enum NodeTag
 	T_CteScanState,
 	T_WorkTableScanState,
 	T_ForeignScanState,
+	T_CustomScanState,
 	T_JoinState,
 	T_NestLoopState,
 	T_MergeJoinState,
@@ -261,6 +263,7 @@ typedef enum NodeTag
 	T_HashPath,
 	T_TidPath,
 	T_ForeignPath,
+	T_CustomPath,
 	T_AppendPath,
 	T_MergeAppendPath,
 	T_ResultPath,
@@ -402,9 +405,10 @@ typedef enum NodeTag
 	T_RemoteStmt,
 #endif
 	T_AlterTableSpaceOptionsStmt,
-	T_AlterTableSpaceMoveStmt,
+	T_AlterTableMoveAllStmt,
 	T_SecLabelStmt,
 	T_CreateForeignTableStmt,
+	T_ImportForeignSchemaStmt,
 	T_CreateExtensionStmt,
 	T_AlterExtensionStmt,
 	T_AlterExtensionContentsStmt,
@@ -413,6 +417,8 @@ typedef enum NodeTag
 	T_RefreshMatViewStmt,
 	T_ReplicaIdentityStmt,
 	T_AlterSystemStmt,
+	T_CreatePolicyStmt,
+	T_AlterPolicyStmt,
 
 	/*
 	 * TAGS FOR PARSE TREE NODES (parsenodes.h)
@@ -427,6 +433,7 @@ typedef enum NodeTag
 	T_A_Indirection,
 	T_A_ArrayExpr,
 	T_ResTarget,
+	T_MultiAssignRef,
 	T_TypeCast,
 	T_CollateClause,
 	T_SortBy,
@@ -454,6 +461,7 @@ typedef enum NodeTag
 	T_XmlSerialize,
 	T_WithClause,
 	T_CommonTableExpr,
+	T_RoleSpec,
 
 	/*
 	 * TAGS FOR REPLICATION GRAMMAR PARSE NODES (replnodes.h)

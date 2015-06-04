@@ -2,7 +2,7 @@
  * oracle_compat.c
  *	Oracle compatible functions.
  *
- * Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Copyright (c) 1996-2015, PostgreSQL Global Development Group
  *
  *	Author: Edmund Mergl <E.Mergl@bawue.de>
  *	Multibyte enhancement: Tatsuo Ishii <ishii@postgresql.org>
@@ -959,7 +959,7 @@ chr			(PG_FUNCTION_ARGS)
 		if (bytes == 2)
 		{
 			wch[0] = 0xC0 | ((cvalue >> 6) & 0x1F);
-			wch[1] = 0x80 | (cvalue & 0x3F);;
+			wch[1] = 0x80 | (cvalue & 0x3F);
 		}
 		else if (bytes == 3)
 		{

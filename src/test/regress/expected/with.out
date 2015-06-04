@@ -1725,14 +1725,18 @@ SELECT * FROM parent ORDER BY id;
 EXPLAIN (VERBOSE, COSTS OFF, NODES OFF, NUM_NODES OFF)
 WITH wcte AS ( INSERT INTO int8_tbl VALUES ( 42, 47 ) RETURNING q2 )
 DELETE FROM a USING wcte WHERE aa = q2;
-                   QUERY PLAN                   
-------------------------------------------------
+                     QUERY PLAN                     
+----------------------------------------------------
  Delete on public.a
+   Delete on public.a
+   Delete on public.b
+   Delete on public.c
+   Delete on public.d
    CTE wcte
      ->  Insert on public.int8_tbl
            Output: int8_tbl.q2
            ->  Result
-                 Output: 42::bigint, 47::bigint
+                 Output: '42'::bigint, '47'::bigint
    ->  Nested Loop
          Output: a.ctid, wcte.*
          Join Filter: (a.aa = wcte.q2)
@@ -1761,7 +1765,7 @@ DELETE FROM a USING wcte WHERE aa = q2;
                Output: d.ctid, d.aa
          ->  CTE Scan on wcte
                Output: wcte.*, wcte.q2
-(34 rows)
+(38 rows)
 
 -- error cases
 -- data-modifying WITH tries to use its own output
@@ -1797,3 +1801,18 @@ WITH t AS (
 VALUES(FALSE);
 ERROR:  conditional DO INSTEAD rules are not supported for data-modifying statements in WITH
 DROP RULE y_rule ON y;
+-- check that parser lookahead for WITH doesn't cause any odd behavior
+create table foo (with baz);  -- fail, WITH is a reserved word
+ERROR:  syntax error at or near "with"
+LINE 1: create table foo (with baz);
+                          ^
+create table foo (with ordinality);  -- fail, WITH is a reserved word
+ERROR:  syntax error at or near "with"
+LINE 1: create table foo (with ordinality);
+                          ^
+with ordinality as (select 1 as x) select * from ordinality;
+ x 
+---
+ 1
+(1 row)
+

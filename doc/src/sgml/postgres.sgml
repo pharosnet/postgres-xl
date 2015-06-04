@@ -242,11 +242,13 @@
   &nls;
   &plhandler;
   &fdwhandler;
+  &custom-scan;
   &geqo;
   &indexam;
   &gist;
   &spgist;
   &gin;
+  &brin;
   &storage;
   &bki;
   &planstats;

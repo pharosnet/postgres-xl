@@ -4,7 +4,7 @@
  * bootscanner.l
  *	  a lexical scanner for the bootstrap parser
  *
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -109,9 +109,12 @@ insert			{ return(INSERT_TUPLE); }
 "on"			{ return(ON); }
 "using"			{ return(USING); }
 "toast"			{ return(XTOAST); }
+"FORCE"			{ return(XFORCE); }
+"NOT"			{ return(XNOT); }
+"NULL"			{ return(XNULL); }
 
 {arrayid}		{
-					yylval.str = pstrdup(MapArrayTypeName(yytext));
+					yylval.str = MapArrayTypeName(yytext);
 					return(ID);
 				}
 {id}			{

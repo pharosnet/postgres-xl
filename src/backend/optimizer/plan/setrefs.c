@@ -9,7 +9,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -49,9 +49,8 @@ typedef struct
 	int			num_vars;		/* number of plain Var tlist entries */
 	bool		has_ph_vars;	/* are there PlaceHolderVar entries? */
 	bool		has_non_vars;	/* are there other entries? */
-	/* array of num_vars entries: */
-	tlist_vinfo vars[1];		/* VARIABLE LENGTH ARRAY */
-} indexed_tlist;				/* VARIABLE LENGTH STRUCT */
+	tlist_vinfo vars[FLEXIBLE_ARRAY_MEMBER];	/* has num_vars entries */
+} indexed_tlist;
 
 typedef struct
 {
@@ -202,10 +201,13 @@ static void set_remotesubplan_references(PlannerInfo *root, Plan *plan, int rtof
  * 3. We adjust Vars in upper plan nodes to refer to the outputs of their
  * subplans.
  *
- * 4. We compute regproc OIDs for operators (ie, we look up the function
+ * 4. PARAM_MULTIEXPR Params are replaced by regular PARAM_EXEC Params,
+ * now that we have finished planning all MULTIEXPR subplans.
+ *
+ * 5. We compute regproc OIDs for operators (ie, we look up the function
  * that implements each op).
  *
- * 5. We create lists of specific objects that the plan depends on.
+ * 6. We create lists of specific objects that the plan depends on.
  * This will be used by plancache.c to drive invalidation of cached plans.
  * Relation dependencies are represented by OIDs, and everything else by
  * PlanInvalItems (this distinction is motivated by the shared-inval APIs).
@@ -648,6 +650,21 @@ set_plan_refs(PlannerInfo *root, Plan *plan, int rtoffset)
 			set_remotesubplan_references(root, plan, rtoffset);
 			break;
 #endif /* XCP */
+
+		case T_CustomScan:
+			{
+				CustomScan *splan = (CustomScan *) plan;
+
+				splan->scan.scanrelid += rtoffset;
+				splan->scan.plan.targetlist =
+					fix_scan_list(root, splan->scan.plan.targetlist, rtoffset);
+				splan->scan.plan.qual =
+					fix_scan_list(root, splan->scan.plan.qual, rtoffset);
+				splan->custom_exprs =
+					fix_scan_list(root, splan->custom_exprs, rtoffset);
+			}
+			break;
+
 		case T_NestLoop:
 		case T_MergeJoin:
 		case T_HashJoin:
@@ -765,6 +782,9 @@ set_plan_refs(PlannerInfo *root, Plan *plan, int rtoffset)
 				Assert(splan->plan.targetlist == NIL);
 				Assert(splan->plan.qual == NIL);
 
+				splan->withCheckOptionLists =
+					fix_scan_list(root, splan->withCheckOptionLists, rtoffset);
+
 				if (splan->returningLists)
 				{
 					List	   *newRL = NIL;
@@ -805,6 +825,8 @@ set_plan_refs(PlannerInfo *root, Plan *plan, int rtoffset)
 					 */
 					splan->plan.targetlist = copyObject(linitial(newRL));
 				}
+
+				splan->nominalRelation += rtoffset;
 
 				foreach(l, splan->resultRelations)
 				{
@@ -1208,10 +1230,39 @@ fix_expr_common(PlannerInfo *root, Node *node)
 }
 
 /*
+ * fix_param_node
+ *		Do set_plan_references processing on a Param
+ *
+ * If it's a PARAM_MULTIEXPR, replace it with the appropriate Param from
+ * root->multiexpr_params; otherwise no change is needed.
+ * Just for paranoia's sake, we make a copy of the node in either case.
+ */
+static Node *
+fix_param_node(PlannerInfo *root, Param *p)
+{
+	if (p->paramkind == PARAM_MULTIEXPR)
+	{
+		int			subqueryid = p->paramid >> 16;
+		int			colno = p->paramid & 0xFFFF;
+		List	   *params;
+
+		if (subqueryid <= 0 ||
+			subqueryid > list_length(root->multiexpr_params))
+			elog(ERROR, "unexpected PARAM_MULTIEXPR ID: %d", p->paramid);
+		params = (List *) list_nth(root->multiexpr_params, subqueryid - 1);
+		if (colno <= 0 || colno > list_length(params))
+			elog(ERROR, "unexpected PARAM_MULTIEXPR ID: %d", p->paramid);
+		return copyObject(list_nth(params, colno - 1));
+	}
+	return copyObject(p);
+}
+
+/*
  * fix_scan_expr
  *		Do set_plan_references processing on a scan-level expression
  *
  * This consists of incrementing all Vars' varnos by rtoffset,
+ * replacing PARAM_MULTIEXPR Params, expanding PlaceHolderVars,
  * looking up operator opcode info for OpExpr and related nodes,
  * and adding OIDs from regclass Const nodes into root->glob->relationOids.
  */
@@ -1223,7 +1274,9 @@ fix_scan_expr(PlannerInfo *root, Node *node, int rtoffset)
 	context.root = root;
 	context.rtoffset = rtoffset;
 
-	if (rtoffset != 0 || root->glob->lastPHId != 0)
+	if (rtoffset != 0 ||
+		root->multiexpr_params != NIL ||
+		root->glob->lastPHId != 0)
 	{
 		return fix_scan_expr_mutator(node, &context);
 	}
@@ -1231,11 +1284,12 @@ fix_scan_expr(PlannerInfo *root, Node *node, int rtoffset)
 	{
 		/*
 		 * If rtoffset == 0, we don't need to change any Vars, and if there
-		 * are no placeholders anywhere we won't need to remove them.  Then
-		 * it's OK to just scribble on the input node tree instead of copying
-		 * (since the only change, filling in any unset opfuncid fields, is
-		 * harmless).  This saves just enough cycles to be noticeable on
-		 * trivial queries.
+		 * are no MULTIEXPR subqueries then we don't need to replace
+		 * PARAM_MULTIEXPR Params, and if there are no placeholders anywhere
+		 * we won't need to remove them.  Then it's OK to just scribble on the
+		 * input node tree instead of copying (since the only change, filling
+		 * in any unset opfuncid fields, is harmless).  This saves just enough
+		 * cycles to be noticeable on trivial queries.
 		 */
 		(void) fix_scan_expr_walker(node, &context);
 		return node;
@@ -1265,6 +1319,8 @@ fix_scan_expr_mutator(Node *node, fix_scan_expr_context *context)
 			var->varnoold += context->rtoffset;
 		return (Node *) var;
 	}
+	if (IsA(node, Param))
+		return fix_param_node(context->root, (Param *) node);
 	if (IsA(node, CurrentOfExpr))
 	{
 		CurrentOfExpr *cexpr = (CurrentOfExpr *) copyObject(node);
@@ -1317,19 +1373,13 @@ set_join_references(PlannerInfo *root, Join *join, int rtoffset)
 	outer_itlist = build_tlist_index(outer_plan->targetlist);
 	inner_itlist = build_tlist_index(inner_plan->targetlist);
 
-	/* All join plans have tlist, qual, and joinqual */
-	join->plan.targetlist = fix_join_expr(root,
-										  join->plan.targetlist,
-										  outer_itlist,
-										  inner_itlist,
-										  (Index) 0,
-										  rtoffset);
-	join->plan.qual = fix_join_expr(root,
-									join->plan.qual,
-									outer_itlist,
-									inner_itlist,
-									(Index) 0,
-									rtoffset);
+	/*
+	 * First process the joinquals (including merge or hash clauses).  These
+	 * are logically below the join so they can always use all values
+	 * available from the input tlists.  It's okay to also handle
+	 * NestLoopParams now, because those couldn't refer to nullable
+	 * subexpressions.
+	 */
 	join->joinqual = fix_join_expr(root,
 								   join->joinqual,
 								   outer_itlist,
@@ -1389,6 +1439,49 @@ set_join_references(PlannerInfo *root, Join *join, int rtoffset)
 										(Index) 0,
 										rtoffset);
 	}
+
+	/*
+	 * Now we need to fix up the targetlist and qpqual, which are logically
+	 * above the join.  This means they should not re-use any input expression
+	 * that was computed in the nullable side of an outer join.  Vars and
+	 * PlaceHolderVars are fine, so we can implement this restriction just by
+	 * clearing has_non_vars in the indexed_tlist structs.
+	 *
+	 * XXX This is a grotty workaround for the fact that we don't clearly
+	 * distinguish between a Var appearing below an outer join and the "same"
+	 * Var appearing above it.  If we did, we'd not need to hack the matching
+	 * rules this way.
+	 */
+	switch (join->jointype)
+	{
+		case JOIN_LEFT:
+		case JOIN_SEMI:
+		case JOIN_ANTI:
+			inner_itlist->has_non_vars = false;
+			break;
+		case JOIN_RIGHT:
+			outer_itlist->has_non_vars = false;
+			break;
+		case JOIN_FULL:
+			outer_itlist->has_non_vars = false;
+			inner_itlist->has_non_vars = false;
+			break;
+		default:
+			break;
+	}
+
+	join->plan.targetlist = fix_join_expr(root,
+										  join->plan.targetlist,
+										  outer_itlist,
+										  inner_itlist,
+										  (Index) 0,
+										  rtoffset);
+	join->plan.qual = fix_join_expr(root,
+									join->plan.qual,
+									outer_itlist,
+									inner_itlist,
+									(Index) 0,
+									rtoffset);
 
 	pfree(outer_itlist);
 	pfree(inner_itlist);
@@ -1700,7 +1793,9 @@ search_indexed_tlist_for_var(Var *var, indexed_tlist *itlist,
  * If no match, return NULL.
  *
  * NOTE: it is a waste of time to call this unless itlist->has_ph_vars or
- * itlist->has_non_vars
+ * itlist->has_non_vars.  Furthermore, set_join_references() relies on being
+ * able to prevent matching of non-Vars by clearing itlist->has_non_vars,
+ * so there's a correctness reason not to call it unless that's set.
  */
 static Var *
 search_indexed_tlist_for_non_var(Node *node,
@@ -1903,6 +1998,8 @@ fix_join_expr_mutator(Node *node, fix_join_expr_context *context)
 		/* If not supplied by input plans, evaluate the contained expr */
 		return fix_join_expr_mutator((Node *) phv->phexpr, context);
 	}
+	if (IsA(node, Param))
+		return fix_param_node(context->root, (Param *) node);
 	/* Try matching more complex expressions too, if tlists have any */
 	if (context->outer_itlist->has_non_vars)
 	{
@@ -2018,6 +2115,8 @@ fix_upper_expr_mutator(Node *node, fix_upper_expr_context *context)
 		/* If not supplied by input plan, evaluate the contained expr */
 		return fix_upper_expr_mutator((Node *) phv->phexpr, context);
 	}
+	if (IsA(node, Param))
+		return fix_param_node(context->root, (Param *) node);
 	/* Try matching more complex expressions too, if tlist has any */
 	if (context->subplan_itlist->has_non_vars)
 	{
@@ -2221,7 +2320,8 @@ record_plan_function_dependency(PlannerInfo *root, Oid funcid)
 void
 extract_query_dependencies(Node *query,
 						   List **relationOids,
-						   List **invalItems)
+						   List **invalItems,
+						   bool *hasRowSecurity)
 {
 	PlannerGlobal glob;
 	PlannerInfo root;
@@ -2231,6 +2331,7 @@ extract_query_dependencies(Node *query,
 	glob.type = T_PlannerGlobal;
 	glob.relationOids = NIL;
 	glob.invalItems = NIL;
+	glob.hasRowSecurity = false;
 
 	MemSet(&root, 0, sizeof(root));
 	root.type = T_PlannerInfo;
@@ -2240,6 +2341,7 @@ extract_query_dependencies(Node *query,
 
 	*relationOids = glob.relationOids;
 	*invalItems = glob.invalItems;
+	*hasRowSecurity = glob.hasRowSecurity;
 }
 
 static bool
@@ -2254,6 +2356,9 @@ extract_query_dependencies_walker(Node *node, PlannerInfo *context)
 	{
 		Query	   *query = (Query *) node;
 		ListCell   *lc;
+
+		/* Collect row security information */
+		context->glob->hasRowSecurity = query->hasRowSecurity;
 
 		if (query->commandType == CMD_UTILITY)
 		{

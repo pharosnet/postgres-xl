@@ -8,7 +8,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -33,6 +33,7 @@
 #include "access/htup_details.h"
 #include "access/sysattr.h"
 #include "access/xact.h"
+#include "access/xlog.h"
 #include "catalog/namespace.h"
 #include "catalog/pg_type.h"
 #ifdef XCP
@@ -60,6 +61,7 @@
 #include "pgxc/postgresql_fdw.h"
 #include "catalog/pgxc_node.h"
 #endif
+#include "nodes/makefuncs.h"
 #include "rewrite/rewriteHandler.h"
 #include "storage/fd.h"
 #include "tcop/tcopprot.h"
@@ -69,6 +71,7 @@
 #include "utils/memutils.h"
 #include "utils/portal.h"
 #include "utils/rel.h"
+#include "utils/rls.h"
 #include "utils/snapmgr.h"
 
 
@@ -186,6 +189,7 @@ typedef struct CopyStateData
 	int		   *defmap;			/* array of default att numbers */
 	ExprState **defexprs;		/* array of default att expressions */
 	bool		volatile_defexprs;		/* is any of defexprs volatile? */
+	List	   *range_table;
 
 	/*
 	 * These variables are used to reduce overhead in textual COPY FROM.
@@ -309,12 +313,13 @@ static const char BinarySignature[11] = "PGCOPY\n\377\r\n\0";
 
 /* non-export function prototypes */
 static CopyState BeginCopy(bool is_from, Relation rel, Node *raw_query,
-		  const char *queryString, List *attnamelist, List *options);
+		  const char *queryString, const Oid queryRelId, List *attnamelist,
+		  List *options);
 static void EndCopy(CopyState cstate);
 static void ClosePipeToProgram(CopyState cstate);
 static CopyState BeginCopyTo(Relation rel, Node *query, const char *queryString,
-			const char *filename, bool is_program, List *attnamelist,
-			List *options);
+			const Oid queryRelId, const char *filename, bool is_program,
+			List *attnamelist, List *options);
 static void EndCopyTo(CopyState cstate);
 static uint64 DoCopyTo(CopyState cstate);
 static uint64 CopyTo(CopyState cstate);
@@ -440,6 +445,8 @@ ReceiveCopyBegin(CopyState cstate)
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 			errmsg("COPY BINARY is not supported to stdout or from stdin")));
 		pq_putemptymessage('G');
+		/* any error in old protocol will make us lose sync */
+		pq_startmsgread();
 		cstate->copy_dest = COPY_OLD_FE;
 	}
 	else
@@ -450,6 +457,8 @@ ReceiveCopyBegin(CopyState cstate)
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 			errmsg("COPY BINARY is not supported to stdout or from stdin")));
 		pq_putemptymessage('D');
+		/* any error in old protocol will make us lose sync */
+		pq_startmsgread();
 		cstate->copy_dest = COPY_OLD_FE;
 	}
 	/* We *must* flush here to ensure FE knows it can send. */
@@ -641,6 +650,8 @@ CopyGetData(CopyState cstate, void *databuf, int minread, int maxread)
 					int			mtype;
 
 			readmessage:
+					HOLD_CANCEL_INTERRUPTS();
+					pq_startmsgread();
 					mtype = pq_getbyte();
 					if (mtype == EOF)
 						ereport(ERROR,
@@ -650,6 +661,7 @@ CopyGetData(CopyState cstate, void *databuf, int minread, int maxread)
 						ereport(ERROR,
 								(errcode(ERRCODE_CONNECTION_FAILURE),
 								 errmsg("unexpected EOF on client connection with an open transaction")));
+					RESUME_CANCEL_INTERRUPTS();
 					switch (mtype)
 					{
 						case 'd':		/* CopyData */
@@ -838,6 +850,8 @@ DoCopy(const CopyStmt *stmt, const char *queryString, uint64 *processed)
 	int oldSeqRangeVal = SequenceRangeVal;
 #endif
 	Oid			relid;
+	Node	   *query = NULL;
+	List	   *range_table = NIL;
 
 	/* Disallow COPY to/from file or program except to superusers. */
 	if (!pipe && !superuser())
@@ -860,9 +874,9 @@ DoCopy(const CopyStmt *stmt, const char *queryString, uint64 *processed)
 	{
 		TupleDesc	tupDesc;
 		AclMode		required_access = (is_from ? ACL_INSERT : ACL_SELECT);
-		RangeTblEntry *rte;
 		List	   *attnums;
 		ListCell   *cur;
+		RangeTblEntry *rte;
 
 		Assert(!stmt->query);
 
@@ -877,6 +891,7 @@ DoCopy(const CopyStmt *stmt, const char *queryString, uint64 *processed)
 		rte->relid = RelationGetRelid(rel);
 		rte->relkind = rel->rd_rel->relkind;
 		rte->requiredPerms = required_access;
+		range_table = list_make1(rte);
 
 #ifdef PGXC
 #ifndef XCP
@@ -898,12 +913,71 @@ DoCopy(const CopyStmt *stmt, const char *queryString, uint64 *processed)
 			else
 				rte->selectedCols = bms_add_member(rte->selectedCols, attno);
 		}
-		ExecCheckRTPerms(list_make1(rte), true);
+		ExecCheckRTPerms(range_table, true);
+
+		/*
+		 * Permission check for row security policies.
+		 *
+		 * check_enable_rls will ereport(ERROR) if the user has requested
+		 * something invalid and will otherwise indicate if we should enable
+		 * RLS (returns RLS_ENABLED) or not for this COPY statement.
+		 *
+		 * If the relation has a row security policy and we are to apply it
+		 * then perform a "query" copy and allow the normal query processing to
+		 * handle the policies.
+		 *
+		 * If RLS is not enabled for this, then just fall through to the
+		 * normal non-filtering relation handling.
+		 */
+		if (check_enable_rls(rte->relid, InvalidOid, false) == RLS_ENABLED)
+		{
+			SelectStmt *select;
+			ColumnRef  *cr;
+			ResTarget  *target;
+			RangeVar   *from;
+
+			if (is_from)
+				ereport(ERROR,
+						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+						 errmsg("COPY FROM not supported with row level security."),
+						 errhint("Use direct INSERT statements instead.")));
+
+			/* Build target list */
+			cr = makeNode(ColumnRef);
+
+			if (!stmt->attlist)
+				cr->fields = list_make1(makeNode(A_Star));
+			else
+				cr->fields = stmt->attlist;
+
+			cr->location = 1;
+
+			target = makeNode(ResTarget);
+			target->name = NULL;
+			target->indirection = NIL;
+			target->val = (Node *) cr;
+			target->location = 1;
+
+			/* Build FROM clause */
+			from = stmt->relation;
+
+			/* Build query */
+			select = makeNode(SelectStmt);
+			select->targetList = list_make1(target);
+			select->fromClause = list_make1(from);
+
+			query = (Node*) select;
+
+			/* Close the handle to the relation as it is no longer needed. */
+			heap_close(rel, (is_from ? RowExclusiveLock : AccessShareLock));
+			rel = NULL;
+		}
 	}
 	else
 	{
 		Assert(stmt->query);
 
+		query = stmt->query;
 		relid = InvalidOid;
 		rel = NULL;
 	}
@@ -938,6 +1012,7 @@ DoCopy(const CopyStmt *stmt, const char *queryString, uint64 *processed)
 
 		cstate = BeginCopyFrom(rel, stmt->filename, stmt->is_program,
 							   stmt->attlist, stmt->options);
+		cstate->range_table = range_table;
 		*processed = CopyFrom(cstate);	/* copy from file to database */
 #ifdef XCP
 		/*
@@ -952,7 +1027,7 @@ DoCopy(const CopyStmt *stmt, const char *queryString, uint64 *processed)
 	}
 	else
 	{
-		cstate = BeginCopyTo(rel, stmt->query, queryString,
+		cstate = BeginCopyTo(rel, query, queryString, relid,
 							 stmt->filename, stmt->is_program,
 							 stmt->attlist, stmt->options);
 		*processed = DoCopyTo(cstate);	/* copy from database to file */
@@ -1335,6 +1410,7 @@ BeginCopy(bool is_from,
 		  Relation rel,
 		  Node *raw_query,
 		  const char *queryString,
+		  const Oid queryRelId,
 		  List *attnamelist,
 		  List *options)
 {
@@ -1459,6 +1535,30 @@ BeginCopy(bool is_from,
 
 		/* plan the query */
 		plan = planner(query, 0, NULL);
+
+		/*
+		 * If we were passed in a relid, make sure we got the same one back
+		 * after planning out the query.  It's possible that it changed between
+		 * when we checked the policies on the table and decided to use a query
+		 * and now.
+		 */
+		if (queryRelId != InvalidOid)
+		{
+			Oid relid = linitial_oid(plan->relationOids);
+
+			/*
+			 * There should only be one relationOid in this case, since we will
+			 * only get here when we have changed the command for the user from
+			 * a "COPY relation TO" to "COPY (SELECT * FROM relation) TO", to
+			 * allow row level security policies to be applied.
+			 */
+			Assert(list_length(plan->relationOids) == 1);
+
+			if (relid != queryRelId)
+				ereport(ERROR,
+						(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+						 errmsg("relation referenced by COPY statement has changed")));
+		}
 
 		/*
 		 * Use a snapshot with an updated command ID to ensure this query sees
@@ -1692,6 +1792,7 @@ static CopyState
 BeginCopyTo(Relation rel,
 			Node *query,
 			const char *queryString,
+			const Oid queryRelId,
 			const char *filename,
 			bool is_program,
 			List *attnamelist,
@@ -1733,7 +1834,8 @@ BeginCopyTo(Relation rel,
 							RelationGetRelationName(rel))));
 	}
 
-	cstate = BeginCopy(false, rel, query, queryString, attnamelist, options);
+	cstate = BeginCopy(false, rel, query, queryString, queryRelId, attnamelist,
+					   options);
 	oldcontext = MemoryContextSwitchTo(cstate->copycontext);
 
 	if (pipe)
@@ -1778,7 +1880,9 @@ BeginCopyTo(Relation rel,
 						 errmsg("could not open file \"%s\" for writing: %m",
 								cstate->filename)));
 
-			fstat(fileno(cstate->copy_file), &st);
+			if (fstat(fileno(cstate->copy_file), &st))
+				elog(ERROR, "could not stat file \"%s\": %m", cstate->filename);
+
 			if (S_ISDIR(st.st_mode))
 				ereport(ERROR,
 						(errcode(ERRCODE_WRONG_OBJECT_TYPE),
@@ -2406,6 +2510,7 @@ CopyFrom(CopyState cstate)
 	estate->es_result_relations = resultRelInfo;
 	estate->es_num_result_relations = 1;
 	estate->es_result_relation_info = resultRelInfo;
+	estate->es_range_table = cstate->range_table;
 
 	/* Set up a tuple slot too */
 	myslot = ExecInitExtraTupleSlot(estate);
@@ -2674,6 +2779,13 @@ CopyFrom(CopyState cstate)
 
 	MemoryContextSwitchTo(oldcontext);
 
+	/*
+	 * In the old protocol, tell pqcomm that we can process normal protocol
+	 * messages again.
+	 */
+	if (cstate->copy_dest == COPY_OLD_FE)
+		pq_endmsgread();
+
 	/* Execute AFTER STATEMENT insertion triggers */
 	ExecASInsertTriggers(estate, resultRelInfo);
 
@@ -2809,7 +2921,7 @@ BeginCopyFrom(Relation rel,
 	MemoryContext oldcontext;
 	bool		volatile_defexprs;
 
-	cstate = BeginCopy(true, rel, NULL, NULL, attnamelist, options);
+	cstate = BeginCopy(true, rel, NULL, NULL, InvalidOid, attnamelist, options);
 	oldcontext = MemoryContextSwitchTo(cstate->copycontext);
 
 	/* Initialize state variables */
@@ -2980,7 +3092,9 @@ BeginCopyFrom(Relation rel,
 						 errmsg("could not open file \"%s\" for reading: %m",
 								cstate->filename)));
 
-			fstat(fileno(cstate->copy_file), &st);
+			if (fstat(fileno(cstate->copy_file), &st))
+				elog(ERROR, "could not stat file \"%s\": %m", cstate->filename);
+
 			if (S_ISDIR(st.st_mode))
 				ereport(ERROR,
 						(errcode(ERRCODE_WRONG_OBJECT_TYPE),

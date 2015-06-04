@@ -16,6 +16,7 @@
 
 #include "postgres.h"
 #include "access/gtm.h"
+#include "access/xlog_internal.h"
 #include "libpq/libpq.h"
 #include "libpq/pqformat.h"
 #include "pgxc/barrier.h"
@@ -116,15 +117,11 @@ ProcessCreateBarrierExecute(const char *id)
 				 errmsg("The CREATE BARRIER EXECUTE message is expected to "
 						"arrive from a Coordinator")));
 	{
-		XLogRecData rdata[1];
 		XLogRecPtr recptr;
 
-		rdata[0].data = (char *) id;
-		rdata[0].len = strlen(id) + 1;
-		rdata[0].buffer = InvalidBuffer;
-		rdata[0].next = NULL;
-
-		recptr = XLogInsert(RM_BARRIER_ID, XLOG_BARRIER_CREATE, rdata);
+		XLogBeginInsert();
+		XLogRegisterData((char *) &id, strlen(id) + 1);
+		recptr = XLogInsert(RM_BARRIER_ID, XLOG_BARRIER_CREATE);
 		XLogFlush(recptr);
 	}
 
@@ -413,15 +410,12 @@ ExecuteBarrier(const char *id)
 	 * Also WAL log the BARRIER locally and flush the WAL buffers to disk
 	 */
 	{
-		XLogRecData rdata[1];
 		XLogRecPtr recptr;
 
-		rdata[0].data = (char *) id;
-		rdata[0].len = strlen(id) + 1;
-		rdata[0].buffer = InvalidBuffer;
-		rdata[0].next = NULL;
+		XLogBeginInsert();
+		XLogRegisterData((char *) &id, strlen(id) + 1);
 
-		recptr = XLogInsert(RM_BARRIER_ID, XLOG_BARRIER_CREATE, rdata);
+		recptr = XLogInsert(RM_BARRIER_ID, XLOG_BARRIER_CREATE);
 		XLogFlush(recptr);
 	}
 }

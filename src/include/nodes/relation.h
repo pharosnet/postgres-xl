@@ -9,7 +9,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/nodes/relation.h
@@ -20,6 +20,7 @@
 #define RELATION_H
 
 #include "access/sdir.h"
+#include "lib/stringinfo.h"
 #include "nodes/params.h"
 #include "nodes/parsenodes.h"
 #include "storage/block.h"
@@ -123,6 +124,8 @@ typedef struct PlannerGlobal
 	Index		lastRowMarkId;	/* highest PlanRowMark ID assigned */
 
 	bool		transientPlan;	/* redo plan when TransactionXmin changes? */
+
+	bool		hasRowSecurity; /* row security applied? */
 } PlannerGlobal;
 
 /* macro for fetching the Plan associated with a SubPlan node */
@@ -214,6 +217,9 @@ typedef struct PlannerInfo
 
 	List	   *cte_plan_ids;	/* per-CTE-item list of subplan IDs */
 
+	List	   *multiexpr_params;		/* List of Lists of Params for
+										 * MULTIEXPR subquery outputs */
+
 	List	   *eq_classes;		/* list of active EquivalenceClasses */
 
 	List	   *canon_pathkeys; /* list of "canonical" PathKeys */
@@ -262,6 +268,7 @@ typedef struct PlannerInfo
 										 * inheritance child rel */
 	bool		hasJoinRTEs;	/* true if any RTEs are RTE_JOIN kind */
 	bool		hasLateralRTEs; /* true if any RTEs are marked LATERAL */
+	bool		hasDeletedRTEs; /* true if any RTE was deleted from jointree */
 	bool		hasHavingQual;	/* true if havingQual was non-null */
 	bool		hasPseudoConstantQuals; /* true if any RestrictInfo has
 										 * pseudoconstant = true */
@@ -566,6 +573,8 @@ typedef struct IndexOptInfo
 	Oid		   *sortopfamily;	/* OIDs of btree opfamilies, if orderable */
 	bool	   *reverse_sort;	/* is sort order descending? */
 	bool	   *nulls_first;	/* do NULLs come first in the sort order? */
+	bool	   *canreturn;		/* which index cols can be returned in an
+								   index-only scan? */
 	Oid			relam;			/* OID of the access method (in pg_am) */
 
 	RegProcedure amcostestimate;	/* OID of the access method's cost fcn */
@@ -579,7 +588,6 @@ typedef struct IndexOptInfo
 	bool		unique;			/* true if a unique index */
 	bool		immediate;		/* is uniqueness enforced immediately? */
 	bool		hypothetical;	/* true if index doesn't really exist */
-	bool		canreturn;		/* can index return IndexTuples? */
 	bool		amcanorderbyop; /* does AM support order by operator result? */
 	bool		amoptionalkey;	/* can query omit key for the first column? */
 	bool		amsearcharray;	/* can AM handle ScalarArrayOpExpr quals? */
@@ -932,6 +940,52 @@ typedef struct ForeignPath
 	Path		path;
 	List	   *fdw_private;
 } ForeignPath;
+
+/*
+ * CustomPath represents a table scan done by some out-of-core extension.
+ *
+ * We provide a set of hooks here - which the provider must take care to set
+ * up correctly - to allow extensions to supply their own methods of scanning
+ * a relation.  For example, a provider might provide GPU acceleration, a
+ * cache-based scan, or some other kind of logic we haven't dreamed up yet.
+ *
+ * CustomPaths can be injected into the planning process for a relation by
+ * set_rel_pathlist_hook functions.
+ *
+ * Core code must avoid assuming that the CustomPath is only as large as
+ * the structure declared here; providers are allowed to make it the first
+ * element in a larger structure.  (Since the planner never copies Paths,
+ * this doesn't add any complication.)  However, for consistency with the
+ * FDW case, we provide a "custom_private" field in CustomPath; providers
+ * may prefer to use that rather than define another struct type.
+ */
+struct CustomPath;
+
+#define CUSTOMPATH_SUPPORT_BACKWARD_SCAN	0x0001
+#define CUSTOMPATH_SUPPORT_MARK_RESTORE		0x0002
+
+typedef struct CustomPathMethods
+{
+	const char *CustomName;
+
+	/* Convert Path to a Plan */
+	struct Plan *(*PlanCustomPath) (PlannerInfo *root,
+												RelOptInfo *rel,
+												struct CustomPath *best_path,
+												List *tlist,
+												List *clauses);
+	/* Optional: print additional fields besides "private" */
+	void		(*TextOutCustomPath) (StringInfo str,
+											  const struct CustomPath *node);
+} CustomPathMethods;
+
+typedef struct CustomPath
+{
+	Path		path;
+	uint32		flags;			/* mask of CUSTOMPATH_* flags, see above */
+	List	   *custom_private;
+	const CustomPathMethods *methods;
+} CustomPath;
 
 /*
  * AppendPath represents an Append plan, ie, successive execution of
@@ -1385,11 +1439,13 @@ typedef struct PlaceHolderVar
  * commute with this join, because that would leave noplace to check the
  * pushed-down clause.  (We don't track this for FULL JOINs, either.)
  *
- * join_quals is an implicit-AND list of the quals syntactically associated
- * with the join (they may or may not end up being applied at the join level).
- * This is just a side list and does not drive actual application of quals.
- * For JOIN_SEMI joins, this is cleared to NIL in create_unique_path() if
- * the join is found not to be suitable for a uniqueify-the-RHS plan.
+ * For a semijoin, we also extract the join operators and their RHS arguments
+ * and set semi_operators, semi_rhs_exprs, semi_can_btree, and semi_can_hash.
+ * This is done in support of possibly unique-ifying the RHS, so we don't
+ * bother unless at least one of semi_can_btree and semi_can_hash can be set
+ * true.  (You might expect that this information would be computed during
+ * join planning; but it's helpful to have it available during planning of
+ * parameterized table scans, so we store it in the SpecialJoinInfo structs.)
  *
  * jointype is never JOIN_RIGHT; a RIGHT JOIN is handled by switching
  * the inputs to make it a LEFT JOIN.  So the allowed values of jointype
@@ -1402,7 +1458,7 @@ typedef struct PlaceHolderVar
  * SpecialJoinInfos with jointype == JOIN_INNER for outer joins, since for
  * cost estimation purposes it is sometimes useful to know the join size under
  * plain innerjoin semantics.  Note that lhs_strict, delay_upper_joins, and
- * join_quals are not set meaningfully within such structs.
+ * of course the semi_xxx fields are not set meaningfully within such structs.
  */
 
 typedef struct SpecialJoinInfo
@@ -1415,7 +1471,11 @@ typedef struct SpecialJoinInfo
 	JoinType	jointype;		/* always INNER, LEFT, FULL, SEMI, or ANTI */
 	bool		lhs_strict;		/* joinclause is strict for some LHS rel */
 	bool		delay_upper_joins;		/* can't commute with upper RHS */
-	List	   *join_quals;		/* join quals, in implicit-AND list format */
+	/* Remaining fields are set only for JOIN_SEMI jointype: */
+	bool		semi_can_btree; /* true if semi_operators are all btree */
+	bool		semi_can_hash;	/* true if semi_operators are all hash */
+	List	   *semi_operators; /* OIDs of equality join operators */
+	List	   *semi_rhs_exprs; /* righthand-side expressions of these ops */
 } SpecialJoinInfo;
 
 /*

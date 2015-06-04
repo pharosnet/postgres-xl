@@ -3,7 +3,7 @@
  * tlist.c
  *	  Target list manipulation routines
  *
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -184,6 +184,27 @@ get_tlist_exprs(List *tlist, bool includeJunk)
 		result = lappend(result, tle->expr);
 	}
 	return result;
+}
+
+
+/*
+ * count_nonjunk_tlist_entries
+ *		What it says ...
+ */
+int
+count_nonjunk_tlist_entries(List *tlist)
+{
+	int			len = 0;
+	ListCell   *l;
+
+	foreach(l, tlist)
+	{
+		TargetEntry *tle = (TargetEntry *) lfirst(l);
+
+		if (!tle->resjunk)
+			len++;
+	}
+	return len;
 }
 
 

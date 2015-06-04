@@ -3,7 +3,7 @@
  * orderedsetaggs.c
  *		Ordered-set aggregate functions.
  *
- * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -47,10 +47,6 @@ typedef struct OSAPerQueryState
 	Aggref	   *aggref;
 	/* Memory context containing this struct and other per-query data: */
 	MemoryContext qcontext;
-	/* Memory context containing per-group data: */
-	MemoryContext gcontext;
-	/* Agg plan node's output econtext: */
-	ExprContext *peraggecontext;
 
 	/* These fields are used only when accumulating tuples: */
 
@@ -88,6 +84,8 @@ typedef struct OSAPerGroupState
 {
 	/* Link to the per-query state for this aggregate: */
 	OSAPerQueryState *qstate;
+	/* Memory context containing per-group data: */
+	MemoryContext gcontext;
 	/* Sort object we're accumulating data in: */
 	Tuplesortstate *sortstate;
 	/* Number of normal rows inserted into sortstate: */
@@ -105,7 +103,16 @@ ordered_set_startup(FunctionCallInfo fcinfo, bool use_tuples)
 {
 	OSAPerGroupState *osastate;
 	OSAPerQueryState *qstate;
+	MemoryContext gcontext;
 	MemoryContext oldcontext;
+
+	/*
+	 * Check we're called as aggregate (and not a window function), and get
+	 * the Agg node's group-lifespan context (which might change from group to
+	 * group, so we shouldn't cache it in the per-query state).
+	 */
+	if (AggCheckCallContext(fcinfo, &gcontext) != AGG_CONTEXT_AGGREGATE)
+		elog(ERROR, "ordered-set aggregate called in non-aggregate context");
 
 	/*
 	 * We keep a link to the per-query state in fn_extra; if it's not there,
@@ -116,27 +123,15 @@ ordered_set_startup(FunctionCallInfo fcinfo, bool use_tuples)
 	{
 		Aggref	   *aggref;
 		MemoryContext qcontext;
-		MemoryContext gcontext;
-		ExprContext *peraggecontext;
 		List	   *sortlist;
 		int			numSortCols;
 
-		/*
-		 * Check we're called as aggregate (and not a window function), and
-		 * get the Agg node's group-lifespan context
-		 */
-		if (AggCheckCallContext(fcinfo, &gcontext) != AGG_CONTEXT_AGGREGATE)
-			elog(ERROR, "ordered-set aggregate called in non-aggregate context");
-		/* Need the Aggref as well */
+		/* Get the Aggref so we can examine aggregate's arguments */
 		aggref = AggGetAggref(fcinfo);
 		if (!aggref)
 			elog(ERROR, "ordered-set aggregate called in non-aggregate context");
 		if (!AGGKIND_IS_ORDERED_SET(aggref->aggkind))
 			elog(ERROR, "ordered-set aggregate support function called for non-ordered-set aggregate");
-		/* Also get output exprcontext so we can register shutdown callback */
-		peraggecontext = AggGetPerAggEContext(fcinfo);
-		if (!peraggecontext)
-			elog(ERROR, "ordered-set aggregate called in non-aggregate context");
 
 		/*
 		 * Prepare per-query structures in the fn_mcxt, which we assume is the
@@ -149,8 +144,6 @@ ordered_set_startup(FunctionCallInfo fcinfo, bool use_tuples)
 		qstate = (OSAPerQueryState *) palloc0(sizeof(OSAPerQueryState));
 		qstate->aggref = aggref;
 		qstate->qcontext = qcontext;
-		qstate->gcontext = gcontext;
-		qstate->peraggecontext = peraggecontext;
 
 		/* Extract the sort information */
 		sortlist = aggref->aggorder;
@@ -267,12 +260,19 @@ ordered_set_startup(FunctionCallInfo fcinfo, bool use_tuples)
 	}
 
 	/* Now build the stuff we need in group-lifespan context */
-	oldcontext = MemoryContextSwitchTo(qstate->gcontext);
+	oldcontext = MemoryContextSwitchTo(gcontext);
 
 	osastate = (OSAPerGroupState *) palloc(sizeof(OSAPerGroupState));
 	osastate->qstate = qstate;
+	osastate->gcontext = gcontext;
 
-	/* Initialize tuplesort object */
+	/*
+	 * Initialize tuplesort object.
+	 *
+	 * In the future, we should consider forcing the tuplesort_begin_heap()
+	 * case when the abbreviated key optimization can thereby be used, even
+	 * when !use_tuples.
+	 */
 	if (use_tuples)
 		osastate->sortstate = tuplesort_begin_heap(qstate->tupdesc,
 												   qstate->numSortCols,
@@ -290,10 +290,10 @@ ordered_set_startup(FunctionCallInfo fcinfo, bool use_tuples)
 
 	osastate->number_of_rows = 0;
 
-	/* Now register a shutdown callback to clean things up */
-	RegisterExprContextCallback(qstate->peraggecontext,
-								ordered_set_shutdown,
-								PointerGetDatum(osastate));
+	/* Now register a shutdown callback to clean things up at end of group */
+	AggRegisterCallback(fcinfo,
+						ordered_set_shutdown,
+						PointerGetDatum(osastate));
 
 	MemoryContextSwitchTo(oldcontext);
 
@@ -910,42 +910,50 @@ percentile_cont_multi_final_common(FunctionCallInfo fcinfo,
 
 		for (; i < num_percentiles; i++)
 		{
-			int64		target_row = pct_info[i].first_row;
-			bool		need_lerp = (pct_info[i].second_row > target_row);
+			int64		first_row = pct_info[i].first_row;
+			int64		second_row = pct_info[i].second_row;
 			int			idx = pct_info[i].idx;
 
-			/* Advance to first_row, if not already there */
-			if (target_row > rownum)
+			/*
+			 * Advance to first_row, if not already there.  Note that we might
+			 * already have rownum beyond first_row, in which case first_val
+			 * is already correct.  (This occurs when interpolating between
+			 * the same two input rows as for the previous percentile.)
+			 */
+			if (first_row > rownum)
 			{
-				if (!tuplesort_skiptuples(osastate->sortstate, target_row - rownum - 1, true))
+				if (!tuplesort_skiptuples(osastate->sortstate, first_row - rownum - 1, true))
 					elog(ERROR, "missing row in percentile_cont");
 
 				if (!tuplesort_getdatum(osastate->sortstate, true, &first_val, &isnull) || isnull)
 					elog(ERROR, "missing row in percentile_cont");
 
-				rownum = target_row;
+				rownum = first_row;
+				/* Always advance second_val to be latest input value */
+				second_val = first_val;
 			}
-			else
+			else if (first_row == rownum)
 			{
 				/*
-				 * We are already at the target row, so we must previously
-				 * have read its value into second_val.
+				 * We are already at the desired row, so we must previously
+				 * have read its value into second_val (and perhaps first_val
+				 * as well, but this assignment is harmless in that case).
 				 */
 				first_val = second_val;
 			}
 
 			/* Fetch second_row if needed */
-			if (need_lerp)
+			if (second_row > rownum)
 			{
 				if (!tuplesort_getdatum(osastate->sortstate, true, &second_val, &isnull) || isnull)
 					elog(ERROR, "missing row in percentile_cont");
 				rownum++;
 			}
-			else
-				second_val = first_val;
+			/* We should now certainly be on second_row exactly */
+			Assert(second_row == rownum);
 
 			/* Compute appropriate result */
-			if (need_lerp)
+			if (second_row > first_row)
 				result_datum[idx] = lerpfunc(first_val, second_val,
 											 pct_info[i].proportion);
 			else
@@ -1310,7 +1318,7 @@ hypothetical_dense_rank_final(PG_FUNCTION_ARGS)
 	sortColIdx = osastate->qstate->sortColIdx;
 
 	/* Get short-term context we can use for execTuplesMatch */
-	tmpcontext = AggGetPerTupleEContext(fcinfo)->ecxt_per_tuple_memory;
+	tmpcontext = AggGetTempMemoryContext(fcinfo);
 
 	/* insert the hypothetical row into the sort */
 	slot = osastate->qstate->tupslot;

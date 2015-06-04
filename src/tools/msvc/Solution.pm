@@ -25,11 +25,18 @@ sub _new
 		platform                   => undef, };
 	bless($self, $classname);
 
+	$self->DeterminePlatform();
+	my $bits = $self->{platform} eq 'Win32' ? 32 : 64;
+
 	# integer_datetimes is now the default
 	$options->{integer_datetimes} = 1
 	  unless exists $options->{integer_datetimes};
 	$options->{float4byval} = 1
 	  unless exists $options->{float4byval};
+	$options->{float8byval} = ($bits == 64)
+	  unless exists $options->{float8byval};
+	die "float8byval not permitted on 32 bit platforms"
+	  if  $options->{float8byval} && $bits == 32;
 	if ($options->{xml})
 	{
 		if (!($options->{xslt} && $options->{iconv}))
@@ -56,8 +63,6 @@ sub _new
 	die "Bad wal_segsize $options->{wal_segsize}"
 	  unless grep { $_ == $options->{wal_segsize} } (1, 2, 4, 8, 16, 32, 64);
 
-	$self->DeterminePlatform();
-
 	return $self;
 }
 
@@ -71,17 +76,9 @@ sub DeterminePlatform
 	my $self = shift;
 
 	# Examine CL help output to determine if we are in 32 or 64-bit mode.
-	$self->{platform} = 'Win32';
-	open(P, "cl /? 2>&1 |") || die "cl command not found";
-	while (<P>)
-	{
-		if (/^\/favor:<.+AMD64/)
-		{
-			$self->{platform} = 'x64';
-			last;
-		}
-	}
-	close(P);
+	my $output = `cl /? 2>&1`;
+	$? >> 8 == 0 or die "cl command not found";
+	$self->{platform} = ($output =~ /^\/favor:<.+AMD64/m) ? 'x64' : 'Win32';
 	print "Detected hardware platform: $self->{platform}\n";
 }
 
@@ -162,11 +159,13 @@ sub GenerateFiles
 		  || confess "Could not open pg_config.h.win32\n";
 		open(O, ">src\\include\\pg_config.h")
 		  || confess "Could not write to pg_config.h\n";
+		my $extraver = $self->{options}->{extraver};
+		$extraver = '' unless defined $extraver;
 		while (<I>)
 		{
-			s{PG_VERSION "[^"]+"}{PG_VERSION "$self->{strver}"};
+			s{PG_VERSION "[^"]+"}{PG_VERSION "$self->{strver}$extraver"};
 			s{PG_VERSION_NUM \d+}{PG_VERSION_NUM $self->{numver}};
-s{PG_VERSION_STR "[^"]+"}{__STRINGIFY(x) #x\n#define __STRINGIFY2(z) __STRINGIFY(z)\n#define PG_VERSION_STR "PostgreSQL $self->{strver}, compiled by Visual C++ build " __STRINGIFY2(_MSC_VER) ", $bits-bit"};
+			s{PG_VERSION_STR "[^"]+"}{__STRINGIFY(x) #x\n#define __STRINGIFY2(z) __STRINGIFY(z)\n#define PG_VERSION_STR "PostgreSQL $self->{strver}$extraver, compiled by Visual C++ build " __STRINGIFY2(_MSC_VER) ", $bits-bit"};
 			print O;
 		}
 		print O "#define PG_MAJORVERSION \"$self->{majorver}\"\n";
@@ -180,7 +179,7 @@ s{PG_VERSION_STR "[^"]+"}{__STRINGIFY(x) #x\n#define __STRINGIFY2(z) __STRINGIFY
 		  if ($self->{options}->{integer_datetimes});
 		print O "#define USE_LDAP 1\n"   if ($self->{options}->{ldap});
 		print O "#define HAVE_LIBZ 1\n"  if ($self->{options}->{zlib});
-		print O "#define USE_SSL 1\n"    if ($self->{options}->{openssl});
+		print O "#define USE_OPENSSL 1\n" if ($self->{options}->{openssl});
 		print O "#define ENABLE_NLS 1\n" if ($self->{options}->{nls});
 
 		print O "#define BLCKSZ ", 1024 * $self->{options}->{blocksize}, "\n";
@@ -214,6 +213,7 @@ s{PG_VERSION_STR "[^"]+"}{__STRINGIFY(x) #x\n#define __STRINGIFY2(z) __STRINGIFY
 
 		if ($self->{options}->{uuid})
 		{
+			print O "#define HAVE_UUID_OSSP\n";
 			print O "#define HAVE_UUID_H\n";
 		}
 		if ($self->{options}->{xml})
@@ -419,7 +419,7 @@ EOF
 	}
 
 	my $mf = Project::read_file('src\backend\catalog\Makefile');
-	$mf =~ s{\\s*[\r\n]+}{}mg;
+	$mf =~ s{\\\r?\n}{}g;
 	$mf =~ /^POSTGRES_BKI_SRCS\s*:?=[^,]+,(.*)\)$/gm
 	  || croak "Could not find POSTGRES_BKI_SRCS in Makefile\n";
 	my @allbki = split /\s+/, $1;
@@ -624,14 +624,15 @@ sub GetFakeConfigure
 	$cfg .= ' --enable-nls' if ($self->{options}->{nls});
 	$cfg .= ' --with-ldap'  if ($self->{options}->{ldap});
 	$cfg .= ' --without-zlib' unless ($self->{options}->{zlib});
-	$cfg .= ' --with-openssl'   if ($self->{options}->{ssl});
-	$cfg .= ' --with-ossp-uuid' if ($self->{options}->{uuid});
-	$cfg .= ' --with-libxml'    if ($self->{options}->{xml});
-	$cfg .= ' --with-libxslt'   if ($self->{options}->{xslt});
-	$cfg .= ' --with-gssapi'    if ($self->{options}->{gss});
-	$cfg .= ' --with-tcl'       if ($self->{options}->{tcl});
-	$cfg .= ' --with-perl'      if ($self->{options}->{perl});
-	$cfg .= ' --with-python'    if ($self->{options}->{python});
+	$cfg .= ' --with-extra-version' if ($self->{options}->{extraver});
+	$cfg .= ' --with-openssl'       if ($self->{options}->{openssl});
+	$cfg .= ' --with-ossp-uuid'     if ($self->{options}->{uuid});
+	$cfg .= ' --with-libxml'        if ($self->{options}->{xml});
+	$cfg .= ' --with-libxslt'       if ($self->{options}->{xslt});
+	$cfg .= ' --with-gssapi'        if ($self->{options}->{gss});
+	$cfg .= ' --with-tcl'           if ($self->{options}->{tcl});
+	$cfg .= ' --with-perl'          if ($self->{options}->{perl});
+	$cfg .= ' --with-python'        if ($self->{options}->{python});
 
 	return $cfg;
 }
