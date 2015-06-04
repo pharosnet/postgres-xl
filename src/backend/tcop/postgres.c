@@ -383,6 +383,12 @@ SocketBackend(StringInfo inBuf)
 {
 	int			qtype;
 
+	/*
+	 * Get message type code from the frontend.
+	 */
+	HOLD_CANCEL_INTERRUPTS();
+	pq_startmsgread();
+
 #ifdef XCP
 	/*
 	 * Session from data node may need to do some background work if it is
@@ -477,11 +483,6 @@ SocketBackend(StringInfo inBuf)
 		qtype = pq_getbyte();
 	}
 #else
-	/*
-	 * Get message type code from the frontend.
-	 */
-	HOLD_CANCEL_INTERRUPTS();
-	pq_startmsgread();
 	qtype = pq_getbyte();
 #endif
 

@@ -2011,6 +2011,7 @@ _readModifyTable(void)
 
 	READ_ENUM_FIELD(operation, CmdType);
 	READ_BOOL_FIELD(canSetTag);
+	READ_UINT_FIELD(nominalRelation);
 	READ_NODE_FIELD(resultRelations);
 	READ_INT_FIELD(resultRelIndex);
 	READ_NODE_FIELD(plans);
@@ -2019,6 +2020,11 @@ _readModifyTable(void)
 	READ_NODE_FIELD(fdwPrivLists);
 	READ_NODE_FIELD(rowMarks);
 	READ_INT_FIELD(epqParam);
+#ifdef PGXC
+#ifndef XCP
+	READ_NODE_FIELD(remote_plans);
+#endif
+#endif
 
 	READ_DONE();
 }

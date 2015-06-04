@@ -182,7 +182,7 @@ MemoryContextDeleteInternal(MemoryContext context, bool parent_locked)
 {
 	AssertArg(MemoryContextIsValid(context));
 	/* We had better not be deleting TopMemoryContext ... */
-	Assert(context != TopMemoryContext);
+	Assert(context != TopMostMemoryContext);
 	/* And not CurrentMemoryContext, either */
 	Assert(context != CurrentMemoryContext);
 
