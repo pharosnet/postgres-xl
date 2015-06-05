@@ -488,15 +488,8 @@ RequestBarrier(const char *id, char *completionTag)
 }
 
 void
-barrier_redo(XLogRecPtr lsn, XLogRecord *record)
+barrier_redo(XLogReaderState *record)
 {
 	/* Nothing to do */
 	return;
-}
-
-void
-barrier_desc(StringInfo buf, uint8 xl_info, char *rec)
-{
-	Assert(xl_info == XLOG_BARRIER_CREATE);
-	appendStringInfo(buf, "BARRIER %s", rec);
 }

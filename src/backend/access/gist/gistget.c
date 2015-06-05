@@ -16,6 +16,7 @@
 
 #include "access/gist_private.h"
 #include "access/relscan.h"
+#include "catalog/pg_type.h"
 #include "miscadmin.h"
 #include "pgstat.h"
 #include "lib/pairingheap.h"
@@ -30,10 +31,12 @@
  * The index tuple might represent either a heap tuple or a lower index page,
  * depending on whether the containing page is a leaf page or not.
  *
- * On success return for a heap tuple, *recheck_p is set to indicate
- * whether recheck is needed.  We recheck if any of the consistent() functions
- * request it.  recheck is not interesting when examining a non-leaf entry,
- * since we must visit the lower index page if there's any doubt.
+ * On success return for a heap tuple, *recheck_p is set to indicate whether
+ * the quals need to be rechecked.  We recheck if any of the consistent()
+ * functions request it.  recheck is not interesting when examining a non-leaf
+ * entry, since we must visit the lower index page if there's any doubt.
+ * Similarly, *recheck_distances_p is set to indicate whether the distances
+ * need to be rechecked, and it is also ignored for non-leaf entries.
  *
  * If we are doing an ordered scan, so->distances[] is filled with distance
  * data from the distance() functions before returning success.
@@ -50,7 +53,8 @@ gistindex_keytest(IndexScanDesc scan,
 				  IndexTuple tuple,
 				  Page page,
 				  OffsetNumber offset,
-				  bool *recheck_p)
+				  bool *recheck_p,
+				  bool *recheck_distances_p)
 {
 	GISTScanOpaque so = (GISTScanOpaque) scan->opaque;
 	GISTSTATE  *giststate = so->giststate;
@@ -60,6 +64,7 @@ gistindex_keytest(IndexScanDesc scan,
 	Relation	r = scan->indexRelation;
 
 	*recheck_p = false;
+	*recheck_distances_p = false;
 
 	/*
 	 * If it's a leftover invalid tuple from pre-9.1, treat it as a match with
@@ -176,6 +181,7 @@ gistindex_keytest(IndexScanDesc scan,
 		else
 		{
 			Datum		dist;
+			bool		recheck;
 			GISTENTRY	de;
 
 			gistdentryinit(giststate, key->sk_attno - 1, &de,
@@ -185,24 +191,28 @@ gistindex_keytest(IndexScanDesc scan,
 			/*
 			 * Call the Distance function to evaluate the distance.  The
 			 * arguments are the index datum (as a GISTENTRY*), the comparison
-			 * datum, and the ordering operator's strategy number and subtype
-			 * from pg_amop.
+			 * datum, the ordering operator's strategy number and subtype from
+			 * pg_amop, and the recheck flag.
 			 *
 			 * (Presently there's no need to pass the subtype since it'll
 			 * always be zero, but might as well pass it for possible future
 			 * use.)
 			 *
-			 * Note that Distance functions don't get a recheck argument. We
-			 * can't tolerate lossy distance calculations on leaf tuples;
-			 * there is no opportunity to re-sort the tuples afterwards.
+			 * If the function sets the recheck flag, the returned distance is
+			 * a lower bound on the true distance and needs to be rechecked.
+			 * We initialize the flag to 'false'.  This flag was added in
+			 * version 9.5; distance functions written before that won't know
+			 * about the flag, but are expected to never be lossy.
 			 */
-			dist = FunctionCall4Coll(&key->sk_func,
+			recheck = false;
+			dist = FunctionCall5Coll(&key->sk_func,
 									 key->sk_collation,
 									 PointerGetDatum(&de),
 									 key->sk_argument,
 									 Int32GetDatum(key->sk_strategy),
-									 ObjectIdGetDatum(key->sk_subtype));
-
+									 ObjectIdGetDatum(key->sk_subtype),
+									 PointerGetDatum(&recheck));
+			*recheck_distances_p |= recheck;
 			*distance_p = DatumGetFloat8(dist);
 		}
 
@@ -304,6 +314,7 @@ gistScanPage(IndexScanDesc scan, GISTSearchItem *pageItem, double *myDistances,
 		IndexTuple	it = (IndexTuple) PageGetItem(page, PageGetItemId(page, i));
 		bool		match;
 		bool		recheck;
+		bool		recheck_distances;
 
 		/*
 		 * Must call gistindex_keytest in tempCxt, and clean up any leftover
@@ -311,7 +322,8 @@ gistScanPage(IndexScanDesc scan, GISTSearchItem *pageItem, double *myDistances,
 		 */
 		oldcxt = MemoryContextSwitchTo(so->giststate->tempCxt);
 
-		match = gistindex_keytest(scan, it, page, i, &recheck);
+		match = gistindex_keytest(scan, it, page, i,
+								  &recheck, &recheck_distances);
 
 		MemoryContextSwitchTo(oldcxt);
 		MemoryContextReset(so->giststate->tempCxt);
@@ -369,6 +381,7 @@ gistScanPage(IndexScanDesc scan, GISTSearchItem *pageItem, double *myDistances,
 				item->blkno = InvalidBlockNumber;
 				item->data.heap.heapPtr = it->t_tid;
 				item->data.heap.recheck = recheck;
+				item->data.heap.recheckDistances = recheck_distances;
 
 				/*
 				 * In an index-only scan, also fetch the data from the tuple.
@@ -434,6 +447,7 @@ getNextNearest(IndexScanDesc scan)
 {
 	GISTScanOpaque so = (GISTScanOpaque) scan->opaque;
 	bool		res = false;
+	int			i;
 
 	if (scan->xs_itup)
 	{
@@ -454,6 +468,45 @@ getNextNearest(IndexScanDesc scan)
 			/* found a heap item at currently minimal distance */
 			scan->xs_ctup.t_self = item->data.heap.heapPtr;
 			scan->xs_recheck = item->data.heap.recheck;
+			scan->xs_recheckorderby = item->data.heap.recheckDistances;
+			for (i = 0; i < scan->numberOfOrderBys; i++)
+			{
+				if (so->orderByTypes[i] == FLOAT8OID)
+				{
+#ifndef USE_FLOAT8_BYVAL
+					/* must free any old value to avoid memory leakage */
+					if (!scan->xs_orderbynulls[i])
+						pfree(DatumGetPointer(scan->xs_orderbyvals[i]));
+#endif
+					scan->xs_orderbyvals[i] = Float8GetDatum(item->distances[i]);
+					scan->xs_orderbynulls[i] = false;
+				}
+				else if (so->orderByTypes[i] == FLOAT4OID)
+				{
+					/* convert distance function's result to ORDER BY type */
+#ifndef USE_FLOAT4_BYVAL
+					/* must free any old value to avoid memory leakage */
+					if (!scan->xs_orderbynulls[i])
+						pfree(DatumGetPointer(scan->xs_orderbyvals[i]));
+#endif
+					scan->xs_orderbyvals[i] = Float4GetDatum((float4) item->distances[i]);
+					scan->xs_orderbynulls[i] = false;
+				}
+				else
+				{
+					/*
+					 * If the ordering operator's return value is anything
+					 * else, we don't know how to convert the float8 bound
+					 * calculated by the distance function to that.  The
+					 * executor won't actually need the order by values we
+					 * return here, if there are no lossy results, so only
+					 * insist on converting if the *recheck flag is set.
+					 */
+					if (scan->xs_recheckorderby)
+						elog(ERROR, "GiST operator family's FOR ORDER BY operator must return float8 or float4 if the distance function is lossy");
+					scan->xs_orderbynulls[i] = true;
+				}
+			}
 
 			/* in an index-only scan, also return the reconstructed tuple. */
 			if (scan->xs_want_itup)

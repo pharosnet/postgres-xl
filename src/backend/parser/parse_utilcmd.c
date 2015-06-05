@@ -275,7 +275,6 @@ transformCreateStmt(CreateStmt *stmt, const char *queryString)
 	cxt.blist = NIL;
 	cxt.alist = NIL;
 	cxt.pkey = NULL;
-	cxt.hasoids = interpretOidsOption(stmt->options, true);
 #ifdef PGXC
 #ifdef XCP
 	cxt.fallback_source = FBS_NONE;
@@ -286,6 +285,18 @@ transformCreateStmt(CreateStmt *stmt, const char *queryString)
 	cxt.distributeby = stmt->distributeby;
 	cxt.subcluster = stmt->subcluster;
 #endif
+
+	/*
+	 * Notice that we allow OIDs here only for plain tables, even though
+	 * foreign tables also support them.  This is necessary because the
+	 * default_with_oids GUC must apply only to plain tables and not any other
+	 * relkind; doing otherwise would break existing pg_dump files.  We could
+	 * allow explicit "WITH OIDS" while not allowing default_with_oids to
+	 * affect other relkinds, but it would complicate interpretOidsOption(),
+	 * and right now there's no WITH OIDS option in CREATE FOREIGN TABLE
+	 * anyway.
+	 */
+	cxt.hasoids = interpretOidsOption(stmt->options, !cxt.isforeign);
 
 	Assert(!stmt->ofTypename || !stmt->inhRelations);	/* grammar enforces */
 
@@ -2026,11 +2037,13 @@ transformIndexConstraint(Constraint *constraint, CreateStmtContext *cxt)
 
 				Assert(IsA(inh, RangeVar));
 				rel = heap_openrv(inh, AccessShareLock);
-				if (rel->rd_rel->relkind != RELKIND_RELATION)
+				/* check user requested inheritance from valid relkind */
+				if (rel->rd_rel->relkind != RELKIND_RELATION &&
+					rel->rd_rel->relkind != RELKIND_FOREIGN_TABLE)
 					ereport(ERROR,
 							(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-						   errmsg("inherited relation \"%s\" is not a table",
-								  inh->relname)));
+							 errmsg("inherited relation \"%s\" is not a table or foreign table",
+									inh->relname)));
 				for (count = 0; count < rel->rd_att->natts; count++)
 				{
 					Form_pg_attribute inhattr = rel->rd_att->attrs[count];
@@ -2924,7 +2937,7 @@ transformAlterTableStmt(Oid relid, AlterTableStmt *stmt,
 
 			case AT_AlterColumnType:
 				{
-					ColumnDef *def = (ColumnDef *) cmd->def;
+					ColumnDef  *def = (ColumnDef *) cmd->def;
 
 					/*
 					 * For ALTER COLUMN TYPE, transform the USING clause if

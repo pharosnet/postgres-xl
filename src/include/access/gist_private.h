@@ -121,6 +121,7 @@ typedef struct GISTSearchHeapItem
 {
 	ItemPointerData heapPtr;
 	bool		recheck;		/* T if quals must be rechecked */
+	bool		recheckDistances;		/* T if distances must be rechecked */
 	IndexTuple	ftup;			/* data fetched back from the index, used in
 								 * index-only scans */
 } GISTSearchHeapItem;
@@ -150,6 +151,8 @@ typedef struct GISTSearchItem
 typedef struct GISTScanOpaqueData
 {
 	GISTSTATE  *giststate;		/* index information, see above */
+	Oid		   *orderByTypes;	/* datatypes of ORDER BY expressions */
+
 	pairingheap *queue;			/* queue of unvisited items */
 	MemoryContext queueCxt;		/* context holding the queue */
 	bool		qual_ok;		/* false if qual can never be satisfied */
@@ -163,7 +166,7 @@ typedef struct GISTScanOpaqueData
 	OffsetNumber nPageData;		/* number of valid items in array */
 	OffsetNumber curPageData;	/* next item to return */
 	MemoryContext pageDataCxt;	/* context holding the fetched tuples, for
-								   index-only scans */
+								 * index-only scans */
 } GISTScanOpaqueData;
 
 typedef GISTScanOpaqueData *GISTScanOpaque;

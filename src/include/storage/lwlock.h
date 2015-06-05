@@ -146,11 +146,12 @@ extern PGDLLIMPORT LWLockPadded *MainLWLockArray;
 #endif
 #define CommitTsControlLock			(&MainLWLockArray[41].lock)
 #define CommitTsLock				(&MainLWLockArray[42].lock)
+#define ReplicationOriginLock		(&MainLWLockArray[43].lock)
 
 #ifdef PGXC
-#define NUM_INDIVIDUAL_LWLOCKS		43
+#define NUM_INDIVIDUAL_LWLOCKS		44
 #else
-#define NUM_INDIVIDUAL_LWLOCKS		40
+#define NUM_INDIVIDUAL_LWLOCKS		41
 #endif
 
 /*

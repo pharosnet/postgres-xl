@@ -594,6 +594,10 @@ extern Datum pg_node_tree_in(PG_FUNCTION_ARGS);
 extern Datum pg_node_tree_out(PG_FUNCTION_ARGS);
 extern Datum pg_node_tree_recv(PG_FUNCTION_ARGS);
 extern Datum pg_node_tree_send(PG_FUNCTION_ARGS);
+extern Datum pg_ddl_command_in(PG_FUNCTION_ARGS);
+extern Datum pg_ddl_command_out(PG_FUNCTION_ARGS);
+extern Datum pg_ddl_command_recv(PG_FUNCTION_ARGS);
+extern Datum pg_ddl_command_send(PG_FUNCTION_ARGS);
 
 /* regexp.c */
 extern Datum nameregexeq(PG_FUNCTION_ARGS);
@@ -648,6 +652,16 @@ extern Datum regtypeout(PG_FUNCTION_ARGS);
 extern Datum regtyperecv(PG_FUNCTION_ARGS);
 extern Datum regtypesend(PG_FUNCTION_ARGS);
 extern Datum to_regtype(PG_FUNCTION_ARGS);
+extern Datum regrolein(PG_FUNCTION_ARGS);
+extern Datum regroleout(PG_FUNCTION_ARGS);
+extern Datum regrolerecv(PG_FUNCTION_ARGS);
+extern Datum regrolesend(PG_FUNCTION_ARGS);
+extern Datum to_regrole(PG_FUNCTION_ARGS);
+extern Datum regnamespacein(PG_FUNCTION_ARGS);
+extern Datum regnamespaceout(PG_FUNCTION_ARGS);
+extern Datum regnamespacerecv(PG_FUNCTION_ARGS);
+extern Datum regnamespacesend(PG_FUNCTION_ARGS);
+extern Datum to_regnamespace(PG_FUNCTION_ARGS);
 extern Datum regconfigin(PG_FUNCTION_ARGS);
 extern Datum regconfigout(PG_FUNCTION_ARGS);
 extern Datum regconfigrecv(PG_FUNCTION_ARGS);
@@ -661,7 +675,7 @@ extern List *stringToQualifiedNameList(const char *string);
 extern char *format_procedure(Oid procedure_oid);
 extern char *format_procedure_qualified(Oid procedure_oid);
 extern void format_procedure_parts(Oid operator_oid, List **objnames,
-					  List **objargs);
+					   List **objargs);
 extern char *format_operator(Oid operator_oid);
 extern char *format_operator_qualified(Oid operator_oid);
 extern void format_operator_parts(Oid operator_oid, List **objnames,
@@ -817,9 +831,9 @@ extern Datum textoverlay_no_len(PG_FUNCTION_ARGS);
 extern Datum name_text(PG_FUNCTION_ARGS);
 extern Datum text_name(PG_FUNCTION_ARGS);
 extern int	varstr_cmp(char *arg1, int len1, char *arg2, int len2, Oid collid);
-extern int	varstr_levenshtein(const char *source, int slen, const char *target,
+extern int varstr_levenshtein(const char *source, int slen, const char *target,
 				   int tlen, int ins_c, int del_c, int sub_c);
-extern int	varstr_levenshtein_less_equal(const char *source, int slen,
+extern int varstr_levenshtein_less_equal(const char *source, int slen,
 							  const char *target, int tlen, int ins_c,
 							  int del_c, int sub_c, int max_d);
 extern List *textToQualifiedNameList(text *textval);
@@ -974,6 +988,8 @@ extern Datum inetpl(PG_FUNCTION_ARGS);
 extern Datum inetmi_int8(PG_FUNCTION_ARGS);
 extern Datum inetmi(PG_FUNCTION_ARGS);
 extern void clean_ipv6_addr(int addr_family, char *addr);
+extern Datum inet_same_family(PG_FUNCTION_ARGS);
+extern Datum inet_merge(PG_FUNCTION_ARGS);
 
 /* mac.c */
 extern Datum macaddr_in(PG_FUNCTION_ARGS);
@@ -1149,6 +1165,7 @@ extern Datum quote_nullable(PG_FUNCTION_ARGS);
 extern Datum show_config_by_name(PG_FUNCTION_ARGS);
 extern Datum set_config_by_name(PG_FUNCTION_ARGS);
 extern Datum show_all_settings(PG_FUNCTION_ARGS);
+extern Datum show_all_file_settings(PG_FUNCTION_ARGS);
 
 /* lockfuncs.c */
 extern Datum pg_lock_status(PG_FUNCTION_ARGS);
@@ -1269,6 +1286,7 @@ extern Datum unique_key_recheck(PG_FUNCTION_ARGS);
 extern Datum pg_event_trigger_dropped_objects(PG_FUNCTION_ARGS);
 extern Datum pg_event_trigger_table_rewrite_oid(PG_FUNCTION_ARGS);
 extern Datum pg_event_trigger_table_rewrite_reason(PG_FUNCTION_ARGS);
+extern Datum pg_event_trigger_ddl_commands(PG_FUNCTION_ARGS);
 
 /* commands/extension.c */
 extern Datum pg_available_extensions(PG_FUNCTION_ARGS);

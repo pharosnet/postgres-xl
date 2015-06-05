@@ -298,7 +298,7 @@ extern struct varlena *pg_detoast_datum_packed(struct varlena * datum);
 #define PG_RETURN_INT32(x)	 return Int32GetDatum(x)
 #define PG_RETURN_UINT32(x)  return UInt32GetDatum(x)
 #define PG_RETURN_INT16(x)	 return Int16GetDatum(x)
-#define PG_RETURN_UINT16(x)	 return UInt16GetDatum(x)
+#define PG_RETURN_UINT16(x)  return UInt16GetDatum(x)
 #define PG_RETURN_CHAR(x)	 return CharGetDatum(x)
 #define PG_RETURN_BOOL(x)	 return BoolGetDatum(x)
 #define PG_RETURN_OID(x)	 return ObjectIdGetDatum(x)
@@ -642,6 +642,9 @@ extern PGFunction load_external_function(char *filename, char *funcname,
 extern PGFunction lookup_external_function(void *filehandle, char *funcname);
 extern void load_file(const char *filename, bool restricted);
 extern void **find_rendezvous_variable(const char *varName);
+extern Size EstimateLibraryStateSpace(void);
+extern void SerializeLibraryState(Size maxsize, char *start_address);
+extern void RestoreLibraryState(char *start_address);
 
 /*
  * Support for aggregate functions

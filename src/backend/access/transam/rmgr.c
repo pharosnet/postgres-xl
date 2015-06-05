@@ -26,6 +26,7 @@
 #ifdef PGXC
 #include "pgxc/barrier.h"
 #endif
+#include "replication/origin.h"
 #include "storage/standby.h"
 #include "utils/relmapper.h"
 

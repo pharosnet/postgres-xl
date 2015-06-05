@@ -2645,7 +2645,7 @@ CreateSharedBackendStatus(void)
 		buffer = (char *) BackendSslStatusBuffer;
 		for (i = 0; i < MaxBackends; i++)
 		{
-			BackendStatusArray[i].st_sslstatus = (PgBackendSSLStatus *)buffer;
+			BackendStatusArray[i].st_sslstatus = (PgBackendSSLStatus *) buffer;
 			buffer += sizeof(PgBackendSSLStatus);
 		}
 	}

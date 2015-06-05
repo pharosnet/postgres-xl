@@ -535,6 +535,9 @@ init_execution_state(List *queryTree_list,
 			}
 #endif /* PGXC */
 
+			if (IsInParallelMode() && !CommandIsReadOnly(stmt))
+				PreventCommandIfParallelMode(CreateCommandTag(stmt));
+
 			/* OK, build the execution_state for this query */
 			newes = (execution_state *) palloc(sizeof(execution_state));
 			if (preves)

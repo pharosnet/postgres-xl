@@ -938,9 +938,9 @@ PostmasterMain(int argc, char *argv[])
 		write_stderr("%s: max_wal_senders must be less than max_connections\n", progname);
 		ExitPostmaster(1);
 	}
-	if (XLogArchiveMode && wal_level == WAL_LEVEL_MINIMAL)
+	if (XLogArchiveMode > ARCHIVE_MODE_OFF && wal_level == WAL_LEVEL_MINIMAL)
 		ereport(ERROR,
-				(errmsg("WAL archival (archive_mode=on) requires wal_level \"archive\", \"hot_standby\", or \"logical\"")));
+				(errmsg("WAL archival cannot be enabled when wal_level is \"minimal\"")));
 	if (max_wal_senders > 0 && wal_level == WAL_LEVEL_MINIMAL)
 		ereport(ERROR,
 				(errmsg("WAL streaming (max_wal_senders > 0) requires wal_level \"archive\", \"hot_standby\", or \"logical\"")));
@@ -1779,10 +1779,6 @@ ServerLoop(void)
 				start_autovac_launcher = false; /* signal processed */
 		}
 
-		/* If we have lost the archiver, try to start a new one */
-		if (XLogArchivingActive() && PgArchPID == 0 && pmState == PM_RUN)
-			PgArchPID = pgarch_start();
-
 		/* If we have lost the stats collector, try to start a new one */
 		if (PgStatPID == 0 && pmState == PM_RUN)
 			PgStatPID = pgstat_start();
@@ -1796,6 +1792,22 @@ ServerLoop(void)
 #endif /* XCP */
 			PgPoolerPID = StartPoolManager();
 #endif /* PGXC */
+		/*
+		 * If we have lost the archiver, try to start a new one.
+		 *
+		 * If WAL archiving is enabled always, we try to start a new archiver
+		 * even during recovery.
+		 */
+		if (PgArchPID == 0 && wal_level >= WAL_LEVEL_ARCHIVE)
+		{
+			if ((pmState == PM_RUN && XLogArchiveMode > ARCHIVE_MODE_OFF) ||
+				((pmState == PM_RECOVERY || pmState == PM_HOT_STANDBY) &&
+				 XLogArchiveMode == ARCHIVE_MODE_ALWAYS))
+			{
+				PgArchPID = pgarch_start();
+			}
+		}
+
 		/* If we need to signal the autovacuum launcher, do so now */
 		if (avlauncher_needs_signal)
 		{
@@ -2784,7 +2796,7 @@ reaper(SIGNAL_ARGS)
 			if (EXIT_STATUS_3(exitstatus))
 			{
 				ereport(LOG,
-					(errmsg("shutdown at recovery target")));
+						(errmsg("shutdown at recovery target")));
 				Shutdown = SmartShutdown;
 				TerminateChildren(SIGTERM);
 				pmState = PM_WAIT_BACKENDS;
@@ -3138,9 +3150,9 @@ CleanupBackgroundWorker(int pid,
 		}
 
 		/*
-		 * We must release the postmaster child slot whether this worker
-		 * is connected to shared memory or not, but we only treat it as
-		 * a crash if it is in fact connected.
+		 * We must release the postmaster child slot whether this worker is
+		 * connected to shared memory or not, but we only treat it as a crash
+		 * if it is in fact connected.
 		 */
 		if (!ReleasePostmasterChildSlot(rw->rw_child_slot) &&
 			(rw->rw_worker.bgw_flags & BGWORKER_SHMEM_ACCESS) != 0)
@@ -4213,7 +4225,16 @@ BackendInitialize(Port *port)
 	 * We arrange for a simple exit(1) if we receive SIGTERM or SIGQUIT or
 	 * timeout while trying to collect the startup packet.  Otherwise the
 	 * postmaster cannot shutdown the database FAST or IMMED cleanly if a
-	 * buggy client fails to send the packet promptly.
+	 * buggy client fails to send the packet promptly.  XXX it follows that
+	 * the remainder of this function must tolerate losing control at any
+	 * instant.  Likewise, any pg_on_exit_callback registered before or during
+	 * this function must be prepared to execute at any instant between here
+	 * and the end of this function.  Furthermore, affected callbacks execute
+	 * partially or not at all when a second exit-inducing signal arrives
+	 * after proc_exit_prepare() decrements on_proc_exit_index.  (Thanks to
+	 * that mechanic, callbacks need not anticipate more than one call.)  This
+	 * is fragile; it ought to instead follow the norm of handling interrupts
+	 * at selected, safe opportunities.
 	 */
 	pqsignal(SIGTERM, startup_die);
 	pqsignal(SIGQUIT, startup_die);
@@ -5071,6 +5092,17 @@ sigusr1_handler(SIGNAL_ARGS)
 		CheckpointerPID = StartCheckpointer();
 		Assert(BgWriterPID == 0);
 		BgWriterPID = StartBackgroundWriter();
+
+		/*
+		 * Start the archiver if we're responsible for (re-)archiving received
+		 * files.
+		 */
+		Assert(PgArchPID == 0);
+		if (wal_level >= WAL_LEVEL_ARCHIVE &&
+			XLogArchiveMode == ARCHIVE_MODE_ALWAYS)
+		{
+			PgArchPID = pgarch_start();
+		}
 
 		pmState = PM_RECOVERY;
 	}

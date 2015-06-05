@@ -118,7 +118,7 @@ _bt_search(Relation rel, int keysz, ScanKey scankey, bool nextkey,
 		 * In write-mode, allow _bt_moveright to finish any incomplete splits
 		 * along the way.  Strictly speaking, we'd only need to finish an
 		 * incomplete split on the leaf page we're about to insert to, not on
-		 * any of the upper levels (they is taken care of in _bt_getstackbuf,
+		 * any of the upper levels (they are taken care of in _bt_getstackbuf,
 		 * if the leaf page is split and we insert to the parent page).  But
 		 * this is a good opportunity to finish splits of internal pages too.
 		 */
@@ -1027,10 +1027,10 @@ _bt_first(IndexScanDesc scan, ScanDirection dir)
 		offnum = OffsetNumberPrev(offnum);
 
 	/*
-	 * By here the scan position is now set for the first key.  If all
-	 * further tuples are expected to match we set the SK_BT_MATCHED flag
-	 * to avoid re-checking the scan key later.  This is a big win for
-	 * slow key matches though is still significant even for fast datatypes.
+	 * By here the scan position is now set for the first key.  If all further
+	 * tuples are expected to match we set the SK_BT_MATCHED flag to avoid
+	 * re-checking the scan key later.  This is a big win for slow key matches
+	 * though is still significant even for fast datatypes.
 	 */
 	switch (startKeys[0]->sk_strategy)
 	{

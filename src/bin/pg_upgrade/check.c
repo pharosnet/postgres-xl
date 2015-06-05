@@ -19,6 +19,7 @@ static void check_databases_are_compatible(void);
 static void check_locale_and_encoding(DbInfo *olddb, DbInfo *newdb);
 static bool equivalent_locale(int category, const char *loca, const char *locb);
 static void check_is_install_user(ClusterInfo *cluster);
+static void check_proper_datallowconn(ClusterInfo *cluster);
 static void check_for_prepared_transactions(ClusterInfo *cluster);
 static void check_for_isn_and_int8_passing_mismatch(ClusterInfo *cluster);
 static void check_for_reg_data_type_usage(ClusterInfo *cluster);
@@ -93,6 +94,7 @@ check_and_dump_old_cluster(bool live_check)
 	 * Check for various failure cases
 	 */
 	check_is_install_user(&old_cluster);
+	check_proper_datallowconn(&old_cluster);
 	check_for_prepared_transactions(&old_cluster);
 	check_for_reg_data_type_usage(&old_cluster);
 	check_for_isn_and_int8_passing_mismatch(&old_cluster);
@@ -315,16 +317,16 @@ equivalent_locale(int category, const char *loca, const char *locb)
 	int			lenb;
 
 	/*
-	 * If the names are equal, the locales are equivalent. Checking this
-	 * first avoids calling setlocale() in the common case that the names
-	 * are equal. That's a good thing, if setlocale() is buggy, for example.
+	 * If the names are equal, the locales are equivalent. Checking this first
+	 * avoids calling setlocale() in the common case that the names are equal.
+	 * That's a good thing, if setlocale() is buggy, for example.
 	 */
 	if (pg_strcasecmp(loca, locb) == 0)
 		return true;
 
 	/*
-	 * Not identical. Canonicalize both names, remove the encoding parts,
-	 * and try again.
+	 * Not identical. Canonicalize both names, remove the encoding parts, and
+	 * try again.
 	 */
 	canona = get_canonical_locale_name(category, loca);
 	chara = strrchr(canona, '.');
@@ -508,6 +510,10 @@ create_script_for_old_cluster_deletion(char **deletion_script_file_name)
 		canonicalize_path(old_tablespace_dir);
 		if (path_is_prefix_of_path(old_cluster_pgdata, old_tablespace_dir))
 		{
+			/* reproduce warning from CREATE TABLESPACE that is in the log */
+			pg_log(PG_WARNING,
+				   "\nWARNING:  user-defined tablespace locations should not be inside the data directory, e.g. %s\n", old_tablespace_dir);
+
 			/* Unlink file in case it is left over from a previous run. */
 			unlink(*deletion_script_file_name);
 			pg_free(*deletion_script_file_name);
@@ -528,7 +534,8 @@ create_script_for_old_cluster_deletion(char **deletion_script_file_name)
 #endif
 
 	/* delete old cluster's default tablespace */
-	fprintf(script, RMDIR_CMD " \"%s\"\n", fix_path_separator(old_cluster.pgdata));
+	fprintf(script, RMDIR_CMD " %c%s%c\n", PATH_QUOTE,
+			fix_path_separator(old_cluster.pgdata), PATH_QUOTE);
 
 	/* delete old cluster's alternate tablespaces */
 	for (tblnum = 0; tblnum < os_info.num_old_tablespaces; tblnum++)
@@ -550,9 +557,10 @@ create_script_for_old_cluster_deletion(char **deletion_script_file_name)
 						PATH_SEPARATOR);
 
 			for (dbnum = 0; dbnum < old_cluster.dbarr.ndbs; dbnum++)
-				fprintf(script, RMDIR_CMD " \"%s%c%d\"\n",
+				fprintf(script, RMDIR_CMD " %c%s%c%d%c\n", PATH_QUOTE,
 						fix_path_separator(os_info.old_tablespaces[tblnum]),
-						PATH_SEPARATOR, old_cluster.dbarr.dbs[dbnum].db_oid);
+						PATH_SEPARATOR, old_cluster.dbarr.dbs[dbnum].db_oid,
+						PATH_QUOTE);
 		}
 		else
 		{
@@ -562,9 +570,9 @@ create_script_for_old_cluster_deletion(char **deletion_script_file_name)
 			 * Simply delete the tablespace directory, which might be ".old"
 			 * or a version-specific subdirectory.
 			 */
-			fprintf(script, RMDIR_CMD " \"%s%s\"\n",
+			fprintf(script, RMDIR_CMD " %c%s%s%c\n", PATH_QUOTE,
 					fix_path_separator(os_info.old_tablespaces[tblnum]),
-					fix_path_separator(suffix_path));
+					fix_path_separator(suffix_path), PATH_QUOTE);
 			pfree(suffix_path);
 		}
 	}
@@ -603,8 +611,8 @@ check_is_install_user(ClusterInfo *cluster)
 
 	/*
 	 * We only allow the install user in the new cluster (see comment below)
-	 * and we preserve pg_authid.oid, so this must be the install user in
-	 * the old cluster too.
+	 * and we preserve pg_authid.oid, so this must be the install user in the
+	 * old cluster too.
 	 */
 	if (PQntuples(res) != 1 ||
 		atooid(PQgetvalue(res, 0, 1)) != BOOTSTRAP_SUPERUSERID)
@@ -631,6 +639,61 @@ check_is_install_user(ClusterInfo *cluster)
 	PQclear(res);
 
 	PQfinish(conn);
+
+	check_ok();
+}
+
+
+static void
+check_proper_datallowconn(ClusterInfo *cluster)
+{
+	int			dbnum;
+	PGconn	   *conn_template1;
+	PGresult   *dbres;
+	int			ntups;
+	int			i_datname;
+	int			i_datallowconn;
+
+	prep_status("Checking database connection settings");
+
+	conn_template1 = connectToServer(cluster, "template1");
+
+	/* get database names */
+	dbres = executeQueryOrDie(conn_template1,
+							  "SELECT	datname, datallowconn "
+							  "FROM	pg_catalog.pg_database");
+
+	i_datname = PQfnumber(dbres, "datname");
+	i_datallowconn = PQfnumber(dbres, "datallowconn");
+
+	ntups = PQntuples(dbres);
+	for (dbnum = 0; dbnum < ntups; dbnum++)
+	{
+		char	   *datname = PQgetvalue(dbres, dbnum, i_datname);
+		char	   *datallowconn = PQgetvalue(dbres, dbnum, i_datallowconn);
+
+		if (strcmp(datname, "template0") == 0)
+		{
+			/* avoid restore failure when pg_dumpall tries to create template0 */
+			if (strcmp(datallowconn, "t") == 0)
+				pg_fatal("template0 must not allow connections, "
+						 "i.e. its pg_database.datallowconn must be false\n");
+		}
+		else
+		{
+			/*
+			 * avoid datallowconn == false databases from being skipped on
+			 * restore
+			 */
+			if (strcmp(datallowconn, "f") == 0)
+				pg_fatal("All non-template0 databases must allow connections, "
+					   "i.e. their pg_database.datallowconn must be true\n");
+		}
+	}
+
+	PQclear(dbres);
+
+	PQfinish(conn_template1);
 
 	check_ok();
 }
@@ -813,7 +876,7 @@ check_for_reg_data_type_usage(ClusterInfo *cluster)
 		"			'pg_catalog.regconfig'::pg_catalog.regtype, "
 								"			'pg_catalog.regdictionary'::pg_catalog.regtype) AND "
 								"		c.relnamespace = n.oid AND "
-							  "		n.nspname NOT IN ('pg_catalog', 'information_schema')");
+								"		n.nspname NOT IN ('pg_catalog', 'information_schema')");
 
 		ntups = PQntuples(res);
 		i_nspname = PQfnumber(res, "nspname");
@@ -904,7 +967,7 @@ check_for_jsonb_9_4_usage(ClusterInfo *cluster)
 								"		c.relnamespace = n.oid AND "
 		/* exclude possible orphaned temp tables */
 								"  		n.nspname !~ '^pg_temp_' AND "
-							  "		n.nspname NOT IN ('pg_catalog', 'information_schema')");
+								"		n.nspname NOT IN ('pg_catalog', 'information_schema')");
 
 		ntups = PQntuples(res);
 		i_nspname = PQfnumber(res, "nspname");
@@ -939,7 +1002,7 @@ check_for_jsonb_9_4_usage(ClusterInfo *cluster)
 	{
 		pg_log(PG_REPORT, "fatal\n");
 		pg_fatal("Your installation contains one of the JSONB data types in user tables.\n"
-		 "The internal format of JSONB changed during 9.4 beta so this cluster cannot currently\n"
+				 "The internal format of JSONB changed during 9.4 beta so this cluster cannot currently\n"
 				 "be upgraded.  You can remove the problem tables and restart the upgrade.  A list\n"
 				 "of the problem columns is in the file:\n"
 				 "    %s\n\n", output_path);

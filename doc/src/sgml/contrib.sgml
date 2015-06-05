@@ -141,6 +141,8 @@ CREATE EXTENSION <replaceable>module_name</> FROM unpackaged;
  &tcn;
  &test-decoding;
  &tsearch2;
+ &tsm-system-rows;
+ &tsm-system-time;
  &unaccent;
  &uuid-ossp;
  &xml2;
@@ -202,8 +204,5 @@ pages.
   </para>
 
  &pgstandby;
- &pgtestfsync;
- &pgtesttiming;
- &pgxlogdump;
  </sect1>
 </appendix>

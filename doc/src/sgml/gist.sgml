@@ -105,6 +105,7 @@
        <literal>~=</>
       </entry>
       <entry>
+       <literal>&lt;-&gt;</>
       </entry>
      </row>
      <row>
@@ -163,6 +164,7 @@
        <literal>~=</>
       </entry>
       <entry>
+       <literal>&lt;-&gt;</>
       </entry>
      </row>
      <row>
@@ -212,7 +214,7 @@
   To use it, mention the class name in <command>CREATE INDEX</>,
   for example
 <programlisting>
-CREATE INDEX ON my_table USING gist (my_inet_column inet_ops);
+CREATE INDEX ON my_table USING GIST (my_inet_column inet_ops);
 </programlisting>
  </para>
 
@@ -325,7 +327,6 @@ LANGUAGE C STRICT;
         And the matching code in the C module could then follow this skeleton:
 
 <programlisting>
-Datum       my_consistent(PG_FUNCTION_ARGS);
 PG_FUNCTION_INFO_V1(my_consistent);
 
 Datum
@@ -388,7 +389,6 @@ LANGUAGE C STRICT;
         And the matching code in the C module could then follow this skeleton:
 
 <programlisting>
-Datum       my_union(PG_FUNCTION_ARGS);
 PG_FUNCTION_INFO_V1(my_union);
 
 Datum
@@ -462,7 +462,6 @@ LANGUAGE C STRICT;
         And the matching code in the C module could then follow this skeleton:
 
 <programlisting>
-Datum       my_compress(PG_FUNCTION_ARGS);
 PG_FUNCTION_INFO_V1(my_compress);
 
 Datum
@@ -523,7 +522,6 @@ LANGUAGE C STRICT;
         And the matching code in the C module could then follow this skeleton:
 
 <programlisting>
-Datum       my_decompress(PG_FUNCTION_ARGS);
 PG_FUNCTION_INFO_V1(my_decompress);
 
 Datum
@@ -563,7 +561,6 @@ LANGUAGE C STRICT;  -- in some cases penalty functions need not be strict
         And the matching code in the C module could then follow this skeleton:
 
 <programlisting>
-Datum       my_penalty(PG_FUNCTION_ARGS);
 PG_FUNCTION_INFO_V1(my_penalty);
 
 Datum
@@ -612,7 +609,6 @@ LANGUAGE C STRICT;
         And the matching code in the C module could then follow this skeleton:
 
 <programlisting>
-Datum       my_picksplit(PG_FUNCTION_ARGS);
 PG_FUNCTION_INFO_V1(my_picksplit);
 
 Datum
@@ -719,7 +715,6 @@ LANGUAGE C STRICT;
         And the matching code in the C module could then follow this skeleton:
 
 <programlisting>
-Datum       my_same(PG_FUNCTION_ARGS);
 PG_FUNCTION_INFO_V1(my_same);
 
 Datum
@@ -770,7 +765,6 @@ LANGUAGE C STRICT;
         And the matching code in the C module could then follow this skeleton:
 
 <programlisting>
-Datum       my_distance(PG_FUNCTION_ARGS);
 PG_FUNCTION_INFO_V1(my_distance);
 
 Datum
@@ -780,6 +774,7 @@ my_distance(PG_FUNCTION_ARGS)
     data_type  *query = PG_GETARG_DATA_TYPE_P(1);
     StrategyNumber strategy = (StrategyNumber) PG_GETARG_UINT16(2);
     /* Oid subtype = PG_GETARG_OID(3); */
+    /* bool *recheck = (bool *) PG_GETARG_POINTER(4); */
     data_type  *key = DatumGetDataType(entry-&gt;key);
     double      retval;
 
@@ -792,17 +787,34 @@ my_distance(PG_FUNCTION_ARGS)
 </programlisting>
 
        The arguments to the <function>distance</> function are identical to
-       the arguments of the <function>consistent</> function, except that no
-       recheck flag is used.  The distance to a leaf index entry must always
-       be determined exactly, since there is no way to re-order the tuples
-       once they are returned.  Some approximation is allowed when determining
-       the distance to an internal tree node, so long as the result is never
-       greater than any child's actual distance.  Thus, for example, distance
-       to a bounding box is usually sufficient in geometric applications.  The
-       result value can be any finite <type>float8</> value.  (Infinity and
-       minus infinity are used internally to handle cases such as nulls, so it
-       is not recommended that <function>distance</> functions return these
-       values.)
+       the arguments of the <function>consistent</> function.
+      </para>
+
+      <para>
+       Some approximation is allowed when determining the distance, so long
+       as the result is never greater than the entry's actual distance. Thus,
+       for example, distance to a bounding box is usually sufficient in
+       geometric applications.  For an internal tree node, the distance
+       returned must not be greater than the distance to any of the child
+       nodes. If the returned distance is not exact, the function must set
+       <literal>*recheck</> to true. (This is not necessary for internal tree
+       nodes; for them, the calculation is always assumed to be inexact.) In
+       this case the executor will calculate the accurate distance after
+       fetching the tuple from the heap, and reorder the tuples if necessary.
+      </para>
+
+      <para>
+       If the distance function returns <literal>*recheck = true</> for any
+       leaf node, the original ordering operator's return type must
+       be <type>float8</> or <type>float4</>, and the distance function's
+       result values must be comparable to those of the original ordering
+       operator, since the executor will sort using both distance function
+       results and recalculated ordering-operator results.  Otherwise, the
+       distance function's result values can be any finite <type>float8</>
+       values, so long as the relative order of the result values matches the
+       order returned by the ordering operator.  (Infinity and minus infinity
+       are used internally to handle cases such as nulls, so it is not
+       recommended that <function>distance</> functions return these values.)
       </para>
 
      </listitem>
@@ -833,13 +845,12 @@ LANGUAGE C STRICT;
         struct, whose 'key' field contains the same datum in the original,
         uncompressed form. If the opclass' compress function does nothing for
         leaf entries, the fetch method can return the argument as is.
-       </para> 
+       </para>
 
        <para>
         The matching code in the C module could then follow this skeleton:
 
 <programlisting>
-Datum       my_fetch(PG_FUNCTION_ARGS);
 PG_FUNCTION_INFO_V1(my_fetch);
 
 Datum

@@ -31,7 +31,7 @@
 /*
  * Each page of XLOG file has a header like this:
  */
-#define XLOG_PAGE_MAGIC 0xD083	/* can be used as WAL version indicator */
+#define XLOG_PAGE_MAGIC 0xD085	/* can be used as WAL version indicator */
 
 typedef struct XLogPageHeaderData
 {
@@ -142,6 +142,19 @@ typedef XLogLongPageHeaderData *XLogLongPageHeader;
 			 (uint32) ((logSegNo) / XLogSegmentsPerXLogId), \
 			 (uint32) ((logSegNo) % XLogSegmentsPerXLogId))
 
+#define IsXLogFileName(fname) \
+	(strlen(fname) == 24 && strspn(fname, "0123456789ABCDEF") == 24)
+
+/*
+ * XLOG segment with .partial suffix.  Used by pg_receivexlog and at end of
+ * archive recovery, when we want to archive a WAL segment but it might not
+ * be complete yet.
+ */
+#define IsPartialXLogFileName(fname)	\
+	(strlen(fname) == 24 + strlen(".partial") &&	\
+	 strspn(fname, "0123456789ABCDEF") == 24 &&		\
+	 strcmp((fname) + 24, ".partial") == 0)
+
 #define XLogFromFileName(fname, tli, logSegNo)	\
 	do {												\
 		uint32 log;										\
@@ -158,6 +171,11 @@ typedef XLogLongPageHeaderData *XLogLongPageHeader;
 #define TLHistoryFileName(fname, tli)	\
 	snprintf(fname, MAXFNAMELEN, "%08X.history", tli)
 
+#define IsTLHistoryFileName(fname)	\
+	(strlen(fname) == 8 + strlen(".history") &&		\
+	 strspn(fname, "0123456789ABCDEF") == 8 &&		\
+	 strcmp((fname) + 8, ".history") == 0)
+
 #define TLHistoryFilePath(path, tli)	\
 	snprintf(path, MAXPGPATH, XLOGDIR "/%08X.history", tli)
 
@@ -168,6 +186,11 @@ typedef XLogLongPageHeaderData *XLogLongPageHeader;
 	snprintf(fname, MAXFNAMELEN, "%08X%08X%08X.%08X.backup", tli, \
 			 (uint32) ((logSegNo) / XLogSegmentsPerXLogId),		  \
 			 (uint32) ((logSegNo) % XLogSegmentsPerXLogId), offset)
+
+#define IsBackupHistoryFileName(fname) \
+	(strlen(fname) > 24 && \
+	 strspn(fname, "0123456789ABCDEF") == 24 && \
+	 strcmp((fname) + strlen(fname) - strlen(".backup"), ".backup") == 0)
 
 #define BackupHistoryFilePath(path, tli, logSegNo, offset)	\
 	snprintf(path, MAXPGPATH, XLOGDIR "/%08X%08X%08X.%08X.backup", tli, \
@@ -282,6 +305,7 @@ extern void XLogArchiveForceDone(const char *xlog);
 extern bool XLogArchiveCheckDone(const char *xlog);
 extern bool XLogArchiveIsBusy(const char *xlog);
 extern bool XLogArchiveIsReady(const char *xlog);
+extern bool XLogArchiveIsReadyOrDone(const char *xlog);
 extern void XLogArchiveCleanup(const char *xlog);
 
 #endif   /* XLOG_INTERNAL_H */

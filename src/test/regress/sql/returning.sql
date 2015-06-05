@@ -164,3 +164,9 @@ UPDATE joinview SET f1 = f1 + 1 WHERE f3 = 57 RETURNING *, other + 1;
 SELECT * FROM joinview ORDER BY f1;
 SELECT * FROM foo ORDER BY f1;
 SELECT * FROM voo ORDER BY f1;
+
+-- Check aliased target relation
+INSERT INTO foo AS bar DEFAULT VALUES RETURNING *; -- ok
+INSERT INTO foo AS bar DEFAULT VALUES RETURNING foo.*; -- fails, wrong name
+INSERT INTO foo AS bar DEFAULT VALUES RETURNING bar.*; -- ok
+INSERT INTO foo AS bar DEFAULT VALUES RETURNING bar.f3; -- ok

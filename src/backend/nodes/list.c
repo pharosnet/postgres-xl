@@ -822,15 +822,14 @@ list_intersection(const List *list1, const List *list2)
 	return result;
 }
 
-#ifdef PGXC
 /*
- * This variant of list_intersection() operates upon lists of integers.
+ * As list_intersection but operates on lists of integers.
  */
 List *
 list_intersection_int(const List *list1, const List *list2)
 {
 	List	   *result;
-	ListCell   *cell;
+	const ListCell *cell;
 
 	if (list1 == NIL || list2 == NIL)
 		return NIL;
@@ -848,7 +847,6 @@ list_intersection_int(const List *list1, const List *list2)
 	check_list_invariants(result);
 	return result;
 }
-#endif
 
 /*
  * Return a list that contains all the cells in list1 that are not in

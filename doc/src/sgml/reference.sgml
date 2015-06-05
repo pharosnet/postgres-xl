@@ -111,6 +111,7 @@
    &createTSDictionary;
    &createTSParser;
    &createTSTemplate;
+   &createTransform;
    &createTrigger;
    &createType;
    &createUser;
@@ -152,6 +153,7 @@
    &dropTSDictionary;
    &dropTSParser;
    &dropTSTemplate;
+   &dropTransform;
    &dropTrigger;
    &dropType;
    &dropUser;
@@ -263,7 +265,10 @@
    &pgCtl;
    &pgResetxlog;
    &pgRewind;
+   &pgtestfsync;
+   &pgtesttiming;
    &pgupgrade;
+   &pgxlogdump;
    &postgres;
    &postmaster;
 

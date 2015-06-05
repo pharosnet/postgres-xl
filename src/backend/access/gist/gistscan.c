@@ -17,6 +17,7 @@
 #include "access/gist_private.h"
 #include "access/gistscan.h"
 #include "access/relscan.h"
+#include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/rel.h"
 
@@ -85,6 +86,12 @@ gistbeginscan(PG_FUNCTION_ARGS)
 	/* workspaces with size dependent on numberOfOrderBys: */
 	so->distances = palloc(sizeof(double) * scan->numberOfOrderBys);
 	so->qual_ok = true;			/* in case there are zero keys */
+	if (scan->numberOfOrderBys > 0)
+	{
+		scan->xs_orderbyvals = palloc0(sizeof(Datum) * scan->numberOfOrderBys);
+		scan->xs_orderbynulls = palloc(sizeof(bool) * scan->numberOfOrderBys);
+		memset(scan->xs_orderbynulls, true, sizeof(bool) * scan->numberOfOrderBys);
+	}
 
 	scan->opaque = so;
 
@@ -147,8 +154,8 @@ gistrescan(PG_FUNCTION_ARGS)
 	}
 
 	/*
-	 * If we're doing an index-only scan, on the first call, also initialize
-	 * a tuple descriptor to represent the returned index tuples and create a
+	 * If we're doing an index-only scan, on the first call, also initialize a
+	 * tuple descriptor to represent the returned index tuples and create a
 	 * memory context to hold them during the scan.
 	 */
 	if (scan->xs_want_itup && !scan->xs_itupdesc)
@@ -162,7 +169,7 @@ gistrescan(PG_FUNCTION_ARGS)
 		 * descriptor. Instead, construct a descriptor with the original data
 		 * types.
 		 */
-		natts =  RelationGetNumberOfAttributes(scan->indexRelation);
+		natts = RelationGetNumberOfAttributes(scan->indexRelation);
 		so->giststate->fetchTupdesc = CreateTemplateTupleDesc(natts, false);
 		for (attno = 1; attno <= natts; attno++)
 		{
@@ -258,6 +265,8 @@ gistrescan(PG_FUNCTION_ARGS)
 		memmove(scan->orderByData, orderbys,
 				scan->numberOfOrderBys * sizeof(ScanKeyData));
 
+		so->orderByTypes = (Oid *) palloc(scan->numberOfOrderBys * sizeof(Oid));
+
 		/*
 		 * Modify the order-by key so that the Distance method is called for
 		 * all comparisons. The original operator is passed to the Distance
@@ -277,6 +286,20 @@ gistrescan(PG_FUNCTION_ARGS)
 					 RelationGetRelationName(scan->indexRelation));
 
 			fmgr_info_copy(&(skey->sk_func), finfo, so->giststate->scanCxt);
+
+			/*
+			 * Look up the datatype returned by the original ordering
+			 * operator. GiST always uses a float8 for the distance function,
+			 * but the ordering operator could be anything else.
+			 *
+			 * XXX: The distance function is only allowed to be lossy if the
+			 * ordering operator's result type is float4 or float8.  Otherwise
+			 * we don't know how to return the distance to the executor.  But
+			 * we cannot check that here, as we won't know if the distance
+			 * function is lossy until it returns *recheck = true for the
+			 * first time.
+			 */
+			so->orderByTypes[i] = get_func_rettype(skey->sk_func.fn_oid);
 
 			/* Restore prior fn_extra pointers, if not first time */
 			if (!first_time)

@@ -120,6 +120,7 @@ ProcessConfigFile(GucContext context)
 			   *head,
 			   *tail;
 	int			i;
+	int			file_variables_count = 0;
 
 	/*
 	 * Config files are processed on startup (by the postmaster only)
@@ -255,6 +256,7 @@ ProcessConfigFile(GucContext context)
 			error = true;
 			ConfFileWithError = item->filename;
 		}
+		file_variables_count++;
 	}
 
 	/*
@@ -340,6 +342,54 @@ ProcessConfigFile(GucContext context)
 		SetConfigOption("client_encoding", GetDatabaseEncodingName(),
 						PGC_BACKEND, PGC_S_DYNAMIC_DEFAULT);
 	}
+
+	/*
+	 * Check if we have allocated the array yet.
+	 *
+	 * If not, allocate it based on the number of file variables we have seen.
+	 */
+	if (!guc_file_variables)
+	{
+		/* For the first call */
+		num_guc_file_variables = file_variables_count;
+		guc_file_variables = (ConfigFileVariable *) guc_malloc(FATAL,
+					num_guc_file_variables * sizeof(struct ConfigFileVariable));
+	}
+	else
+	{
+		int i;
+
+		/* Free all of the previously allocated entries */
+		for (i = 0; i < num_guc_file_variables; i++)
+		{
+			free(guc_file_variables[i].name);
+			free(guc_file_variables[i].value);
+			free(guc_file_variables[i].filename);
+		}
+
+		/* Update the global count and realloc based on the new size */
+		num_guc_file_variables = file_variables_count;
+		guc_file_variables = (ConfigFileVariable *) guc_realloc(FATAL,
+									guc_file_variables,
+					num_guc_file_variables * sizeof(struct ConfigFileVariable));
+	}
+
+	/*
+	 * Copy the settings which came from the files read into the
+	 * guc_file_variables array which backs the pg_show_file_settings()
+	 * function.
+	 */
+	for (item = head, i = 0; item && i < num_guc_file_variables;
+		 item = item->next, i++)
+	{
+		guc_file_variables[i].name = guc_strdup(FATAL, item->name);
+		guc_file_variables[i].value = guc_strdup(FATAL, item->value);
+		guc_file_variables[i].filename = guc_strdup(FATAL, item->filename);
+		guc_file_variables[i].sourceline = item->sourceline;
+	}
+
+	/* We had better have made it through the loop above to a clean ending. */
+	Assert(!item && i == num_guc_file_variables);
 
 	/*
 	 * Now apply the values from the config file.
@@ -554,12 +604,12 @@ GUC_flex_fatal(const char *msg)
  *	config_file: absolute or relative path name of the configuration file
  *	depth: recursion depth (should be 0 in the outermost call)
  *	elevel: error logging level to use
- * Output parameters:
+ * Input/Output parameters:
  *	head_p, tail_p: head and tail of linked list of name/value pairs
  *
- * *head_p and *tail_p must be initialized to NULL before calling the outer
- * recursion level.  On exit, they contain a list of name-value pairs read
- * from the input file(s).
+ * *head_p and *tail_p must either be initialized to NULL or valid pointers
+ * to a ConfigVariable list before calling the outer recursion level.  Any
+ * name-value pairs read from the input file(s) will be added to the list.
  *
  * Returns TRUE if successful, FALSE if an error occurred.  The error has
  * already been ereport'd, it is only necessary for the caller to clean up

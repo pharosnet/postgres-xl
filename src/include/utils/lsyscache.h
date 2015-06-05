@@ -80,6 +80,7 @@ extern int32 get_collation_encoding(Oid colloid);
 extern Oid 	get_collid(const char *collname, int32 collencoding, Oid collnsp);
 #endif
 extern char *get_constraint_name(Oid conoid);
+extern char *get_language_name(Oid langoid, bool missing_ok);
 extern Oid	get_opclass_family(Oid opclass);
 extern Oid	get_opclass_input_type(Oid opclass);
 extern RegProcedure get_opcode(Oid opno);
@@ -114,6 +115,8 @@ extern Oid	get_rel_namespace(Oid relid);
 extern Oid	get_rel_type_id(Oid relid);
 extern char get_rel_relkind(Oid relid);
 extern Oid	get_rel_tablespace(Oid relid);
+extern Oid	get_transform_fromsql(Oid typid, Oid langid, List *trftypes);
+extern Oid	get_transform_tosql(Oid typid, Oid langid, List *trftypes);
 extern bool get_typisdefined(Oid typid);
 extern int16 get_typlen(Oid typid);
 extern bool get_typbyval(Oid typid);
@@ -189,6 +192,7 @@ extern Oid	get_operid(const char *oprname, Oid oprleft, Oid oprright, Oid oprnsp
 #endif
 extern char *get_namespace_name_or_temp(Oid nspid);
 extern Oid	get_range_subtype(Oid rangeOid);
+extern char *get_tablesample_method_name(Oid tsmid);
 
 #define type_is_array(typid)  (get_element_type(typid) != InvalidOid)
 /* type_is_array_domain accepts both plain arrays and domains over arrays */

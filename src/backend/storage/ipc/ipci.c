@@ -39,6 +39,7 @@
 #include "replication/slot.h"
 #include "replication/walreceiver.h"
 #include "replication/walsender.h"
+#include "replication/origin.h"
 #include "storage/bufmgr.h"
 #include "storage/dsm.h"
 #include "storage/ipc.h"
@@ -144,6 +145,7 @@ CreateSharedMemoryAndSemaphores(bool makePrivate, int port)
 		size = add_size(size, CheckpointerShmemSize());
 		size = add_size(size, AutoVacuumShmemSize());
 		size = add_size(size, ReplicationSlotsShmemSize());
+		size = add_size(size, ReplicationOriginShmemSize());
 		size = add_size(size, WalSndShmemSize());
 		size = add_size(size, WalRcvShmemSize());
 #ifdef XCP
@@ -260,6 +262,7 @@ CreateSharedMemoryAndSemaphores(bool makePrivate, int port)
 	CheckpointerShmemInit();
 	AutoVacuumShmemInit();
 	ReplicationSlotsShmemInit();
+	ReplicationOriginShmemInit();
 	WalSndShmemInit();
 	WalRcvShmemInit();
 

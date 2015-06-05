@@ -107,6 +107,7 @@
 #include "executor/nodeNestloop.h"
 #include "executor/nodeRecursiveunion.h"
 #include "executor/nodeResult.h"
+#include "executor/nodeSamplescan.h"
 #include "executor/nodeSeqscan.h"
 #include "executor/nodeSetOp.h"
 #include "executor/nodeSort.h"
@@ -195,6 +196,11 @@ ExecInitNode(Plan *node, EState *estate, int eflags)
 		case T_SeqScan:
 			result = (PlanState *) ExecInitSeqScan((SeqScan *) node,
 												   estate, eflags);
+			break;
+
+		case T_SampleScan:
+			result = (PlanState *) ExecInitSampleScan((SampleScan *) node,
+													  estate, eflags);
 			break;
 
 		case T_IndexScan:
@@ -510,6 +516,10 @@ ExecProcNode(PlanState *node)
 			result = ExecSeqScan((SeqScanState *) node);
 			break;
 
+		case T_SampleScanState:
+			result = ExecSampleScan((SampleScanState *) node);
+			break;
+
 		case T_IndexScanState:
 			result = ExecIndexScan((IndexScanState *) node);
 			break;
@@ -757,6 +767,10 @@ ExecEndNode(PlanState *node)
 			 */
 		case T_SeqScanState:
 			ExecEndSeqScan((SeqScanState *) node);
+			break;
+
+		case T_SampleScanState:
+			ExecEndSampleScan((SampleScanState *) node);
 			break;
 
 		case T_IndexScanState:

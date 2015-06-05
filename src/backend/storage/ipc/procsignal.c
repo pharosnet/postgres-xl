@@ -22,6 +22,7 @@
 #include <signal.h>
 #include <unistd.h>
 
+#include "access/parallel.h"
 #include "commands/async.h"
 #include "miscadmin.h"
 #include "storage/latch.h"
@@ -285,6 +286,8 @@ procsignal_sigusr1_handler(SIGNAL_ARGS)
 	if (CheckProcSignal(PROCSIG_PGXCPOOL_RELOAD))
 		HandlePoolerReload();
 #endif
+	if (CheckProcSignal(PROCSIG_PARALLEL_MESSAGE))
+		HandleParallelMessageInterrupt();
 
 	if (CheckProcSignal(PROCSIG_RECOVERY_CONFLICT_DATABASE))
 		RecoveryConflictInterrupt(PROCSIG_RECOVERY_CONFLICT_DATABASE);

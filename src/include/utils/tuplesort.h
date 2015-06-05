@@ -28,11 +28,11 @@
 #include "access/itup.h"
 #include "executor/tuptable.h"
 #include "fmgr.h"
-#ifdef PGXC
-#include "pgxc/execRemote.h"
-#endif
 #include "utils/relcache.h"
 
+#ifdef XCP
+struct ResponseCombiner;
+#endif
 
 /* Tuplesortstate is an opaque type whose details are not known outside
  * tuplesort.c.
@@ -91,7 +91,7 @@ extern Tuplesortstate *tuplesort_begin_merge(TupleDesc tupDesc,
 					 int nkeys, AttrNumber *attNums,
 					 Oid *sortOperators, Oid *sortCollations, bool *nullsFirstFlags,
 #ifdef XCP
-					 ResponseCombiner *combiner,
+					 struct ResponseCombiner *combiner,
 #else
 					 RemoteQueryState *combiner,
 #endif

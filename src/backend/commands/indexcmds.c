@@ -1111,7 +1111,7 @@ ComputeIndexAttrs(IndexInfo *indexInfo,
 				 */
 
 				/*
-				 * A expression using mutable functions is probably wrong,
+				 * An expression using mutable functions is probably wrong,
 				 * since if you aren't going to get the same result for the
 				 * same data every time, it's not clear what the index entries
 				 * mean at all.
@@ -1741,7 +1741,7 @@ ChooseIndexColumnNames(List *indexElems)
  *		Recreate a specific index.
  */
 Oid
-ReindexIndex(RangeVar *indexRelation)
+ReindexIndex(RangeVar *indexRelation, int options)
 {
 	Oid			indOid;
 	Oid			heapOid = InvalidOid;
@@ -1766,7 +1766,7 @@ ReindexIndex(RangeVar *indexRelation)
 	persistence = irel->rd_rel->relpersistence;
 	index_close(irel, NoLock);
 
-	reindex_index(indOid, false, persistence);
+	reindex_index(indOid, false, persistence, options);
 
 	return indOid;
 }
@@ -1835,7 +1835,7 @@ RangeVarCallbackForReindexIndex(const RangeVar *relation,
  *		Recreate all indexes of a table (and of its toast table, if any)
  */
 Oid
-ReindexTable(RangeVar *relation)
+ReindexTable(RangeVar *relation, int options)
 {
 	Oid			heapOid;
 
@@ -1845,7 +1845,8 @@ ReindexTable(RangeVar *relation)
 
 	if (!reindex_relation(heapOid,
 						  REINDEX_REL_PROCESS_TOAST |
-						  REINDEX_REL_CHECK_CONSTRAINTS))
+						  REINDEX_REL_CHECK_CONSTRAINTS,
+						  options))
 		ereport(NOTICE,
 				(errmsg("table \"%s\" has no indexes",
 						relation->relname)));
@@ -1862,7 +1863,8 @@ ReindexTable(RangeVar *relation)
  * That means this must not be called within a user transaction block!
  */
 void
-ReindexMultipleTables(const char *objectName, ReindexObjectType objectKind)
+ReindexMultipleTables(const char *objectName, ReindexObjectType objectKind,
+					  int options)
 {
 	Oid			objectOid;
 	Relation	relationRelation;
@@ -1998,11 +2000,14 @@ ReindexMultipleTables(const char *objectName, ReindexObjectType objectKind)
 		PushActiveSnapshot(GetTransactionSnapshot());
 		if (reindex_relation(relid,
 							 REINDEX_REL_PROCESS_TOAST |
-							 REINDEX_REL_CHECK_CONSTRAINTS))
-			ereport(DEBUG1,
-					(errmsg("table \"%s.%s\" was reindexed",
-							get_namespace_name(get_rel_namespace(relid)),
-							get_rel_name(relid))));
+							 REINDEX_REL_CHECK_CONSTRAINTS,
+							 options))
+
+			if (options & REINDEXOPT_VERBOSE)
+				ereport(INFO,
+						(errmsg("table \"%s.%s\" was reindexed",
+								get_namespace_name(get_rel_namespace(relid)),
+								get_rel_name(relid))));
 		PopActiveSnapshot();
 		CommitTransactionCommand();
 	}

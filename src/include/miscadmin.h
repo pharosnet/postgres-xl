@@ -280,6 +280,7 @@ extern void check_stack_depth(void);
 
 /* in tcop/utility.c */
 extern void PreventCommandIfReadOnly(const char *cmdname);
+extern void PreventCommandIfParallelMode(const char *cmdname);
 extern void PreventCommandDuringRecovery(const char *cmdname);
 
 /* in utils/misc/guc.c */
@@ -304,7 +305,7 @@ extern void InitStandaloneProcess(const char *argv0);
 
 extern void SetDatabasePath(const char *path);
 
-extern char *GetUserNameFromId(Oid roleid);
+extern char *GetUserNameFromId(Oid roleid, bool noerr);
 extern Oid	GetUserId(void);
 extern Oid	GetOuterUserId(void);
 extern Oid	GetSessionUserId(void);
@@ -462,7 +463,7 @@ extern char *local_preload_libraries_string;
 #define LOCK_FILE_LINE_SHMEM_KEY	7
 
 extern void CreateDataDirLockFile(bool amPostmaster);
-extern void ForgetLockFiles();
+extern void ForgetLockFiles(void);
 extern void CreateSocketLockFile(const char *socketfile, bool amPostmaster,
 					 const char *socketDir);
 extern void TouchSocketLockFiles(void);

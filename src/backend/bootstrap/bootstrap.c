@@ -124,6 +124,10 @@ static const struct typinfo TypInfo[] = {
 	F_REGPROCIN, F_REGPROCOUT},
 	{"regtype", REGTYPEOID, 0, 4, true, 'i', 'p', InvalidOid,
 	F_REGTYPEIN, F_REGTYPEOUT},
+	{"regrole", REGROLEOID, 0, 4, true, 'i', 'p', InvalidOid,
+	F_REGROLEIN, F_REGROLEOUT},
+	{"regnamespace", REGNAMESPACEOID, 0, 4, true, 'i', 'p', InvalidOid,
+	F_REGNAMESPACEIN, F_REGNAMESPACEOUT},
 	{"text", TEXTOID, 0, -1, false, 'i', 'x', DEFAULT_COLLATION_OID,
 	F_TEXTIN, F_TEXTOUT},
 	{"oid", OIDOID, 0, 4, true, 'i', 'p', InvalidOid,
@@ -426,6 +430,13 @@ AuxiliaryProcessMain(int argc, char *argv[])
 			proc_exit(1);		/* should never return */
 
 		case BootstrapProcess:
+
+			/*
+			 * There was a brief instant during which mode was Normal; this is
+			 * okay.  We need to be in bootstrap mode during BootStrapXLOG for
+			 * the sake of multixact initialization.
+			 */
+			SetProcessingMode(BootstrapProcessing);
 			bootstrap_signals();
 			BootStrapXLOG();
 			BootstrapModeMain();
@@ -488,8 +499,7 @@ BootstrapModeMain(void)
 	int			i;
 
 	Assert(!IsUnderPostmaster);
-
-	SetProcessingMode(BootstrapProcessing);
+	Assert(IsBootstrapProcessingMode());
 
 	/*
 	 * Do backend-like initialization for bootstrap mode

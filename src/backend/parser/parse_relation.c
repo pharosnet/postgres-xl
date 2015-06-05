@@ -544,8 +544,8 @@ updateFuzzyAttrMatchState(int fuzzy_rte_penalty,
 						  FuzzyAttrMatchState *fuzzystate, RangeTblEntry *rte,
 						  const char *actual, const char *match, int attnum)
 {
-	int		columndistance;
-	int		matchlen;
+	int			columndistance;
+	int			matchlen;
 
 	/* Bail before computing the Levenshtein distance if there's no hope. */
 	if (fuzzy_rte_penalty > fuzzystate->distance)
@@ -564,7 +564,7 @@ updateFuzzyAttrMatchState(int fuzzy_rte_penalty,
 		varstr_levenshtein_less_equal(actual, strlen(actual), match, matchlen,
 									  1, 1, 1,
 									  fuzzystate->distance + 1
-										- fuzzy_rte_penalty);
+									  - fuzzy_rte_penalty);
 
 	/*
 	 * If more than half the characters are different, don't treat it as a
@@ -574,8 +574,8 @@ updateFuzzyAttrMatchState(int fuzzy_rte_penalty,
 		return;
 
 	/*
-	 * From this point on, we can ignore the distinction between the
-	 * RTE-name distance and the column-name distance.
+	 * From this point on, we can ignore the distinction between the RTE-name
+	 * distance and the column-name distance.
 	 */
 	columndistance += fuzzy_rte_penalty;
 
@@ -595,11 +595,11 @@ updateFuzzyAttrMatchState(int fuzzy_rte_penalty,
 	else if (columndistance == fuzzystate->distance)
 	{
 		/*
-		 * This match distance may equal a prior match within this same
-		 * range table.  When that happens, the prior match may also be
-		 * given, but only if there is no more than two equally distant
-		 * matches from the RTE (in turn, our caller will only accept
-		 * two equally distant matches overall).
+		 * This match distance may equal a prior match within this same range
+		 * table.  When that happens, the prior match may also be given, but
+		 * only if there is no more than two equally distant matches from the
+		 * RTE (in turn, our caller will only accept two equally distant
+		 * matches overall).
 		 */
 		if (AttributeNumberIsValid(fuzzystate->second))
 		{
@@ -620,9 +620,9 @@ updateFuzzyAttrMatchState(int fuzzy_rte_penalty,
 		else if (fuzzystate->distance <= MAX_FUZZY_DISTANCE)
 		{
 			/*
-			 * Record as provisional first match (this can occasionally
-			 * occur because previous lowest distance was "too low a
-			 * bar", rather than being associated with a real match)
+			 * Record as provisional first match (this can occasionally occur
+			 * because previous lowest distance was "too low a bar", rather
+			 * than being associated with a real match)
 			 */
 			fuzzystate->rfirst = rte;
 			fuzzystate->first = attnum;
@@ -834,8 +834,8 @@ searchRangeTableForCol(ParseState *pstate, const char *alias, char *colname,
 
 		foreach(l, pstate->p_rtable)
 		{
-			RangeTblEntry	   *rte = (RangeTblEntry *) lfirst(l);
-			int					fuzzy_rte_penalty = 0;
+			RangeTblEntry *rte = (RangeTblEntry *) lfirst(l);
+			int			fuzzy_rte_penalty = 0;
 
 			/*
 			 * Typically, it is not useful to look for matches within join
@@ -865,7 +865,7 @@ searchRangeTableForCol(ParseState *pstate, const char *alias, char *colname,
 			 */
 			if (scanRTEForColumn(orig_pstate, rte, colname, location,
 								 fuzzy_rte_penalty, fuzzystate)
-					&& fuzzy_rte_penalty == 0)
+				&& fuzzy_rte_penalty == 0)
 			{
 				fuzzystate->rfirst = rte;
 				fuzzystate->first = InvalidAttrNumber;
@@ -1319,7 +1319,8 @@ addRangeTableEntry(ParseState *pstate,
 	rte->requiredPerms = ACL_SELECT;
 	rte->checkAsUser = InvalidOid;		/* not set-uid by default, either */
 	rte->selectedCols = NULL;
-	rte->modifiedCols = NULL;
+	rte->insertedCols = NULL;
+	rte->updatedCols = NULL;
 
 	/*
 	 * Add completed RTE to pstate's range table list, but not to join list
@@ -1379,7 +1380,8 @@ addRangeTableEntryForRelation(ParseState *pstate,
 	rte->requiredPerms = ACL_SELECT;
 	rte->checkAsUser = InvalidOid;		/* not set-uid by default, either */
 	rte->selectedCols = NULL;
-	rte->modifiedCols = NULL;
+	rte->insertedCols = NULL;
+	rte->updatedCols = NULL;
 
 	/*
 	 * Add completed RTE to pstate's range table list, but not to join list
@@ -1458,7 +1460,8 @@ addRangeTableEntryForSubquery(ParseState *pstate,
 	rte->requiredPerms = 0;
 	rte->checkAsUser = InvalidOid;
 	rte->selectedCols = NULL;
-	rte->modifiedCols = NULL;
+	rte->insertedCols = NULL;
+	rte->updatedCols = NULL;
 
 	/*
 	 * Add completed RTE to pstate's range table list, but not to join list
@@ -1713,7 +1716,8 @@ addRangeTableEntryForFunction(ParseState *pstate,
 	rte->requiredPerms = 0;
 	rte->checkAsUser = InvalidOid;
 	rte->selectedCols = NULL;
-	rte->modifiedCols = NULL;
+	rte->insertedCols = NULL;
+	rte->updatedCols = NULL;
 
 	/*
 	 * Add completed RTE to pstate's range table list, but not to join list
@@ -1786,7 +1790,8 @@ addRangeTableEntryForValues(ParseState *pstate,
 	rte->requiredPerms = 0;
 	rte->checkAsUser = InvalidOid;
 	rte->selectedCols = NULL;
-	rte->modifiedCols = NULL;
+	rte->insertedCols = NULL;
+	rte->updatedCols = NULL;
 
 	/*
 	 * Add completed RTE to pstate's range table list, but not to join list
@@ -1855,7 +1860,8 @@ addRangeTableEntryForJoin(ParseState *pstate,
 	rte->requiredPerms = 0;
 	rte->checkAsUser = InvalidOid;
 	rte->selectedCols = NULL;
-	rte->modifiedCols = NULL;
+	rte->insertedCols = NULL;
+	rte->updatedCols = NULL;
 
 	/*
 	 * Add completed RTE to pstate's range table list, but not to join list
@@ -1965,7 +1971,8 @@ addRangeTableEntryForCTE(ParseState *pstate,
 	rte->requiredPerms = 0;
 	rte->checkAsUser = InvalidOid;
 	rte->selectedCols = NULL;
-	rte->modifiedCols = NULL;
+	rte->insertedCols = NULL;
+	rte->updatedCols = NULL;
 
 	/*
 	 * Add completed RTE to pstate's range table list, but not to join list
@@ -3154,8 +3161,8 @@ void
 errorMissingColumn(ParseState *pstate,
 				   char *relname, char *colname, int location)
 {
-	FuzzyAttrMatchState	   *state;
-	char				   *closestfirst = NULL;
+	FuzzyAttrMatchState *state;
+	char	   *closestfirst = NULL;
 
 	/*
 	 * Search the entire rtable looking for possible matches.  If we find one,
@@ -3170,10 +3177,10 @@ errorMissingColumn(ParseState *pstate,
 	 * Extract closest col string for best match, if any.
 	 *
 	 * Infer an exact match referenced despite not being visible from the fact
-	 * that an attribute number was not present in state passed back -- this is
-	 * what is reported when !closestfirst.  There might also be an exact match
-	 * that was qualified with an incorrect alias, in which case closestfirst
-	 * will be set (so hint is the same as generic fuzzy case).
+	 * that an attribute number was not present in state passed back -- this
+	 * is what is reported when !closestfirst.  There might also be an exact
+	 * match that was qualified with an incorrect alias, in which case
+	 * closestfirst will be set (so hint is the same as generic fuzzy case).
 	 */
 	if (state->rfirst && AttributeNumberIsValid(state->first))
 		closestfirst = strVal(list_nth(state->rfirst->eref->colnames,
@@ -3188,19 +3195,19 @@ errorMissingColumn(ParseState *pstate,
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_COLUMN),
 				 relname ?
-				 errmsg("column %s.%s does not exist", relname, colname):
+				 errmsg("column %s.%s does not exist", relname, colname) :
 				 errmsg("column \"%s\" does not exist", colname),
 				 state->rfirst ? closestfirst ?
-				 errhint("Perhaps you meant to reference the column \"%s\".\"%s\".",
-						 state->rfirst->eref->aliasname, closestfirst):
+		  errhint("Perhaps you meant to reference the column \"%s\".\"%s\".",
+				  state->rfirst->eref->aliasname, closestfirst) :
 				 errhint("There is a column named \"%s\" in table \"%s\", but it cannot be referenced from this part of the query.",
-						 colname, state->rfirst->eref->aliasname): 0,
+						 colname, state->rfirst->eref->aliasname) : 0,
 				 parser_errposition(pstate, location)));
 	}
 	else
 	{
 		/* Handle case where there are two equally useful column hints */
-		char				   *closestsecond;
+		char	   *closestsecond;
 
 		closestsecond = strVal(list_nth(state->rsecond->eref->colnames,
 										state->second - 1));
@@ -3208,7 +3215,7 @@ errorMissingColumn(ParseState *pstate,
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_COLUMN),
 				 relname ?
-				 errmsg("column %s.%s does not exist", relname, colname):
+				 errmsg("column %s.%s does not exist", relname, colname) :
 				 errmsg("column \"%s\" does not exist", colname),
 				 errhint("Perhaps you meant to reference the column \"%s\".\"%s\" or the column \"%s\".\"%s\".",
 						 state->rfirst->eref->aliasname, closestfirst,

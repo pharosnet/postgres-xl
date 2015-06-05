@@ -725,6 +725,12 @@ nextval_internal(Oid relid)
 #ifdef PGXC
 	is_temp = seqrel->rd_backend == MyBackendId;
 #endif
+	/*
+	 * Forbid this during parallel operation because, to make it work, the
+	 * cooperating backends would need to share the backend-local cached
+	 * sequence information.  Currently, we don't support that.
+	 */
+	PreventCommandIfParallelMode("nextval()");
 
 	if (elm->last != elm->cached)		/* some numbers were cached */
 	{
@@ -986,10 +992,10 @@ nextval_internal(Oid relid)
 
 	/*
 	 * If something needs to be WAL logged, acquire an xid, so this
-	 * transaction's commit will trigger a WAL flush and wait for
-	 * syncrep. It's sufficient to ensure the toplevel transaction has a xid,
-	 * no need to assign xids subxacts, that'll already trigger a appropriate
-	 * wait.  (Have to do that here, so we're outside the critical section)
+	 * transaction's commit will trigger a WAL flush and wait for syncrep.
+	 * It's sufficient to ensure the toplevel transaction has an xid, no need
+	 * to assign xids subxacts, that'll already trigger an appropriate wait.
+	 * (Have to do that here, so we're outside the critical section)
 	 */
 	if (logit && RelationNeedsWAL(seqrel))
 		GetTopTransactionId();
@@ -1199,6 +1205,12 @@ do_setval(Oid relid, int64 next, bool iscalled)
 #ifdef PGXC
 	is_temp = seqrel->rd_backend == MyBackendId;
 #endif
+	/*
+	 * Forbid this during parallel operation because, to make it work, the
+	 * cooperating backends would need to share the backend-local cached
+	 * sequence information.  Currently, we don't support that.
+	 */
+	PreventCommandIfParallelMode("setval()");
 
 	/* lock page' buffer and read tuple */
 	seq = read_seq_tuple(elm, seqrel, &buf, &seqtuple);

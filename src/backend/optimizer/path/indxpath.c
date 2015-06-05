@@ -17,7 +17,7 @@
 
 #include <math.h>
 
-#include "access/skey.h"
+#include "access/stratnum.h"
 #include "access/sysattr.h"
 #include "catalog/pg_am.h"
 #include "catalog/pg_collation.h"
@@ -1954,7 +1954,8 @@ adjust_rowcount_for_semijoins(PlannerInfo *root,
 			nraw = approximate_joinrel_size(root, sjinfo->syn_righthand);
 			nunique = estimate_num_groups(root,
 										  sjinfo->semi_rhs_exprs,
-										  nraw);
+										  nraw,
+										  NULL);
 			if (rowcount > nunique)
 				rowcount = nunique;
 		}
@@ -3967,7 +3968,7 @@ prefix_quals(Node *leftop, Oid opfamily, Oid collation,
 }
 
 /*
- * Given a leftop and a rightop, and a inet-family sup/sub operator,
+ * Given a leftop and a rightop, and an inet-family sup/sub operator,
  * generate suitable indexqual condition(s).  expr_op is the original
  * operator, and opfamily is the index opfamily.
  */

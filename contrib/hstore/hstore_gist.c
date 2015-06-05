@@ -4,7 +4,7 @@
 #include "postgres.h"
 
 #include "access/gist.h"
-#include "access/skey.h"
+#include "access/stratnum.h"
 #include "catalog/pg_type.h"
 #include "utils/pg_crc.h"
 
@@ -72,7 +72,7 @@ typedef struct
 static pg_crc32
 crc32_sz(char *buf, int size)
 {
-	pg_crc32 crc;
+	pg_crc32	crc;
 
 	INIT_TRADITIONAL_CRC32(crc);
 	COMP_TRADITIONAL_CRC32(crc, buf, size);

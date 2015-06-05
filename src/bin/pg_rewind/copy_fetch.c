@@ -42,6 +42,9 @@ traverse_datadir(const char *datadir, process_file_callback_t callback)
 
 /*
  * recursive part of traverse_datadir
+ *
+ * parent_path is the current subdirectory's path relative to datadir,
+ * or NULL at the top level.
  */
 static void
 recurse_dir(const char *datadir, const char *parentpath,
@@ -112,27 +115,26 @@ recurse_dir(const char *datadir, const char *parentpath,
 		{
 #if defined(HAVE_READLINK) || defined(WIN32)
 			char		link_target[MAXPGPATH];
-			ssize_t		len;
+			int			len;
 
-			len = readlink(fullpath, link_target, sizeof(link_target) - 1);
-			if (len == -1)
-				pg_fatal("readlink() failed on \"%s\": %s\n",
+			len = readlink(fullpath, link_target, sizeof(link_target));
+			if (len < 0)
+				pg_fatal("could not read symbolic link \"%s\": %s\n",
 						 fullpath, strerror(errno));
-
-			if (len == sizeof(link_target) - 1)
-			{
-				/* path was truncated */
-				pg_fatal("symbolic link \"%s\" target path too long\n",
+			if (len >= sizeof(link_target))
+				pg_fatal("symbolic link \"%s\" target is too long\n",
 						 fullpath);
-			}
+			link_target[len] = '\0';
 
 			callback(path, FILE_TYPE_SYMLINK, 0, link_target);
 
 			/*
 			 * If it's a symlink within pg_tblspc, we need to recurse into it,
-			 * to process all the tablespaces.
+			 * to process all the tablespaces.  We also follow a symlink if
+			 * it's for pg_xlog.  Symlinks elsewhere are ignored.
 			 */
-			if (strcmp(parentpath, "pg_tblspc") == 0)
+			if ((parentpath && strcmp(parentpath, "pg_tblspc") == 0) ||
+				strcmp(path, "pg_xlog") == 0)
 				recurse_dir(datadir, path, callback);
 #else
 			pg_fatal("\"%s\" is a symbolic link, but symbolic links are not supported on this platform\n",

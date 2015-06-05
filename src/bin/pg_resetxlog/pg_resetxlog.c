@@ -56,6 +56,8 @@
 #include "common/restricted_token.h"
 #include "storage/large_object.h"
 #include "pg_getopt.h"
+#include "replication/logical.h"
+#include "replication/origin.h"
 
 
 static ControlFileData ControlFile;		/* pg_control values */
@@ -904,14 +906,18 @@ FindEndOfXLOG(void)
 
 	while (errno = 0, (xlde = readdir(xldir)) != NULL)
 	{
-		if (strlen(xlde->d_name) == 24 &&
-			strspn(xlde->d_name, "0123456789ABCDEF") == 24)
+		if (IsXLogFileName(xlde->d_name))
 		{
 			unsigned int tli,
 						log,
 						seg;
 			XLogSegNo	segno;
 
+			/*
+			 * Note: We don't use XLogFromFileName here, because we want to
+			 * use the segment size from the control file, not the size the
+			 * pg_resetxlog binary was compiled with
+			 */
 			sscanf(xlde->d_name, "%08X%08X%08X", &tli, &log, &seg);
 			segno = ((uint64) log) * segs_per_xlogid + seg;
 
@@ -1091,6 +1097,7 @@ WriteEmptyXLOG(void)
 	record->xl_tot_len = SizeOfXLogRecord + SizeOfXLogRecordDataHeaderShort + sizeof(CheckPoint);
 	record->xl_info = XLOG_CHECKPOINT_SHUTDOWN;
 	record->xl_rmid = RM_XLOG_ID;
+
 	recptr += SizeOfXLogRecord;
 	*(recptr++) = XLR_BLOCK_ID_DATA_SHORT;
 	*(recptr++) = sizeof(CheckPoint);

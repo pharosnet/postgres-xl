@@ -40,4 +40,4 @@ lib*.pc
 /StormDB*
 /cscope*
 /.gitignore
-
+/tmp_install/

@@ -883,7 +883,7 @@ equalPolicy(RowSecurityPolicy *policy1, RowSecurityPolicy *policy2)
 			return false;
 		if (policy1->hassublinks != policy2->hassublinks)
 			return false;
-		if (strcmp(policy1->policy_name,policy2->policy_name) != 0)
+		if (strcmp(policy1->policy_name, policy2->policy_name) != 0)
 			return false;
 		if (ARR_DIMS(policy1->roles)[0] != ARR_DIMS(policy2->roles)[0])
 			return false;
@@ -897,7 +897,7 @@ equalPolicy(RowSecurityPolicy *policy1, RowSecurityPolicy *policy2)
 				return false;
 		}
 
-		if (!equal(policy1->qual, policy1->qual))
+		if (!equal(policy1->qual, policy2->qual))
 			return false;
 		if (!equal(policy1->with_check_qual, policy2->with_check_qual))
 			return false;
@@ -916,8 +916,8 @@ equalPolicy(RowSecurityPolicy *policy1, RowSecurityPolicy *policy2)
 static bool
 equalRSDesc(RowSecurityDesc *rsdesc1, RowSecurityDesc *rsdesc2)
 {
-	ListCell 	*lc,
-				*rc;
+	ListCell   *lc,
+			   *rc;
 
 	if (rsdesc1 == NULL && rsdesc2 == NULL)
 		return true;
@@ -932,10 +932,10 @@ equalRSDesc(RowSecurityDesc *rsdesc1, RowSecurityDesc *rsdesc2)
 	/* RelationBuildRowSecurity should build policies in order */
 	forboth(lc, rsdesc1->policies, rc, rsdesc2->policies)
 	{
-		RowSecurityPolicy	   *l = (RowSecurityPolicy *) lfirst(lc);
-		RowSecurityPolicy	   *r = (RowSecurityPolicy *) lfirst(rc);
+		RowSecurityPolicy *l = (RowSecurityPolicy *) lfirst(lc);
+		RowSecurityPolicy *r = (RowSecurityPolicy *) lfirst(rc);
 
-		if (!equalPolicy(l,r))
+		if (!equalPolicy(l, r))
 			return false;
 	}
 
@@ -3492,7 +3492,7 @@ RelationCacheInitializePhase3(void)
 		{
 			RelationBuildRowSecurity(relation);
 
-			Assert (relation->rd_rsdesc != NULL);
+			Assert(relation->rd_rsdesc != NULL);
 			restart = true;
 		}
 

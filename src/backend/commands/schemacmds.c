@@ -30,6 +30,7 @@
 #include "catalog/objectaccess.h"
 #include "catalog/pg_namespace.h"
 #include "commands/dbcommands.h"
+#include "commands/event_trigger.h"
 #include "commands/schemacmds.h"
 #include "miscadmin.h"
 #include "parser/parse_utilcmd.h"
@@ -56,7 +57,7 @@ CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString, bool sentTo
 CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString)
 #endif
 {
-	const char	*schemaName = stmt->schemaname;
+	const char *schemaName = stmt->schemaname;
 	Oid			namespaceId;
 	OverrideSearchPath *overridePath;
 	List	   *parsetree_list;
@@ -65,6 +66,7 @@ CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString)
 	Oid			saved_uid;
 	int			save_sec_context;
 	AclResult	aclresult;
+	ObjectAddress address;
 
 	GetUserIdAndSecContext(&saved_uid, &save_sec_context);
 
@@ -79,7 +81,7 @@ CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString)
 	/* fill schema name with the user name if not specified */
 	if (!schemaName)
 	{
-		HeapTuple tuple;
+		HeapTuple	tuple;
 
 		tuple = SearchSysCache1(AUTHOID, ObjectIdGetDatum(owner_uid));
 		if (!HeapTupleIsValid(tuple))
@@ -154,6 +156,16 @@ CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString)
 	overridePath->schemas = lcons_oid(namespaceId, overridePath->schemas);
 	/* XXX should we clear overridePath->useTemp? */
 	PushOverrideSearchPath(overridePath);
+
+	/*
+	 * Report the new schema to possibly interested event triggers.  Note we
+	 * must do this here and not in ProcessUtilitySlow because otherwise the
+	 * objects created below are reported before the schema, which would be
+	 * wrong.
+	 */
+	ObjectAddressSet(address, NamespaceRelationId, namespaceId);
+	EventTriggerCollectSimpleCommand(address, InvalidObjectAddress,
+									 (Node *) stmt);
 
 	/*
 	 * Examine the list of commands embedded in the CREATE SCHEMA command, and

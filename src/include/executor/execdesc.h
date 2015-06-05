@@ -26,7 +26,6 @@
 #endif
 #include "tcop/dest.h"
 
-
 /* ----------------
  *		query descriptor:
  *

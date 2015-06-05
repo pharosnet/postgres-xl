@@ -25,6 +25,7 @@
 #include "postgres.h"
 
 #include "access/htup_details.h"
+#include "access/parallel.h"
 #include "access/xact.h"
 #ifdef PGXC
 #include "access/transam.h"
@@ -3018,7 +3019,7 @@ NameListToString(List *names)
 		if (IsA(name, String))
 			appendStringInfoString(&string, strVal(name));
 		else if (IsA(name, A_Star))
-			appendStringInfoString(&string, "*");
+			appendStringInfoChar(&string, '*');
 		else
 			elog(ERROR, "unexpected node type in name list: %d",
 				 (int) nodeTag(name));
@@ -3749,6 +3750,12 @@ InitTempTableNamespace(void)
 				(errcode(ERRCODE_READ_ONLY_SQL_TRANSACTION),
 				 errmsg("cannot create temporary tables during recovery")));
 
+	/* Parallel workers can't create temporary tables, either. */
+	if (IsParallelWorker())
+		ereport(ERROR,
+				(errcode(ERRCODE_READ_ONLY_SQL_TRANSACTION),
+				 errmsg("cannot create temporary tables in parallel mode")));
+
 #ifdef XCP
 	/*
 	 * In case of distributed session use MyFirstBackendId for temp objects
@@ -3835,7 +3842,7 @@ InitTempTableNamespace(void)
  * End-of-transaction cleanup for namespaces.
  */
 void
-AtEOXact_Namespace(bool isCommit)
+AtEOXact_Namespace(bool isCommit, bool parallel)
 {
 	/*
 	 * If we abort the transaction in which a temp namespace was selected,
@@ -3845,7 +3852,7 @@ AtEOXact_Namespace(bool isCommit)
 	 * at backend shutdown.  (We only want to register the callback once per
 	 * session, so this is a good place to do it.)
 	 */
-	if (myTempNamespaceSubID != InvalidSubTransactionId)
+	if (myTempNamespaceSubID != InvalidSubTransactionId && !parallel)
 	{
 		if (isCommit)
 #ifdef XCP

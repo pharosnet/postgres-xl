@@ -444,6 +444,7 @@ static const struct config_enum_entry row_security_options[] = {
  * Options for enum values stored in other modules
  */
 extern const struct config_enum_entry wal_level_options[];
+extern const struct config_enum_entry archive_mode_options[];
 extern const struct config_enum_entry sync_method_options[];
 extern const struct config_enum_entry dynamic_shared_memory_options[];
 
@@ -482,7 +483,6 @@ int			temp_file_limit = -1;
 int			num_temp_buffers = 1024;
 
 char	   *cluster_name = "";
-char	   *data_directory;
 char	   *ConfigFileName;
 char	   *HbaFileName;
 char	   *IdentFileName;
@@ -526,6 +526,7 @@ static char *timezone_string;
 static char *log_timezone_string;
 static char *timezone_abbreviations_string;
 static char *XactIsoLevel_string;
+static char *data_directory;
 static char *session_authorization_string;
 #ifdef XCP
 static char *global_session_string;
@@ -728,11 +729,12 @@ const char *const config_type_names[] =
 
 typedef struct
 {
-	char	unit[MAX_UNIT_LEN + 1];	/* unit, as a string, like "kB" or "min" */
-	int		base_unit;		/* GUC_UNIT_XXX */
-	int		multiplier;		/* If positive, multiply the value with this for
-							 * unit -> base_unit conversion.  If negative,
-							 * divide (with the absolute value) */
+	char		unit[MAX_UNIT_LEN + 1]; /* unit, as a string, like "kB" or
+										 * "min" */
+	int			base_unit;		/* GUC_UNIT_XXX */
+	int			multiplier;		/* If positive, multiply the value with this
+								 * for unit -> base_unit conversion.  If
+								 * negative, divide (with the absolute value) */
 } unit_conversion;
 
 /* Ensure that the constants in the tables don't overflow or underflow */
@@ -746,58 +748,56 @@ typedef struct
 #error XLOG_SEG_SIZE must be between 1MB and 1GB
 #endif
 
-static const char *memory_units_hint =
-	gettext_noop("Valid units for this parameter are \"kB\", \"MB\", \"GB\", and \"TB\".");
+static const char *memory_units_hint = gettext_noop("Valid units for this parameter are \"kB\", \"MB\", \"GB\", and \"TB\".");
 
 static const unit_conversion memory_unit_conversion_table[] =
 {
-	{ "TB",		GUC_UNIT_KB,	 	1024*1024*1024 },
-	{ "GB",		GUC_UNIT_KB,	 	1024*1024 },
-	{ "MB",		GUC_UNIT_KB,	 	1024 },
-	{ "kB",		GUC_UNIT_KB,	 	1 },
+	{"TB", GUC_UNIT_KB, 1024 * 1024 * 1024},
+	{"GB", GUC_UNIT_KB, 1024 * 1024},
+	{"MB", GUC_UNIT_KB, 1024},
+	{"kB", GUC_UNIT_KB, 1},
 
-	{ "TB",		GUC_UNIT_BLOCKS,	(1024*1024*1024) / (BLCKSZ / 1024) },
-	{ "GB",		GUC_UNIT_BLOCKS,	(1024*1024) / (BLCKSZ / 1024) },
-	{ "MB",		GUC_UNIT_BLOCKS,	1024 / (BLCKSZ / 1024) },
-	{ "kB",		GUC_UNIT_BLOCKS,	-(BLCKSZ / 1024) },
+	{"TB", GUC_UNIT_BLOCKS, (1024 * 1024 * 1024) / (BLCKSZ / 1024)},
+	{"GB", GUC_UNIT_BLOCKS, (1024 * 1024) / (BLCKSZ / 1024)},
+	{"MB", GUC_UNIT_BLOCKS, 1024 / (BLCKSZ / 1024)},
+	{"kB", GUC_UNIT_BLOCKS, -(BLCKSZ / 1024)},
 
-	{ "TB",		GUC_UNIT_XBLOCKS,	(1024*1024*1024) / (XLOG_BLCKSZ / 1024) },
-	{ "GB",		GUC_UNIT_XBLOCKS,	(1024*1024) / (XLOG_BLCKSZ / 1024) },
-	{ "MB",		GUC_UNIT_XBLOCKS,	1024 / (XLOG_BLCKSZ / 1024) },
-	{ "kB",		GUC_UNIT_XBLOCKS,	-(XLOG_BLCKSZ / 1024) },
+	{"TB", GUC_UNIT_XBLOCKS, (1024 * 1024 * 1024) / (XLOG_BLCKSZ / 1024)},
+	{"GB", GUC_UNIT_XBLOCKS, (1024 * 1024) / (XLOG_BLCKSZ / 1024)},
+	{"MB", GUC_UNIT_XBLOCKS, 1024 / (XLOG_BLCKSZ / 1024)},
+	{"kB", GUC_UNIT_XBLOCKS, -(XLOG_BLCKSZ / 1024)},
 
-	{ "TB",		GUC_UNIT_XSEGS,		(1024*1024*1024) / (XLOG_SEG_SIZE / 1024) },
-	{ "GB",		GUC_UNIT_XSEGS,		(1024*1024) / (XLOG_SEG_SIZE / 1024) },
-	{ "MB",		GUC_UNIT_XSEGS,		-(XLOG_SEG_SIZE / (1024 * 1024)) },
-	{ "kB",		GUC_UNIT_XSEGS,		-(XLOG_SEG_SIZE / 1024) },
+	{"TB", GUC_UNIT_XSEGS, (1024 * 1024 * 1024) / (XLOG_SEG_SIZE / 1024)},
+	{"GB", GUC_UNIT_XSEGS, (1024 * 1024) / (XLOG_SEG_SIZE / 1024)},
+	{"MB", GUC_UNIT_XSEGS, -(XLOG_SEG_SIZE / (1024 * 1024))},
+	{"kB", GUC_UNIT_XSEGS, -(XLOG_SEG_SIZE / 1024)},
 
-	{ "" }		/* end of table marker */
+	{""}						/* end of table marker */
 };
 
-static const char *time_units_hint =
-	gettext_noop("Valid units for this parameter are \"ms\", \"s\", \"min\", \"h\", and \"d\".");
+static const char *time_units_hint = gettext_noop("Valid units for this parameter are \"ms\", \"s\", \"min\", \"h\", and \"d\".");
 
 static const unit_conversion time_unit_conversion_table[] =
 {
-	{ "d",		GUC_UNIT_MS,	1000 * 60 * 60 * 24 },
-	{ "h",		GUC_UNIT_MS,	1000 * 60 * 60 },
-	{ "min", 	GUC_UNIT_MS,	1000 * 60},
-	{ "s",		GUC_UNIT_MS,	1000 },
-	{ "ms",		GUC_UNIT_MS,	1 },
+	{"d", GUC_UNIT_MS, 1000 * 60 * 60 * 24},
+	{"h", GUC_UNIT_MS, 1000 * 60 * 60},
+	{"min", GUC_UNIT_MS, 1000 * 60},
+	{"s", GUC_UNIT_MS, 1000},
+	{"ms", GUC_UNIT_MS, 1},
 
-	{ "d",		GUC_UNIT_S,		60 * 60 * 24 },
-	{ "h",		GUC_UNIT_S,		60 * 60 },
-	{ "min", 	GUC_UNIT_S,		60 },
-	{ "s",		GUC_UNIT_S,		1 },
-	{ "ms", 	GUC_UNIT_S,	 	-1000 },
+	{"d", GUC_UNIT_S, 60 * 60 * 24},
+	{"h", GUC_UNIT_S, 60 * 60},
+	{"min", GUC_UNIT_S, 60},
+	{"s", GUC_UNIT_S, 1},
+	{"ms", GUC_UNIT_S, -1000},
 
-	{ "d", 		GUC_UNIT_MIN,	60 * 24 },
-	{ "h", 		GUC_UNIT_MIN,	60 },
-	{ "min", 	GUC_UNIT_MIN,	1 },
-	{ "s", 		GUC_UNIT_MIN,	-60 },
-	{ "ms", 	GUC_UNIT_MIN,	-1000 * 60 },
+	{"d", GUC_UNIT_MIN, 60 * 24},
+	{"h", GUC_UNIT_MIN, 60},
+	{"min", GUC_UNIT_MIN, 1},
+	{"s", GUC_UNIT_MIN, -60},
+	{"ms", GUC_UNIT_MIN, -1000 * 60},
 
-	{ "" }		/* end of table marker */
+	{""}						/* end of table marker */
 };
 
 /*
@@ -1108,8 +1108,8 @@ static struct config_bool ConfigureNamesBool[] =
 
 	{
 		{"wal_compression", PGC_USERSET, WAL_SETTINGS,
-			 gettext_noop("Compresses full-page writes written in WAL file."),
-			 NULL
+			gettext_noop("Compresses full-page writes written in WAL file."),
+			NULL
 		},
 		&wal_compression,
 		false,
@@ -1646,16 +1646,6 @@ static struct config_bool ConfigureNamesBool[] =
 		},
 		&synchronize_seqscans,
 		true,
-		NULL, NULL, NULL
-	},
-
-	{
-		{"archive_mode", PGC_POSTMASTER, WAL_ARCHIVING,
-			gettext_noop("Allows archiving of WAL files using archive_command."),
-			NULL
-		},
-		&XLogArchiveMode,
-		false,
 		NULL, NULL, NULL
 	},
 
@@ -3951,6 +3941,16 @@ static struct config_enum ConfigureNamesEnum[] =
 	},
 
 	{
+		{"archive_mode", PGC_POSTMASTER, WAL_ARCHIVING,
+			gettext_noop("Allows archiving of WAL files using archive_command."),
+			NULL
+		},
+		&XLogArchiveMode,
+		ARCHIVE_MODE_OFF, archive_mode_options,
+		NULL, NULL, NULL
+	},
+
+	{
 		{"trace_recovery_messages", PGC_SIGHUP, DEVELOPER_OPTIONS,
 			gettext_noop("Enables logging of recovery-related debugging information."),
 			gettext_noop("Each level includes all the levels that follow it. The later"
@@ -4091,6 +4091,22 @@ static struct config_generic **guc_variables;
 
 /* Current number of variables contained in the vector */
 static int	num_guc_variables;
+
+/*
+ * Lookup of variables for pg_file_settings view.
+ * guc_file_variables is an array of length num_guc_file_variables.
+ */
+typedef struct ConfigFileVariable
+{
+	char	   *name;
+	char	   *value;
+	char	   *filename;
+	int			sourceline;
+} ConfigFileVariable;
+static struct ConfigFileVariable *guc_file_variables;
+
+/* Number of file variables */
+static int	num_guc_file_variables;
 
 /* Vector capacity */
 static int	size_guc_variables;
@@ -5570,7 +5586,7 @@ convert_to_base_unit(int64 value, const char *unit,
 					 int base_unit, int64 *base_value)
 {
 	const unit_conversion *table;
-	int 		i;
+	int			i;
 
 	if (base_unit & GUC_UNIT_MEMORY)
 		table = memory_unit_conversion_table;
@@ -5617,9 +5633,9 @@ convert_from_base_unit(int64 base_value, int base_unit,
 		if (base_unit == table[i].base_unit)
 		{
 			/*
-			 * Accept the first conversion that divides the value evenly.
-			 * We assume that the conversions for each base unit are ordered
-			 * from greatest unit to the smallest!
+			 * Accept the first conversion that divides the value evenly. We
+			 * assume that the conversions for each base unit are ordered from
+			 * greatest unit to the smallest!
 			 */
 			if (table[i].multiplier < 0)
 			{
@@ -5688,7 +5704,7 @@ parse_int(const char *value, int *result, int flags, const char **hintmsg)
 		bool		converted = false;
 
 		if ((flags & GUC_UNIT) == 0)
-			return false;	/* this setting does not accept a unit */
+			return false;		/* this setting does not accept a unit */
 
 		unitlen = 0;
 		while (*endptr != '\0' && !isspace((unsigned char) *endptr) &&
@@ -6109,6 +6125,20 @@ set_config_option(const char *name, const char *value,
 			elevel = ERROR;
 	}
 
+	/*
+	 * GUC_ACTION_SAVE changes are acceptable during a parallel operation,
+	 * because the current worker will also pop the change.  We're probably
+	 * dealing with a function having a proconfig entry.  Only the function's
+	 * body should observe the change, and peer workers do not share in the
+	 * execution of a function call started by this worker.
+	 *
+	 * Other changes might need to affect other workers, so forbid them.
+	 */
+	if (IsInParallelMode() && changeVal && action != GUC_ACTION_SAVE)
+		ereport(elevel,
+				(errcode(ERRCODE_INVALID_TRANSACTION_STATE),
+			   errmsg("cannot set parameters during a parallel operation")));
+
 	record = find_option(name, true, elevel);
 	if (record == NULL)
 	{
@@ -6341,12 +6371,14 @@ set_config_option(const char *name, const char *value,
 				{
 					if (*conf->variable != newval)
 					{
+						record->status |= GUC_PENDING_RESTART;
 						ereport(elevel,
 								(errcode(ERRCODE_CANT_CHANGE_RUNTIME_PARAM),
 								 errmsg("parameter \"%s\" cannot be changed without restarting the server",
 										name)));
 						return 0;
 					}
+					record->status &= ~GUC_PENDING_RESTART;
 					return -1;
 				}
 
@@ -6429,12 +6461,14 @@ set_config_option(const char *name, const char *value,
 				{
 					if (*conf->variable != newval)
 					{
+						record->status |= GUC_PENDING_RESTART;
 						ereport(elevel,
 								(errcode(ERRCODE_CANT_CHANGE_RUNTIME_PARAM),
 								 errmsg("parameter \"%s\" cannot be changed without restarting the server",
 										name)));
 						return 0;
 					}
+					record->status &= ~GUC_PENDING_RESTART;
 					return -1;
 				}
 
@@ -6517,12 +6551,14 @@ set_config_option(const char *name, const char *value,
 				{
 					if (*conf->variable != newval)
 					{
+						record->status |= GUC_PENDING_RESTART;
 						ereport(elevel,
 								(errcode(ERRCODE_CANT_CHANGE_RUNTIME_PARAM),
 								 errmsg("parameter \"%s\" cannot be changed without restarting the server",
 										name)));
 						return 0;
 					}
+					record->status &= ~GUC_PENDING_RESTART;
 					return -1;
 				}
 
@@ -6623,12 +6659,14 @@ set_config_option(const char *name, const char *value,
 					if (*conf->variable == NULL || newval == NULL ||
 						strcmp(*conf->variable, newval) != 0)
 					{
+						record->status |= GUC_PENDING_RESTART;
 						ereport(elevel,
 								(errcode(ERRCODE_CANT_CHANGE_RUNTIME_PARAM),
 								 errmsg("parameter \"%s\" cannot be changed without restarting the server",
 										name)));
 						return 0;
 					}
+					record->status &= ~GUC_PENDING_RESTART;
 					return -1;
 				}
 
@@ -6716,12 +6754,14 @@ set_config_option(const char *name, const char *value,
 				{
 					if (*conf->variable != newval)
 					{
+						record->status |= GUC_PENDING_RESTART;
 						ereport(elevel,
 								(errcode(ERRCODE_CANT_CHANGE_RUNTIME_PARAM),
 								 errmsg("parameter \"%s\" cannot be changed without restarting the server",
 										name)));
 						return 0;
 					}
+					record->status &= ~GUC_PENDING_RESTART;
 					return -1;
 				}
 
@@ -7368,11 +7408,11 @@ AlterSystemSetConfigFile(AlterSystemStmt *altersysstmt)
 	}
 
 	/*
-	 * Use data directory as reference path for PG_AUTOCONF_FILENAME and its
-	 * corresponding temporary file.
+	 * PG_AUTOCONF_FILENAME and its corresponding temporary file are always in
+	 * the data directory, so we can reference them by simple relative paths.
 	 */
-	join_path_components(AutoConfFileName, data_directory, PG_AUTOCONF_FILENAME);
-	canonicalize_path(AutoConfFileName);
+	snprintf(AutoConfFileName, sizeof(AutoConfFileName), "%s",
+			 PG_AUTOCONF_FILENAME);
 	snprintf(AutoConfTmpFileName, sizeof(AutoConfTmpFileName), "%s.%s",
 			 AutoConfFileName,
 			 "tmp");
@@ -7481,6 +7521,15 @@ void
 ExecSetVariableStmt(VariableSetStmt *stmt, bool isTopLevel)
 {
 	GucAction	action = stmt->is_local ? GUC_ACTION_LOCAL : GUC_ACTION_SET;
+
+	/*
+	 * Workers synchronize these parameters at the start of the parallel
+	 * operation; then, we block SET during the operation.
+	 */
+	if (IsInParallelMode())
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_TRANSACTION_STATE),
+			   errmsg("cannot set parameters during a parallel operation")));
 
 	switch (stmt->kind)
 	{
@@ -8519,6 +8568,8 @@ GetConfigOptionByNum(int varnum, const char **values, bool *noshow)
 		values[14] = NULL;
 		values[15] = NULL;
 	}
+
+	values[16] = (conf->status & GUC_PENDING_RESTART) ? "t" : "f";
 }
 
 /*
@@ -8554,7 +8605,7 @@ show_config_by_name(PG_FUNCTION_ARGS)
  * show_all_settings - equiv to SHOW ALL command but implemented as
  * a Table Function.
  */
-#define NUM_PG_SETTINGS_ATTS	16
+#define NUM_PG_SETTINGS_ATTS	17
 
 Datum
 show_all_settings(PG_FUNCTION_ARGS)
@@ -8614,6 +8665,8 @@ show_all_settings(PG_FUNCTION_ARGS)
 						   TEXTOID, -1, 0);
 		TupleDescInitEntry(tupdesc, (AttrNumber) 16, "sourceline",
 						   INT4OID, -1, 0);
+		TupleDescInitEntry(tupdesc, (AttrNumber) 17, "pending_restart",
+						   BOOLOID, -1, 0);
 
 		/*
 		 * Generate attribute metadata needed later to produce tuples from raw
@@ -8672,6 +8725,110 @@ show_all_settings(PG_FUNCTION_ARGS)
 		/* do when there is no more left */
 		SRF_RETURN_DONE(funcctx);
 	}
+}
+
+/*
+ * show_all_file_settings
+ *
+ * returns a table of all parameter settings in all configuration files
+ * which includes the config file path/name, filename, a sequence number
+ * indicating when we loaded it, the parameter name, and the value it is
+ * set to.
+ *
+ * Note: no filtering is done here, instead we depend on the GRANT system
+ * to prevent unprivileged users from accessing this function or the view
+ * built on top of it.
+ */
+Datum
+show_all_file_settings(PG_FUNCTION_ARGS)
+{
+#define NUM_PG_FILE_SETTINGS_ATTS 5
+	FuncCallContext *funcctx;
+	TupleDesc	tupdesc;
+	int			call_cntr;
+	int			max_calls;
+	AttInMetadata *attinmeta;
+	MemoryContext oldcontext;
+
+	if (SRF_IS_FIRSTCALL())
+	{
+		funcctx = SRF_FIRSTCALL_INIT();
+
+		oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);
+
+		/*
+		 * need a tuple descriptor representing NUM_PG_SETTINGS_ATTS columns
+		 * of the appropriate types
+		 */
+
+		tupdesc = CreateTemplateTupleDesc(NUM_PG_FILE_SETTINGS_ATTS, false);
+		TupleDescInitEntry(tupdesc, (AttrNumber) 1, "sourcefile",
+						   TEXTOID, -1, 0);
+		TupleDescInitEntry(tupdesc, (AttrNumber) 2, "sourceline",
+						   INT4OID, -1, 0);
+		TupleDescInitEntry(tupdesc, (AttrNumber) 3, "seqno",
+						   INT4OID, -1, 0);
+		TupleDescInitEntry(tupdesc, (AttrNumber) 4, "name",
+						   TEXTOID, -1, 0);
+		TupleDescInitEntry(tupdesc, (AttrNumber) 5, "setting",
+						   TEXTOID, -1, 0);
+
+		attinmeta = TupleDescGetAttInMetadata(tupdesc);
+		funcctx->attinmeta = attinmeta;
+		funcctx->max_calls = num_guc_file_variables;
+		MemoryContextSwitchTo(oldcontext);
+	}
+
+	funcctx = SRF_PERCALL_SETUP();
+
+	call_cntr = funcctx->call_cntr;
+	max_calls = funcctx->max_calls;
+	attinmeta = funcctx->attinmeta;
+
+	if (call_cntr < max_calls)
+	{
+		char	   *values[NUM_PG_FILE_SETTINGS_ATTS];
+		HeapTuple	tuple;
+		Datum		result;
+		ConfigFileVariable conf;
+		char		buffer[12]; /* must be at least 12, per pg_ltoa */
+
+		/* Check to avoid going past end of array */
+		if (call_cntr > num_guc_file_variables)
+			SRF_RETURN_DONE(funcctx);
+
+		conf = guc_file_variables[call_cntr];
+
+		/* sourcefile */
+		values[0] = conf.filename;
+
+		/* sourceline */
+		pg_ltoa(conf.sourceline, buffer);
+		values[1] = pstrdup(buffer);
+
+		/* seqno */
+		pg_ltoa(call_cntr + 1, buffer);
+		values[2] = pstrdup(buffer);
+
+		/* name */
+		values[3] = conf.name;
+
+		/* setting */
+		values[4] = conf.value;
+
+		/* build a tuple */
+		tuple = BuildTupleFromCStrings(attinmeta, values);
+
+		/* make the tuple into a datum */
+		result = HeapTupleGetDatum(tuple);
+
+		SRF_RETURN_NEXT(funcctx, result);
+	}
+	else
+	{
+		SRF_RETURN_DONE(funcctx);
+	}
+
 }
 
 static char *

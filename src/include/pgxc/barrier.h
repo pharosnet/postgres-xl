@@ -38,6 +38,8 @@ extern void ProcessCreateBarrierEnd(const char *id);
 extern void ProcessCreateBarrierExecute(const char *id);
 
 extern void RequestBarrier(const char *id, char *completionTag);
-extern void barrier_redo(XLogRecPtr lsn, XLogRecord *record);
-extern void barrier_desc(StringInfo buf, uint8 xl_info, char *rec);
+extern void barrier_redo(XLogReaderState *record);
+extern void barrier_desc(StringInfo buf, XLogReaderState *record);
+extern const char *barrier_identify(uint8 info);
+
 #endif

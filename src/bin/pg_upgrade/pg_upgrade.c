@@ -198,7 +198,7 @@ setup(char *argv0, bool *live_check)
 		 * start, assume the server is running.  If the pid file is left over
 		 * from a server crash, this also allows any committed transactions
 		 * stored in the WAL to be replayed so they are not lost, because WAL
-		 * files are not transfered from old to new servers.
+		 * files are not transferred from old to new servers.
 		 */
 		if (start_postmaster(&old_cluster, false))
 			stop_postmaster(false);
@@ -333,8 +333,8 @@ create_new_objects(void)
 	check_ok();
 
 	/*
-	 * We don't have minmxids for databases or relations in pre-9.3
-	 * clusters, so set those after we have restores the schemas.
+	 * We don't have minmxids for databases or relations in pre-9.3 clusters,
+	 * so set those after we have restores the schemas.
 	 */
 	if (GET_MAJOR_VERSION(old_cluster.major_version) < 903)
 		set_frozenxids(true);
@@ -473,8 +473,9 @@ copy_clog_xlog_xid(void)
 	/* now reset the wal archives in the new cluster */
 	prep_status("Resetting WAL archives");
 	exec_prog(UTILITY_LOG_FILE, NULL, true,
-			  "\"%s/pg_resetxlog\" -l %s \"%s\"", new_cluster.bindir,
-			  old_cluster.controldata.nextxlogfile,
+	/* use timeline 1 to match controldata and no WAL history file */
+			  "\"%s/pg_resetxlog\" -l 00000001%s \"%s\"", new_cluster.bindir,
+			  old_cluster.controldata.nextxlogfile + 8,
 			  new_cluster.pgdata);
 	check_ok();
 }
@@ -538,8 +539,8 @@ set_frozenxids(bool minmxid_only)
 		/*
 		 * We must update databases where datallowconn = false, e.g.
 		 * template0, because autovacuum increments their datfrozenxids,
-		 * relfrozenxids, and relminmxid  even if autovacuum is turned off,
-		 * and even though all the data rows are already frozen  To enable
+		 * relfrozenxids, and relminmxid even if autovacuum is turned off,
+		 * and even though all the data rows are already frozen.  To enable
 		 * this, we temporarily change datallowconn.
 		 */
 		if (strcmp(datallowconn, "f") == 0)

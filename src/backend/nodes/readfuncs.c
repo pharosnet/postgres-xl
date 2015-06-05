@@ -464,8 +464,10 @@ _readQuery(void)
 	READ_NODE_FIELD(jointree);
 	READ_NODE_FIELD(targetList);
 	READ_NODE_FIELD(withCheckOptions);
+	READ_NODE_FIELD(onConflict);
 	READ_NODE_FIELD(returningList);
 	READ_NODE_FIELD(groupClause);
+	READ_NODE_FIELD(groupingSets);
 	READ_NODE_FIELD(havingQual);
 	READ_NODE_FIELD(windowClause);
 	READ_NODE_FIELD(distinctClause);
@@ -516,7 +518,8 @@ _readWithCheckOption(void)
 {
 	READ_LOCALS(WithCheckOption);
 
-	READ_STRING_FIELD(viewname);
+	READ_ENUM_FIELD(kind, WCOKind);
+	READ_STRING_FIELD(relname);
 	READ_NODE_FIELD(qual);
 	READ_BOOL_FIELD(cascaded);
 
@@ -546,6 +549,21 @@ _readSortGroupClause(void)
 	READ_OID_FIELD(sortop);
 	READ_BOOL_FIELD(nulls_first);
 	READ_BOOL_FIELD(hashable);
+
+	READ_DONE();
+}
+
+/*
+ * _readGroupingSet
+ */
+static GroupingSet *
+_readGroupingSet(void)
+{
+	READ_LOCALS(GroupingSet);
+
+	READ_ENUM_FIELD(kind, GroupingSetKind);
+	READ_NODE_FIELD(content);
+	READ_LOCATION_FIELD(location);
 
 	READ_DONE();
 }
@@ -605,6 +623,46 @@ _readCommonTableExpr(void)
 	READ_NODE_FIELD(ctecoltypes);
 	READ_NODE_FIELD(ctecoltypmods);
 	READ_NODE_FIELD(ctecolcollations);
+
+	READ_DONE();
+}
+
+/*
+ * _readRangeTableSample
+ */
+static RangeTableSample *
+_readRangeTableSample(void)
+{
+	READ_LOCALS(RangeTableSample);
+
+	READ_NODE_FIELD(relation);
+	READ_STRING_FIELD(method);
+	READ_NODE_FIELD(repeatable);
+	READ_NODE_FIELD(args);
+
+	READ_DONE();
+}
+
+/*
+ * _readTableSampleClause
+ */
+static TableSampleClause *
+_readTableSampleClause(void)
+{
+	READ_LOCALS(TableSampleClause);
+
+	READ_OID_FIELD(tsmid);
+	READ_BOOL_FIELD(tsmseqscan);
+	READ_BOOL_FIELD(tsmpagemode);
+	READ_OID_FIELD(tsminit);
+	READ_OID_FIELD(tsmnextblock);
+	READ_OID_FIELD(tsmnexttuple);
+	READ_OID_FIELD(tsmexaminetuple);
+	READ_OID_FIELD(tsmend);
+	READ_OID_FIELD(tsmreset);
+	READ_OID_FIELD(tsmcost);
+	READ_NODE_FIELD(repeatable);
+	READ_NODE_FIELD(args);
 
 	READ_DONE();
 }
@@ -826,6 +884,23 @@ _readAggref(void)
 	READ_BOOL_FIELD(aggvariadic);
 	READ_CHAR_FIELD(aggkind);
 	READ_UINT_FIELD(agglevelsup);
+	READ_LOCATION_FIELD(location);
+
+	READ_DONE();
+}
+
+/*
+ * _readGroupingFunc
+ */
+static GroupingFunc *
+_readGroupingFunc(void)
+{
+	READ_LOCALS(GroupingFunc);
+
+	READ_NODE_FIELD(args);
+	READ_NODE_FIELD(refs);
+	READ_NODE_FIELD(cols);
+	READ_INT_FIELD(agglevelsup);
 	READ_LOCATION_FIELD(location);
 
 	READ_DONE();
@@ -1792,6 +1867,21 @@ _readCurrentOfExpr(void)
 }
 
 /*
+ * _readInferenceElem
+ */
+static InferenceElem *
+_readInferenceElem(void)
+{
+	READ_LOCALS(InferenceElem);
+
+	READ_NODE_FIELD(expr);
+	READ_OID_FIELD(infercollid);
+	READ_OID_FIELD(inferopclass);
+
+	READ_DONE();
+}
+
+/*
  * _readTargetEntry
  */
 static TargetEntry *
@@ -1862,6 +1952,25 @@ _readFromExpr(void)
 	READ_DONE();
 }
 
+/*
+ * _readOnConflictExpr
+ */
+static OnConflictExpr *
+_readOnConflictExpr(void)
+{
+	READ_LOCALS(OnConflictExpr);
+
+	READ_ENUM_FIELD(action, OnConflictAction);
+	READ_NODE_FIELD(arbiterElems);
+	READ_NODE_FIELD(arbiterWhere);
+	READ_NODE_FIELD(onConflictSet);
+	READ_NODE_FIELD(onConflictWhere);
+	READ_OID_FIELD(constraint);
+	READ_INT_FIELD(exclRelIndex);
+	READ_NODE_FIELD(exclRelTlist);
+
+	READ_DONE();
+}
 
 /*
  *	Stuff from parsenodes.h.
@@ -1895,6 +2004,7 @@ _readRangeTblEntry(void)
 #endif
 			READ_OID_FIELD(relid);
 			READ_CHAR_FIELD(relkind);
+			READ_NODE_FIELD(tablesample);
 			break;
 		case RTE_SUBQUERY:
 			READ_NODE_FIELD(subquery);
@@ -1947,7 +2057,8 @@ _readRangeTblEntry(void)
 #endif
 	READ_OID_FIELD(checkAsUser);
 	READ_BITMAPSET_FIELD(selectedCols);
-	READ_BITMAPSET_FIELD(modifiedCols);
+	READ_BITMAPSET_FIELD(insertedCols);
+	READ_BITMAPSET_FIELD(updatedCols);
 	READ_NODE_FIELD(securityQuals);
 
 	READ_DONE();
@@ -2025,6 +2136,13 @@ _readModifyTable(void)
 	READ_NODE_FIELD(remote_plans);
 #endif
 #endif
+
+	READ_ENUM_FIELD(onConflictAction, OnConflictAction);
+	READ_NODE_FIELD(arbiterIndexes);
+	READ_NODE_FIELD(onConflictSet);
+	READ_NODE_FIELD(onConflictWhere);
+	READ_INT_FIELD(exclRelRTI);
+	READ_NODE_FIELD(exclRelTlist);
 
 	READ_DONE();
 }
@@ -2251,6 +2369,7 @@ _readIndexScan(void)
 	READ_NODE_FIELD(indexqualorig);
 	READ_NODE_FIELD(indexorderby);
 	READ_NODE_FIELD(indexorderbyorig);
+	READ_NODE_FIELD(indexorderbyops);
 	READ_ENUM_FIELD(indexorderdir, ScanDirection);
 
 	READ_DONE();
@@ -2759,6 +2878,9 @@ _readAgg(void)
 	}
 
 	READ_LONG_FIELD(numGroups);
+
+	READ_NODE_FIELD(groupingSets);
+	READ_NODE_FIELD(chain);
 
 	READ_DONE();
 }
@@ -3310,12 +3432,18 @@ parseNodeString(void)
 		return_value = _readWithCheckOption();
 	else if (MATCH("SORTGROUPCLAUSE", 15))
 		return_value = _readSortGroupClause();
+	else if (MATCH("GROUPINGSET", 11))
+		return_value = _readGroupingSet();
 	else if (MATCH("WINDOWCLAUSE", 12))
 		return_value = _readWindowClause();
 	else if (MATCH("ROWMARKCLAUSE", 13))
 		return_value = _readRowMarkClause();
 	else if (MATCH("COMMONTABLEEXPR", 15))
 		return_value = _readCommonTableExpr();
+	else if (MATCH("RANGETABLESAMPLE", 16))
+		return_value = _readRangeTableSample();
+	else if (MATCH("TABLESAMPLECLAUSE", 17))
+		return_value = _readTableSampleClause();
 	else if (MATCH("SETOPERATIONSTMT", 16))
 		return_value = _readSetOperationStmt();
 	else if (MATCH("ALIAS", 5))
@@ -3332,6 +3460,8 @@ parseNodeString(void)
 		return_value = _readParam();
 	else if (MATCH("AGGREF", 6))
 		return_value = _readAggref();
+	else if (MATCH("GROUPINGFUNC", 12))
+		return_value = _readGroupingFunc();
 	else if (MATCH("WINDOWFUNC", 10))
 		return_value = _readWindowFunc();
 	else if (MATCH("ARRAYREF", 8))
@@ -3400,6 +3530,8 @@ parseNodeString(void)
 		return_value = _readSetToDefault();
 	else if (MATCH("CURRENTOFEXPR", 13))
 		return_value = _readCurrentOfExpr();
+	else if (MATCH("INFERENCEELEM", 13))
+		return_value = _readInferenceElem();
 	else if (MATCH("TARGETENTRY", 11))
 		return_value = _readTargetEntry();
 	else if (MATCH("RANGETBLREF", 11))
@@ -3408,6 +3540,8 @@ parseNodeString(void)
 		return_value = _readJoinExpr();
 	else if (MATCH("FROMEXPR", 8))
 		return_value = _readFromExpr();
+	else if (MATCH("ONCONFLICTEXPR", 14))
+		return_value = _readOnConflictExpr();
 	else if (MATCH("RTE", 3))
 		return_value = _readRangeTblEntry();
 	else if (MATCH("RANGETBLFUNCTION", 16))

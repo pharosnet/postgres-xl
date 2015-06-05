@@ -48,6 +48,7 @@ typedef enum
 #ifdef PGXC
 	PROCSIG_PGXCPOOL_RELOAD,	/* abort current transaction and reconnect to pooler */
 #endif
+	PROCSIG_PARALLEL_MESSAGE,	/* message from cooperating parallel backend */
 
 	/* Recovery conflict reasons */
 	PROCSIG_RECOVERY_CONFLICT_DATABASE,

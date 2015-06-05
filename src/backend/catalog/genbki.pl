@@ -147,7 +147,7 @@ foreach my $catname (@{ $catalogs->{names} })
 	}
 	print BKI "\n )\n";
 
-	# open it, unless bootstrap case (create bootstrap does this automatically)
+   # open it, unless bootstrap case (create bootstrap does this automatically)
 	if ($catalog->{bootstrap} eq '')
 	{
 		print BKI "open $catname\n";
@@ -242,17 +242,17 @@ foreach my $catname (@{ $catalogs->{names} })
 			{
 				$attnum = 0;
 				my @SYS_ATTRS = (
-					{ name => 'ctid', type => 'tid' },
-					{ name => 'oid', type => 'oid' },
-					{ name => 'xmin', type => 'xid' },
-					{ name => 'cmin', type=> 'cid' },
-					{ name => 'xmax', type=> 'xid' },
-					{ name => 'cmax', type => 'cid' },
+					{ name => 'ctid',     type => 'tid' },
+					{ name => 'oid',      type => 'oid' },
+					{ name => 'xmin',     type => 'xid' },
+					{ name => 'cmin',     type => 'cid' },
+					{ name => 'xmax',     type => 'xid' },
+					{ name => 'cmax',     type => 'cid' },
 					{ name => 'tableoid', type => 'oid' }
 #PGXC_BEGIN
 					,{ name => 'xc_node_id', type => 'int4' }
-#PGXC_END
 					);
+#PGXC_END
 				foreach my $attr (@SYS_ATTRS)
 				{
 					$attnum--;
@@ -388,6 +388,7 @@ sub emit_pgattr_row
 			}
 			elsif ($priornotnull)
 			{
+
 				# attnotnull will automatically be set if the type is
 				# fixed-width and prior columns are all NOT NULL ---
 				# compare DefineAttr in bootstrap.c. oidvector and
