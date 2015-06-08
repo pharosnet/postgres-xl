@@ -103,7 +103,7 @@ test: namespace
 #test: prepared_xacts
 test: brin
 test: gin
-#test: gist
+test: gist
 test: spgist
 test: privileges
 test: security_label
