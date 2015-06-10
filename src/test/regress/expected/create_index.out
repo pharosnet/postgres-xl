@@ -410,13 +410,14 @@ EXPLAIN (NODES OFF, COSTS OFF)
 SELECT * FROM fast_emp4000
     WHERE home_base @ '(200,200),(2000,1000)'::box
     ORDER BY (home_base[0])[0];
-                           QUERY PLAN                           
-----------------------------------------------------------------
- Sort
-   Sort Key: ((home_base[0])[0])
-   ->  Index Only Scan using grect2ind on fast_emp4000
-         Index Cond: (home_base @ '(2000,1000),(200,200)'::box)
-(4 rows)
+                              QUERY PLAN                              
+----------------------------------------------------------------------
+ Remote Subquery Scan on all
+   ->  Sort
+         Sort Key: ((home_base[0])[0])
+         ->  Index Only Scan using grect2ind on fast_emp4000
+               Index Cond: (home_base @ '(2000,1000),(200,200)'::box)
+(5 rows)
 
 SELECT * FROM fast_emp4000
     WHERE home_base @ '(200,200),(2000,1000)'::box
@@ -432,9 +433,11 @@ SELECT count(*) FROM fast_emp4000 WHERE home_base && '(1000,1000,0,0)'::box;
                                QUERY PLAN                                
 -------------------------------------------------------------------------
  Aggregate
-   ->  Index Only Scan using grect2ind on fast_emp4000
-         Index Cond: (home_base && '(1000,1000),(0,0)'::box)
-(3 rows)
+   ->  Remote Subquery Scan on all
+         ->  Aggregate
+               ->  Index Only Scan using grect2ind on fast_emp4000
+                     Index Cond: (home_base && '(1000,1000),(0,0)'::box)
+(5 rows)
 
 SELECT count(*) FROM fast_emp4000 WHERE home_base && '(1000,1000,0,0)'::box;
  count 
@@ -444,12 +447,14 @@ SELECT count(*) FROM fast_emp4000 WHERE home_base && '(1000,1000,0,0)'::box;
 
 EXPLAIN (COSTS OFF, NODES OFF)
 SELECT count(*) FROM fast_emp4000 WHERE home_base IS NULL;
-                      QUERY PLAN                       
--------------------------------------------------------
+                            QUERY PLAN                             
+-------------------------------------------------------------------
  Aggregate
-   ->  Index Only Scan using grect2ind on fast_emp4000
-         Index Cond: (home_base IS NULL)
-(3 rows)
+   ->  Remote Subquery Scan on all
+         ->  Aggregate
+               ->  Index Only Scan using grect2ind on fast_emp4000
+                     Index Cond: (home_base IS NULL)
+(5 rows)
 
 SELECT count(*) FROM fast_emp4000 WHERE home_base IS NULL;
  count 
@@ -534,12 +539,13 @@ SELECT count(*) FROM gcircle_tbl WHERE f1 && '<(500,500),500>'::circle;
 
 EXPLAIN (COSTS OFF, NODES OFF)
 SELECT count(*) FROM point_tbl WHERE f1 <@ box '(0,0,100,100)';
-                     QUERY PLAN                     
-----------------------------------------------------
- Aggregate
-   ->  Index Only Scan using gpointind on point_tbl
-         Index Cond: (f1 <@ '(100,100),(0,0)'::box)
-(3 rows)
+                        QUERY PLAN                        
+----------------------------------------------------------
+ Remote Subquery Scan on all
+   ->  Aggregate
+         ->  Index Only Scan using gpointind on point_tbl
+               Index Cond: (f1 <@ '(100,100),(0,0)'::box)
+(4 rows)
 
 SELECT count(*) FROM point_tbl WHERE f1 <@ box '(0,0,100,100)';
  count 
@@ -549,12 +555,13 @@ SELECT count(*) FROM point_tbl WHERE f1 <@ box '(0,0,100,100)';
 
 EXPLAIN (COSTS OFF, NODES OFF)
 SELECT count(*) FROM point_tbl WHERE box '(0,0,100,100)' @> f1;
-                     QUERY PLAN                     
-----------------------------------------------------
- Aggregate
-   ->  Index Only Scan using gpointind on point_tbl
-         Index Cond: (f1 <@ '(100,100),(0,0)'::box)
-(3 rows)
+                        QUERY PLAN                        
+----------------------------------------------------------
+ Remote Subquery Scan on all
+   ->  Aggregate
+         ->  Index Only Scan using gpointind on point_tbl
+               Index Cond: (f1 <@ '(100,100),(0,0)'::box)
+(4 rows)
 
 SELECT count(*) FROM point_tbl WHERE box '(0,0,100,100)' @> f1;
  count 
@@ -564,12 +571,13 @@ SELECT count(*) FROM point_tbl WHERE box '(0,0,100,100)' @> f1;
 
 EXPLAIN (COSTS OFF, NODES OFF)
 SELECT count(*) FROM point_tbl WHERE f1 <@ polygon '(0,0),(0,100),(100,100),(50,50),(100,0),(0,0)';
-                                       QUERY PLAN                                       
-----------------------------------------------------------------------------------------
- Aggregate
-   ->  Index Only Scan using gpointind on point_tbl
-         Index Cond: (f1 <@ '((0,0),(0,100),(100,100),(50,50),(100,0),(0,0))'::polygon)
-(3 rows)
+                                          QUERY PLAN                                          
+----------------------------------------------------------------------------------------------
+ Remote Subquery Scan on all
+   ->  Aggregate
+         ->  Index Only Scan using gpointind on point_tbl
+               Index Cond: (f1 <@ '((0,0),(0,100),(100,100),(50,50),(100,0),(0,0))'::polygon)
+(4 rows)
 
 SELECT count(*) FROM point_tbl WHERE f1 <@ polygon '(0,0),(0,100),(100,100),(50,50),(100,0),(0,0)';
  count 
@@ -579,12 +587,13 @@ SELECT count(*) FROM point_tbl WHERE f1 <@ polygon '(0,0),(0,100),(100,100),(50,
 
 EXPLAIN (COSTS OFF, NODES OFF)
 SELECT count(*) FROM point_tbl WHERE f1 <@ circle '<(50,50),50>';
-                     QUERY PLAN                     
-----------------------------------------------------
- Aggregate
-   ->  Index Only Scan using gpointind on point_tbl
-         Index Cond: (f1 <@ '<(50,50),50>'::circle)
-(3 rows)
+                        QUERY PLAN                        
+----------------------------------------------------------
+ Remote Subquery Scan on all
+   ->  Aggregate
+         ->  Index Only Scan using gpointind on point_tbl
+               Index Cond: (f1 <@ '<(50,50),50>'::circle)
+(4 rows)
 
 SELECT count(*) FROM point_tbl WHERE f1 <@ circle '<(50,50),50>';
  count 
@@ -594,12 +603,13 @@ SELECT count(*) FROM point_tbl WHERE f1 <@ circle '<(50,50),50>';
 
 EXPLAIN (COSTS OFF, NODES OFF)
 SELECT count(*) FROM point_tbl p WHERE p.f1 << '(0.0, 0.0)';
-                      QUERY PLAN                      
-------------------------------------------------------
- Aggregate
-   ->  Index Only Scan using gpointind on point_tbl p
-         Index Cond: (f1 << '(0,0)'::point)
-(3 rows)
+                         QUERY PLAN                         
+------------------------------------------------------------
+ Remote Subquery Scan on all
+   ->  Aggregate
+         ->  Index Only Scan using gpointind on point_tbl p
+               Index Cond: (f1 << '(0,0)'::point)
+(4 rows)
 
 SELECT count(*) FROM point_tbl p WHERE p.f1 << '(0.0, 0.0)';
  count 
@@ -609,12 +619,13 @@ SELECT count(*) FROM point_tbl p WHERE p.f1 << '(0.0, 0.0)';
 
 EXPLAIN (COSTS OFF, NODES OFF)
 SELECT count(*) FROM point_tbl p WHERE p.f1 >> '(0.0, 0.0)';
-                      QUERY PLAN                      
-------------------------------------------------------
- Aggregate
-   ->  Index Only Scan using gpointind on point_tbl p
-         Index Cond: (f1 >> '(0,0)'::point)
-(3 rows)
+                         QUERY PLAN                         
+------------------------------------------------------------
+ Remote Subquery Scan on all
+   ->  Aggregate
+         ->  Index Only Scan using gpointind on point_tbl p
+               Index Cond: (f1 >> '(0,0)'::point)
+(4 rows)
 
 SELECT count(*) FROM point_tbl p WHERE p.f1 >> '(0.0, 0.0)';
  count 
@@ -624,12 +635,13 @@ SELECT count(*) FROM point_tbl p WHERE p.f1 >> '(0.0, 0.0)';
 
 EXPLAIN (COSTS OFF, NODES OFF)
 SELECT count(*) FROM point_tbl p WHERE p.f1 <^ '(0.0, 0.0)';
-                      QUERY PLAN                      
-------------------------------------------------------
- Aggregate
-   ->  Index Only Scan using gpointind on point_tbl p
-         Index Cond: (f1 <^ '(0,0)'::point)
-(3 rows)
+                         QUERY PLAN                         
+------------------------------------------------------------
+ Remote Subquery Scan on all
+   ->  Aggregate
+         ->  Index Only Scan using gpointind on point_tbl p
+               Index Cond: (f1 <^ '(0,0)'::point)
+(4 rows)
 
 SELECT count(*) FROM point_tbl p WHERE p.f1 <^ '(0.0, 0.0)';
  count 
@@ -639,12 +651,13 @@ SELECT count(*) FROM point_tbl p WHERE p.f1 <^ '(0.0, 0.0)';
 
 EXPLAIN (COSTS OFF, NODES OFF)
 SELECT count(*) FROM point_tbl p WHERE p.f1 >^ '(0.0, 0.0)';
-                      QUERY PLAN                      
-------------------------------------------------------
- Aggregate
-   ->  Index Only Scan using gpointind on point_tbl p
-         Index Cond: (f1 >^ '(0,0)'::point)
-(3 rows)
+                         QUERY PLAN                         
+------------------------------------------------------------
+ Remote Subquery Scan on all
+   ->  Aggregate
+         ->  Index Only Scan using gpointind on point_tbl p
+               Index Cond: (f1 >^ '(0,0)'::point)
+(4 rows)
 
 SELECT count(*) FROM point_tbl p WHERE p.f1 >^ '(0.0, 0.0)';
  count 
@@ -654,12 +667,13 @@ SELECT count(*) FROM point_tbl p WHERE p.f1 >^ '(0.0, 0.0)';
 
 EXPLAIN (COSTS OFF, NODES OFF)
 SELECT count(*) FROM point_tbl p WHERE p.f1 ~= '(-5, -12)';
-                      QUERY PLAN                      
-------------------------------------------------------
- Aggregate
-   ->  Index Only Scan using gpointind on point_tbl p
-         Index Cond: (f1 ~= '(-5,-12)'::point)
-(3 rows)
+                         QUERY PLAN                         
+------------------------------------------------------------
+ Remote Subquery Scan on all
+   ->  Aggregate
+         ->  Index Only Scan using gpointind on point_tbl p
+               Index Cond: (f1 ~= '(-5,-12)'::point)
+(4 rows)
 
 SELECT count(*) FROM point_tbl p WHERE p.f1 ~= '(-5, -12)';
  count 
@@ -669,11 +683,12 @@ SELECT count(*) FROM point_tbl p WHERE p.f1 ~= '(-5, -12)';
 
 EXPLAIN (COSTS OFF, NODES OFF)
 SELECT * FROM point_tbl ORDER BY f1 <-> '0,1';
-                  QUERY PLAN                  
-----------------------------------------------
- Index Only Scan using gpointind on point_tbl
-   Order By: (f1 <-> '(0,1)'::point)
-(2 rows)
+                     QUERY PLAN                     
+----------------------------------------------------
+ Remote Subquery Scan on all
+   ->  Index Only Scan using gpointind on point_tbl
+         Order By: (f1 <-> '(0,1)'::point)
+(3 rows)
 
 SELECT * FROM point_tbl ORDER BY f1 <-> '0,1';
      f1     
@@ -689,11 +704,12 @@ SELECT * FROM point_tbl ORDER BY f1 <-> '0,1';
 
 EXPLAIN (COSTS OFF, NODES OFF)
 SELECT * FROM point_tbl WHERE f1 IS NULL;
-                  QUERY PLAN                  
-----------------------------------------------
- Index Only Scan using gpointind on point_tbl
-   Index Cond: (f1 IS NULL)
-(2 rows)
+                     QUERY PLAN                     
+----------------------------------------------------
+ Remote Subquery Scan on all
+   ->  Index Only Scan using gpointind on point_tbl
+         Index Cond: (f1 IS NULL)
+(3 rows)
 
 SELECT * FROM point_tbl WHERE f1 IS NULL;
  f1 
@@ -703,12 +719,13 @@ SELECT * FROM point_tbl WHERE f1 IS NULL;
 
 EXPLAIN (COSTS OFF, NODES OFF)
 SELECT * FROM point_tbl WHERE f1 IS NOT NULL ORDER BY f1 <-> '0,1';
-                  QUERY PLAN                  
-----------------------------------------------
- Index Only Scan using gpointind on point_tbl
-   Index Cond: (f1 IS NOT NULL)
-   Order By: (f1 <-> '(0,1)'::point)
-(3 rows)
+                     QUERY PLAN                     
+----------------------------------------------------
+ Remote Subquery Scan on all
+   ->  Index Only Scan using gpointind on point_tbl
+         Index Cond: (f1 IS NOT NULL)
+         Order By: (f1 <-> '(0,1)'::point)
+(4 rows)
 
 SELECT * FROM point_tbl WHERE f1 IS NOT NULL ORDER BY f1 <-> '0,1';
      f1     
@@ -723,12 +740,13 @@ SELECT * FROM point_tbl WHERE f1 IS NOT NULL ORDER BY f1 <-> '0,1';
 
 EXPLAIN (COSTS OFF, NODES OFF)
 SELECT * FROM point_tbl WHERE f1 <@ '(-10,-10),(10,10)':: box ORDER BY f1 <-> '0,1';
-                   QUERY PLAN                   
-------------------------------------------------
- Index Only Scan using gpointind on point_tbl
-   Index Cond: (f1 <@ '(10,10),(-10,-10)'::box)
-   Order By: (f1 <-> '(0,1)'::point)
-(3 rows)
+                      QUERY PLAN                      
+------------------------------------------------------
+ Remote Subquery Scan on all
+   ->  Index Only Scan using gpointind on point_tbl
+         Index Cond: (f1 <@ '(10,10),(-10,-10)'::box)
+         Order By: (f1 <-> '(0,1)'::point)
+(4 rows)
 
 SELECT * FROM point_tbl WHERE f1 <@ '(-10,-10),(10,10)':: box ORDER BY f1 <-> '0,1';
    f1    
@@ -1249,12 +1267,14 @@ SELECT count(*) FROM radix_text_tbl WHERE t ~>~  'Worth                         
 
 EXPLAIN (COSTS OFF)
 SELECT * FROM gpolygon_tbl ORDER BY f1 <-> '(0,0)'::point LIMIT 10;
-                     QUERY PLAN                      
------------------------------------------------------
+                           QUERY PLAN                            
+-----------------------------------------------------------------
  Limit
-   ->  Index Scan using ggpolygonind on gpolygon_tbl
-         Order By: (f1 <-> '(0,0)'::point)
-(3 rows)
+   ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+         ->  Limit
+               ->  Index Scan using ggpolygonind on gpolygon_tbl
+                     Order By: (f1 <-> '(0,0)'::point)
+(5 rows)
 
 SELECT * FROM gpolygon_tbl ORDER BY f1 <-> '(0,0)'::point LIMIT 10;
                        f1                        
@@ -1273,12 +1293,14 @@ SELECT * FROM gpolygon_tbl ORDER BY f1 <-> '(0,0)'::point LIMIT 10;
 
 EXPLAIN (COSTS OFF)
 SELECT circle_center(f1), round(radius(f1)) as radius FROM gcircle_tbl ORDER BY f1 <-> '(200,300)'::point LIMIT 10;
-                    QUERY PLAN                     
----------------------------------------------------
+                          QUERY PLAN                           
+---------------------------------------------------------------
  Limit
-   ->  Index Scan using ggcircleind on gcircle_tbl
-         Order By: (f1 <-> '(200,300)'::point)
-(3 rows)
+   ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+         ->  Limit
+               ->  Index Scan using ggcircleind on gcircle_tbl
+                     Order By: (f1 <-> '(200,300)'::point)
+(5 rows)
 
 SELECT circle_center(f1), round(radius(f1)) as radius FROM gcircle_tbl ORDER BY f1 <-> '(200,300)'::point LIMIT 10;
  circle_center  | radius 
@@ -2515,14 +2537,20 @@ ERROR:  Unique index of partitioned table must contain the hash/modulo distribut
 CREATE TABLE concur_heap (f1 text, f2 text);
 -- empty table
 CREATE INDEX CONCURRENTLY concur_index1 ON concur_heap(f2,f1);
+ERROR:  PGXC does not support concurrent INDEX yet
+DETAIL:  The feature is not currently supported
 CREATE INDEX CONCURRENTLY IF NOT EXISTS concur_index1 ON concur_heap(f2,f1);
-NOTICE:  relation "concur_index1" already exists, skipping
+ERROR:  PGXC does not support concurrent INDEX yet
+DETAIL:  The feature is not currently supported
 INSERT INTO concur_heap VALUES  ('a','b');
 INSERT INTO concur_heap VALUES  ('b','b');
 -- unique index
 CREATE UNIQUE INDEX CONCURRENTLY concur_index2 ON concur_heap(f1);
+ERROR:  PGXC does not support concurrent INDEX yet
+DETAIL:  The feature is not currently supported
 CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS concur_index2 ON concur_heap(f1);
-NOTICE:  relation "concur_index2" already exists, skipping
+ERROR:  PGXC does not support concurrent INDEX yet
+DETAIL:  The feature is not currently supported
 -- check if constraint is set up properly to be enforced
 INSERT INTO concur_heap VALUES ('b','x');
 -- check if constraint is enforced properly at build time
@@ -2553,8 +2581,6 @@ COMMIT;
 -- Failed builds are left invalid by VACUUM FULL, fixed by REINDEX
 VACUUM FULL concur_heap;
 REINDEX TABLE concur_heap;
-ERROR:  could not create unique index "concur_index3"
-DETAIL:  Key (f2)=(b) is duplicated.
 DELETE FROM concur_heap WHERE f1 = 'b';
 VACUUM FULL concur_heap;
 \d concur_heap
@@ -2574,12 +2600,6 @@ Table "public.concur_heap"
  f1     | text | 
  f2     | text | 
 Indexes:
-    "concur_index2" UNIQUE, btree (f1)
-    "concur_index3" UNIQUE, btree (f2)
-    "concur_heap_expr_idx" btree ((f2 || f1))
-    "concur_index1" btree (f2, f1)
-    "concur_index4" btree (f2) WHERE f1 = 'a'::text
-    "concur_index5" btree (f2) WHERE f1 = 'x'::text
     "std_index" btree (f2)
 
 --
@@ -2851,10 +2871,12 @@ SELECT * FROM tenk1
                               QUERY PLAN                               
 -----------------------------------------------------------------------
  Remote Subquery Scan on all
-   ->  Index Scan using tenk1_thous_tenthous on tenk1
-         Index Cond: (thousand = 42)
+   ->  Bitmap Heap Scan on tenk1
+         Recheck Cond: (thousand = 42)
          Filter: ((tenthous = 1) OR (tenthous = 3) OR (tenthous = 42))
-(4 rows)
+         ->  Bitmap Index Scan on tenk1_thous_tenthous
+               Index Cond: (thousand = 42)
+(6 rows)
 
 SELECT * FROM tenk1
   WHERE thousand = 42 AND (tenthous = 1 OR tenthous = 3 OR tenthous = 42);
@@ -2871,10 +2893,12 @@ SELECT count(*) FROM tenk1
  Aggregate
    ->  Remote Subquery Scan on all
          ->  Aggregate
-               ->  Index Scan using tenk1_hundred on tenk1
-                     Index Cond: (hundred = 42)
+               ->  Bitmap Heap Scan on tenk1
+                     Recheck Cond: (hundred = 42)
                      Filter: ((thousand = 42) OR (thousand = 99))
-(6 rows)
+                     ->  Bitmap Index Scan on tenk1_hundred
+                           Index Cond: (hundred = 42)
+(8 rows)
 
 SELECT count(*) FROM tenk1
   WHERE hundred = 42 AND (thousand = 42 OR thousand = 99);
@@ -2893,14 +2917,16 @@ ANALYZE dupindexcols;
 EXPLAIN (NODES OFF, COSTS OFF)
   SELECT count(*) FROM dupindexcols
     WHERE f1 BETWEEN 'WA' AND 'ZZZ' and id < 1000 and f1 ~<~ 'YX';
-                                                   QUERY PLAN                                                   
-----------------------------------------------------------------------------------------------------------------
+                                                         QUERY PLAN                                                         
+----------------------------------------------------------------------------------------------------------------------------
  Aggregate
-   ->  Bitmap Heap Scan on dupindexcols
-         Recheck Cond: ((f1 >= 'WA'::text) AND (f1 <= 'ZZZ'::text) AND (id < 1000) AND (f1 ~<~ 'YX'::text))
-         ->  Bitmap Index Scan on dupindexcols_i
-               Index Cond: ((f1 >= 'WA'::text) AND (f1 <= 'ZZZ'::text) AND (id < 1000) AND (f1 ~<~ 'YX'::text))
-(5 rows)
+   ->  Remote Subquery Scan on all
+         ->  Aggregate
+               ->  Bitmap Heap Scan on dupindexcols
+                     Recheck Cond: ((f1 >= 'WA'::text) AND (f1 <= 'ZZZ'::text) AND (id < 1000) AND (f1 ~<~ 'YX'::text))
+                     ->  Bitmap Index Scan on dupindexcols_i
+                           Index Cond: ((f1 >= 'WA'::text) AND (f1 <= 'ZZZ'::text) AND (id < 1000) AND (f1 ~<~ 'YX'::text))
+(7 rows)
 
 SELECT count(*) FROM dupindexcols
   WHERE f1 BETWEEN 'WA' AND 'ZZZ' and id < 1000 and f1 ~<~ 'YX';
@@ -2917,11 +2943,16 @@ explain (costs off)
 SELECT unique1 FROM tenk1
 WHERE unique1 IN (1,42,7)
 ORDER BY unique1;
-                      QUERY PLAN                       
--------------------------------------------------------
- Index Only Scan using tenk1_unique1 on tenk1
-   Index Cond: (unique1 = ANY ('{1,42,7}'::integer[]))
-(2 rows)
+                               QUERY PLAN                                
+-------------------------------------------------------------------------
+ Remote Subquery Scan on all (datanode_1,datanode_2)
+   ->  Sort
+         Sort Key: unique1
+         ->  Bitmap Heap Scan on tenk1
+               Recheck Cond: (unique1 = ANY ('{1,42,7}'::integer[]))
+               ->  Bitmap Index Scan on tenk1_unique1
+                     Index Cond: (unique1 = ANY ('{1,42,7}'::integer[]))
+(7 rows)
 
 SELECT unique1 FROM tenk1
 WHERE unique1 IN (1,42,7)
@@ -2937,12 +2968,16 @@ explain (costs off)
 SELECT thousand, tenthous FROM tenk1
 WHERE thousand < 2 AND tenthous IN (1001,3000)
 ORDER BY thousand;
-                      QUERY PLAN                       
--------------------------------------------------------
- Index Only Scan using tenk1_thous_tenthous on tenk1
-   Index Cond: (thousand < 2)
-   Filter: (tenthous = ANY ('{1001,3000}'::integer[]))
-(3 rows)
+                                            QUERY PLAN                                            
+--------------------------------------------------------------------------------------------------
+ Remote Subquery Scan on all (datanode_1,datanode_2)
+   ->  Sort
+         Sort Key: thousand
+         ->  Bitmap Heap Scan on tenk1
+               Recheck Cond: ((thousand < 2) AND (tenthous = ANY ('{1001,3000}'::integer[])))
+               ->  Bitmap Index Scan on tenk1_thous_tenthous
+                     Index Cond: ((thousand < 2) AND (tenthous = ANY ('{1001,3000}'::integer[])))
+(7 rows)
 
 SELECT thousand, tenthous FROM tenk1
 WHERE thousand < 2 AND tenthous IN (1001,3000)
@@ -2958,13 +2993,16 @@ explain (costs off)
 SELECT thousand, tenthous FROM tenk1
 WHERE thousand < 2 AND tenthous IN (1001,3000)
 ORDER BY thousand;
-                                      QUERY PLAN                                      
---------------------------------------------------------------------------------------
- Sort
-   Sort Key: thousand
-   ->  Index Scan using tenk1_thous_tenthous on tenk1
-         Index Cond: ((thousand < 2) AND (tenthous = ANY ('{1001,3000}'::integer[])))
-(4 rows)
+                                            QUERY PLAN                                            
+--------------------------------------------------------------------------------------------------
+ Remote Subquery Scan on all (datanode_1,datanode_2)
+   ->  Sort
+         Sort Key: thousand
+         ->  Bitmap Heap Scan on tenk1
+               Recheck Cond: ((thousand < 2) AND (tenthous = ANY ('{1001,3000}'::integer[])))
+               ->  Bitmap Index Scan on tenk1_thous_tenthous
+                     Index Cond: ((thousand < 2) AND (tenthous = ANY ('{1001,3000}'::integer[])))
+(7 rows)
 
 SELECT thousand, tenthous FROM tenk1
 WHERE thousand < 2 AND tenthous IN (1001,3000)
@@ -2981,11 +3019,12 @@ RESET enable_indexscan;
 --
 explain (costs off)
   select * from tenk1 where (thousand, tenthous) in ((1,1001), (null,null));
-                      QUERY PLAN                      
-------------------------------------------------------
- Index Scan using tenk1_thous_tenthous on tenk1
-   Index Cond: ((thousand = 1) AND (tenthous = 1001))
-(2 rows)
+                         QUERY PLAN                         
+------------------------------------------------------------
+ Remote Subquery Scan on all (datanode_1,datanode_2)
+   ->  Index Scan using tenk1_thous_tenthous on tenk1
+         Index Cond: ((thousand = 1) AND (tenthous = 1001))
+(3 rows)
 
 --
 -- REINDEX (VERBOSE)
