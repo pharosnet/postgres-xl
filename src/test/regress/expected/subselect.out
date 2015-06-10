@@ -235,39 +235,44 @@ from int8_tbl group by q1 order by q1;
 explain (costs off)
 select * from int4_tbl o where exists
   (select 1 from int4_tbl i where i.f1=o.f1 limit null);
-             QUERY PLAN             
-------------------------------------
- Hash Semi Join
-   Hash Cond: (o.f1 = i.f1)
-   ->  Seq Scan on int4_tbl o
-   ->  Hash
-         ->  Seq Scan on int4_tbl i
-(5 rows)
+                QUERY PLAN                
+------------------------------------------
+ Remote Subquery Scan on all (datanode_1)
+   ->  Hash Semi Join
+         Hash Cond: (o.f1 = i.f1)
+         ->  Seq Scan on int4_tbl o
+         ->  Hash
+               ->  Seq Scan on int4_tbl i
+(6 rows)
 
 explain (costs off)
 select * from int4_tbl o where not exists
   (select 1 from int4_tbl i where i.f1=o.f1 limit 1);
-             QUERY PLAN             
-------------------------------------
- Hash Anti Join
-   Hash Cond: (o.f1 = i.f1)
-   ->  Seq Scan on int4_tbl o
-   ->  Hash
-         ->  Seq Scan on int4_tbl i
-(5 rows)
+                QUERY PLAN                
+------------------------------------------
+ Remote Subquery Scan on all (datanode_2)
+   ->  Hash Anti Join
+         Hash Cond: (o.f1 = i.f1)
+         ->  Seq Scan on int4_tbl o
+         ->  Hash
+               ->  Seq Scan on int4_tbl i
+(6 rows)
 
 explain (costs off)
 select * from int4_tbl o where exists
   (select 1 from int4_tbl i where i.f1=o.f1 limit 0);
-              QUERY PLAN              
---------------------------------------
- Seq Scan on int4_tbl o
-   Filter: (SubPlan 1)
-   SubPlan 1
-     ->  Limit
-           ->  Seq Scan on int4_tbl i
-                 Filter: (f1 = o.f1)
-(6 rows)
+                          QUERY PLAN                          
+--------------------------------------------------------------
+ Remote Subquery Scan on all (datanode_2)
+   ->  Seq Scan on int4_tbl o
+         Filter: (SubPlan 1)
+         SubPlan 1
+           ->  Limit
+                 ->  Remote Subquery Scan on all (datanode_2)
+                       ->  Limit
+                             ->  Seq Scan on int4_tbl i
+                                   Filter: (f1 = o.f1)
+(9 rows)
 
 --
 -- Test cases to catch unpleasant interactions between IN-join processing
@@ -792,19 +797,28 @@ explain (verbose, costs off)
 select * from int4_tbl where
   (case when f1 in (select unique1 from tenk1 a) then f1 else null end) in
   (select ten from tenk1 b);
-                                                                                      QUERY PLAN                                                                                       
----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Nested Loop Semi Join
+                                                                                            QUERY PLAN                                                                                             
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Remote Subquery Scan on all (datanode_1,datanode_2)
    Output: int4_tbl.f1
-   Join Filter: (CASE WHEN (hashed SubPlan 1) THEN int4_tbl.f1 ELSE NULL::integer END = b.ten)
-   ->  Seq Scan on public.int4_tbl
+   ->  Hash Join
          Output: int4_tbl.f1
-   ->  Seq Scan on public.tenk1 b
-         Output: b.unique1, b.unique2, b.two, b.four, b.ten, b.twenty, b.hundred, b.thousand, b.twothousand, b.fivethous, b.tenthous, b.odd, b.even, b.stringu1, b.stringu2, b.string4
-   SubPlan 1
-     ->  Index Only Scan using tenk1_unique1 on public.tenk1 a
-           Output: a.unique1
-(10 rows)
+         Hash Cond: (b.ten = CASE WHEN (hashed SubPlan 1) THEN int4_tbl.f1 ELSE NULL::integer END)
+         ->  HashAggregate
+               Output: b.ten
+               Group Key: b.ten
+               ->  Seq Scan on public.tenk1 b
+                     Output: b.unique1, b.unique2, b.two, b.four, b.ten, b.twenty, b.hundred, b.thousand, b.twothousand, b.fivethous, b.tenthous, b.odd, b.even, b.stringu1, b.stringu2, b.string4
+         ->  Hash
+               Output: int4_tbl.f1
+               ->  Seq Scan on public.int4_tbl
+                     Output: int4_tbl.f1
+         SubPlan 1
+           ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+                 Output: a.unique1
+                 ->  Seq Scan on public.tenk1 a
+                       Output: a.unique1
+(19 rows)
 
 select * from int4_tbl where
   (case when f1 in (select unique1 from tenk1 a) then f1 else null end) in
@@ -820,27 +834,29 @@ select * from int4_tbl where
 explain (verbose, costs off)
 select * from int4_tbl o where (f1, f1) in
   (select f1, generate_series(1,2) / 10 g from int4_tbl i group by f1);
-                              QUERY PLAN                              
-----------------------------------------------------------------------
- Hash Join
+                                 QUERY PLAN                                 
+----------------------------------------------------------------------------
+ Remote Subquery Scan on all (datanode_1)
    Output: o.f1
-   Hash Cond: (o.f1 = "ANY_subquery".f1)
-   ->  Seq Scan on public.int4_tbl o
+   ->  Hash Join
          Output: o.f1
-   ->  Hash
-         Output: "ANY_subquery".f1, "ANY_subquery".g
-         ->  HashAggregate
+         Hash Cond: (o.f1 = "ANY_subquery".f1)
+         ->  Seq Scan on public.int4_tbl o
+               Output: o.f1
+         ->  Hash
                Output: "ANY_subquery".f1, "ANY_subquery".g
-               Group Key: "ANY_subquery".f1, "ANY_subquery".g
-               ->  Subquery Scan on "ANY_subquery"
+               ->  HashAggregate
                      Output: "ANY_subquery".f1, "ANY_subquery".g
-                     Filter: ("ANY_subquery".f1 = "ANY_subquery".g)
-                     ->  HashAggregate
-                           Output: i.f1, (generate_series(1, 2) / 10)
-                           Group Key: i.f1
-                           ->  Seq Scan on public.int4_tbl i
-                                 Output: i.f1
-(18 rows)
+                     Group Key: "ANY_subquery".f1, "ANY_subquery".g
+                     ->  Subquery Scan on "ANY_subquery"
+                           Output: "ANY_subquery".f1, "ANY_subquery".g
+                           Filter: ("ANY_subquery".f1 = "ANY_subquery".g)
+                           ->  HashAggregate
+                                 Output: i.f1, (generate_series(1, 2) / 10)
+                                 Group Key: i.f1
+                                 ->  Seq Scan on public.int4_tbl i
+                                       Output: i.f1
+(20 rows)
 
 select * from int4_tbl o where (f1, f1) in
   (select f1, generate_series(1,2) / 10 g from int4_tbl i group by f1);
