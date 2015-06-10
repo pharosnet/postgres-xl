@@ -69,15 +69,11 @@ CREATE INDEX ON vaccluster(wrap_do_analyze(i));
 INSERT INTO vaccluster VALUES (1), (2);
 ANALYZE vaccluster;
 ERROR:  ANALYZE cannot be executed from VACUUM or ANALYZE
-CONTEXT:  SQL function "do_analyze" statement 1
-SQL function "wrap_do_analyze" statement 1
 VACUUM FULL pg_am;
 VACUUM FULL pg_class;
 VACUUM FULL pg_catalog.pg_database;
 VACUUM FULL vaccluster;
 ERROR:  ANALYZE cannot be executed from VACUUM or ANALYZE
-CONTEXT:  SQL function "do_analyze" statement 1
-SQL function "wrap_do_analyze" statement 1
 VACUUM FULL vactst;
 DROP TABLE vaccluster;
 DROP TABLE vactst;
