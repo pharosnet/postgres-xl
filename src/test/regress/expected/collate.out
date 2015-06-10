@@ -45,28 +45,28 @@ CREATE TABLE collate_test2 (
 );
 INSERT INTO collate_test1 VALUES (1, 'abc'), (2, 'Abc'), (3, 'bbc'), (4, 'ABD');
 INSERT INTO collate_test2 SELECT * FROM collate_test1;
-SELECT * FROM collate_test1 WHERE b COLLATE "C" >= 'abc';
+SELECT * FROM collate_test1 WHERE b COLLATE "C" >= 'abc' ORDER BY a;
  a |  b  
 ---+-----
  1 | abc
  3 | bbc
 (2 rows)
 
-SELECT * FROM collate_test1 WHERE b >= 'abc' COLLATE "C";
+SELECT * FROM collate_test1 WHERE b >= 'abc' COLLATE "C" ORDER BY a;
  a |  b  
 ---+-----
  1 | abc
  3 | bbc
 (2 rows)
 
-SELECT * FROM collate_test1 WHERE b COLLATE "C" >= 'abc' COLLATE "C";
+SELECT * FROM collate_test1 WHERE b COLLATE "C" >= 'abc' COLLATE "C" ORDER BY a;
  a |  b  
 ---+-----
  1 | abc
  3 | bbc
 (2 rows)
 
-SELECT * FROM collate_test1 WHERE b COLLATE "C" >= 'bbc' COLLATE "POSIX"; -- fail
+SELECT * FROM collate_test1 WHERE b COLLATE "C" >= 'bbc' COLLATE "POSIX" ORDER BY a; -- fail
 ERROR:  collation mismatch between explicit collations "C" and "POSIX"
 LINE 1: ...* FROM collate_test1 WHERE b COLLATE "C" >= 'bbc' COLLATE "P...
                                                              ^
@@ -167,14 +167,14 @@ CREATE TABLE collate_test10 (
     y text COLLATE "POSIX"
 );
 INSERT INTO collate_test10 VALUES (1, 'hij', 'hij'), (2, 'HIJ', 'HIJ');
-SELECT a, lower(x), lower(y), upper(x), upper(y), initcap(x), initcap(y) FROM collate_test10;
+SELECT a, lower(x), lower(y), upper(x), upper(y), initcap(x), initcap(y) FROM collate_test10 ORDER BY a;
  a | lower | lower | upper | upper | initcap | initcap 
 ---+-------+-------+-------+-------+---------+---------
  1 | hij   | hij   | HIJ   | HIJ   | Hij     | Hij
  2 | hij   | hij   | HIJ   | HIJ   | Hij     | Hij
 (2 rows)
 
-SELECT a, lower(x COLLATE "C"), lower(y COLLATE "C") FROM collate_test10;
+SELECT a, lower(x COLLATE "C"), lower(y COLLATE "C") FROM collate_test10 ORDER BY a;
  a | lower | lower 
 ---+-------+-------
  1 | hij   | hij
@@ -228,14 +228,14 @@ SELECT a, coalesce(b, 'foo') FROM collate_test2 ORDER BY 2;
  3 | bbc
 (4 rows)
 
-SELECT a, lower(coalesce(x, 'foo')), lower(coalesce(y, 'foo')) FROM collate_test10;
+SELECT a, lower(coalesce(x, 'foo')), lower(coalesce(y, 'foo')) FROM collate_test10 ORDER BY a;
  a | lower | lower 
 ---+-------+-------
  1 | hij   | hij
  2 | hij   | hij
 (2 rows)
 
-SELECT a, b, greatest(b, 'CCC') FROM collate_test1 ORDER BY 3;
+SELECT a, b, greatest(b, 'CCC') FROM collate_test1 ORDER BY 3,1;
  a |  b  | greatest 
 ---+-----+----------
  2 | Abc | CCC
@@ -244,7 +244,7 @@ SELECT a, b, greatest(b, 'CCC') FROM collate_test1 ORDER BY 3;
  3 | bbc | bbc
 (4 rows)
 
-SELECT a, b, greatest(b, 'CCC') FROM collate_test2 ORDER BY 3;
+SELECT a, b, greatest(b, 'CCC') FROM collate_test2 ORDER BY 3,1;
  a |  b  | greatest 
 ---+-----+----------
  2 | Abc | CCC
@@ -253,7 +253,7 @@ SELECT a, b, greatest(b, 'CCC') FROM collate_test2 ORDER BY 3;
  3 | bbc | bbc
 (4 rows)
 
-SELECT a, x, y, lower(greatest(x, 'foo')), lower(greatest(y, 'foo')) FROM collate_test10;
+SELECT a, x, y, lower(greatest(x, 'foo')), lower(greatest(y, 'foo')) FROM collate_test10 ORDER BY a;
  a |  x  |  y  | lower | lower 
 ---+-----+-----+-------+-------
  1 | hij | hij | hij   | hij
@@ -278,7 +278,7 @@ SELECT a, nullif(b, 'abc') FROM collate_test2 ORDER BY 2;
  1 | 
 (4 rows)
 
-SELECT a, lower(nullif(x, 'foo')), lower(nullif(y, 'foo')) FROM collate_test10;
+SELECT a, lower(nullif(x, 'foo')), lower(nullif(y, 'foo')) FROM collate_test10 ORDER BY a;
  a | lower | lower 
 ---+-------+-------
  1 | hij   | hij
@@ -331,7 +331,7 @@ SELECT a, b::testdomain_p FROM collate_test2 ORDER BY 2;
  3 | bbc
 (4 rows)
 
-SELECT a, lower(x::testdomain), lower(y::testdomain) FROM collate_test10;
+SELECT a, lower(x::testdomain), lower(y::testdomain) FROM collate_test10 ORDER BY 2;
  a | lower | lower 
 ---+-------+-------
  1 | hij   | hij
@@ -424,7 +424,7 @@ SELECT a, b FROM collate_test2 EXCEPT SELECT a, b FROM collate_test2 WHERE a < 2
 SELECT a, b FROM collate_test1 UNION ALL SELECT a, b FROM collate_test2 ORDER BY 2; -- fail
 ERROR:  could not determine which collation to use for string comparison
 HINT:  Use the COLLATE clause to set the collation explicitly.
-SELECT a, b FROM collate_test1 UNION ALL SELECT a, b FROM collate_test2; -- ok
+(SELECT a, b FROM collate_test1 ORDER BY 1) UNION ALL (SELECT a, b FROM collate_test2 ORDER BY 1); -- ok
  a |  b  
 ---+-----
  1 | abc
@@ -462,12 +462,9 @@ LINE 1: SELECT a, b FROM collate_test1 EXCEPT SELECT a, b FROM colla...
                                                         ^
 HINT:  You can choose the collation by applying the COLLATE clause to one or both expressions.
 CREATE TABLE test_u AS SELECT a, b FROM collate_test1 UNION ALL SELECT a, b FROM collate_test2; -- fail
-ERROR:  no collation was derived for column "b" with collatable type text
-HINT:  Use the COLLATE clause to set the collation explicitly.
 -- ideally this would be a parse-time error, but for now it must be run-time:
 select x < y from collate_test10; -- fail
 ERROR:  could not determine which collation to use for string comparison
-HINT:  Use the COLLATE clause to set the collation explicitly.
 select x || y from collate_test10; -- ok, because || is not collation aware
  ?column? 
 ----------
@@ -491,11 +488,11 @@ LINE 2:    (SELECT x FROM (VALUES('a' COLLATE "C"),('b')) t(x)
                    ^
 HINT:  Use the COLLATE clause to set the collation of the non-recursive term.
 SELECT a, b, a < b as lt FROM
-  (VALUES ('a', 'B'), ('A', 'b' COLLATE "C")) v(a,b);
+  (VALUES ('a', 'B'), ('A', 'b' COLLATE "C")) v(a,b) ORDER BY a;
  a | b | lt 
 ---+---+----
- a | B | f
  A | b | t
+ a | B | f
 (2 rows)
 
 -- casting
@@ -606,21 +603,23 @@ RESET enable_nestloop;
 -- EXPLAIN
 EXPLAIN (COSTS OFF)
   SELECT * FROM collate_test10 ORDER BY x, y;
-                  QUERY PLAN                  
-----------------------------------------------
- Sort
-   Sort Key: x COLLATE "C", y COLLATE "POSIX"
-   ->  Seq Scan on collate_test10
-(3 rows)
+                     QUERY PLAN                      
+-----------------------------------------------------
+ Remote Subquery Scan on all (datanode_1,datanode_2)
+   ->  Sort
+         Sort Key: x COLLATE "C", y COLLATE "POSIX"
+         ->  Seq Scan on collate_test10
+(4 rows)
 
 EXPLAIN (COSTS OFF)
   SELECT * FROM collate_test10 ORDER BY x DESC, y COLLATE "C" ASC NULLS FIRST;
-                        QUERY PLAN                         
------------------------------------------------------------
- Sort
-   Sort Key: x COLLATE "C" DESC, y COLLATE "C" NULLS FIRST
-   ->  Seq Scan on collate_test10
-(3 rows)
+                           QUERY PLAN                            
+-----------------------------------------------------------------
+ Remote Subquery Scan on all (datanode_1,datanode_2)
+   ->  Sort
+         Sort Key: x COLLATE "C" DESC, y COLLATE "C" NULLS FIRST
+         ->  Seq Scan on collate_test10
+(4 rows)
 
 -- 9.1 bug with useless COLLATE in an expression subject to length coercion
 CREATE TEMP TABLE vctable (f1 varchar(25));
@@ -651,7 +650,7 @@ SELECT collation for ((SELECT b FROM collate_test1 LIMIT 1));
 -- must get rid of them.
 --
 DROP SCHEMA collate_tests CASCADE;
-NOTICE:  drop cascades to 15 other objects
+NOTICE:  drop cascades to 16 other objects
 DETAIL:  drop cascades to table collate_test1
 drop cascades to table collate_test_like
 drop cascades to table collate_test2
@@ -663,6 +662,7 @@ drop cascades to view collview1
 drop cascades to view collview2
 drop cascades to view collview3
 drop cascades to type testdomain
+drop cascades to table test_u
 drop cascades to function dup(anyelement)
 drop cascades to table collate_test20
 drop cascades to table collate_test21
