@@ -113,6 +113,7 @@ SELECT '' AS two, * from CHECK2_TBL ORDER BY x,y,z;
 -- Check constraints on INSERT
 --
 CREATE SEQUENCE INSERT_SEQ;
+-- PGXCTODO : Feature ID 3520518
 CREATE TABLE INSERT_TBL (x INT DEFAULT nextval('insert_seq'),
 	y TEXT DEFAULT '-NULL-',
 	z INT DEFAULT -1 * currval('insert_seq'),
@@ -463,7 +464,8 @@ DROP TABLE UNIQUE_TBL;
 --
 -- Deferrable unique constraints
 --
-CREATE TABLE unique_tbl (i int UNIQUE DEFERRABLE, t text);
+-- PGXCTODO : Feature ID 3520518
+CREATE TABLE unique_tbl (i int UNIQUE DEFERRABLE, t text) DISTRIBUTE BY REPLICATION;
 INSERT INTO unique_tbl VALUES (0, 'one');
 INSERT INTO unique_tbl VALUES (1, 'two');
 INSERT INTO unique_tbl VALUES (2, 'tree');
@@ -477,7 +479,7 @@ DETAIL:  Key (i)=(1) already exists.
 ROLLBACK;
 -- check is done at end of statement, so this should succeed
 UPDATE unique_tbl SET i = i+1;
-SELECT * FROM unique_tbl;
+SELECT * FROM unique_tbl ORDER BY 1,t;
  i |  t   
 ---+------
  1 | one
@@ -493,14 +495,14 @@ SET CONSTRAINTS unique_tbl_i_key DEFERRED;
 INSERT INTO unique_tbl VALUES (3, 'three');
 DELETE FROM unique_tbl WHERE t = 'tree'; -- makes constraint valid again
 COMMIT; -- should succeed
-SELECT * FROM unique_tbl;
+SELECT * FROM unique_tbl ORDER BY 1,t;
  i |   t   
 ---+-------
  1 | one
  2 | two
+ 3 | three
  4 | four
  5 | five
- 3 | three
 (5 rows)
 
 -- try adding an initially deferred constraint
@@ -515,14 +517,14 @@ UPDATE unique_tbl SET i = 2 WHERE i = 4 AND t = 'four';
 DELETE FROM unique_tbl WHERE i = 1 AND t = 'one';
 DELETE FROM unique_tbl WHERE i = 5 AND t = 'five';
 COMMIT;
-SELECT * FROM unique_tbl;
+SELECT * FROM unique_tbl ORDER BY 1,t;
  i |   t   
 ---+-------
- 3 | three
  1 | five
- 5 | one
- 4 | two
  2 | four
+ 3 | three
+ 4 | two
+ 5 | one
 (5 rows)
 
 -- should fail at commit-time
@@ -554,14 +556,14 @@ UPDATE unique_tbl SET t = 'THREE' WHERE i = 3 AND t = 'Three';
 COMMIT; -- should fail
 ERROR:  duplicate key value violates unique constraint "unique_tbl_i_key"
 DETAIL:  Key (i)=(3) already exists.
-SELECT * FROM unique_tbl;
+SELECT * FROM unique_tbl ORDER BY 1,t;
  i |   t   
 ---+-------
- 3 | three
  1 | five
- 5 | one
- 4 | two
  2 | four
+ 3 | three
+ 4 | two
+ 5 | one
 (5 rows)
 
 -- test a HOT update that modifies the newly inserted tuple,
@@ -570,25 +572,25 @@ BEGIN;
 INSERT INTO unique_tbl VALUES(3, 'tree'); -- should succeed for now
 UPDATE unique_tbl SET t = 'threex' WHERE t = 'tree';
 DELETE FROM unique_tbl WHERE t = 'three';
-SELECT * FROM unique_tbl;
+SELECT * FROM unique_tbl ORDER BY 1,t;
  i |   t    
 ---+--------
  1 | five
- 5 | one
- 4 | two
  2 | four
  3 | threex
+ 4 | two
+ 5 | one
 (5 rows)
 
 COMMIT;
-SELECT * FROM unique_tbl;
+SELECT * FROM unique_tbl ORDER BY 1,t;
  i |   t    
 ---+--------
  1 | five
- 5 | one
- 4 | two
  2 | four
  3 | threex
+ 4 | two
+ 5 | one
 (5 rows)
 
 DROP TABLE unique_tbl;
@@ -631,11 +633,12 @@ DETAIL:  Key (c1, (c2::circle))=(<(0,0),5>, <(0,0),5>) conflicts with key (c1, (
 REINDEX INDEX circles_c1_c2_excl;
 DROP TABLE circles;
 -- Check deferred exclusion constraint
+-- PGXCTODO : Feature ID 3520518
 CREATE TABLE deferred_excl (
   f1 int,
   f2 int,
   CONSTRAINT deferred_excl_con EXCLUDE (f1 WITH =) INITIALLY DEFERRED
-);
+) DISTRIBUTE BY REPLICATION;
 INSERT INTO deferred_excl VALUES(1);
 INSERT INTO deferred_excl VALUES(2);
 INSERT INTO deferred_excl VALUES(1); -- fail
