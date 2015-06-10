@@ -595,13 +595,16 @@ explain (costs off)
 select first_value(max(x)) over (), y
   from (select unique1 as x, ten+four as y from tenk1) ss
   group by y;
-                 QUERY PLAN                  
----------------------------------------------
+                           QUERY PLAN                            
+-----------------------------------------------------------------
  WindowAgg
    ->  HashAggregate
          Group Key: (tenk1.ten + tenk1.four)
-         ->  Seq Scan on tenk1
-(4 rows)
+         ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+               ->  HashAggregate
+                     Group Key: (tenk1.ten + tenk1.four)
+                     ->  Seq Scan on tenk1
+(7 rows)
 
 -- test non-default frame specifications
 SELECT four, ten,
@@ -941,16 +944,17 @@ SELECT * FROM
           min(salary) OVER (PARTITION BY depname || 'A', depname) depminsalary
    FROM empsalary) emp
 WHERE depname = 'sales';
-                             QUERY PLAN                              
----------------------------------------------------------------------
+                                 QUERY PLAN                                  
+-----------------------------------------------------------------------------
  Subquery Scan on emp
    ->  WindowAgg
          ->  Sort
                Sort Key: (((empsalary.depname)::text || 'A'::text))
                ->  WindowAgg
-                     ->  Seq Scan on empsalary
-                           Filter: ((depname)::text = 'sales'::text)
-(7 rows)
+                     ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+                           ->  Seq Scan on empsalary
+                                 Filter: ((depname)::text = 'sales'::text)
+(8 rows)
 
 -- pushdown is unsafe because there's a PARTITION BY clause without depname:
 EXPLAIN (COSTS OFF)
@@ -960,18 +964,19 @@ SELECT * FROM
           min(salary) OVER (PARTITION BY depname) depminsalary
    FROM empsalary) emp
 WHERE depname = 'sales';
-                        QUERY PLAN                         
------------------------------------------------------------
+                                 QUERY PLAN                                  
+-----------------------------------------------------------------------------
  Subquery Scan on emp
    Filter: ((emp.depname)::text = 'sales'::text)
    ->  WindowAgg
          ->  Sort
                Sort Key: empsalary.depname
                ->  WindowAgg
-                     ->  Sort
-                           Sort Key: empsalary.enroll_date
-                           ->  Seq Scan on empsalary
-(9 rows)
+                     ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+                           ->  Sort
+                                 Sort Key: empsalary.enroll_date
+                                 ->  Seq Scan on empsalary
+(10 rows)
 
 -- cleanup
 DROP TABLE empsalary;
@@ -980,36 +985,10 @@ CREATE FUNCTION nth_value_def(val anyelement, n integer = 1) RETURNS anyelement
   LANGUAGE internal WINDOW IMMUTABLE STRICT AS 'window_nth_value';
 SELECT nth_value_def(n := 2, val := ten) OVER (PARTITION BY four), ten, four
   FROM (SELECT * FROM tenk1 WHERE unique2 < 10 ORDER BY four, ten) s;
- nth_value_def | ten | four 
----------------+-----+------
-             0 |   0 |    0
-             0 |   0 |    0
-             0 |   4 |    0
-             1 |   1 |    1
-             1 |   1 |    1
-             1 |   7 |    1
-             1 |   9 |    1
-               |   0 |    2
-             3 |   1 |    3
-             3 |   3 |    3
-(10 rows)
-
+ERROR:  Postgres-XL does not currently support ORDER BY in subqueries
 SELECT nth_value_def(ten) OVER (PARTITION BY four), ten, four
   FROM (SELECT * FROM tenk1 WHERE unique2 < 10 ORDER BY four, ten) s;
- nth_value_def | ten | four 
----------------+-----+------
-             0 |   0 |    0
-             0 |   0 |    0
-             0 |   4 |    0
-             1 |   1 |    1
-             1 |   1 |    1
-             1 |   7 |    1
-             1 |   9 |    1
-             0 |   0 |    2
-             1 |   1 |    3
-             1 |   3 |    3
-(10 rows)
-
+ERROR:  Postgres-XL does not currently support ORDER BY in subqueries
 --
 -- Test the basic moving-aggregate machinery
 --
