@@ -126,8 +126,10 @@ set_portable_output(bool value)
 
 /* Write a Node field */
 #define WRITE_NODE_FIELD(fldname) \
-	(appendStringInfo(str, " :" CppAsString(fldname) " "), \
-	 _outNode(str, node->fldname))
+	do { \
+		appendStringInfo(str, " :" CppAsString(fldname) " "); \
+		_outNode(str, node->fldname); \
+	} while (0)
 
 /* Write a bitmapset field */
 #define WRITE_BITMAPSET_FIELD(fldname) \
@@ -143,12 +145,36 @@ set_portable_output(bool value)
  * the OID on target node. The identifier depends on object type.
  */
 
+#define WRITE_RELID_INTERNAL(relid) \
+	(_outToken(str, OidIsValid((relid)) ? NSP_NAME(get_rel_namespace((relid))) : NULL), \
+	 appendStringInfoChar(str, ' '), \
+	 _outToken(str, OidIsValid((relid)) ? get_rel_name((relid)) : NULL))
+
 /* write an OID which is a relation OID */
 #define WRITE_RELID_FIELD(fldname) \
 	(appendStringInfo(str, " :" CppAsString(fldname) " "), \
-	 _outToken(str, OidIsValid(node->fldname) ? NSP_NAME(get_rel_namespace(node->fldname)) : NULL), \
-	 appendStringInfoChar(str, ' '), \
-	 _outToken(str, OidIsValid(node->fldname) ? get_rel_name(node->fldname) : NULL))
+	 WRITE_RELID_INTERNAL(node->fldname))
+
+#define WRITE_RELID_LIST_FIELD(fldname) \
+	do { \
+		ListCell *lc; \
+		char *sep = ""; \
+		appendStringInfo(str, " :" CppAsString(fldname) " "); \
+		if (node->fldname == NIL || list_length(node->fldname) == 0) \
+			appendStringInfoString(str, "<>"); \
+		else \
+		{ \
+			appendStringInfoChar(str, '('); \
+			foreach (lc, node->fldname) \
+			{ \
+				Oid relid = lfirst_oid(lc); \
+				appendStringInfoString(str, sep); \
+				WRITE_RELID_INTERNAL(relid); \
+				sep = ","; \
+			} \
+			appendStringInfoChar(str, ')'); \
+		} \
+	}  while (0)
 
 /* write an OID which is a data type OID */
 #define WRITE_TYPID_FIELD(fldname) \
@@ -224,6 +250,7 @@ set_portable_output(bool value)
 		else \
 			appendStringInfo(str, "<> <> -1"); \
 	} while (0)
+
 
 #endif
 
@@ -518,7 +545,16 @@ _outModifyTable(StringInfo str, const ModifyTable *node)
 #endif
 #endif
 	WRITE_ENUM_FIELD(onConflictAction, OnConflictAction);
+#ifdef XCP	
+	if (portable_output)
+		WRITE_RELID_LIST_FIELD(arbiterIndexes);
+	else
+	{
+#endif
 	WRITE_NODE_FIELD(arbiterIndexes);
+#ifdef XCP
+	}
+#endif
 	WRITE_NODE_FIELD(onConflictSet);
 	WRITE_NODE_FIELD(onConflictWhere);
 	WRITE_INT_FIELD(exclRelRTI);

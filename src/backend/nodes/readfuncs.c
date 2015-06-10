@@ -162,9 +162,11 @@ set_portable_input(bool value)
 
 /* Read a Node field */
 #define READ_NODE_FIELD(fldname) \
-	token = pg_strtok(&length);		/* skip :fldname */ \
-	(void) token;				/* in case not used elsewhere */ \
-	local_node->fldname = nodeRead(NULL, 0)
+	do { \
+		token = pg_strtok(&length);		/* skip :fldname */ \
+		(void) token;				/* in case not used elsewhere */ \
+		local_node->fldname = nodeRead(NULL, 0); \
+	} while (0)
 
 /* Read a bitmapset field */
 #define READ_BITMAPSET_FIELD(fldname) \
@@ -232,20 +234,48 @@ set_portable_input(bool value)
 #define NSP_OID(nspname) LookupNamespaceNoError(nspname)
 
 /* Read relation identifier and lookup the OID */
-#define READ_RELID_FIELD(fldname) \
+#define READ_RELID_INTERNAL(relid) \
 	do { \
 		char	   *nspname; /* namespace name */ \
 		char	   *relname; /* relation name */ \
-		token = pg_strtok(&length);		/* skip :fldname */ \
 		token = pg_strtok(&length); /* get nspname */ \
 		nspname = nullable_string(token, length); \
 		token = pg_strtok(&length); /* get relname */ \
 		relname = nullable_string(token, length); \
 		if (relname) \
-			local_node->fldname = get_relname_relid(relname, \
+			relid = get_relname_relid(relname, \
 													NSP_OID(nspname)); \
 		else \
-			local_node->fldname = InvalidOid; \
+			relid = InvalidOid; \
+	} while (0)
+
+#define READ_RELID_FIELD(fldname) \
+	do { \
+		Oid relid; \
+		token = pg_strtok(&length);		/* skip :fldname */ \
+		READ_RELID_INTERNAL(relid); \
+		local_node->fldname = relid; \
+	} while (0)
+
+#define READ_RELID_LIST_FIELD(fldname) \
+	do { \
+		token = pg_strtok(&length);		/* skip :fldname */ \
+		token = pg_strtok(&length); 	/* skip '(' */ \
+		if (length > 0 ) \
+		{ \
+			Assert(token[0] == '('); \
+			for (;;) \
+			{ \
+				Oid relid; \
+				READ_RELID_INTERNAL(relid); \
+				local_node->fldname = lappend_oid(local_node->fldname, relid); \
+				token = pg_strtok(&length); \
+				if (token[0] == ')') \
+				break; \
+			} \
+		} \
+		else \
+			local_node->fldname = NIL; \
 	} while (0)
 
 /* Read data type identifier and lookup the OID */
@@ -2138,6 +2168,11 @@ _readModifyTable(void)
 #endif
 
 	READ_ENUM_FIELD(onConflictAction, OnConflictAction);
+#ifdef XCP
+	if (portable_input)
+		READ_RELID_LIST_FIELD(arbiterIndexes);
+	else
+#endif
 	READ_NODE_FIELD(arbiterIndexes);
 	READ_NODE_FIELD(onConflictSet);
 	READ_NODE_FIELD(onConflictWhere);
