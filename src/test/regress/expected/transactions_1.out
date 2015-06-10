@@ -524,6 +524,49 @@ DETAIL:  correlated UPDATE or updating distribution column currently not support
 select * from xacttest order by a, b;
 ERROR:  current transaction is aborted, commands ignored until end of transaction block
 rollback;
+-- test case for relations which are created and accessed in the same
+-- transaction, especially when the queries require datanode-to-datanode
+-- connections. In the past we had failed to use the correct snapshot in such
+-- cases 
+begin;
+create table a_snap (
+     code char not null,
+     constraint a_snap_pk primary key (code)
+);
+create table b_snap (
+     a char not null,
+     num integer not null,
+     constraint b_snap_pk primary key (a, num)
+);
+create table c_snap (
+     name char not null,
+     a char,
+     constraint c_snap_pk primary key (name)
+);
+insert into a_snap (code) values ('p');
+insert into a_snap (code) values ('q');
+insert into b_snap (a, num) values ('p', 1);
+insert into b_snap (a, num) values ('p', 2);
+insert into c_snap (name, a) values ('A', 'p');
+insert into c_snap (name, a) values ('B', 'q');
+insert into c_snap (name, a) values ('C', null);
+select c_snap.name, ss.code, ss.b_cnt, ss.const
+from c_snap left join
+  (select a_snap.code, coalesce(b_grp.cnt, 0) as b_cnt, -1 as const
+   from a_snap left join
+     (select count(1) as cnt, b_snap.a from b_snap group by b_snap.a) as b_grp
+     on a_snap.code = b_grp.a
+  ) as ss
+  on (c_snap.a = ss.code)
+order by c_snap.name;
+ name | code | b_cnt | const 
+------+------+-------+-------
+ A    | p    |     2 |    -1
+ B    | q    |     0 |    -1
+ C    |      |       |      
+(3 rows)
+
+rollback;
 -- test case for problems with dropping an open relation during abort
 BEGIN;
 	savepoint x;
@@ -549,6 +592,21 @@ DROP TABLE baz;
 ERROR:  table "baz" does not exist
 DROP TABLE barbaz;
 ERROR:  table "barbaz" does not exist
+-- test case for problems with revalidating an open relation during abort
+create function inverse(int) returns float8 as
+$$
+begin
+  analyze revalidate_bug;
+  return 1::float8/$1;
+exception
+  when division_by_zero then return 0;
+end$$ language plpgsql volatile;
+create table revalidate_bug (c float8 unique);
+insert into revalidate_bug values (1);
+insert into revalidate_bug values (inverse(0));
+ERROR:  Failed to receive more data from data node 11820
+drop table revalidate_bug;
+drop function inverse(int);
 -- verify that cursors created during an aborted subtransaction are
 -- closed, but that we do not rollback the effect of any FETCHs
 -- performed in the aborted subtransaction
