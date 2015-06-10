@@ -240,11 +240,16 @@ explain (costs off)
 select thousand, tenthous from tenk1
 where (thousand, tenthous) >= (997, 5000)
 order by thousand, tenthous;
-                        QUERY PLAN                         
------------------------------------------------------------
- Index Only Scan using tenk1_thous_tenthous on tenk1
-   Index Cond: (ROW(thousand, tenthous) >= ROW(997, 5000))
-(2 rows)
+                                 QUERY PLAN                                  
+-----------------------------------------------------------------------------
+ Remote Subquery Scan on all (datanode_1,datanode_2)
+   ->  Sort
+         Sort Key: thousand, tenthous
+         ->  Bitmap Heap Scan on tenk1
+               Recheck Cond: (ROW(thousand, tenthous) >= ROW(997, 5000))
+               ->  Bitmap Index Scan on tenk1_thous_tenthous
+                     Index Cond: (ROW(thousand, tenthous) >= ROW(997, 5000))
+(7 rows)
 
 select thousand, tenthous from tenk1
 where (thousand, tenthous) >= (997, 5000)
@@ -284,11 +289,12 @@ ERROR:  cannot compare dissimilar column types bigint and integer at record colu
 explain (costs off)
 select * from int8_tbl i8
 where i8 in (row(123,456)::int8_tbl, '(4567890123456789,123)');
-                                                   QUERY PLAN                                                    
------------------------------------------------------------------------------------------------------------------
- Seq Scan on int8_tbl i8
-   Filter: (i8.* = ANY (ARRAY[ROW('123'::bigint, '456'::bigint)::int8_tbl, '(4567890123456789,123)'::int8_tbl]))
-(2 rows)
+                                                      QUERY PLAN                                                       
+-----------------------------------------------------------------------------------------------------------------------
+ Remote Subquery Scan on all (datanode_2)
+   ->  Seq Scan on int8_tbl i8
+         Filter: (i8.* = ANY (ARRAY[ROW('123'::bigint, '456'::bigint)::int8_tbl, '(4567890123456789,123)'::int8_tbl]))
+(3 rows)
 
 select * from int8_tbl i8
 where i8 in (row(123,456)::int8_tbl, '(4567890123456789,123)');
@@ -589,12 +595,13 @@ explain (costs off)
 select row_to_json(q) from
   (select thousand, tenthous from tenk1
    where thousand = 42 and tenthous < 2000 offset 0) q;
-                         QUERY PLAN                          
--------------------------------------------------------------
- Subquery Scan on q
-   ->  Index Only Scan using tenk1_thous_tenthous on tenk1
-         Index Cond: ((thousand = 42) AND (tenthous < 2000))
-(3 rows)
+                            QUERY PLAN                             
+-------------------------------------------------------------------
+ Remote Subquery Scan on all (datanode_1,datanode_2)
+   ->  Subquery Scan on q
+         ->  Index Only Scan using tenk1_thous_tenthous on tenk1
+               Index Cond: ((thousand = 42) AND (tenthous < 2000))
+(4 rows)
 
 select row_to_json(q) from
   (select thousand, tenthous from tenk1
