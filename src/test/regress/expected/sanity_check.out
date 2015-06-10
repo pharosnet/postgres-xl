@@ -47,14 +47,14 @@ f_star|f
 fast_emp4000|t
 float4_tbl|f
 float8_tbl|f
-func_index_heap|t
+func_index_heap|f
 hash_f8_heap|t
 hash_i4_heap|t
 hash_name_heap|t
 hash_txt_heap|t
 hobbies_r|f
 ihighway|t
-inet_tbl|f
+inet_tbl|t
 inhf|f
 inhx|t
 insert_tbl|f
@@ -67,7 +67,7 @@ kd_point_tbl|t
 line_tbl|f
 log_table|f
 lseg_tbl|f
-main_table|f
+main_table|t
 money_data|f
 num_data|f
 num_exp_add|t
@@ -139,6 +139,9 @@ pg_ts_parser|t
 pg_ts_template|t
 pg_type|t
 pg_user_mapping|t
+pgxc_class|t
+pgxc_group|t
+pgxc_node|t
 point_tbl|t
 polygon_tbl|t
 quad_point_tbl|t
