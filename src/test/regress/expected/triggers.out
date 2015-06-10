@@ -91,9 +91,11 @@ insert into fkeys values (60, '6', 4);
 delete from pkeys where pkey1 = 30 and pkey2 = '3';
 delete from pkeys where pkey1 = 40 and pkey2 = '4';
 update pkeys set pkey1 = 7, pkey2 = '70' where pkey1 = 50 and pkey2 = '5';
-ERROR:  Partition column can't be updated in current version
+ERROR:  could not plan this distributed update
+DETAIL:  correlated UPDATE or updating distribution column currently not supported in Postgres-XL.
 update pkeys set pkey1 = 7, pkey2 = '70' where pkey1 = 10 and pkey2 = '1';
-ERROR:  Partition column can't be updated in current version
+ERROR:  could not plan this distributed update
+DETAIL:  correlated UPDATE or updating distribution column currently not supported in Postgres-XL.
 DROP TABLE pkeys;
 DROP TABLE fkeys;
 DROP TABLE fkeys2;
@@ -192,7 +194,8 @@ select * from tttest order by 1,2,3,4;
 -- now we want to change pric_id in ALL tuples
 -- this gets us not what we need
 update tttest set price_id = 5 where price_id = 3;
-ERROR:  Partition column can't be updated in current version
+ERROR:  could not plan this distributed update
+DETAIL:  correlated UPDATE or updating distribution column currently not supported in Postgres-XL.
 select * from tttest order by 1,2,3,4;
  price_id | price_val | price_on | price_off 
 ----------+-----------+----------+-----------
@@ -218,7 +221,8 @@ select * from tttest order by 1,2,3,4;
 
 -- and try change price_id now!
 update tttest set price_id = 5 where price_id = 3;
-ERROR:  Partition column can't be updated in current version
+ERROR:  could not plan this distributed update
+DETAIL:  correlated UPDATE or updating distribution column currently not supported in Postgres-XL.
 select * from tttest order by 1,2,3,4;
  price_id | price_val | price_on | price_off 
 ----------+-----------+----------+-----------
@@ -285,24 +289,25 @@ DETAIL:  The feature is not currently supported
 --
 CREATE TRIGGER after_upd_stmt_trig AFTER UPDATE ON main_table
 EXECUTE PROCEDURE trigger_func('after_upd_stmt');
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 -- Both insert and update statement level triggers (before and after) should
 -- fire.  Doesn't fire UPDATE before trigger, but only because one isn't
 -- defined.
 INSERT INTO main_table (a, b) VALUES (5, 10) ON CONFLICT (a)
   DO UPDATE SET b = EXCLUDED.b;
-NOTICE:  trigger_func(before_ins_stmt) called: action = INSERT, when = BEFORE, level = STATEMENT
-NOTICE:  trigger_func(after_upd_stmt) called: action = UPDATE, when = AFTER, level = STATEMENT
-NOTICE:  trigger_func(after_ins_stmt) called: action = INSERT, when = AFTER, level = STATEMENT
 CREATE TRIGGER after_upd_row_trig AFTER UPDATE ON main_table
 FOR EACH ROW EXECUTE PROCEDURE trigger_func('after_upd_row');
 ERROR:  Postgres-XL does not support TRIGGER yet
 DETAIL:  The feature is not currently supported
 INSERT INTO main_table DEFAULT VALUES;
 UPDATE main_table SET a = a + 1 WHERE b < 30;
-ERROR:  Partition column can't be updated in current version
+ERROR:  could not plan this distributed update
+DETAIL:  correlated UPDATE or updating distribution column currently not supported in Postgres-XL.
 -- UPDATE that effects zero rows should still call per-statement trigger
 UPDATE main_table SET a = a + 2 WHERE b > 100;
-NOTICE:  trigger_func(after_upd_stmt) called: action = UPDATE, when = AFTER, level = STATEMENT
+ERROR:  could not plan this distributed update
+DETAIL:  correlated UPDATE or updating distribution column currently not supported in Postgres-XL.
 -- constraint now unneeded
 ALTER TABLE main_table DROP CONSTRAINT main_table_a_key;
 -- COPY should fire per-row and per-statement INSERT triggers
@@ -351,7 +356,8 @@ INSERT INTO main_table (a) VALUES (123), (456);
 COPY main_table FROM stdin;
 DELETE FROM main_table WHERE a IN (123, 456);
 UPDATE main_table SET a = 50, b = 60;
-ERROR:  Partition column can't be updated in current version
+ERROR:  could not plan this distributed update
+DETAIL:  correlated UPDATE or updating distribution column currently not supported in Postgres-XL.
 SELECT * FROM main_table ORDER BY a, b;
  a  | b  
 ----+----
@@ -421,8 +427,45 @@ SELECT pg_get_triggerdef(oid) FROM pg_trigger WHERE tgrelid = 'main_table'::regc
 (0 rows)
 
 UPDATE main_table SET a = 50;
-ERROR:  Partition column can't be updated in current version
+ERROR:  could not plan this distributed update
+DETAIL:  correlated UPDATE or updating distribution column currently not supported in Postgres-XL.
 UPDATE main_table SET b = 10;
+--
+-- Test case for bug with BEFORE trigger followed by AFTER trigger with WHEN
+--
+CREATE TABLE some_t (some_col boolean NOT NULL);
+CREATE FUNCTION dummy_update_func() RETURNS trigger AS $$
+BEGIN
+  RAISE NOTICE 'dummy_update_func(%) called: action = %, old = %, new = %',
+    TG_ARGV[0], TG_OP, OLD, NEW;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+CREATE TRIGGER some_trig_before BEFORE UPDATE ON some_t FOR EACH ROW
+  EXECUTE PROCEDURE dummy_update_func('before');
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
+CREATE TRIGGER some_trig_aftera AFTER UPDATE ON some_t FOR EACH ROW
+  WHEN (NOT OLD.some_col AND NEW.some_col)
+  EXECUTE PROCEDURE dummy_update_func('aftera');
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
+CREATE TRIGGER some_trig_afterb AFTER UPDATE ON some_t FOR EACH ROW
+  WHEN (NOT NEW.some_col)
+  EXECUTE PROCEDURE dummy_update_func('afterb');
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
+INSERT INTO some_t VALUES (TRUE);
+UPDATE some_t SET some_col = TRUE;
+ERROR:  could not plan this distributed update
+DETAIL:  correlated UPDATE or updating distribution column currently not supported in Postgres-XL.
+UPDATE some_t SET some_col = FALSE;
+ERROR:  could not plan this distributed update
+DETAIL:  correlated UPDATE or updating distribution column currently not supported in Postgres-XL.
+UPDATE some_t SET some_col = TRUE;
+ERROR:  could not plan this distributed update
+DETAIL:  correlated UPDATE or updating distribution column currently not supported in Postgres-XL.
+DROP TABLE some_t;
 -- bogus cases
 CREATE TRIGGER error_upd_and_col BEFORE UPDATE OR UPDATE OF a ON main_table
 FOR EACH ROW EXECUTE PROCEDURE trigger_func('error_upd_and_col');
@@ -431,7 +474,8 @@ LINE 1: ...ER error_upd_and_col BEFORE UPDATE OR UPDATE OF a ON main_ta...
                                                              ^
 CREATE TRIGGER error_upd_a_a BEFORE UPDATE OF a, a ON main_table
 FOR EACH ROW EXECUTE PROCEDURE trigger_func('error_upd_a_a');
-ERROR:  column "a" specified more than once
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 CREATE TRIGGER error_ins_a BEFORE INSERT OF a ON main_table
 FOR EACH ROW EXECUTE PROCEDURE trigger_func('error_ins_a');
 ERROR:  syntax error at or near "OF"
@@ -440,27 +484,23 @@ LINE 1: CREATE TRIGGER error_ins_a BEFORE INSERT OF a ON main_table
 CREATE TRIGGER error_ins_when BEFORE INSERT OR UPDATE ON main_table
 FOR EACH ROW WHEN (OLD.a <> NEW.a)
 EXECUTE PROCEDURE trigger_func('error_ins_old');
-ERROR:  INSERT trigger's WHEN condition cannot reference OLD values
-LINE 2: FOR EACH ROW WHEN (OLD.a <> NEW.a)
-                           ^
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 CREATE TRIGGER error_del_when BEFORE DELETE OR UPDATE ON main_table
 FOR EACH ROW WHEN (OLD.a <> NEW.a)
 EXECUTE PROCEDURE trigger_func('error_del_new');
-ERROR:  DELETE trigger's WHEN condition cannot reference NEW values
-LINE 2: FOR EACH ROW WHEN (OLD.a <> NEW.a)
-                                    ^
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 CREATE TRIGGER error_del_when BEFORE INSERT OR UPDATE ON main_table
 FOR EACH ROW WHEN (NEW.tableoid <> 0)
 EXECUTE PROCEDURE trigger_func('error_when_sys_column');
-ERROR:  BEFORE trigger's WHEN condition cannot reference NEW system columns
-LINE 2: FOR EACH ROW WHEN (NEW.tableoid <> 0)
-                           ^
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 CREATE TRIGGER error_stmt_when BEFORE UPDATE OF a ON main_table
 FOR EACH STATEMENT WHEN (OLD.* IS DISTINCT FROM NEW.*)
 EXECUTE PROCEDURE trigger_func('error_stmt_when');
-ERROR:  statement trigger's WHEN condition cannot reference column values
-LINE 2: FOR EACH STATEMENT WHEN (OLD.* IS DISTINCT FROM NEW.*)
-                                 ^
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 -- check dependency restrictions
 ALTER TABLE main_table DROP COLUMN b;
 -- this should succeed, but we'll roll it back to keep the triggers around
@@ -670,12 +710,11 @@ INSERT INTO serializable_update_tab SELECT a, repeat('xyzxz', 100), 'new'
 BEGIN;
 SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
 UPDATE serializable_update_tab SET description = 'no no', id = 1 WHERE id = 1;
-ERROR:  Partition column can't be updated in current version
 COMMIT;
 SELECT description FROM serializable_update_tab WHERE id = 1;
  description 
 -------------
- new
+ no no
 (1 row)
 
 DROP TABLE serializable_update_tab;
@@ -737,24 +776,6 @@ CREATE VIEW main_view AS SELECT a, b FROM main_table;
 ERROR:  column "b" does not exist
 LINE 1: CREATE VIEW main_view AS SELECT a, b FROM main_table;
                                            ^
--- Updates should fail without rules or triggers
-INSERT INTO main_view VALUES (1,2);
-ERROR:  relation "main_view" does not exist
-LINE 1: INSERT INTO main_view VALUES (1,2);
-                    ^
-UPDATE main_view SET b = 20 WHERE a = 50;
-ERROR:  relation "main_view" does not exist
-LINE 1: UPDATE main_view SET b = 20 WHERE a = 50;
-               ^
-DELETE FROM main_view WHERE a = 50;
-ERROR:  relation "main_view" does not exist
-LINE 1: DELETE FROM main_view WHERE a = 50;
-                    ^
--- Should fail even when there are no matching rows
-DELETE FROM main_view WHERE a = 51;
-ERROR:  relation "main_view" does not exist
-LINE 1: DELETE FROM main_view WHERE a = 51;
-                    ^
 -- VIEW trigger function
 CREATE OR REPLACE FUNCTION view_trigger() RETURNS trigger
 LANGUAGE plpgsql AS $$
@@ -798,85 +819,105 @@ $$;
 -- Before row triggers aren't allowed on views
 CREATE TRIGGER invalid_trig BEFORE INSERT ON main_view
 FOR EACH ROW EXECUTE PROCEDURE trigger_func('before_ins_row');
-ERROR:  relation "main_view" does not exist
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 CREATE TRIGGER invalid_trig BEFORE UPDATE ON main_view
 FOR EACH ROW EXECUTE PROCEDURE trigger_func('before_upd_row');
-ERROR:  relation "main_view" does not exist
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 CREATE TRIGGER invalid_trig BEFORE DELETE ON main_view
 FOR EACH ROW EXECUTE PROCEDURE trigger_func('before_del_row');
-ERROR:  relation "main_view" does not exist
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 -- After row triggers aren't allowed on views
 CREATE TRIGGER invalid_trig AFTER INSERT ON main_view
 FOR EACH ROW EXECUTE PROCEDURE trigger_func('before_ins_row');
-ERROR:  relation "main_view" does not exist
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 CREATE TRIGGER invalid_trig AFTER UPDATE ON main_view
 FOR EACH ROW EXECUTE PROCEDURE trigger_func('before_upd_row');
-ERROR:  relation "main_view" does not exist
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 CREATE TRIGGER invalid_trig AFTER DELETE ON main_view
 FOR EACH ROW EXECUTE PROCEDURE trigger_func('before_del_row');
-ERROR:  relation "main_view" does not exist
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 -- Truncate triggers aren't allowed on views
 CREATE TRIGGER invalid_trig BEFORE TRUNCATE ON main_view
 EXECUTE PROCEDURE trigger_func('before_tru_row');
-ERROR:  relation "main_view" does not exist
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 CREATE TRIGGER invalid_trig AFTER TRUNCATE ON main_view
 EXECUTE PROCEDURE trigger_func('before_tru_row');
-ERROR:  relation "main_view" does not exist
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 -- INSTEAD OF triggers aren't allowed on tables
 CREATE TRIGGER invalid_trig INSTEAD OF INSERT ON main_table
 FOR EACH ROW EXECUTE PROCEDURE view_trigger('instead_of_ins');
-ERROR:  "main_table" is a table
-DETAIL:  Tables cannot have INSTEAD OF triggers.
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 CREATE TRIGGER invalid_trig INSTEAD OF UPDATE ON main_table
 FOR EACH ROW EXECUTE PROCEDURE view_trigger('instead_of_upd');
-ERROR:  "main_table" is a table
-DETAIL:  Tables cannot have INSTEAD OF triggers.
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 CREATE TRIGGER invalid_trig INSTEAD OF DELETE ON main_table
 FOR EACH ROW EXECUTE PROCEDURE view_trigger('instead_of_del');
-ERROR:  "main_table" is a table
-DETAIL:  Tables cannot have INSTEAD OF triggers.
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 -- Don't support WHEN clauses with INSTEAD OF triggers
 CREATE TRIGGER invalid_trig INSTEAD OF UPDATE ON main_view
 FOR EACH ROW WHEN (OLD.a <> NEW.a) EXECUTE PROCEDURE view_trigger('instead_of_upd');
-ERROR:  relation "main_view" does not exist
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 -- Don't support column-level INSTEAD OF triggers
 CREATE TRIGGER invalid_trig INSTEAD OF UPDATE OF a ON main_view
 FOR EACH ROW EXECUTE PROCEDURE view_trigger('instead_of_upd');
-ERROR:  relation "main_view" does not exist
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 -- Don't support statement-level INSTEAD OF triggers
 CREATE TRIGGER invalid_trig INSTEAD OF UPDATE ON main_view
 EXECUTE PROCEDURE view_trigger('instead_of_upd');
-ERROR:  relation "main_view" does not exist
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 -- Valid INSTEAD OF triggers
 CREATE TRIGGER instead_of_insert_trig INSTEAD OF INSERT ON main_view
 FOR EACH ROW EXECUTE PROCEDURE view_trigger('instead_of_ins');
-ERROR:  relation "main_view" does not exist
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 CREATE TRIGGER instead_of_update_trig INSTEAD OF UPDATE ON main_view
 FOR EACH ROW EXECUTE PROCEDURE view_trigger('instead_of_upd');
-ERROR:  relation "main_view" does not exist
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 CREATE TRIGGER instead_of_delete_trig INSTEAD OF DELETE ON main_view
 FOR EACH ROW EXECUTE PROCEDURE view_trigger('instead_of_del');
-ERROR:  relation "main_view" does not exist
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 -- Valid BEFORE statement VIEW triggers
 CREATE TRIGGER before_ins_stmt_trig BEFORE INSERT ON main_view
 FOR EACH STATEMENT EXECUTE PROCEDURE view_trigger('before_view_ins_stmt');
-ERROR:  relation "main_view" does not exist
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 CREATE TRIGGER before_upd_stmt_trig BEFORE UPDATE ON main_view
 FOR EACH STATEMENT EXECUTE PROCEDURE view_trigger('before_view_upd_stmt');
-ERROR:  relation "main_view" does not exist
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 CREATE TRIGGER before_del_stmt_trig BEFORE DELETE ON main_view
 FOR EACH STATEMENT EXECUTE PROCEDURE view_trigger('before_view_del_stmt');
-ERROR:  relation "main_view" does not exist
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 -- Valid AFTER statement VIEW triggers
 CREATE TRIGGER after_ins_stmt_trig AFTER INSERT ON main_view
 FOR EACH STATEMENT EXECUTE PROCEDURE view_trigger('after_view_ins_stmt');
-ERROR:  relation "main_view" does not exist
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 CREATE TRIGGER after_upd_stmt_trig AFTER UPDATE ON main_view
 FOR EACH STATEMENT EXECUTE PROCEDURE view_trigger('after_view_upd_stmt');
-ERROR:  relation "main_view" does not exist
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 CREATE TRIGGER after_del_stmt_trig AFTER DELETE ON main_view
 FOR EACH STATEMENT EXECUTE PROCEDURE view_trigger('after_view_del_stmt');
-ERROR:  relation "main_view" does not exist
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 \set QUIET false
 -- Insert into view using trigger
 INSERT INTO main_view VALUES (20, 30);
@@ -930,24 +971,6 @@ ERROR:  relation "main_view" does not exist
 DROP TRIGGER instead_of_delete_trig ON main_view;
 ERROR:  relation "main_view" does not exist
 \d+ main_view
-               View "public.main_view"
- Column |  Type   | Modifiers | Storage | Description 
---------+---------+-----------+---------+-------------
- a      | integer |           | plain   | 
- b      | integer |           | plain   | 
-View definition:
- SELECT main_table.a,
-    main_table.b
-   FROM main_table;
-Triggers:
-    after_del_stmt_trig AFTER DELETE ON main_view FOR EACH STATEMENT EXECUTE PROCEDURE view_trigger('after_view_del_stmt')
-    after_ins_stmt_trig AFTER INSERT ON main_view FOR EACH STATEMENT EXECUTE PROCEDURE view_trigger('after_view_ins_stmt')
-    after_upd_stmt_trig AFTER UPDATE ON main_view FOR EACH STATEMENT EXECUTE PROCEDURE view_trigger('after_view_upd_stmt')
-    before_del_stmt_trig BEFORE DELETE ON main_view FOR EACH STATEMENT EXECUTE PROCEDURE view_trigger('before_view_del_stmt')
-    before_ins_stmt_trig BEFORE INSERT ON main_view FOR EACH STATEMENT EXECUTE PROCEDURE view_trigger('before_view_ins_stmt')
-    before_upd_stmt_trig BEFORE UPDATE ON main_view FOR EACH STATEMENT EXECUTE PROCEDURE view_trigger('before_view_upd_stmt')
-    instead_of_update_trig INSTEAD OF UPDATE ON main_view FOR EACH ROW EXECUTE PROCEDURE view_trigger('instead_of_upd')
-
 DROP VIEW main_view;
 ERROR:  view "main_view" does not exist
 --
@@ -958,29 +981,28 @@ CREATE TABLE country_table (
     country_name    text unique not null,
     continent        text not null
 );
-ERROR:  Unique index of partitioned table must contain the hash/modulo distribution column.
 INSERT INTO country_table (country_name, continent)
     VALUES ('Japan', 'Asia'),
            ('UK', 'Europe'),
            ('USA', 'North America')
     RETURNING *;
-ERROR:  relation "country_table" does not exist
-LINE 1: INSERT INTO country_table (country_name, continent)
-                    ^
+ country_id | country_name |   continent   
+------------+--------------+---------------
+          1 | Japan        | Asia
+          2 | UK           | Europe
+          3 | USA          | North America
+(3 rows)
+
 CREATE TABLE city_table (
     city_id        serial primary key,
     city_name    text not null,
     population    bigint,
     country_id    int references country_table
 );
-ERROR:  relation "country_table" does not exist
 CREATE VIEW city_view AS
     SELECT city_id, city_name, population, country_name, continent
     FROM city_table ci
     LEFT JOIN country_table co ON co.country_id = ci.country_id;
-ERROR:  relation "city_table" does not exist
-LINE 3:     FROM city_table ci
-                 ^
 CREATE FUNCTION city_insert() RETURNS trigger LANGUAGE plpgsql AS $$
 declare
     ctry_id int;
@@ -1009,7 +1031,8 @@ end;
 $$;
 CREATE TRIGGER city_insert_trig INSTEAD OF INSERT ON city_view
 FOR EACH ROW EXECUTE PROCEDURE city_insert();
-ERROR:  relation "city_view" does not exist
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 CREATE FUNCTION city_delete() RETURNS trigger LANGUAGE plpgsql AS $$
 begin
     DELETE FROM city_table WHERE city_id = OLD.city_id;
@@ -1019,7 +1042,8 @@ end;
 $$;
 CREATE TRIGGER city_delete_trig INSTEAD OF DELETE ON city_view
 FOR EACH ROW EXECUTE PROCEDURE city_delete();
-ERROR:  relation "city_view" does not exist
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 CREATE FUNCTION city_update() RETURNS trigger LANGUAGE plpgsql AS $$
 declare
     ctry_id int;
@@ -1048,104 +1072,104 @@ end;
 $$;
 CREATE TRIGGER city_update_trig INSTEAD OF UPDATE ON city_view
 FOR EACH ROW EXECUTE PROCEDURE city_update();
-ERROR:  relation "city_view" does not exist
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 \set QUIET false
 -- INSERT .. RETURNING
 INSERT INTO city_view(city_name) VALUES('Tokyo') RETURNING *;
-ERROR:  relation "city_view" does not exist
-LINE 1: INSERT INTO city_view(city_name) VALUES('Tokyo') RETURNING *...
-                    ^
+ERROR:  cannot insert into view "city_view"
+DETAIL:  Views that do not select from a single table or view are not automatically updatable.
+HINT:  To enable inserting into the view, provide an INSTEAD OF INSERT trigger or an unconditional ON INSERT DO INSTEAD rule.
 INSERT INTO city_view(city_name, population) VALUES('London', 7556900) RETURNING *;
-ERROR:  relation "city_view" does not exist
-LINE 1: INSERT INTO city_view(city_name, population) VALUES('London'...
-                    ^
+ERROR:  cannot insert into view "city_view"
+DETAIL:  Views that do not select from a single table or view are not automatically updatable.
+HINT:  To enable inserting into the view, provide an INSTEAD OF INSERT trigger or an unconditional ON INSERT DO INSTEAD rule.
 INSERT INTO city_view(city_name, country_name) VALUES('Washington DC', 'USA') RETURNING *;
-ERROR:  relation "city_view" does not exist
-LINE 1: INSERT INTO city_view(city_name, country_name) VALUES('Washi...
-                    ^
+ERROR:  cannot insert into view "city_view"
+DETAIL:  Views that do not select from a single table or view are not automatically updatable.
+HINT:  To enable inserting into the view, provide an INSTEAD OF INSERT trigger or an unconditional ON INSERT DO INSTEAD rule.
 INSERT INTO city_view(city_id, city_name) VALUES(123456, 'New York') RETURNING *;
-ERROR:  relation "city_view" does not exist
-LINE 1: INSERT INTO city_view(city_id, city_name) VALUES(123456, 'Ne...
-                    ^
+ERROR:  cannot insert into view "city_view"
+DETAIL:  Views that do not select from a single table or view are not automatically updatable.
+HINT:  To enable inserting into the view, provide an INSTEAD OF INSERT trigger or an unconditional ON INSERT DO INSTEAD rule.
 INSERT INTO city_view VALUES(234567, 'Birmingham', 1016800, 'UK', 'EU') RETURNING *;
-ERROR:  relation "city_view" does not exist
-LINE 1: INSERT INTO city_view VALUES(234567, 'Birmingham', 1016800, ...
-                    ^
+ERROR:  cannot insert into view "city_view"
+DETAIL:  Views that do not select from a single table or view are not automatically updatable.
+HINT:  To enable inserting into the view, provide an INSTEAD OF INSERT trigger or an unconditional ON INSERT DO INSTEAD rule.
 -- UPDATE .. RETURNING
 UPDATE city_view SET country_name = 'Japon' WHERE city_name = 'Tokyo'; -- error
-ERROR:  relation "city_view" does not exist
-LINE 1: UPDATE city_view SET country_name = 'Japon' WHERE city_name ...
-               ^
+ERROR:  cannot update view "city_view"
+DETAIL:  Views that do not select from a single table or view are not automatically updatable.
+HINT:  To enable updating the view, provide an INSTEAD OF UPDATE trigger or an unconditional ON UPDATE DO INSTEAD rule.
 UPDATE city_view SET country_name = 'Japan' WHERE city_name = 'Takyo'; -- no match
-ERROR:  relation "city_view" does not exist
-LINE 1: UPDATE city_view SET country_name = 'Japan' WHERE city_name ...
-               ^
+ERROR:  cannot update view "city_view"
+DETAIL:  Views that do not select from a single table or view are not automatically updatable.
+HINT:  To enable updating the view, provide an INSTEAD OF UPDATE trigger or an unconditional ON UPDATE DO INSTEAD rule.
 UPDATE city_view SET country_name = 'Japan' WHERE city_name = 'Tokyo' RETURNING *; -- OK
-ERROR:  relation "city_view" does not exist
-LINE 1: UPDATE city_view SET country_name = 'Japan' WHERE city_name ...
-               ^
+ERROR:  cannot update view "city_view"
+DETAIL:  Views that do not select from a single table or view are not automatically updatable.
+HINT:  To enable updating the view, provide an INSTEAD OF UPDATE trigger or an unconditional ON UPDATE DO INSTEAD rule.
 UPDATE city_view SET population = 13010279 WHERE city_name = 'Tokyo' RETURNING *;
-ERROR:  relation "city_view" does not exist
-LINE 1: UPDATE city_view SET population = 13010279 WHERE city_name =...
-               ^
+ERROR:  cannot update view "city_view"
+DETAIL:  Views that do not select from a single table or view are not automatically updatable.
+HINT:  To enable updating the view, provide an INSTEAD OF UPDATE trigger or an unconditional ON UPDATE DO INSTEAD rule.
 UPDATE city_view SET country_name = 'UK' WHERE city_name = 'New York' RETURNING *;
-ERROR:  relation "city_view" does not exist
-LINE 1: UPDATE city_view SET country_name = 'UK' WHERE city_name = '...
-               ^
+ERROR:  cannot update view "city_view"
+DETAIL:  Views that do not select from a single table or view are not automatically updatable.
+HINT:  To enable updating the view, provide an INSTEAD OF UPDATE trigger or an unconditional ON UPDATE DO INSTEAD rule.
 UPDATE city_view SET country_name = 'USA', population = 8391881 WHERE city_name = 'New York' RETURNING *;
-ERROR:  relation "city_view" does not exist
-LINE 1: UPDATE city_view SET country_name = 'USA', population = 8391...
-               ^
+ERROR:  cannot update view "city_view"
+DETAIL:  Views that do not select from a single table or view are not automatically updatable.
+HINT:  To enable updating the view, provide an INSTEAD OF UPDATE trigger or an unconditional ON UPDATE DO INSTEAD rule.
 UPDATE city_view SET continent = 'EU' WHERE continent = 'Europe' RETURNING *;
-ERROR:  relation "city_view" does not exist
-LINE 1: UPDATE city_view SET continent = 'EU' WHERE continent = 'Eur...
-               ^
+ERROR:  cannot update view "city_view"
+DETAIL:  Views that do not select from a single table or view are not automatically updatable.
+HINT:  To enable updating the view, provide an INSTEAD OF UPDATE trigger or an unconditional ON UPDATE DO INSTEAD rule.
 UPDATE city_view v1 SET country_name = v2.country_name FROM city_view v2
     WHERE v2.city_name = 'Birmingham' AND v1.city_name = 'London' RETURNING *;
-ERROR:  relation "city_view" does not exist
-LINE 1: UPDATE city_view v1 SET country_name = v2.country_name FROM ...
-               ^
+ERROR:  cannot update view "city_view"
+DETAIL:  Views that do not select from a single table or view are not automatically updatable.
+HINT:  To enable updating the view, provide an INSTEAD OF UPDATE trigger or an unconditional ON UPDATE DO INSTEAD rule.
 -- DELETE .. RETURNING
 DELETE FROM city_view WHERE city_name = 'Birmingham' RETURNING *;
-ERROR:  relation "city_view" does not exist
-LINE 1: DELETE FROM city_view WHERE city_name = 'Birmingham' RETURNI...
-                    ^
+ERROR:  cannot delete from view "city_view"
+DETAIL:  Views that do not select from a single table or view are not automatically updatable.
+HINT:  To enable deleting from the view, provide an INSTEAD OF DELETE trigger or an unconditional ON DELETE DO INSTEAD rule.
 \set QUIET true
 -- read-only view with WHERE clause
 CREATE VIEW european_city_view AS
     SELECT * FROM city_view WHERE continent = 'Europe';
-ERROR:  relation "city_view" does not exist
-LINE 2:     SELECT * FROM city_view WHERE continent = 'Europe';
-                          ^
 SELECT count(*) FROM european_city_view;
-ERROR:  relation "european_city_view" does not exist
-LINE 1: SELECT count(*) FROM european_city_view;
-                             ^
+ count 
+-------
+     0
+(1 row)
+
 CREATE FUNCTION no_op_trig_fn() RETURNS trigger LANGUAGE plpgsql
 AS 'begin RETURN NULL; end';
 CREATE TRIGGER no_op_trig INSTEAD OF INSERT OR UPDATE OR DELETE
 ON european_city_view FOR EACH ROW EXECUTE PROCEDURE no_op_trig_fn();
-ERROR:  relation "european_city_view" does not exist
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 \set QUIET false
 INSERT INTO european_city_view VALUES (0, 'x', 10000, 'y', 'z');
-ERROR:  relation "european_city_view" does not exist
-LINE 1: INSERT INTO european_city_view VALUES (0, 'x', 10000, 'y', '...
-                    ^
+ERROR:  cannot insert into view "city_view"
+DETAIL:  Views that do not select from a single table or view are not automatically updatable.
+HINT:  To enable inserting into the view, provide an INSTEAD OF INSERT trigger or an unconditional ON INSERT DO INSTEAD rule.
 UPDATE european_city_view SET population = 10000;
-ERROR:  relation "european_city_view" does not exist
-LINE 1: UPDATE european_city_view SET population = 10000;
-               ^
+ERROR:  cannot update view "city_view"
+DETAIL:  Views that do not select from a single table or view are not automatically updatable.
+HINT:  To enable updating the view, provide an INSTEAD OF UPDATE trigger or an unconditional ON UPDATE DO INSTEAD rule.
 DELETE FROM european_city_view;
-ERROR:  relation "european_city_view" does not exist
-LINE 1: DELETE FROM european_city_view;
-                    ^
+ERROR:  cannot delete from view "city_view"
+DETAIL:  Views that do not select from a single table or view are not automatically updatable.
+HINT:  To enable deleting from the view, provide an INSTEAD OF DELETE trigger or an unconditional ON DELETE DO INSTEAD rule.
 \set QUIET true
 -- rules bypassing no-op triggers
 CREATE RULE european_city_insert_rule AS ON INSERT TO european_city_view
 DO INSTEAD INSERT INTO city_view
 VALUES (NEW.city_id, NEW.city_name, NEW.population, NEW.country_name, NEW.continent)
 RETURNING *;
-ERROR:  relation "european_city_view" does not exist
 CREATE RULE european_city_update_rule AS ON UPDATE TO european_city_view
 DO INSTEAD UPDATE city_view SET
     city_name = NEW.city_name,
@@ -1153,41 +1177,39 @@ DO INSTEAD UPDATE city_view SET
     country_name = NEW.country_name
 WHERE city_id = OLD.city_id
 RETURNING NEW.*;
-ERROR:  relation "european_city_view" does not exist
 CREATE RULE european_city_delete_rule AS ON DELETE TO european_city_view
 DO INSTEAD DELETE FROM city_view WHERE city_id = OLD.city_id RETURNING *;
-ERROR:  relation "european_city_view" does not exist
 \set QUIET false
 -- INSERT not limited by view's WHERE clause, but UPDATE AND DELETE are
 INSERT INTO european_city_view(city_name, country_name)
     VALUES ('Cambridge', 'USA') RETURNING *;
-ERROR:  relation "european_city_view" does not exist
-LINE 1: INSERT INTO european_city_view(city_name, country_name)
-                    ^
+ERROR:  cannot insert into view "city_view"
+DETAIL:  Views that do not select from a single table or view are not automatically updatable.
+HINT:  To enable inserting into the view, provide an INSTEAD OF INSERT trigger or an unconditional ON INSERT DO INSTEAD rule.
 UPDATE european_city_view SET country_name = 'UK'
     WHERE city_name = 'Cambridge';
-ERROR:  relation "european_city_view" does not exist
-LINE 1: UPDATE european_city_view SET country_name = 'UK'
-               ^
+ERROR:  cannot update view "city_view"
+DETAIL:  Views that do not select from a single table or view are not automatically updatable.
+HINT:  To enable updating the view, provide an INSTEAD OF UPDATE trigger or an unconditional ON UPDATE DO INSTEAD rule.
 DELETE FROM european_city_view WHERE city_name = 'Cambridge';
-ERROR:  relation "european_city_view" does not exist
-LINE 1: DELETE FROM european_city_view WHERE city_name = 'Cambridge'...
-                    ^
+ERROR:  cannot delete from view "city_view"
+DETAIL:  Views that do not select from a single table or view are not automatically updatable.
+HINT:  To enable deleting from the view, provide an INSTEAD OF DELETE trigger or an unconditional ON DELETE DO INSTEAD rule.
 -- UPDATE and DELETE via rule and trigger
 UPDATE city_view SET country_name = 'UK'
     WHERE city_name = 'Cambridge' RETURNING *;
-ERROR:  relation "city_view" does not exist
-LINE 1: UPDATE city_view SET country_name = 'UK'
-               ^
+ERROR:  cannot update view "city_view"
+DETAIL:  Views that do not select from a single table or view are not automatically updatable.
+HINT:  To enable updating the view, provide an INSTEAD OF UPDATE trigger or an unconditional ON UPDATE DO INSTEAD rule.
 UPDATE european_city_view SET population = 122800
     WHERE city_name = 'Cambridge' RETURNING *;
-ERROR:  relation "european_city_view" does not exist
-LINE 1: UPDATE european_city_view SET population = 122800
-               ^
+ERROR:  cannot update view "city_view"
+DETAIL:  Views that do not select from a single table or view are not automatically updatable.
+HINT:  To enable updating the view, provide an INSTEAD OF UPDATE trigger or an unconditional ON UPDATE DO INSTEAD rule.
 DELETE FROM european_city_view WHERE city_name = 'Cambridge' RETURNING *;
-ERROR:  relation "european_city_view" does not exist
-LINE 1: DELETE FROM european_city_view WHERE city_name = 'Cambridge'...
-                    ^
+ERROR:  cannot delete from view "city_view"
+DETAIL:  Views that do not select from a single table or view are not automatically updatable.
+HINT:  To enable deleting from the view, provide an INSTEAD OF DELETE trigger or an unconditional ON DELETE DO INSTEAD rule.
 -- join UPDATE test
 UPDATE city_view v SET population = 599657
     FROM city_table ci, country_table co
@@ -1195,16 +1217,19 @@ UPDATE city_view v SET population = 599657
     AND v.city_id = ci.city_id AND v.country_name = co.country_name
     RETURNING co.country_id, v.country_name,
               v.city_id, v.city_name, v.population;
-ERROR:  relation "city_view" does not exist
-LINE 1: UPDATE city_view v SET population = 599657
-               ^
+ERROR:  cannot update view "city_view"
+DETAIL:  Views that do not select from a single table or view are not automatically updatable.
+HINT:  To enable updating the view, provide an INSTEAD OF UPDATE trigger or an unconditional ON UPDATE DO INSTEAD rule.
 \set QUIET true
 SELECT * FROM city_view;
-ERROR:  relation "city_view" does not exist
-LINE 1: SELECT * FROM city_view;
-                      ^
+ city_id | city_name | population | country_name | continent 
+---------+-----------+------------+--------------+-----------
+(0 rows)
+
 DROP TABLE city_table CASCADE;
-ERROR:  table "city_table" does not exist
+NOTICE:  drop cascades to 2 other objects
+DETAIL:  drop cascades to view city_view
+drop cascades to view european_city_view
 DROP TABLE country_table;
 -- Test pg_trigger_depth()
 create table depth_a (id int not null primary key);
@@ -1221,6 +1246,8 @@ end;
 $$;
 create trigger depth_a_tr before insert on depth_a
   for each row execute procedure depth_a_tf();
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 create function depth_b_tf() returns trigger
   language plpgsql as $$
 begin
@@ -1240,6 +1267,8 @@ end;
 $$;
 create trigger depth_b_tr before insert on depth_b
   for each row execute procedure depth_b_tf();
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 create function depth_c_tf() returns trigger
   language plpgsql as $$
 begin
@@ -1253,6 +1282,8 @@ end;
 $$;
 create trigger depth_c_tr before insert on depth_c
   for each row execute procedure depth_c_tf();
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 select pg_trigger_depth();
  pg_trigger_depth 
 ------------------
@@ -1260,31 +1291,6 @@ select pg_trigger_depth();
 (1 row)
 
 insert into depth_a values (1);
-NOTICE:  depth_a_tr: depth = 1
-NOTICE:  depth_b_tr: depth = 2
-CONTEXT:  SQL statement "insert into depth_b values (new.id)"
-PL/pgSQL function depth_a_tf() line 4 at SQL statement
-NOTICE:  depth_c_tr: depth = 3
-CONTEXT:  SQL statement "insert into depth_c values (1)"
-PL/pgSQL function depth_b_tf() line 5 at EXECUTE statement
-SQL statement "insert into depth_b values (new.id)"
-PL/pgSQL function depth_a_tf() line 4 at SQL statement
-NOTICE:  SQLSTATE = U9999: depth = 2
-CONTEXT:  SQL statement "insert into depth_b values (new.id)"
-PL/pgSQL function depth_a_tf() line 4 at SQL statement
-NOTICE:  depth_b_tr: depth = 2
-CONTEXT:  SQL statement "insert into depth_b values (new.id)"
-PL/pgSQL function depth_a_tf() line 4 at SQL statement
-NOTICE:  depth_c_tr: depth = 3
-CONTEXT:  SQL statement "insert into depth_c values (1)"
-PL/pgSQL function depth_b_tf() line 12 at EXECUTE statement
-SQL statement "insert into depth_b values (new.id)"
-PL/pgSQL function depth_a_tf() line 4 at SQL statement
-ERROR:  U9999
-CONTEXT:  SQL statement "insert into depth_c values (1)"
-PL/pgSQL function depth_b_tf() line 12 at EXECUTE statement
-SQL statement "insert into depth_b values (new.id)"
-PL/pgSQL function depth_a_tf() line 4 at SQL statement
 select pg_trigger_depth();
  pg_trigger_depth 
 ------------------
@@ -1292,24 +1298,6 @@ select pg_trigger_depth();
 (1 row)
 
 insert into depth_a values (2);
-NOTICE:  depth_a_tr: depth = 1
-NOTICE:  depth_b_tr: depth = 2
-CONTEXT:  SQL statement "insert into depth_b values (new.id)"
-PL/pgSQL function depth_a_tf() line 4 at SQL statement
-NOTICE:  depth_c_tr: depth = 3
-CONTEXT:  SQL statement "insert into depth_c values (2)"
-PL/pgSQL function depth_b_tf() line 5 at EXECUTE statement
-SQL statement "insert into depth_b values (new.id)"
-PL/pgSQL function depth_a_tf() line 4 at SQL statement
-NOTICE:  depth_c_tr: depth = 3
-CONTEXT:  SQL statement "insert into depth_c values (2)"
-PL/pgSQL function depth_b_tf() line 5 at EXECUTE statement
-SQL statement "insert into depth_b values (new.id)"
-PL/pgSQL function depth_a_tf() line 4 at SQL statement
-NOTICE:  depth_b_tr: depth = 2
-CONTEXT:  SQL statement "insert into depth_b values (new.id)"
-PL/pgSQL function depth_a_tf() line 4 at SQL statement
-NOTICE:  depth_a_tr: depth = 1
 select pg_trigger_depth();
  pg_trigger_depth 
 ------------------
@@ -1348,6 +1336,8 @@ end;
 $$;
 create trigger parent_upd_trig before update on parent
   for each row execute procedure parent_upd_func();
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 create function parent_del_func()
   returns trigger language plpgsql as
 $$
@@ -1358,6 +1348,8 @@ end;
 $$;
 create trigger parent_del_trig before delete on parent
   for each row execute procedure parent_del_func();
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 create function child_ins_func()
   returns trigger language plpgsql as
 $$
@@ -1368,6 +1360,8 @@ end;
 $$;
 create trigger child_ins_trig after insert on child
   for each row execute procedure child_ins_func();
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 create function child_del_func()
   returns trigger language plpgsql as
 $$
@@ -1378,12 +1372,14 @@ end;
 $$;
 create trigger child_del_trig after delete on child
   for each row execute procedure child_del_func();
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 insert into parent values (1, 'a', 'a', 'a', 'a', 0);
 insert into child values (10, 1, 'b');
 select * from parent; select * from child;
  aid | val1 | val2 | val3 | val4 | bcnt 
 -----+------+------+------+------+------
-   1 | a    | a    | a    | a    |    1
+   1 | a    | a    | a    | a    |    0
 (1 row)
 
  bid | aid | val1 
@@ -1392,12 +1388,10 @@ select * from parent; select * from child;
 (1 row)
 
 update parent set val1 = 'b' where aid = 1; -- should fail
-ERROR:  tuple to be updated was already modified by an operation triggered by the current command
-HINT:  Consider using an AFTER trigger instead of a BEFORE trigger to propagate changes to other rows.
 select * from parent; select * from child;
  aid | val1 | val2 | val3 | val4 | bcnt 
 -----+------+------+------+------+------
-   1 | a    | a    | a    | a    |    1
+   1 | b    | a    | a    | a    |    0
 (1 row)
 
  bid | aid | val1 
@@ -1406,13 +1400,10 @@ select * from parent; select * from child;
 (1 row)
 
 delete from parent where aid = 1; -- should fail
-ERROR:  tuple to be updated was already modified by an operation triggered by the current command
-HINT:  Consider using an AFTER trigger instead of a BEFORE trigger to propagate changes to other rows.
 select * from parent; select * from child;
  aid | val1 | val2 | val3 | val4 | bcnt 
 -----+------+------+------+------+------
-   1 | a    | a    | a    | a    |    1
-(1 row)
+(0 rows)
 
  bid | aid | val1 
 -----+-----+------
@@ -1441,7 +1432,8 @@ select * from parent; select * from child;
 
  bid | aid | val1 
 -----+-----+------
-(0 rows)
+  10 |   1 | b
+(1 row)
 
 drop table parent, child;
 drop function parent_upd_func();
@@ -1469,6 +1461,8 @@ end;
 $$;
 create trigger self_ref_trigger_ins_trig before insert on self_ref_trigger
   for each row execute procedure self_ref_trigger_ins_func();
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 create function self_ref_trigger_del_func()
   returns trigger language plpgsql as
 $$
@@ -1482,34 +1476,32 @@ end;
 $$;
 create trigger self_ref_trigger_del_trig before delete on self_ref_trigger
   for each row execute procedure self_ref_trigger_del_func();
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 insert into self_ref_trigger values (1, null, 'root');
 insert into self_ref_trigger values (2, 1, 'root child A');
 insert into self_ref_trigger values (3, 1, 'root child B');
+ERROR:  insert or update on table "self_ref_trigger" violates foreign key constraint "self_ref_trigger_parent_fkey"
+DETAIL:  Key (parent)=(1) is not present in table "self_ref_trigger".
 insert into self_ref_trigger values (4, 2, 'grandchild 1');
+ERROR:  insert or update on table "self_ref_trigger" violates foreign key constraint "self_ref_trigger_parent_fkey"
+DETAIL:  Key (parent)=(2) is not present in table "self_ref_trigger".
 insert into self_ref_trigger values (5, 3, 'grandchild 2');
+ERROR:  insert or update on table "self_ref_trigger" violates foreign key constraint "self_ref_trigger_parent_fkey"
+DETAIL:  Key (parent)=(3) is not present in table "self_ref_trigger".
 update self_ref_trigger set data = 'root!' where id = 1;
 select * from self_ref_trigger;
  id | parent |     data     | nchildren 
 ----+--------+--------------+-----------
-  2 |      1 | root child A |         1
-  4 |      2 | grandchild 1 |         0
-  3 |      1 | root child B |         1
-  5 |      3 | grandchild 2 |         0
-  1 |        | root!        |         2
-(5 rows)
+  2 |      1 | root child A |         0
+  1 |        | root!        |         0
+(2 rows)
 
 delete from self_ref_trigger;
-ERROR:  tuple to be updated was already modified by an operation triggered by the current command
-HINT:  Consider using an AFTER trigger instead of a BEFORE trigger to propagate changes to other rows.
 select * from self_ref_trigger;
- id | parent |     data     | nchildren 
-----+--------+--------------+-----------
-  2 |      1 | root child A |         1
-  4 |      2 | grandchild 1 |         0
-  3 |      1 | root child B |         1
-  5 |      3 | grandchild 2 |         0
-  1 |        | root!        |         2
-(5 rows)
+ id | parent | data | nchildren 
+----+--------+------+-----------
+(0 rows)
 
 drop table self_ref_trigger;
 drop function self_ref_trigger_ins_func();
@@ -1539,6 +1531,8 @@ end;
 $$;
 create trigger upsert_before_trig before insert or update on upsert
   for each row execute procedure upsert_before_func();
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 create function upsert_after_func()
   returns trigger language plpgsql as
 $$
@@ -1554,52 +1548,28 @@ end;
 $$;
 create trigger upsert_after_trig after insert or update on upsert
   for each row execute procedure upsert_after_func();
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 insert into upsert values(1, 'black') on conflict (key) do update set color = 'updated ' || upsert.color;
-WARNING:  before insert (new): (1,black)
-WARNING:  after insert (new): (1,black)
 insert into upsert values(2, 'red') on conflict (key) do update set color = 'updated ' || upsert.color;
-WARNING:  before insert (new): (2,red)
-WARNING:  before insert (new, modified): (3,"red trig modified")
-WARNING:  after insert (new): (3,"red trig modified")
 insert into upsert values(3, 'orange') on conflict (key) do update set color = 'updated ' || upsert.color;
-WARNING:  before insert (new): (3,orange)
-WARNING:  before update (old): (3,"red trig modified")
-WARNING:  before update (new): (3,"updated red trig modified")
-WARNING:  after update (old): (3,"updated red trig modified")
-WARNING:  after update (new): (3,"updated red trig modified")
 insert into upsert values(4, 'green') on conflict (key) do update set color = 'updated ' || upsert.color;
-WARNING:  before insert (new): (4,green)
-WARNING:  before insert (new, modified): (5,"green trig modified")
-WARNING:  after insert (new): (5,"green trig modified")
 insert into upsert values(5, 'purple') on conflict (key) do update set color = 'updated ' || upsert.color;
-WARNING:  before insert (new): (5,purple)
-WARNING:  before update (old): (5,"green trig modified")
-WARNING:  before update (new): (5,"updated green trig modified")
-WARNING:  after update (old): (5,"updated green trig modified")
-WARNING:  after update (new): (5,"updated green trig modified")
 insert into upsert values(6, 'white') on conflict (key) do update set color = 'updated ' || upsert.color;
-WARNING:  before insert (new): (6,white)
-WARNING:  before insert (new, modified): (7,"white trig modified")
-WARNING:  after insert (new): (7,"white trig modified")
 insert into upsert values(7, 'pink') on conflict (key) do update set color = 'updated ' || upsert.color;
-WARNING:  before insert (new): (7,pink)
-WARNING:  before update (old): (7,"white trig modified")
-WARNING:  before update (new): (7,"updated white trig modified")
-WARNING:  after update (old): (7,"updated white trig modified")
-WARNING:  after update (new): (7,"updated white trig modified")
 insert into upsert values(8, 'yellow') on conflict (key) do update set color = 'updated ' || upsert.color;
-WARNING:  before insert (new): (8,yellow)
-WARNING:  before insert (new, modified): (9,"yellow trig modified")
-WARNING:  after insert (new): (9,"yellow trig modified")
 select * from upsert;
- key |            color            
------+-----------------------------
+ key | color  
+-----+--------
    1 | black
-   3 | updated red trig modified
-   5 | updated green trig modified
-   7 | updated white trig modified
-   9 | yellow trig modified
-(5 rows)
+   2 | red
+   5 | purple
+   6 | white
+   8 | yellow
+   3 | orange
+   4 | green
+   7 | pink
+(8 rows)
 
 drop table upsert;
 drop function upsert_before_func();
