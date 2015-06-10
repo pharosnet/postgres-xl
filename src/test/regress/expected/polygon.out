@@ -3,14 +3,14 @@
 --
 -- polygon logic
 --
-CREATE TABLE POLYGON_TBL(f1 polygon);
-INSERT INTO POLYGON_TBL(f1) VALUES ('(2.0,0.0),(2.0,4.0),(0.0,0.0)');
-INSERT INTO POLYGON_TBL(f1) VALUES ('(3.0,1.0),(3.0,3.0),(1.0,0.0)');
--- degenerate polygons
-INSERT INTO POLYGON_TBL(f1) VALUES ('(0.0,0.0)');
-INSERT INTO POLYGON_TBL(f1) VALUES ('(0.0,1.0),(0.0,1.0)');
--- bad polygon input strings
-INSERT INTO POLYGON_TBL(f1) VALUES ('0.0');
+CREATE TABLE POLYGON_TBL(ID int, f1 polygon);
+INSERT INTO POLYGON_TBL(ID,f1) VALUES (1, '(2.0,0.0),(2.0,4.0),(0.0,0.0)');
+INSERT INTO POLYGON_TBL(ID,f1) VALUES (2, '(3.0,1.0),(3.0,3.0),(1.0,0.0)');
+-- degenerate polygons 
+INSERT INTO POLYGON_TBL(ID,f1) VALUES (3, '(0.0,0.0)');
+INSERT INTO POLYGON_TBL(ID,f1) VALUES (4, '(0.0,1.0),(0.0,1.0)');
+-- bad polygon input strings 
+INSERT INTO POLYGON_TBL(ID,f1) VALUES (5, '0.0');
 ERROR:  invalid input syntax for type polygon: "0.0"
 LINE 1: INSERT INTO POLYGON_TBL(ID,f1) VALUES (5, '0.0');
                                                   ^
