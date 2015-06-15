@@ -626,7 +626,14 @@ datasegpath(RelFileNode rnode, ForkNumber forknum, BlockNumber segno)
 	char	   *path;
 	char	   *segpath;
 
+#ifdef XCP
+	/*
+	 * TODO!! Pass correct node name
+	 */
+	path = relpathperm_client(rnode, forknum, "");
+#else
 	path = relpathperm(rnode, forknum);
+#endif
 	if (segno > 0)
 	{
 		segpath = psprintf("%s.%u", path, segno);

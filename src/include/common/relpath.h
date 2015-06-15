@@ -49,9 +49,17 @@ extern int	forkname_chars(const char *str, ForkNumber *fork);
  * Stuff for computing filesystem pathnames for relations.
  */
 extern char *GetDatabasePath(Oid dbNode, Oid spcNode);
+#ifdef XCP
+extern char *GetDatabasePath_client(Oid dbNode, Oid spcNode, const char *nodename);
+#endif
 
 extern char *GetRelationPath(Oid dbNode, Oid spcNode, Oid relNode,
 				int backendId, ForkNumber forkNumber);
+#ifdef XCP
+extern char *GetRelationPath_client(Oid dbNode, Oid spcNode, Oid relNode,
+				int backendId, ForkNumber forkNumber,
+				const char *nodename);
+#endif
 
 /*
  * Wrapper macros for GetRelationPath.  Beware of multiple
@@ -62,18 +70,22 @@ extern char *GetRelationPath(Oid dbNode, Oid spcNode, Oid relNode,
 #define relpathbackend(rnode, backend, forknum) \
 	GetRelationPath((rnode).dbNode, (rnode).spcNode, (rnode).relNode, \
 					backend, forknum)
+#ifdef XCP
+#define relpathbackend_client(rnode, backend, forknum, nodename) \
+	GetRelationPath_client((rnode).dbNode, (rnode).spcNode, (rnode).relNode, \
+					backend, forknum, nodename)
+#endif
 
 /* First argument is a RelFileNode */
 #define relpathperm(rnode, forknum) \
 	relpathbackend(rnode, InvalidBackendId, forknum)
+#ifdef XCP
+#define relpathperm_client(rnode, forknum, nodename) \
+	relpathbackend_client(rnode, InvalidBackendId, forknum, nodename)
+#endif
 
 /* First argument is a RelFileNodeBackend */
-#ifdef XCP
-#define relpath(rnode, forknum) \
-		relpathbackend((rnode).node, InvalidBackendId, (forknum))
-#else
 #define relpath(rnode, forknum) \
 	relpathbackend((rnode).node, (rnode).backend, forknum)
-#endif
 
 #endif   /* RELPATH_H */

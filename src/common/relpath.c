@@ -27,8 +27,6 @@
 #include "pgxc/pgxc.h"
 #endif
 
-#define PGXCNodeName ""
-
 /*
  * Lookup table of fork name by fork number.
  *
@@ -109,8 +107,16 @@ forkname_chars(const char *str, ForkNumber *fork)
  *
  * XXX this must agree with GetRelationPath()!
  */
+#ifndef FRONTEND
 char *
 GetDatabasePath(Oid dbNode, Oid spcNode)
+{
+	return GetDatabasePath_client(dbNode, spcNode, PGXCNodeName);
+}
+#endif
+
+char *
+GetDatabasePath_client(Oid dbNode, Oid spcNode, const char *nodename)
 {
 	if (spcNode == GLOBALTABLESPACE_OID)
 	{
@@ -129,7 +135,7 @@ GetDatabasePath(Oid dbNode, Oid spcNode)
 #ifdef PGXC		
 		return psprintf("pg_tblspc/%u/%s_%s/%u",
 						spcNode, TABLESPACE_VERSION_DIRECTORY,
-						PGXCNodeName,
+						nodename,
 						dbNode);
 #else		
 		return psprintf("pg_tblspc/%u/%s/%u",
@@ -147,9 +153,20 @@ GetDatabasePath(Oid dbNode, Oid spcNode)
  * would have to include a backend-only header to do that; doesn't seem worth
  * the trouble considering BackendId is just int anyway.
  */
+#ifndef FRONTEND
 char *
 GetRelationPath(Oid dbNode, Oid spcNode, Oid relNode,
 				int backendId, ForkNumber forkNumber)
+{
+	return GetRelationPath_client(dbNode, spcNode, relNode, backendId,
+			forkNumber, PGXCNodeName);
+}
+#endif
+
+char *
+GetRelationPath_client(Oid dbNode, Oid spcNode, Oid relNode,
+				int backendId, ForkNumber forkNumber,
+				const char *nodename)
 {
 	char	   *path;
 
@@ -202,7 +219,7 @@ GetRelationPath(Oid dbNode, Oid spcNode, Oid relNode,
 								spcNode, TABLESPACE_VERSION_DIRECTORY,
 #ifdef PGXC
 				/* Postgres-XC tablespaces include node name */
-								PGXCNodeName,
+								nodename,
 #endif
 								dbNode,
 								relNode,
@@ -216,7 +233,7 @@ GetRelationPath(Oid dbNode, Oid spcNode, Oid relNode,
 								spcNode, TABLESPACE_VERSION_DIRECTORY,
 #ifdef PGXC
 				/* Postgres-XC tablespaces include node name */
-								PGXCNodeName,
+								nodename,
 #endif
 								dbNode, relNode);
 		}
@@ -231,7 +248,7 @@ GetRelationPath(Oid dbNode, Oid spcNode, Oid relNode,
 								spcNode, TABLESPACE_VERSION_DIRECTORY,
 #ifdef PGXC
 				/* Postgres-XC tablespaces include node name */
-								PGXCNodeName,
+								nodename,
 #endif
 								dbNode, backendId, relNode,
 								forkNames[forkNumber]);
@@ -244,7 +261,7 @@ GetRelationPath(Oid dbNode, Oid spcNode, Oid relNode,
 								spcNode, TABLESPACE_VERSION_DIRECTORY,
 #ifdef PGXC
 				/* Postgres-XC tablespaces include node name */
-								PGXCNodeName,
+								nodename,
 #endif
 								dbNode, backendId, relNode);
 		}
