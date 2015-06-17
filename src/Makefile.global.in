@@ -257,9 +257,9 @@ ld_R_works = @ld_R_works@
 # something.
 # PGXC_BEGIN
 ifdef PGXS
-  LDFLAGS = -L$(libdir) -lpthread
+  LDFLAGS = -L$(libdir)
 else
-  LDFLAGS = -L$(top_builddir)/src/port -L$(top_builddir)/src/common -lpthread
+  LDFLAGS = -L$(top_builddir)/src/port -L$(top_builddir)/src/common
 endif
 # PGXC_END
 LDFLAGS += @LDFLAGS@

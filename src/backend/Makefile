@@ -40,6 +40,8 @@ endif
 endif
 
 OBJS = $(SUBDIROBJS) $(LOCALOBJS) \
+	$(top_builddir)/src/port/libpgport_srv.a \
+       $(top_builddir)/src/common/libpgcommon_srv.a \
 	$(top_builddir)/src/interfaces/libpq/fe-connect.o \
 	$(top_builddir)/src/interfaces/libpq/fe-secure.o \
 	$(top_builddir)/src/interfaces/libpq/fe-misc.o \
@@ -48,11 +50,9 @@ OBJS = $(SUBDIROBJS) $(LOCALOBJS) \
 	$(top_builddir)/src/interfaces/libpq/fe-exec.o \
 	$(top_builddir)/src/interfaces/libpq/fe-auth.o \
 	$(top_builddir)/src/interfaces/libpq/pqexpbuffer.o \
-	$(top_builddir)/src/port/libpgport_srv.a \
 	$(top_builddir)/src/gtm/client/libgtmclient.a \
 	$(top_builddir)/src/gtm/common/libgtm.a \
-	$(top_builddir)/src/gtm/libpq/libpqcomm.a	 \
-       $(top_builddir)/src/common/libpgcommon_srv.a
+	$(top_builddir)/src/gtm/libpq/libpqcomm.a
 
 # We put libpgport and libpgcommon into OBJS, so remove it from LIBS; also add
 # libldap
