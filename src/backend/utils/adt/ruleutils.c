@@ -6225,10 +6225,11 @@ get_utility_query_def(Query *query, deparse_context *context)
 		bool		istemp = (relation->relpersistence == RELPERSISTENCE_TEMP);
 		bool		isunlogged = (relation->relpersistence == RELPERSISTENCE_UNLOGGED);
 
-		appendStringInfo(buf, "CREATE %s %s %s TABLE ",
+		appendStringInfo(buf, "CREATE %s %s %s TABLE %s ",
 				stmt->islocal ? "LOCAL" : "",
 				istemp ? "TEMP" : "",
-				isunlogged ? "UNLOGGED" : "");
+				isunlogged ? "UNLOGGED" : "",
+				stmt->if_not_exists ? "IF NOT EXISTS " : "");
 
 		if (!istemp && relation->schemaname && relation->schemaname[0])
 			appendStringInfo(buf, "%s.", relation->schemaname);
