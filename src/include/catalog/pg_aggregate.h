@@ -190,6 +190,7 @@ DATA(insert ( 2050	n 0 array_larger	array_larger	-				-				-				-				f f 1073	22
 DATA(insert ( 2244	n 0 bpchar_larger	bpchar_larger	-				-				-				-				f f 1060	1042	1042	0	0		0	_null_	_null_	_null_ ));
 DATA(insert ( 2797	n 0 tidlarger		tidlarger	-				-				-				-				f f 2800	27		27	0	0		0	_null_	_null_	_null_ ));
 DATA(insert ( 3526	n 0 enum_larger		enum_larger	-				-				-				-				f f 3519	3500	3500	0	0		0	_null_	_null_	_null_ ));
+DATA(insert ( 3564	n 0 network_larger	network_larger -				- 			-				-				f f 1205	869		869		0	0		0	_null_	_null_ _null_ ));
 
 /* min */
 DATA(insert ( 2131	n 0 int8smaller		int8smaller	-				-				-				-				f f 412		20		20		0	0		0	_null_ _null_ _null_ ));
@@ -212,6 +213,7 @@ DATA(insert ( 2051	n 0 array_smaller	array_smaller	-				-				-				-				f f 1072	
 DATA(insert ( 2245	n 0 bpchar_smaller	bpchar_smaller	-				-				-				-				f f 1058	1042	1042	0	0		0	_null_ _null_ _null_ ));
 DATA(insert ( 2798	n 0 tidsmaller		tidsmaller	-				-				-				-				f f 2799	27		27		0	0		0	_null_ _null_ _null_ ));
 DATA(insert ( 3527	n 0 enum_smaller	enum_smaller	-				-				-				-				f f 3518	3500	3500	0	0		0	_null_ _null_ _null_ ));
+DATA(insert ( 3565	n 0 network_smaller network_smaller	-				-				-				-				f f 1203	869		869		0	0		0	_null_ _null_ _null_ ));
 
 /* count */
 DATA(insert ( 2147	n 0 int8inc_any		int8_sum_to_int8	-				int8inc_any		int8dec_any		-				f f 0		20		20	0	20		0	"0" _null_	"0" ));

@@ -182,26 +182,26 @@ SELECT '' AS ten, i, c,
   i << c AS sb, i <<= c AS sbe,
   i >> c AS sup, i >>= c AS spe,
   i && c AS ovr
-  FROM INET_TBL;
+  FROM INET_TBL ORDER BY i, c;
  ten |        i         |         c          | lt | le | eq | ge | gt | ne | sb | sbe | sup | spe | ovr 
 -----+------------------+--------------------+----+----+----+----+----+----+----+-----+-----+-----+-----
-     | 192.168.1.226/24 | 192.168.1.0/24     | f  | f  | f  | t  | t  | t  | f  | t   | f   | t   | t
-     | 192.168.1.226    | 192.168.1.0/26     | f  | f  | f  | t  | t  | t  | f  | f   | f   | f   | f
-     | 192.168.1.0/24   | 192.168.1.0/24     | f  | t  | t  | t  | f  | f  | f  | t   | f   | t   | t
-     | 192.168.1.0/25   | 192.168.1.0/24     | f  | f  | f  | t  | t  | t  | t  | t   | f   | f   | t
-     | 192.168.1.255/24 | 192.168.1.0/24     | f  | f  | f  | t  | t  | t  | f  | t   | f   | t   | t
-     | 192.168.1.255/25 | 192.168.1.0/24     | f  | f  | f  | t  | t  | t  | t  | t   | f   | f   | t
+     | 9.1.2.3/8        | 10.0.0.0/8         | t  | t  | f  | f  | f  | t  | f  | f   | f   | f   | f
+     | 10.1.2.3/8       | 10.0.0.0/8         | f  | f  | f  | t  | t  | t  | f  | t   | f   | t   | t
      | 10.1.2.3/8       | 10.0.0.0/8         | f  | f  | f  | t  | t  | t  | f  | t   | f   | t   | t
      | 10.1.2.3/8       | 10.0.0.0/32        | t  | t  | f  | f  | f  | t  | f  | f   | t   | t   | t
-     | 10.1.2.3         | 10.1.2.3/32        | f  | t  | t  | t  | f  | f  | f  | t   | f   | t   | t
-     | 10.1.2.3/24      | 10.1.2.0/24        | f  | f  | f  | t  | t  | t  | f  | t   | f   | t   | t
      | 10.1.2.3/16      | 10.1.0.0/16        | f  | f  | f  | t  | t  | t  | f  | t   | f   | t   | t
-     | 10.1.2.3/8       | 10.0.0.0/8         | f  | f  | f  | t  | t  | t  | f  | t   | f   | t   | t
+     | 10.1.2.3/24      | 10.1.2.0/24        | f  | f  | f  | t  | t  | t  | f  | t   | f   | t   | t
+     | 10.1.2.3         | 10.1.2.3/32        | f  | t  | t  | t  | f  | f  | f  | t   | f   | t   | t
      | 11.1.2.3/8       | 10.0.0.0/8         | f  | f  | f  | t  | t  | t  | f  | f   | f   | f   | f
-     | 9.1.2.3/8        | 10.0.0.0/8         | t  | t  | f  | f  | f  | t  | f  | f   | f   | f   | f
+     | 192.168.1.0/24   | 192.168.1.0/24     | f  | t  | t  | t  | f  | f  | f  | t   | f   | t   | t
+     | 192.168.1.226/24 | 192.168.1.0/24     | f  | f  | f  | t  | t  | t  | f  | t   | f   | t   | t
+     | 192.168.1.255/24 | 192.168.1.0/24     | f  | f  | f  | t  | t  | t  | f  | t   | f   | t   | t
+     | 192.168.1.0/25   | 192.168.1.0/24     | f  | f  | f  | t  | t  | t  | t  | t   | f   | f   | t
+     | 192.168.1.255/25 | 192.168.1.0/24     | f  | f  | f  | t  | t  | t  | t  | t   | f   | f   | t
+     | 192.168.1.226    | 192.168.1.0/26     | f  | f  | f  | t  | t  | t  | f  | f   | f   | f   | f
+     | ::4.3.2.1/24     | ::ffff:1.2.3.4/128 | t  | t  | f  | f  | f  | t  | f  | f   | t   | t   | t
      | 10:23::f1/64     | 10:23::f1/128      | t  | t  | f  | f  | f  | t  | f  | f   | t   | t   | t
      | 10:23::ffff      | 10:23::8000/113    | f  | f  | f  | t  | t  | t  | t  | t   | f   | f   | t
-     | ::4.3.2.1/24     | ::ffff:1.2.3.4/128 | t  | t  | f  | f  | f  | t  | f  | f   | t   | t   | t
 (17 rows)
 
 SELECT max(i) AS max, min(i) AS min FROM INET_TBL;
@@ -217,10 +217,15 @@ SELECT max(c) AS max, min(c) AS min FROM INET_TBL;
 (1 row)
 
 -- check the conversion to/from text and set_netmask
-SELECT '' AS ten, set_masklen(inet(text(i)), 24) FROM INET_TBL ORDER BY i;
+SELECT '' AS ten, set_masklen(inet(text(i)), 24) FROM INET_TBL;
  ten |   set_masklen    
 -----+------------------
-     | 9.1.2.3/24
+     | 192.168.1.226/24
+     | 192.168.1.226/24
+     | 192.168.1.0/24
+     | 192.168.1.0/24
+     | 192.168.1.255/24
+     | 192.168.1.255/24
      | 10.1.2.3/24
      | 10.1.2.3/24
      | 10.1.2.3/24
@@ -228,15 +233,10 @@ SELECT '' AS ten, set_masklen(inet(text(i)), 24) FROM INET_TBL ORDER BY i;
      | 10.1.2.3/24
      | 10.1.2.3/24
      | 11.1.2.3/24
-     | 192.168.1.0/24
-     | 192.168.1.226/24
-     | 192.168.1.255/24
-     | 192.168.1.0/24
-     | 192.168.1.255/24
-     | 192.168.1.226/24
-     | ::4.3.2.1/24
+     | 9.1.2.3/24
      | 10:23::f1/24
      | 10:23::ffff/24
+     | ::4.3.2.1/24
 (17 rows)
 
 -- check that btree index works correctly
@@ -393,13 +393,16 @@ SELECT * FROM inet_tbl WHERE i <> '192.168.1.0/24'::cidr ORDER BY i;
 -- test index-only scans
 EXPLAIN (COSTS OFF)
 SELECT i FROM inet_tbl WHERE i << '192.168.1.0/24'::cidr ORDER BY i;
-                    QUERY PLAN                     
----------------------------------------------------
- Sort
-   Sort Key: i
-   ->  Index Only Scan using inet_idx2 on inet_tbl
-         Index Cond: (i << '192.168.1.0/24'::inet)
-(4 rows)
+                          QUERY PLAN                           
+---------------------------------------------------------------
+ Remote Subquery Scan on all (datanode_1,datanode_2)
+   ->  Sort
+         Sort Key: i
+         ->  Bitmap Heap Scan on inet_tbl
+               Recheck Cond: (i << '192.168.1.0/24'::inet)
+               ->  Bitmap Index Scan on inet_idx2
+                     Index Cond: (i << '192.168.1.0/24'::inet)
+(7 rows)
 
 SELECT i FROM inet_tbl WHERE i << '192.168.1.0/24'::cidr ORDER BY i;
         i         
