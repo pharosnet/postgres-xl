@@ -1146,6 +1146,11 @@ standard_ProcessUtility(Node *parsetree,
 		case T_ReindexStmt:
 			{
 				ReindexStmt *stmt = (ReindexStmt *) parsetree;
+#ifdef XCP
+				Oid			relid;
+				RemoteQueryExecType exec_type;
+				bool				is_temp;
+#endif
 
 				/* we choose to allow this during "read only" transactions */
 				PreventCommandDuringRecovery("REINDEX");
@@ -1154,9 +1159,17 @@ standard_ProcessUtility(Node *parsetree,
 				{
 					case REINDEX_OBJECT_INDEX:
 						ReindexIndex(stmt->relation, stmt->options);
+#ifdef XCP
+						relid = RangeVarGetRelid(stmt->relation, NoLock, true);
+						exec_type = ExecUtilityFindNodesRelkind(relid, &is_temp);
+#endif
 						break;
 					case REINDEX_OBJECT_TABLE:
 						ReindexTable(stmt->relation, stmt->options);
+#ifdef XCP
+						relid = RangeVarGetRelid(stmt->relation, NoLock, true);
+						exec_type = ExecUtilityFindNodesRelkind(relid, &is_temp);
+#endif
 						break;
 					case REINDEX_OBJECT_SCHEMA:
 					case REINDEX_OBJECT_SYSTEM:
@@ -1173,6 +1186,7 @@ standard_ProcessUtility(Node *parsetree,
 												(stmt->kind == REINDEX_OBJECT_SYSTEM) ? "REINDEX SYSTEM" :
 												"REINDEX DATABASE");
 						ReindexMultipleTables(stmt->name, stmt->kind, stmt->options);
+						exec_type = EXEC_ON_ALL_NODES;
 						break;
 					default:
 						elog(ERROR, "unrecognized object type: %d",
@@ -1182,7 +1196,7 @@ standard_ProcessUtility(Node *parsetree,
 #ifdef PGXC
 				if (IS_PGXC_LOCAL_COORDINATOR)
 					ExecUtilityStmtOnNodes(queryString, NULL, sentToRemote,
-							stmt->kind == REINDEX_OBJECT_DATABASE, EXEC_ON_ALL_NODES, false);
+							stmt->kind == REINDEX_OBJECT_DATABASE, exec_type, false);
 #endif
 			}
 			break;
@@ -4398,7 +4412,7 @@ ExecUtilityFindNodes(ObjectType object_type,
  * Get node execution and temporary type
  * for given relation depending on its relkind
  */
-	static RemoteQueryExecType
+static RemoteQueryExecType
 ExecUtilityFindNodesRelkind(Oid relid, bool *is_temp)
 {
 	char relkind_str = get_rel_relkind(relid);
@@ -4428,6 +4442,31 @@ ExecUtilityFindNodesRelkind(Oid relid, bool *is_temp)
 				exec_type = EXEC_ON_ALL_NODES;
 #endif
 			break;
+
+#ifdef XCP			
+		case RELKIND_INDEX:
+			{
+				HeapTuple   tuple;
+				Oid table_relid = InvalidOid;
+
+				tuple = SearchSysCache1(INDEXRELID, ObjectIdGetDatum(relid));
+				if (HeapTupleIsValid(tuple))
+				{
+					Form_pg_index index = (Form_pg_index) GETSTRUCT(tuple);
+					table_relid = index->indrelid;
+
+					/* Release system cache BEFORE looking at the parent table */
+					ReleaseSysCache(tuple);
+					return ExecUtilityFindNodesRelkind(table_relid, is_temp);
+				}
+				else
+				{
+					exec_type = EXEC_ON_NONE;
+					*is_temp = false;
+				}
+			}
+			break;
+#endif
 
 		case RELKIND_VIEW:
 			if ((*is_temp = IsTempTable(relid)))
@@ -4465,7 +4504,7 @@ ExecUtilityFindNodesRelkind(Oid relid, bool *is_temp)
  * a new node has to be created while the cluster is still
  * locked for backup
  */
-	static bool
+static bool
 IsStmtAllowedInLockedMode(Node *parsetree, const char *queryString)
 {
 #define ALLOW         1
@@ -4563,7 +4602,7 @@ IsStmtAllowedInLockedMode(Node *parsetree, const char *queryString)
  * even if this code is duplicated this is done like this to facilitate
  * merges with PostgreSQL head.
  */
-	static RemoteQueryExecType
+static RemoteQueryExecType
 GetNodesForCommentUtility(CommentStmt *stmt, bool *is_temp)
 {
 	ObjectAddress		address;
@@ -4623,7 +4662,7 @@ GetNodesForCommentUtility(CommentStmt *stmt, bool *is_temp)
  * existence on Datanode. In fact, if it were to exist on Datanode,
  * there is a possibility that it would expand again
  */
-	static RemoteQueryExecType
+static RemoteQueryExecType
 GetNodesForRulesUtility(RangeVar *relation, bool *is_temp)
 {
 	Oid relid = RangeVarGetRelid(relation, NoLock, true);
@@ -4646,7 +4685,7 @@ GetNodesForRulesUtility(RangeVar *relation, bool *is_temp)
  * TreatDropStmtOnCoord
  * Do a pre-treatment of Drop statement on a remote Coordinator
  */
-	static void
+static void
 DropStmtPreTreatment(DropStmt *stmt, const char *queryString, bool sentToRemote,
 		bool *is_temp, RemoteQueryExecType *exec_type)
 {
