@@ -1263,11 +1263,22 @@ exec_simple_query(const char *query_string)
 		CHECK_FOR_INTERRUPTS();
 
 #ifdef PGXC
-		/* PGXC_DATANODE */
-		/* Force getting Xid from GTM for vacuum and cluster. */
-		if (IS_PGXC_DATANODE && IsPostmasterEnvironment &&
-			(IsA(parsetree, VacuumStmt) || IsA(parsetree, ClusterStmt)))
-			SetForceXidFromGTM(true);
+		/* 
+		 * Force getting Xid from GTM for vacuum, cluster and reindex for
+		 * database or schema
+		 */
+		if (IS_PGXC_DATANODE && IsPostmasterEnvironment)
+		{
+			if (IsA(parsetree, VacuumStmt) || IsA(parsetree, ClusterStmt))
+				 SetForceXidFromGTM(true);
+			else if (IsA(parsetree, ReindexStmt))
+			{
+				ReindexStmt *stmt = (ReindexStmt *) parsetree;
+				if (stmt->kind == REINDEX_OBJECT_SCHEMA ||
+					stmt->kind == REINDEX_OBJECT_DATABASE)
+					SetForceXidFromGTM(true);
+			}
+		}
 #endif
 
 		/*

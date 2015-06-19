@@ -1186,7 +1186,7 @@ standard_ProcessUtility(Node *parsetree,
 												(stmt->kind == REINDEX_OBJECT_SYSTEM) ? "REINDEX SYSTEM" :
 												"REINDEX DATABASE");
 						ReindexMultipleTables(stmt->name, stmt->kind, stmt->options);
-						exec_type = EXEC_ON_ALL_NODES;
+						exec_type = EXEC_ON_DATANODES;
 						break;
 					default:
 						elog(ERROR, "unrecognized object type: %d",
@@ -1195,8 +1195,13 @@ standard_ProcessUtility(Node *parsetree,
 				}
 #ifdef PGXC
 				if (IS_PGXC_LOCAL_COORDINATOR)
+				{
+					bool auto_commit = (stmt->kind == REINDEX_OBJECT_DATABASE ||
+									   stmt->kind == REINDEX_OBJECT_SCHEMA);
+
 					ExecUtilityStmtOnNodes(queryString, NULL, sentToRemote,
-							stmt->kind == REINDEX_OBJECT_DATABASE, exec_type, false);
+							auto_commit, exec_type, false);
+				}
 #endif
 			}
 			break;
