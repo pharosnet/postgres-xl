@@ -2680,6 +2680,8 @@ pgxc_node_begin(int conn_count, PGXCNodeHandle **connections,
 #ifdef XCP
 		if (IS_PGXC_DATANODE && GlobalTransactionIdIsValid(gxid))
 			need_tran_block = true;
+		else if (IS_PGXC_REMOTE_COORDINATOR)
+			need_tran_block = false;
 		/* Send BEGIN if not already in transaction */
 		if (need_tran_block && connections[i]->transaction_status == 'I')
 #else
