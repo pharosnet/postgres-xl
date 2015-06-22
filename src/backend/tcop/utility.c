@@ -1224,59 +1224,57 @@ standard_ProcessUtility(Node *parsetree,
 #endif
 									   completionTag);
 				else
-				{
+					ExecuteGrantStmt((GrantStmt *) parsetree);
 #ifdef PGXC
-					if (IS_PGXC_LOCAL_COORDINATOR)
+				if (IS_PGXC_LOCAL_COORDINATOR)
+				{
+					RemoteQueryExecType remoteExecType = EXEC_ON_ALL_NODES;
+					GrantStmt *stmt = (GrantStmt *) parsetree;
+					bool is_temp = false;
+
+					/* Launch GRANT on Coordinator if object is a sequence */
+					if ((stmt->objtype == ACL_OBJECT_RELATION &&
+								stmt->targtype == ACL_TARGET_OBJECT))
 					{
-						RemoteQueryExecType remoteExecType = EXEC_ON_ALL_NODES;
-						GrantStmt *stmt = (GrantStmt *) parsetree;
-						bool is_temp = false;
+						/*
+						 * In case object is a relation, differenciate the case
+						 * of a sequence, a view and a table
+						 */
+						ListCell   *cell;
+						/* Check the list of objects */
+						bool		first = true;
+						RemoteQueryExecType type_local = remoteExecType;
 
-						/* Launch GRANT on Coordinator if object is a sequence */
-						if ((stmt->objtype == ACL_OBJECT_RELATION &&
-									stmt->targtype == ACL_TARGET_OBJECT))
+						foreach (cell, stmt->objects)
 						{
-							/*
-							 * In case object is a relation, differenciate the case
-							 * of a sequence, a view and a table
-							 */
-							ListCell   *cell;
-							/* Check the list of objects */
-							bool		first = true;
-							RemoteQueryExecType type_local = remoteExecType;
+							RangeVar   *relvar = (RangeVar *) lfirst(cell);
+							Oid			relid = RangeVarGetRelid(relvar, NoLock, true);
 
-							foreach (cell, stmt->objects)
+							/* Skip if object does not exist */
+							if (!OidIsValid(relid))
+								continue;
+
+							remoteExecType = ExecUtilityFindNodesRelkind(relid, &is_temp);
+
+							/* Check if object node type corresponds to the first one */
+							if (first)
 							{
-								RangeVar   *relvar = (RangeVar *) lfirst(cell);
-								Oid			relid = RangeVarGetRelid(relvar, NoLock, true);
-
-								/* Skip if object does not exist */
-								if (!OidIsValid(relid))
-									continue;
-
-								remoteExecType = ExecUtilityFindNodesRelkind(relid, &is_temp);
-
-								/* Check if object node type corresponds to the first one */
-								if (first)
-								{
-									type_local = remoteExecType;
-									first = false;
-								}
-								else
-								{
-									if (type_local != remoteExecType)
-										ereport(ERROR,
-												(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-												 errmsg("PGXC does not support GRANT on multiple object types"),
-												 errdetail("Grant VIEW/TABLE with separate queries")));
-								}
+								type_local = remoteExecType;
+								first = false;
+							}
+							else
+							{
+								if (type_local != remoteExecType)
+									ereport(ERROR,
+											(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+											 errmsg("PGXC does not support GRANT on multiple object types"),
+											 errdetail("Grant VIEW/TABLE with separate queries")));
 							}
 						}
-						ExecUtilityStmtOnNodes(queryString, NULL, sentToRemote, false, remoteExecType, is_temp);
 					}
-#endif
-					ExecuteGrantStmt((GrantStmt *) parsetree);
+					ExecUtilityStmtOnNodes(queryString, NULL, sentToRemote, false, remoteExecType, is_temp);
 				}
+#endif
 			}
 			break;
 
@@ -1302,6 +1300,20 @@ standard_ProcessUtility(Node *parsetree,
 			break;
 
 		case T_RenameStmt:
+			{
+				RenameStmt *stmt = (RenameStmt *) parsetree;
+
+				if (EventTriggerSupportsObjectType(stmt->renameType))
+					ProcessUtilitySlow(parsetree, queryString,
+									   context, params,
+									   dest,
+#ifdef PGXC
+									   sentToRemote,
+#endif				
+									   completionTag);
+				else
+					ExecRenameStmt(stmt);
+			}
 #ifdef PGXC
 			if (IS_PGXC_LOCAL_COORDINATOR)
 			{
@@ -1342,10 +1354,13 @@ standard_ProcessUtility(Node *parsetree,
 						is_temp);
 			}
 #endif
-			{
-				RenameStmt *stmt = (RenameStmt *) parsetree;
+			break;
 
-				if (EventTriggerSupportsObjectType(stmt->renameType))
+		case T_AlterObjectSchemaStmt:
+			{
+				AlterObjectSchemaStmt *stmt = (AlterObjectSchemaStmt *) parsetree;
+
+				if (EventTriggerSupportsObjectType(stmt->objectType))
 					ProcessUtilitySlow(parsetree, queryString,
 									   context, params,
 									   dest,
@@ -1354,11 +1369,8 @@ standard_ProcessUtility(Node *parsetree,
 #endif				
 									   completionTag);
 				else
-					ExecRenameStmt(stmt);
+					ExecAlterObjectSchemaStmt(stmt, NULL);
 			}
-			break;
-
-		case T_AlterObjectSchemaStmt:
 #ifdef PGXC
 			if (IS_PGXC_LOCAL_COORDINATOR)
 			{
@@ -1399,20 +1411,6 @@ standard_ProcessUtility(Node *parsetree,
 						is_temp);
 			}
 #endif
-			{
-				AlterObjectSchemaStmt *stmt = (AlterObjectSchemaStmt *) parsetree;
-
-				if (EventTriggerSupportsObjectType(stmt->objectType))
-					ProcessUtilitySlow(parsetree, queryString,
-									   context, params,
-									   dest,
-#ifdef PGXC
-									   sentToRemote,
-#endif				
-									   completionTag);
-				else
-					ExecAlterObjectSchemaStmt(stmt, NULL);
-			}
 			break;
 
 		case T_AlterOwnerStmt:
@@ -1480,21 +1478,21 @@ standard_ProcessUtility(Node *parsetree,
 #endif
 									   completionTag);
 				else
-				{
 					CommentObject((CommentStmt *) parsetree);
-#ifdef PGXC
-					/* Comment objects depending on their object and temporary types */
-					if (IS_PGXC_LOCAL_COORDINATOR)
-					{
-						bool is_temp = false;
-						CommentStmt *stmt = (CommentStmt *) parsetree;
-						RemoteQueryExecType exec_type = GetNodesForCommentUtility(stmt, &is_temp);
-						ExecUtilityStmtOnNodes(queryString, NULL, sentToRemote, false, exec_type, is_temp);
-					}
-#endif
-				}
-				break;
 			}
+#ifdef PGXC
+			{
+				/* Comment objects depending on their object and temporary types */
+				if (IS_PGXC_LOCAL_COORDINATOR)
+				{
+					bool is_temp = false;
+					CommentStmt *stmt = (CommentStmt *) parsetree;
+					RemoteQueryExecType exec_type = GetNodesForCommentUtility(stmt, &is_temp);
+					ExecUtilityStmtOnNodes(queryString, NULL, sentToRemote, false, exec_type, is_temp);
+				}
+			}
+#endif
+			break;
 
 		case T_SecLabelStmt:
 			{
