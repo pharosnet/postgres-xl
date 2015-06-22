@@ -53,10 +53,14 @@ INSERT INTO uaccount VALUES
     ('rls_regress_user2', 2),
     ('rls_regress_user3', 3);
 
+-- PGXL
+--   Distribute by replication so that "document" table below can reference "cid"
+--   column
+--
 CREATE TABLE category (
     cid        int primary key,
     cname      text
-);
+) DISTRIBUTE BY REPLICATION;
 GRANT ALL ON category TO public;
 INSERT INTO category VALUES
     (11, 'novel'),
