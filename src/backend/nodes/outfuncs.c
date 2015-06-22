@@ -3598,9 +3598,38 @@ _outTableSampleClause(StringInfo str, const TableSampleClause *node)
 {
 	WRITE_NODE_TYPE("TABLESAMPLECLAUSE");
 
+#ifdef XCP
+	if (portable_output)
+	{
+		char *tsmname = get_tablesample_method_name(node->tsmid);
+		appendStringInfo(str, " :" CppAsString(tsmid) " ");
+		_outToken(str, tsmname);
+		pfree(tsmname);
+	}
+	else
+	{
+#endif
 	WRITE_OID_FIELD(tsmid);
+#ifdef XCP
+	}
+#endif
 	WRITE_BOOL_FIELD(tsmseqscan);
 	WRITE_BOOL_FIELD(tsmpagemode);
+
+#ifdef XCP
+	if (portable_output)
+	{
+		WRITE_FUNCID_FIELD(tsminit);
+		WRITE_FUNCID_FIELD(tsmnextblock);
+		WRITE_FUNCID_FIELD(tsmnexttuple);
+		WRITE_FUNCID_FIELD(tsmexaminetuple);
+		WRITE_FUNCID_FIELD(tsmend);
+		WRITE_FUNCID_FIELD(tsmreset);
+		WRITE_FUNCID_FIELD(tsmcost);
+	}
+	else
+	{
+#endif
 	WRITE_OID_FIELD(tsminit);
 	WRITE_OID_FIELD(tsmnextblock);
 	WRITE_OID_FIELD(tsmnexttuple);
@@ -3608,6 +3637,9 @@ _outTableSampleClause(StringInfo str, const TableSampleClause *node)
 	WRITE_OID_FIELD(tsmend);
 	WRITE_OID_FIELD(tsmreset);
 	WRITE_OID_FIELD(tsmcost);
+#ifdef XCP
+	}
+#endif
 	WRITE_NODE_FIELD(repeatable);
 	WRITE_NODE_FIELD(args);
 }

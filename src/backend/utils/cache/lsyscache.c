@@ -3526,3 +3526,26 @@ get_tablesample_method_name(Oid tsmid)
 	else
 		return NULL;
 }
+
+#ifdef XCP
+Oid
+get_tablesample_method_id(const char *methodname)
+{
+	Oid tsoid;
+	HeapTuple	tuple;
+
+	/* Load the tablesample method */
+	tuple = SearchSysCache1(TABLESAMPLEMETHODNAME, PointerGetDatum(methodname));
+	if (!HeapTupleIsValid(tuple))
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_OBJECT),
+				 errmsg("tablesample method \"%s\" does not exist",
+					 methodname)));
+
+	tsoid = HeapTupleGetOid(tuple);
+	ReleaseSysCache(tuple);
+
+	return tsoid;
+}
+#endif
+

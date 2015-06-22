@@ -194,6 +194,10 @@ extern char *get_namespace_name_or_temp(Oid nspid);
 extern Oid	get_range_subtype(Oid rangeOid);
 extern char *get_tablesample_method_name(Oid tsmid);
 
+#ifdef XCP
+extern Oid	get_tablesample_method_id(const char *methodname);
+#endif
+
 #define type_is_array(typid)  (get_element_type(typid) != InvalidOid)
 /* type_is_array_domain accepts both plain arrays and domains over arrays */
 #define type_is_array_domain(typid)  (get_base_element_type(typid) != InvalidOid)

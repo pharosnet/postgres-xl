@@ -681,9 +681,45 @@ _readTableSampleClause(void)
 {
 	READ_LOCALS(TableSampleClause);
 
+#ifdef XCP
+	if (portable_input)
+	{
+		char *tsmname;
+
+		token = pg_strtok(&length);		/* skip :fldname */ \
+		token = pg_strtok(&length);		/* tsmname */
+		tsmname = nullable_string(token, length);
+
+		if (tsmname)
+			local_node->tsmid = get_tablesample_method_id(tsmname);
+		else
+			local_node->tsmid = InvalidOid;
+	}
+	else
+	{
+#endif
 	READ_OID_FIELD(tsmid);
+#ifdef XCP
+	}
+#endif
+	
 	READ_BOOL_FIELD(tsmseqscan);
 	READ_BOOL_FIELD(tsmpagemode);
+
+#ifdef XCP
+	if (portable_input)
+	{
+		READ_FUNCID_FIELD(tsminit);
+		READ_FUNCID_FIELD(tsmnextblock);
+		READ_FUNCID_FIELD(tsmnexttuple);
+		READ_FUNCID_FIELD(tsmexaminetuple);
+		READ_FUNCID_FIELD(tsmend);
+		READ_FUNCID_FIELD(tsmreset);
+		READ_FUNCID_FIELD(tsmcost);
+	}
+	else
+	{
+#endif
 	READ_OID_FIELD(tsminit);
 	READ_OID_FIELD(tsmnextblock);
 	READ_OID_FIELD(tsmnexttuple);
@@ -691,6 +727,9 @@ _readTableSampleClause(void)
 	READ_OID_FIELD(tsmend);
 	READ_OID_FIELD(tsmreset);
 	READ_OID_FIELD(tsmcost);
+#ifdef XCP
+	}
+#endif
 	READ_NODE_FIELD(repeatable);
 	READ_NODE_FIELD(args);
 
