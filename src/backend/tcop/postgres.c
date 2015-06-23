@@ -88,6 +88,7 @@
 #include "mb/pg_wchar.h"
 
 #ifdef PGXC
+#include "catalog/pgxc_node.h"
 #include "storage/procarray.h"
 #include "pgxc/pgxc.h"
 #include "access/gtm.h"
@@ -4059,6 +4060,8 @@ PostgresMain(int argc, char *argv[],
 #endif
 #ifdef XCP
 	parentPGXCNode = NULL;
+	parentPGXCNodeId = -1;
+	parentPGXCNodeType = PGXC_NODE_DATANODE;
 	cluster_lock_held = false;
 	cluster_ex_lock_held = false;
 #endif /* XCP */

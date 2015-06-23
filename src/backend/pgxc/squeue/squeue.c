@@ -352,16 +352,15 @@ tryagain:
 		 */
 		if (sq->sq_pid != 0)
 		{
-			int 		selfid;  /* Node Id of the parent data node */
 			int			i;
-			char		ntype = PGXC_NODE_DATANODE;
 			bool		old_squeue = true;
 
-			selfid = PGXCNodeGetNodeIdFromName(PGXC_PARENT_NODE, &ntype);
+			PGXC_PARENT_NODE_ID = PGXCNodeGetNodeIdFromName(PGXC_PARENT_NODE,
+					&PGXC_PARENT_NODE_TYPE);
 			for (i = 0; i < sq->sq_nconsumers; i++)
 			{
 				ConsState *cstate = &(sq->sq_consumers[i]);
-				if (cstate->cs_node == selfid)
+				if (cstate->cs_node == PGXC_PARENT_NODE_ID)
 				{
 					SQueueSync *sqsync = sq->sq_sync;
 
@@ -411,13 +410,11 @@ SharedQueueBind(const char *sqname, List *consNodes,
 {
 	bool		found;
 	SharedQueue sq;
-	int 		selfid;  /* Node Id of the parent data node */
-	char		ntype = PGXC_NODE_DATANODE;
 
 	LWLockAcquire(SQueuesLock, LW_EXCLUSIVE);
 
-	selfid = PGXCNodeGetNodeIdFromName(PGXC_PARENT_NODE, &ntype);
-
+	PGXC_PARENT_NODE_ID = PGXCNodeGetNodeIdFromName(PGXC_PARENT_NODE,
+			&PGXC_PARENT_NODE_TYPE);
 	sq = (SharedQueue) hash_search(SharedQueues, sqname, HASH_FIND, &found);
 	if (!found)
 		elog(PANIC, "Shared queue %s not found", sqname);
@@ -434,7 +431,7 @@ SharedQueueBind(const char *sqname, List *consNodes,
 
 		/* Initialize the shared queue */
 		sq->sq_pid = MyProcPid;
-		sq->sq_nodeid = selfid;
+		sq->sq_nodeid = PGXC_PARENT_NODE_ID;
 		OwnLatch(&sq->sq_sync->sqs_producer_latch);
 
 		i = 0;
@@ -446,7 +443,7 @@ SharedQueueBind(const char *sqname, List *consNodes,
 			 * Producer won't go to shared queue to hand off tuple to itself,
 			 * so we do not need to create queue for that entry.
 			 */
-			if (nodeid == selfid)
+			if (nodeid == PGXC_PARENT_NODE_ID)
 			{
 				/* Producer must be in the consNodes list */
 				Assert(list_member_int(consNodes, nodeid));
@@ -531,7 +528,7 @@ SharedQueueBind(const char *sqname, List *consNodes,
 				if (cstate->cs_node == nodeid)
 				{
 					nconsumers++;
-					if (nodeid == selfid)
+					if (nodeid == PGXC_PARENT_NODE_ID)
 					{
 						/*
 						 * Current consumer queue is that from which current
@@ -1309,19 +1306,18 @@ SharedQueueRelease(const char *sqname)
 			return;
 		}
 
-		myid = PGXCNodeGetNodeIdFromName(PGXC_PARENT_NODE, &ntype);
 		/*
 		 * Do not bother releasing producer, all necessary work will be
 		 * done upon UnBind.
 		 */
-		if (sq->sq_nodeid != myid)
+		if (sq->sq_nodeid != PGXC_PARENT_NODE_ID)
 		{
 			elog(LOG, "Looking for consumer %d in %s", myid, sqname);
 			/* find specified node in the consumer lists */
 			for (i = 0; i < sq->sq_nconsumers; i++)
 			{
 				ConsState *cstate = &(sq->sq_consumers[i]);
-				if (cstate->cs_node == myid)
+				if (cstate->cs_node == PGXC_PARENT_NODE_ID)
 				{
 					LWLockAcquire(sqsync->sqs_consumer_sync[i].cs_lwlock,
 								  LW_EXCLUSIVE);

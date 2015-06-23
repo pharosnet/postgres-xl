@@ -108,6 +108,7 @@
 #include "libpq/pqsignal.h"
 #include "miscadmin.h"
 #ifdef PGXC
+#include "catalog/pgxc_node.h"
 #include "pgxc/pgxc.h"
 /* COORD */
 #include "pgxc/locator.h"
@@ -545,6 +546,8 @@ static void ShmemBackendArrayRemove(Backend *bn);
 
 #ifdef XCP
 char *parentPGXCNode = NULL;
+int  parentPGXCNodeId = -1;
+char parentPGXCNodeType = PGXC_NODE_DATANODE;
 #endif
 
 #ifdef PGXC

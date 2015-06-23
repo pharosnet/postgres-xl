@@ -628,8 +628,6 @@ PortalStart(Portal portal, ParamListInfo params,
 				{
 					int 	   *consMap;
 					int 		len;
-					int 		selfid;  /* Node Id of the parent data node */
-					char 		ntype = PGXC_NODE_DATANODE;
 					ListCell   *lc;
 					int 		i;
 					Locator	   *locator;
@@ -640,12 +638,12 @@ PortalStart(Portal portal, ParamListInfo params,
 					consMap = (int *) palloc0(len * sizeof(int));
 					queryDesc->squeue = NULL;
 					queryDesc->myindex = -1;
-					selfid = PGXCNodeGetNodeIdFromName(PGXC_PARENT_NODE,
-													   &ntype);
+					PGXC_PARENT_NODE_ID = PGXCNodeGetNodeIdFromName(PGXC_PARENT_NODE,
+													   &PGXC_PARENT_NODE_TYPE);
 					i = 0;
 					foreach(lc, queryDesc->plannedstmt->distributionNodes)
 					{
-						if (selfid == lfirst_int(lc))
+						if (PGXC_PARENT_NODE_ID == lfirst_int(lc))
 							consMap[i] = SQ_CONS_SELF;
 						else
 							consMap[i] = SQ_CONS_NONE;
@@ -659,7 +657,7 @@ PortalStart(Portal portal, ParamListInfo params,
 					 */
 					RemoteSubplanMakeUnique(
 							(Node *) queryDesc->plannedstmt->planTree,
-							selfid);
+							PGXC_PARENT_NODE_ID);
 					/*
 					 * Call ExecutorStart to prepare the plan for execution
 					 */
