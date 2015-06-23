@@ -85,7 +85,11 @@ extern char *GetRelationPath_client(Oid dbNode, Oid spcNode, Oid relNode,
 #endif
 
 /* First argument is a RelFileNodeBackend */
+#ifdef XCP
+#define relpath(rnode, forknum) \
+	relpathbackend((rnode).node, InvalidBackendId, forknum)
+#else
 #define relpath(rnode, forknum) \
 	relpathbackend((rnode).node, (rnode).backend, forknum)
-
+#endif
 #endif   /* RELPATH_H */
