@@ -15,7 +15,7 @@ declare
 	num_nodes	int;
 begin
 	nodenames_query := 'SELECT node_name FROM pgxc_node WHERE node_type = ''D'''; 
-	cr_command := 'CREATE TABLE ' || tab_schema || ' DISTRIBUTE BY ' || distribution || ' TO NODE ';
+	cr_command := 'CREATE TABLE ' || tab_schema || ' DISTRIBUTE BY ' || distribution || ' TO NODE (';
 	for nodename in execute nodenames_query loop
 		nodes := array_append(nodes, nodename);
 	end loop;
@@ -34,9 +34,11 @@ begin
 		sep := ', ';
 	end loop;
 	cr_command := cr_command || nodenames;
+	cr_command := cr_command || ')';
 	if (cmd_suffix is not null) then
 		cr_command := cr_command  || ' ' || cmd_suffix;
 	end if;
+
 	execute cr_command;
 end;
 $$;

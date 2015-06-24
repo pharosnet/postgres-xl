@@ -1,3 +1,42 @@
+-- A function to create table on specified nodes 
+create or replace function cr_table(tab_schema varchar, nodenums int[], distribution varchar)
+returns void language plpgsql as $$
+declare
+	cr_command	varchar;
+	nodes		varchar[];
+	nodename	varchar;
+	nodenames_query varchar;
+	nodenames 	varchar;
+	node 		int;
+	sep			varchar;
+	tmp_node	int;
+	num_nodes	int;
+begin
+	nodenames_query := 'SELECT node_name FROM pgxc_node WHERE node_type = ''D'''; 
+	cr_command := 'CREATE TABLE ' || tab_schema || ' DISTRIBUTE BY ' || distribution || ' TO NODE (';
+	for nodename in execute nodenames_query loop
+		nodes := array_append(nodes, nodename);
+	end loop;
+	nodenames := '';
+	sep := '';
+	num_nodes := array_length(nodes, 1);
+	foreach node in array nodenums loop
+		tmp_node := node;
+		if (tmp_node < 1 or tmp_node > num_nodes) then
+			tmp_node := tmp_node % num_nodes;
+			if (tmp_node < 1) then
+				tmp_node := num_nodes; 
+			end if;
+		end if;
+		nodenames := nodenames || sep || nodes[tmp_node];
+		sep := ', ';
+	end loop;
+	cr_command := cr_command || nodenames;
+	cr_command := cr_command || ')';
+
+	execute cr_command;
+end;
+$$;
 -- This file contains tests for Fast Query Shipping (FQS) for queries involving
 -- a single table
 
@@ -64,7 +103,7 @@ update tab1_rr set val2 = 1000 where val = 7;
 explain (verbose on, nodes off, costs off) update tab1_rr set val2 = 1000 where val = 7; 
 select * from tab1_rr where val = 7;
 delete from tab1_rr where val = 7; 
-explain verbose delete from tab1_rr where val = 7; 
+explain (verbose on, costs off) delete from tab1_rr where val = 7; 
 select * from tab1_rr where val = 7;
 
 -- Testset 2 for distributed tables (by hash)
@@ -74,7 +113,7 @@ insert into tab1_hash values (2, 4);
 insert into tab1_hash values (5, 3);
 insert into tab1_hash values (7, 8);
 insert into tab1_hash values (9, 2);
-explain verbose insert into tab1_hash values (9, 2);
+explain (verbose on, costs off) insert into tab1_hash values (9, 2);
 -- simple select
 -- should get FQSed
 select val, val2 + 2, case val when val2 then 'val and val2 are same' else 'val and val2 are not same' end from tab1_hash where val2 = 4;
@@ -129,7 +168,7 @@ update tab1_hash set val2 = 1000 where val = 7;
 explain (verbose on, nodes off, costs off) update tab1_hash set val2 = 1000 where val = 7; 
 select * from tab1_hash where val = 7;
 delete from tab1_hash where val = 7; 
-explain verbose delete from tab1_hash where val = 7; 
+explain (verbose on, costs off) delete from tab1_hash where val = 7; 
 select * from tab1_hash where val = 7;
 
 -- Testset 3 for distributed tables (by modulo)
@@ -139,7 +178,7 @@ insert into tab1_modulo values (2, 4);
 insert into tab1_modulo values (5, 3);
 insert into tab1_modulo values (7, 8);
 insert into tab1_modulo values (9, 2);
-explain verbose insert into tab1_modulo values (9, 2);
+explain (verbose on, costs off) insert into tab1_modulo values (9, 2);
 -- simple select
 -- should get FQSed
 select val, val2 + 2, case val when val2 then 'val and val2 are same' else 'val and val2 are not same' end from tab1_modulo where val2 = 4;
@@ -194,7 +233,7 @@ update tab1_modulo set val2 = 1000 where val = 7;
 explain (verbose on, nodes off, costs off) update tab1_modulo set val2 = 1000 where val = 7; 
 select * from tab1_modulo where val = 7;
 delete from tab1_modulo where val = 7; 
-explain verbose delete from tab1_modulo where val = 7; 
+explain (verbose on, costs off) delete from tab1_modulo where val = 7; 
 select * from tab1_modulo where val = 7;
 
 -- Testset 4 for replicated tables, for replicated tables, unless the expression
@@ -230,7 +269,7 @@ update tab1_replicated set val2 = 1000 where val = 7;
 explain (verbose on, nodes off, costs off) update tab1_replicated set val2 = 1000 where val = 7; 
 select * from tab1_replicated where val = 7;
 delete from tab1_replicated where val = 7; 
-explain verbose delete from tab1_replicated where val = 7; 
+explain (verbose on, costs off) delete from tab1_replicated where val = 7; 
 select * from tab1_replicated where val = 7;
 
 drop table tab1_rr;

@@ -157,18 +157,20 @@ select distinct val, val2 from tab1_rr where val2 = 8;
 (1 row)
 
 explain (verbose on, nodes off, costs off) select distinct val, val2 from tab1_rr where val2 = 8;
-                   QUERY PLAN                   
-------------------------------------------------
+                     QUERY PLAN                     
+----------------------------------------------------
  HashAggregate
    Output: val, val2
+   Group Key: tab1_rr.val, tab1_rr.val2
    ->  Remote Subquery Scan on all
          Output: val, val2
          ->  HashAggregate
                Output: val, val2
+               Group Key: tab1_rr.val, tab1_rr.val2
                ->  Seq Scan on public.tab1_rr
                      Output: val, val2
                      Filter: (tab1_rr.val2 = 8)
-(9 rows)
+(11 rows)
 
 -- should not get FQSed because of GROUP clause
 select val, val2 from tab1_rr where val2 = 8 group by val, val2;
@@ -178,18 +180,20 @@ select val, val2 from tab1_rr where val2 = 8 group by val, val2;
 (1 row)
 
 explain (verbose on, nodes off, costs off) select val, val2 from tab1_rr where val2 = 8 group by val, val2;
-                   QUERY PLAN                   
-------------------------------------------------
+                     QUERY PLAN                     
+----------------------------------------------------
  HashAggregate
    Output: val, val2
+   Group Key: tab1_rr.val, tab1_rr.val2
    ->  Remote Subquery Scan on all
          Output: val, val2
          ->  HashAggregate
                Output: val, val2
+               Group Key: tab1_rr.val, tab1_rr.val2
                ->  Seq Scan on public.tab1_rr
                      Output: val, val2
                      Filter: (tab1_rr.val2 = 8)
-(9 rows)
+(11 rows)
 
 -- should not get FQSed because of HAVING clause
 select sum(val) from tab1_rr where val2 = 2 group by val2 having sum(val) > 1;
@@ -203,15 +207,17 @@ explain (verbose on, nodes off, costs off) select sum(val) from tab1_rr where va
 ----------------------------------------------------
  GroupAggregate
    Output: pg_catalog.sum((sum(val))), val2
+   Group Key: tab1_rr.val2
    Filter: (pg_catalog.sum((sum(tab1_rr.val))) > 1)
    ->  Remote Subquery Scan on all
          Output: sum(val), val2
          ->  GroupAggregate
                Output: sum(val), val2
+               Group Key: tab1_rr.val2
                ->  Seq Scan on public.tab1_rr
                      Output: val, val2
                      Filter: (tab1_rr.val2 = 2)
-(10 rows)
+(12 rows)
 
 -- tests for node reduction by application of quals, for roundrobin node
 -- reduction is not applicable. Having query not FQSed because of existence of ORDER BY,
@@ -354,14 +360,16 @@ explain (verbose on, nodes off, costs off) select distinct val2 from tab1_rr whe
 -----------------------------------------------
  HashAggregate
    Output: val2
+   Group Key: tab1_rr.val2
    ->  Remote Subquery Scan on all
          Output: val2
          ->  HashAggregate
                Output: val2
+               Group Key: tab1_rr.val2
                ->  Seq Scan on public.tab1_rr
                      Output: val2
                      Filter: (tab1_rr.val = 7)
-(9 rows)
+(11 rows)
 
 -- DMLs
 update tab1_rr set val2 = 1000 where val = 7; 
@@ -371,7 +379,7 @@ explain (verbose on, nodes off, costs off) update tab1_rr set val2 = 1000 where 
  Remote Subquery Scan on all
    ->  Update on public.tab1_rr
          ->  Seq Scan on public.tab1_rr
-               Output: val, 1000, val, ctid, xc_node_id
+               Output: val, 1000, val, xc_node_id, ctid
                Filter: (tab1_rr.val = 7)
 (5 rows)
 
@@ -383,13 +391,13 @@ select * from tab1_rr where val = 7;
 (2 rows)
 
 delete from tab1_rr where val = 7; 
-explain verbose delete from tab1_rr where val = 7; 
-                                        QUERY PLAN                                        
-------------------------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode_1,datanode_2)  (cost=0.00..36.75 rows=11 width=14)
-   ->  Delete on public.tab1_rr  (cost=0.00..36.75 rows=11 width=14)
-         ->  Seq Scan on public.tab1_rr  (cost=0.00..36.75 rows=11 width=14)
-               Output: val, ctid, xc_node_id
+explain (verbose on, costs off) delete from tab1_rr where val = 7; 
+                     QUERY PLAN                      
+-----------------------------------------------------
+ Remote Subquery Scan on all (datanode_1,datanode_2)
+   ->  Delete on public.tab1_rr
+         ->  Seq Scan on public.tab1_rr
+               Output: val, xc_node_id, ctid
                Filter: (tab1_rr.val = 7)
 (5 rows)
 
@@ -410,15 +418,15 @@ insert into tab1_hash values (2, 4);
 insert into tab1_hash values (5, 3);
 insert into tab1_hash values (7, 8);
 insert into tab1_hash values (9, 2);
-explain verbose insert into tab1_hash values (9, 2);
-                                    QUERY PLAN                                    
-----------------------------------------------------------------------------------
- Remote Subquery Scan on all (d01)  (cost=0.00..0.01 rows=1 width=0)
-   ->  Insert on public.tab1_hash  (cost=0.00..0.01 rows=1 width=0)
-         ->  Remote Subquery Scan on local node  (cost=0.00..0.01 rows=1 width=0)
+explain (verbose on, costs off) insert into tab1_hash values (9, 2);
+                   QUERY PLAN                   
+------------------------------------------------
+ Remote Subquery Scan on all (datanode_1)
+   ->  Insert on public.tab1_hash
+         ->  Remote Subquery Scan on local node
                Output: 9, 2
                Distribute results by H: 9
-               ->  Result  (cost=0.00..0.01 rows=1 width=0)
+               ->  Result
                      Output: 9, 2
 (7 rows)
 
@@ -462,9 +470,29 @@ explain (verbose on, nodes off, costs off) select sum(val), avg(val), count(*) f
 
 -- should not get FQSed because of window functions
 select first_value(val) over (partition by val2 order by val) from tab1_hash;
-ERROR:  Window functions are not supported yet
+ first_value 
+-------------
+           1
+           1
+           5
+           2
+           7
+(5 rows)
+
 explain (verbose on, nodes off, costs off) select first_value(val) over (partition by val2 order by val) from tab1_hash;
-ERROR:  Window functions are not supported yet
+                      QUERY PLAN                       
+-------------------------------------------------------
+ WindowAgg
+   Output: first_value(val) OVER (?), val, val2
+   ->  Remote Subquery Scan on all
+         Output: val, val2
+         ->  Sort
+               Output: val, val2
+               Sort Key: tab1_hash.val2, tab1_hash.val
+               ->  Seq Scan on public.tab1_hash
+                     Output: val, val2
+(9 rows)
+
 -- should not get FQSed because of LIMIT clause
 select * from tab1_hash where val2 = 3 limit 1;
  val | val2 
@@ -493,18 +521,16 @@ select * from tab1_hash where val2 = 4 offset 1;
 (0 rows)
 
 explain (verbose on, nodes off, costs off) select * from tab1_hash where val2 = 4 offset 1;
-                    QUERY PLAN                    
---------------------------------------------------
+                 QUERY PLAN                 
+--------------------------------------------
  Limit
    Output: val, val2
    ->  Remote Subquery Scan on all
          Output: val, val2
-         ->  Limit
+         ->  Seq Scan on public.tab1_hash
                Output: val, val2
-               ->  Seq Scan on public.tab1_hash
-                     Output: val, val2
-                     Filter: (tab1_hash.val2 = 4)
-(9 rows)
+               Filter: (tab1_hash.val2 = 4)
+(7 rows)
 
 -- should not get FQSed because of SORT clause
 select * from tab1_hash order by val;
@@ -537,16 +563,17 @@ select distinct val, val2 from tab1_hash where val2 = 8;
 (1 row)
 
 explain (verbose on, nodes off, costs off) select distinct val, val2 from tab1_hash where val2 = 8;
-                 QUERY PLAN                 
---------------------------------------------
+                    QUERY PLAN                    
+--------------------------------------------------
  Remote Subquery Scan on all
    Output: val, val2
    ->  HashAggregate
          Output: val, val2
+         Group Key: tab1_hash.val, tab1_hash.val2
          ->  Seq Scan on public.tab1_hash
                Output: val, val2
                Filter: (tab1_hash.val2 = 8)
-(7 rows)
+(8 rows)
 
 -- should not get FQSed because of GROUP clause
 select val, val2 from tab1_hash where val2 = 8 group by val, val2;
@@ -556,16 +583,17 @@ select val, val2 from tab1_hash where val2 = 8 group by val, val2;
 (1 row)
 
 explain (verbose on, nodes off, costs off) select val, val2 from tab1_hash where val2 = 8 group by val, val2;
-                 QUERY PLAN                 
---------------------------------------------
+                    QUERY PLAN                    
+--------------------------------------------------
  Remote Subquery Scan on all
    Output: val, val2
    ->  HashAggregate
          Output: val, val2
+         Group Key: tab1_hash.val, tab1_hash.val2
          ->  Seq Scan on public.tab1_hash
                Output: val, val2
                Filter: (tab1_hash.val2 = 8)
-(7 rows)
+(8 rows)
 
 -- should not get FQSed because of HAVING clause
 select sum(val) from tab1_hash where val2 = 2 group by val2 having sum(val) > 1;
@@ -579,15 +607,17 @@ explain (verbose on, nodes off, costs off) select sum(val) from tab1_hash where 
 ------------------------------------------------------
  GroupAggregate
    Output: pg_catalog.sum((sum(val))), val2
+   Group Key: tab1_hash.val2
    Filter: (pg_catalog.sum((sum(tab1_hash.val))) > 1)
    ->  Remote Subquery Scan on all
          Output: sum(val), val2
          ->  GroupAggregate
                Output: sum(val), val2
+               Group Key: tab1_hash.val2
                ->  Seq Scan on public.tab1_hash
                      Output: val, val2
                      Filter: (tab1_hash.val2 = 2)
-(10 rows)
+(12 rows)
 
 -- tests for node reduction by application of quals. Having query FQSed because of
 -- existence of ORDER BY, implies that nodes got reduced.
@@ -729,14 +759,16 @@ explain (verbose on, nodes off, costs off, num_nodes on) select distinct val2 fr
 -------------------------------------------------
  HashAggregate
    Output: val2
+   Group Key: tab1_hash.val2
    ->  Remote Subquery Scan on all
          Output: val2
          ->  HashAggregate
                Output: val2
+               Group Key: tab1_hash.val2
                ->  Seq Scan on public.tab1_hash
                      Output: val2
                      Filter: (tab1_hash.val = 7)
-(9 rows)
+(11 rows)
 
 -- DMLs
 update tab1_hash set val2 = 1000 where val = 7; 
@@ -746,7 +778,7 @@ explain (verbose on, nodes off, costs off) update tab1_hash set val2 = 1000 wher
  Remote Subquery Scan on all
    ->  Update on public.tab1_hash
          ->  Seq Scan on public.tab1_hash
-               Output: val, 1000, val, ctid, xc_node_id
+               Output: val, 1000, val, xc_node_id, ctid
                Filter: (tab1_hash.val = 7)
 (5 rows)
 
@@ -758,13 +790,13 @@ select * from tab1_hash where val = 7;
 (2 rows)
 
 delete from tab1_hash where val = 7; 
-explain verbose delete from tab1_hash where val = 7; 
-                                  QUERY PLAN                                   
--------------------------------------------------------------------------------
- Remote Subquery Scan on all (d01)  (cost=0.00..36.75 rows=11 width=14)
-   ->  Delete on public.tab1_hash  (cost=0.00..36.75 rows=11 width=14)
-         ->  Seq Scan on public.tab1_hash  (cost=0.00..36.75 rows=11 width=14)
-               Output: val, ctid, xc_node_id, val
+explain (verbose on, costs off) delete from tab1_hash where val = 7; 
+                    QUERY PLAN                    
+--------------------------------------------------
+ Remote Subquery Scan on all (datanode_2)
+   ->  Delete on public.tab1_hash
+         ->  Seq Scan on public.tab1_hash
+               Output: val, xc_node_id, ctid, val
                Filter: (tab1_hash.val = 7)
 (5 rows)
 
@@ -785,15 +817,15 @@ insert into tab1_modulo values (2, 4);
 insert into tab1_modulo values (5, 3);
 insert into tab1_modulo values (7, 8);
 insert into tab1_modulo values (9, 2);
-explain verbose insert into tab1_modulo values (9, 2);
-                                    QUERY PLAN                                    
-----------------------------------------------------------------------------------
- Remote Subquery Scan on all (d01)  (cost=0.00..0.01 rows=1 width=0)
-   ->  Insert on public.tab1_modulo  (cost=0.00..0.01 rows=1 width=0)
-         ->  Remote Subquery Scan on local node  (cost=0.00..0.01 rows=1 width=0)
+explain (verbose on, costs off) insert into tab1_modulo values (9, 2);
+                   QUERY PLAN                   
+------------------------------------------------
+ Remote Subquery Scan on all (datanode_2)
+   ->  Insert on public.tab1_modulo
+         ->  Remote Subquery Scan on local node
                Output: 9, 2
                Distribute results by M: 9
-               ->  Result  (cost=0.00..0.01 rows=1 width=0)
+               ->  Result
                      Output: 9, 2
 (7 rows)
 
@@ -837,9 +869,29 @@ explain (verbose on, nodes off, costs off) select sum(val), avg(val), count(*) f
 
 -- should not get FQSed because of window functions
 select first_value(val) over (partition by val2 order by val) from tab1_modulo;
-ERROR:  Window functions are not supported yet
+ first_value 
+-------------
+           1
+           1
+           5
+           2
+           7
+(5 rows)
+
 explain (verbose on, nodes off, costs off) select first_value(val) over (partition by val2 order by val) from tab1_modulo;
-ERROR:  Window functions are not supported yet
+                        QUERY PLAN                         
+-----------------------------------------------------------
+ WindowAgg
+   Output: first_value(val) OVER (?), val, val2
+   ->  Remote Subquery Scan on all
+         Output: val, val2
+         ->  Sort
+               Output: val, val2
+               Sort Key: tab1_modulo.val2, tab1_modulo.val
+               ->  Seq Scan on public.tab1_modulo
+                     Output: val, val2
+(9 rows)
+
 -- should not get FQSed because of LIMIT clause
 select * from tab1_modulo where val2 = 3 limit 1;
  val | val2 
@@ -868,18 +920,16 @@ select * from tab1_modulo where val2 = 4 offset 1;
 (0 rows)
 
 explain (verbose on, nodes off, costs off) select * from tab1_modulo where val2 = 4 offset 1;
-                     QUERY PLAN                     
-----------------------------------------------------
+                  QUERY PLAN                  
+----------------------------------------------
  Limit
    Output: val, val2
    ->  Remote Subquery Scan on all
          Output: val, val2
-         ->  Limit
+         ->  Seq Scan on public.tab1_modulo
                Output: val, val2
-               ->  Seq Scan on public.tab1_modulo
-                     Output: val, val2
-                     Filter: (tab1_modulo.val2 = 4)
-(9 rows)
+               Filter: (tab1_modulo.val2 = 4)
+(7 rows)
 
 -- should not get FQSed because of SORT clause
 select * from tab1_modulo order by val;
@@ -912,16 +962,17 @@ select distinct val, val2 from tab1_modulo where val2 = 8;
 (1 row)
 
 explain (verbose on, nodes off, costs off) select distinct val, val2 from tab1_modulo where val2 = 8;
-                  QUERY PLAN                  
-----------------------------------------------
+                      QUERY PLAN                      
+------------------------------------------------------
  Remote Subquery Scan on all
    Output: val, val2
    ->  HashAggregate
          Output: val, val2
+         Group Key: tab1_modulo.val, tab1_modulo.val2
          ->  Seq Scan on public.tab1_modulo
                Output: val, val2
                Filter: (tab1_modulo.val2 = 8)
-(7 rows)
+(8 rows)
 
 -- should not get FQSed because of GROUP clause
 select val, val2 from tab1_modulo where val2 = 8 group by val, val2;
@@ -931,16 +982,17 @@ select val, val2 from tab1_modulo where val2 = 8 group by val, val2;
 (1 row)
 
 explain (verbose on, nodes off, costs off) select val, val2 from tab1_modulo where val2 = 8 group by val, val2;
-                  QUERY PLAN                  
-----------------------------------------------
+                      QUERY PLAN                      
+------------------------------------------------------
  Remote Subquery Scan on all
    Output: val, val2
    ->  HashAggregate
          Output: val, val2
+         Group Key: tab1_modulo.val, tab1_modulo.val2
          ->  Seq Scan on public.tab1_modulo
                Output: val, val2
                Filter: (tab1_modulo.val2 = 8)
-(7 rows)
+(8 rows)
 
 -- should not get FQSed because of HAVING clause
 select sum(val) from tab1_modulo where val2 = 2 group by val2 having sum(val) > 1;
@@ -954,15 +1006,17 @@ explain (verbose on, nodes off, costs off) select sum(val) from tab1_modulo wher
 --------------------------------------------------------
  GroupAggregate
    Output: pg_catalog.sum((sum(val))), val2
+   Group Key: tab1_modulo.val2
    Filter: (pg_catalog.sum((sum(tab1_modulo.val))) > 1)
    ->  Remote Subquery Scan on all
          Output: sum(val), val2
          ->  GroupAggregate
                Output: sum(val), val2
+               Group Key: tab1_modulo.val2
                ->  Seq Scan on public.tab1_modulo
                      Output: val, val2
                      Filter: (tab1_modulo.val2 = 2)
-(10 rows)
+(12 rows)
 
 -- tests for node reduction by application of quals. Having query FQSed because of
 -- existence of ORDER BY, implies that nodes got reduced.
@@ -1104,14 +1158,16 @@ explain (verbose on, nodes off, costs off, num_nodes on) select distinct val2 fr
 ---------------------------------------------------
  HashAggregate
    Output: val2
+   Group Key: tab1_modulo.val2
    ->  Remote Subquery Scan on all
          Output: val2
          ->  HashAggregate
                Output: val2
+               Group Key: tab1_modulo.val2
                ->  Seq Scan on public.tab1_modulo
                      Output: val2
                      Filter: (tab1_modulo.val = 7)
-(9 rows)
+(11 rows)
 
 -- DMLs
 update tab1_modulo set val2 = 1000 where val = 7; 
@@ -1121,7 +1177,7 @@ explain (verbose on, nodes off, costs off) update tab1_modulo set val2 = 1000 wh
  Remote Subquery Scan on all
    ->  Update on public.tab1_modulo
          ->  Seq Scan on public.tab1_modulo
-               Output: val, 1000, val, ctid, xc_node_id
+               Output: val, 1000, val, xc_node_id, ctid
                Filter: (tab1_modulo.val = 7)
 (5 rows)
 
@@ -1133,13 +1189,13 @@ select * from tab1_modulo where val = 7;
 (2 rows)
 
 delete from tab1_modulo where val = 7; 
-explain verbose delete from tab1_modulo where val = 7; 
-                                   QUERY PLAN                                    
----------------------------------------------------------------------------------
- Remote Subquery Scan on all (d01)  (cost=0.00..36.75 rows=11 width=14)
-   ->  Delete on public.tab1_modulo  (cost=0.00..36.75 rows=11 width=14)
-         ->  Seq Scan on public.tab1_modulo  (cost=0.00..36.75 rows=11 width=14)
-               Output: val, ctid, xc_node_id, val
+explain (verbose on, costs off) delete from tab1_modulo where val = 7; 
+                    QUERY PLAN                    
+--------------------------------------------------
+ Remote Subquery Scan on all (datanode_2)
+   ->  Delete on public.tab1_modulo
+         ->  Seq Scan on public.tab1_modulo
+               Output: val, xc_node_id, ctid, val
                Filter: (tab1_modulo.val = 7)
 (5 rows)
 
@@ -1162,11 +1218,11 @@ insert into tab1_replicated values (5, 3);
 insert into tab1_replicated values (7, 8);
 insert into tab1_replicated values (9, 2);
 explain (verbose on, nodes off, costs off) insert into tab1_replicated values (9, 2);
-                   QUERY PLAN                   
-------------------------------------------------
- Remote Subquery Scan on all
+               QUERY PLAN                
+-----------------------------------------
+ Remote Subquery Scan on any
    ->  Insert on public.tab1_replicated
-         ->  Remote Subquery Scan on local node
+         ->  Remote Subquery Scan on all
                Output: 9, 2
                Distribute results by R
                ->  Result
@@ -1211,9 +1267,29 @@ explain (num_nodes on, verbose on, nodes off, costs off) select sum(val), avg(va
 (6 rows)
 
 select first_value(val) over (partition by val2 order by val) from tab1_replicated;
-ERROR:  Window functions are not supported yet
+ first_value 
+-------------
+           1
+           1
+           5
+           2
+           7
+(5 rows)
+
 explain (num_nodes on, verbose on, nodes off, costs off) select first_value(val) over (partition by val2 order by val) from tab1_replicated;
-ERROR:  Window functions are not supported yet
+                         QUERY PLAN                          
+-------------------------------------------------------------
+ WindowAgg
+   Output: first_value(val) OVER (?), val, val2
+   ->  Sort
+         Output: val, val2
+         Sort Key: tab1_replicated.val2, tab1_replicated.val
+         ->  Remote Subquery Scan on all
+               Output: val, val2
+               ->  Seq Scan on public.tab1_replicated
+                     Output: val, val2
+(9 rows)
+
 select * from tab1_replicated where val2 = 2 limit 2;
  val | val2 
 -----+------
@@ -1241,18 +1317,16 @@ select * from tab1_replicated where val2 = 4 offset 1;
 (0 rows)
 
 explain (num_nodes on, verbose on, nodes off, costs off) select * from tab1_replicated where val2 = 4 offset 1;
-                       QUERY PLAN                       
---------------------------------------------------------
+                    QUERY PLAN                    
+--------------------------------------------------
  Limit
    Output: val, val2
    ->  Remote Subquery Scan on all
          Output: val, val2
-         ->  Limit
+         ->  Seq Scan on public.tab1_replicated
                Output: val, val2
-               ->  Seq Scan on public.tab1_replicated
-                     Output: val, val2
-                     Filter: (tab1_replicated.val2 = 4)
-(9 rows)
+               Filter: (tab1_replicated.val2 = 4)
+(7 rows)
 
 select * from tab1_replicated order by val;
  val | val2 
@@ -1287,15 +1361,16 @@ select distinct val, val2 from tab1_replicated;
 (5 rows)
 
 explain (num_nodes on, verbose on, nodes off, costs off) select distinct val, val2 from tab1_replicated;
-                   QUERY PLAN                   
-------------------------------------------------
+                          QUERY PLAN                          
+--------------------------------------------------------------
  Remote Subquery Scan on all
    Output: val, val2
    ->  HashAggregate
          Output: val, val2
+         Group Key: tab1_replicated.val, tab1_replicated.val2
          ->  Seq Scan on public.tab1_replicated
                Output: val, val2
-(6 rows)
+(7 rows)
 
 select val, val2 from tab1_replicated group by val, val2;
  val | val2 
@@ -1308,15 +1383,16 @@ select val, val2 from tab1_replicated group by val, val2;
 (5 rows)
 
 explain (num_nodes on, verbose on, nodes off, costs off) select val, val2 from tab1_replicated group by val, val2;
-                   QUERY PLAN                   
-------------------------------------------------
+                          QUERY PLAN                          
+--------------------------------------------------------------
  Remote Subquery Scan on all
    Output: val, val2
    ->  HashAggregate
          Output: val, val2
+         Group Key: tab1_replicated.val, tab1_replicated.val2
          ->  Seq Scan on public.tab1_replicated
                Output: val, val2
-(6 rows)
+(7 rows)
 
 select sum(val) from tab1_replicated group by val2 having sum(val) > 1;
  sum 
@@ -1334,17 +1410,18 @@ explain (num_nodes on, verbose on, nodes off, costs off) select sum(val) from ta
    Output: sum(val), val2
    ->  HashAggregate
          Output: sum(val), val2
+         Group Key: tab1_replicated.val2
          Filter: (sum(tab1_replicated.val) > 1)
          ->  Seq Scan on public.tab1_replicated
                Output: val, val2
-(7 rows)
+(8 rows)
 
 -- DMLs
 update tab1_replicated set val2 = 1000 where val = 7; 
 explain (verbose on, nodes off, costs off) update tab1_replicated set val2 = 1000 where val = 7; 
                    QUERY PLAN                    
 -------------------------------------------------
- Remote Subquery Scan on all
+ Remote Subquery Scan on any
    ->  Update on public.tab1_replicated
          ->  Seq Scan on public.tab1_replicated
                Output: val, 1000, val, ctid
@@ -1358,12 +1435,12 @@ select * from tab1_replicated where val = 7;
 (1 row)
 
 delete from tab1_replicated where val = 7; 
-explain verbose delete from tab1_replicated where val = 7; 
-                                     QUERY PLAN                                      
--------------------------------------------------------------------------------------
- Remote Subquery Scan on all (d01)  (cost=0.00..36.75 rows=11 width=10)
-   ->  Delete on public.tab1_replicated  (cost=0.00..36.75 rows=11 width=10)
-         ->  Seq Scan on public.tab1_replicated  (cost=0.00..36.75 rows=11 width=10)
+explain (verbose on, costs off) delete from tab1_replicated where val = 7; 
+                     QUERY PLAN                      
+-----------------------------------------------------
+ Remote Subquery Scan on any (datanode_1,datanode_2)
+   ->  Delete on public.tab1_replicated
+         ->  Seq Scan on public.tab1_replicated
                Output: val, ctid
                Filter: (tab1_replicated.val = 7)
 (5 rows)
