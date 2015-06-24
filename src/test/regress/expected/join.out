@@ -2683,14 +2683,12 @@ create temp table nt2 (
   id int primary key,
   nt1_id int,
   b1 boolean,
-  b2 boolean,
-  foreign key (nt1_id) references nt1(id)
+  b2 boolean
 );
 create temp table nt3 (
   id int primary key,
   nt2_id int,
-  c1 boolean,
-  foreign key (nt2_id) references nt2(id)
+  c1 boolean
 );
 insert into nt1 values (1,true,true);
 insert into nt1 values (2,true,false);
@@ -2701,7 +2699,7 @@ insert into nt2 values (3,3,false,false);
 insert into nt3 values (1,1,true);
 insert into nt3 values (2,2,false);
 insert into nt3 values (3,3,true);
-explain (costs off)
+explain(num_nodes off, nodes off, costs off) 
 select nt3.id
 from nt3 as nt3
   left join
@@ -2713,92 +2711,23 @@ from nt3 as nt3
     ) as ss2
     on ss2.id = nt3.nt2_id
 where nt3.id = 1 and ss2.b3;
-                  QUERY PLAN                   
------------------------------------------------
+                        QUERY PLAN                         
+-----------------------------------------------------------
  Nested Loop
    ->  Nested Loop
-         ->  Index Scan using nt3_pkey on nt3
-               Index Cond: (id = 1)
-         ->  Index Scan using nt2_pkey on nt2
-               Index Cond: (id = nt3.nt2_id)
-   ->  Index Only Scan using nt1_pkey on nt1
-         Index Cond: (id = nt2.nt1_id)
-         Filter: (nt2.b1 AND (id IS NOT NULL))
-(9 rows)
-
-select nt3.id
-from nt3 as nt3
-  left join
-    (select nt2.*, (nt2.b1 and ss1.a3) AS b3
-     from nt2 as nt2
-       left join
-         (select nt1.*, (nt1.id is not null) as a3 from nt1) as ss1
-         on ss1.id = nt2.nt1_id
-    ) as ss2
-    on ss2.id = nt3.nt2_id
-where nt3.id = 1 and ss2.b3;
- id 
-----
-  1
-(1 row)
-
---
--- test case where a PlaceHolderVar is propagated into a subquery
---
-create temp table nt1 (
-  id int primary key,
-  a1 boolean,
-  a2 boolean
-);
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "nt1_pkey" for table "nt1"
-create temp table nt2 (
-  id int primary key,
-  nt1_id int,
-  b1 boolean,
-  b2 boolean,
-  foreign key (nt1_id) references nt1(id)
-);
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "nt2_pkey" for table "nt2"
-create temp table nt3 (
-  id int primary key,
-  nt2_id int,
-  c1 boolean,
-  foreign key (nt2_id) references nt2(id)
-);
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "nt3_pkey" for table "nt3"
-insert into nt1 values (1,true,true);
-insert into nt1 values (2,true,false);
-insert into nt1 values (3,false,false);
-insert into nt2 values (1,1,true,true);
-insert into nt2 values (2,2,true,false);
-insert into nt2 values (3,3,false,false);
-insert into nt3 values (1,1,true);
-insert into nt3 values (2,2,false);
-insert into nt3 values (3,3,true);
-explain (costs off)
-select nt3.id
-from nt3 as nt3
-  left join
-    (select nt2.*, (nt2.b1 and ss1.a3) AS b3
-     from nt2 as nt2
-       left join
-         (select nt1.*, (nt1.id is not null) as a3 from nt1) as ss1
-         on ss1.id = nt2.nt1_id
-    ) as ss2
-    on ss2.id = nt3.nt2_id
-where nt3.id = 1 and ss2.b3;
-                  QUERY PLAN                   
------------------------------------------------
- Nested Loop
-   ->  Nested Loop
-         ->  Index Scan using nt3_pkey on nt3
-               Index Cond: (id = 1)
-         ->  Index Scan using nt2_pkey on nt2
-               Index Cond: (id = nt3.nt2_id)
-   ->  Index Only Scan using nt1_pkey on nt1
-         Index Cond: (id = nt2.nt1_id)
-         Filter: (nt2.b1 AND (id IS NOT NULL))
-(9 rows)
+         ->  Remote Subquery Scan on all
+               ->  Index Scan using nt3_pkey on nt3
+                     Index Cond: (id = 1)
+         ->  Materialize
+               ->  Remote Subquery Scan on all
+                     ->  Index Scan using nt2_pkey on nt2
+                           Index Cond: (id = nt3.nt2_id)
+   ->  Materialize
+         ->  Remote Subquery Scan on all
+               ->  Index Only Scan using nt1_pkey on nt1
+                     Index Cond: (id = nt2.nt1_id)
+                     Filter: (nt2.b1 AND (id IS NOT NULL))
+(14 rows)
 
 select nt3.id
 from nt3 as nt3
@@ -3208,7 +3137,7 @@ select b.unique1 from
         
 (5 rows)
 
-explain (costs off)
+explain (num_nodes off, nodes off, costs off)
 select * from
 (
   select unique1, q1, coalesce(unique1, -1) + q1 as fault
@@ -3221,10 +3150,10 @@ order by fault;
  Hash Right Join
    Hash Cond: (tenk1.unique2 = int8_tbl.q2)
    Filter: ((COALESCE(tenk1.unique1, '-1'::integer) + int8_tbl.q1) = 122)
-   ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+   ->  Remote Subquery Scan on all
          ->  Seq Scan on tenk1
    ->  Hash
-         ->  Remote Subquery Scan on all (datanode_1)
+         ->  Remote Subquery Scan on all
                ->  Seq Scan on int8_tbl
 (8 rows)
 
@@ -3243,7 +3172,7 @@ order by fault;
 --
 -- test handling of potential equivalence clauses above outer joins
 --
-explain (costs off)
+explain (num_nodes off, nodes off, costs off)
 select q1, unique2, thousand, hundred
   from int8_tbl a left join tenk1 b on q1 = unique2
   where coalesce(thousand,123) = q1 and q1 = coalesce(hundred,123);
@@ -3252,10 +3181,10 @@ select q1, unique2, thousand, hundred
  Hash Right Join
    Hash Cond: (b.unique2 = a.q1)
    Filter: ((COALESCE(b.thousand, 123) = a.q1) AND (a.q1 = COALESCE(b.hundred, 123)))
-   ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+   ->  Remote Subquery Scan on all
          ->  Seq Scan on tenk1 b
    ->  Hash
-         ->  Remote Subquery Scan on all (datanode_1)
+         ->  Remote Subquery Scan on all
                ->  Seq Scan on int8_tbl a
 (8 rows)
 
@@ -3266,21 +3195,21 @@ select q1, unique2, thousand, hundred
 ----+---------+----------+---------
 (0 rows)
 
-explain (costs off)
+explain (num_nodes off, nodes off, costs off)
 select f1, unique2, case when unique2 is null then f1 else 0 end
   from int4_tbl a left join tenk1 b on f1 = unique2
   where (case when unique2 is null then f1 else 0 end) = 0;
                                 QUERY PLAN                                
 --------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode_1,datanode_2)
+ Remote Subquery Scan on all
    ->  Hash Right Join
          Hash Cond: (b.unique2 = a.f1)
          Filter: (CASE WHEN (b.unique2 IS NULL) THEN a.f1 ELSE 0 END = 0)
-         ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+         ->  Remote Subquery Scan on all
                Distribute results by H: unique2
                ->  Seq Scan on tenk1 b
          ->  Hash
-               ->  Remote Subquery Scan on all (datanode_1)
+               ->  Remote Subquery Scan on all
                      Distribute results by H: f1
                      ->  Seq Scan on int4_tbl a
 (11 rows)
@@ -3371,7 +3300,7 @@ using (join_key);
                            Output: i2.unique2
                ->  Hash
                      Output: i1.f1
-                     ->  Remote Subquery Scan on all (datanode_2)
+                     ->  Remote Subquery Scan on all (datanode_1)
                            Output: i1.f1
                            Distribute results by H: f1
                            ->  Seq Scan on public.int4_tbl i1
@@ -3403,19 +3332,19 @@ using (join_key);
 --
 -- test ability to push constants through outer join clauses
 --
-explain (costs off)
+explain (num_nodes off, nodes off, costs off)
   select * from int4_tbl a left join tenk1 b on f1 = unique2 where f1 = 0;
-                              QUERY PLAN                               
------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode_1,datanode_2)
+                            QUERY PLAN                            
+------------------------------------------------------------------
+ Remote Subquery Scan on all
    ->  Nested Loop Left Join
          Join Filter: (a.f1 = b.unique2)
-         ->  Remote Subquery Scan on all (datanode_1)
+         ->  Remote Subquery Scan on all
                Distribute results by H: f1
                ->  Seq Scan on int4_tbl a
                      Filter: (f1 = 0)
          ->  Materialize
-               ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+               ->  Remote Subquery Scan on all
                      Distribute results by H: unique2
                      ->  Bitmap Heap Scan on tenk1 b
                            Recheck Cond: (unique2 = 0)
@@ -3423,21 +3352,21 @@ explain (costs off)
                                  Index Cond: (unique2 = 0)
 (14 rows)
 
-explain (costs off)
+explain (num_nodes off, nodes off, costs off)
   select * from tenk1 a full join tenk1 b using(unique2) where unique2 = 42;
-                              QUERY PLAN                               
------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode_1,datanode_2)
+                            QUERY PLAN                            
+------------------------------------------------------------------
+ Remote Subquery Scan on all
    ->  Hash Full Join
          Hash Cond: (a.unique2 = b.unique2)
-         ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+         ->  Remote Subquery Scan on all
                Distribute results by H: unique2
                ->  Bitmap Heap Scan on tenk1 a
                      Recheck Cond: (unique2 = 42)
                      ->  Bitmap Index Scan on tenk1_unique2
                            Index Cond: (unique2 = 42)
          ->  Hash
-               ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+               ->  Remote Subquery Scan on all
                      Distribute results by H: unique2
                      ->  Bitmap Heap Scan on tenk1 b
                            Recheck Cond: (unique2 = 42)
@@ -3972,16 +3901,16 @@ explain (costs off)
 (5 rows)
 
 -- lateral with UNION ALL subselect
-explain (costs off)
+explain (num_nodes off, nodes off, costs off)
   select * from generate_series(100,200) g,
     lateral (select * from int8_tbl a where g = q1 union all
              select * from int8_tbl b where g = q2) ss;
-                      QUERY PLAN                      
-------------------------------------------------------
+                   QUERY PLAN                   
+------------------------------------------------
  Nested Loop
    ->  Function Scan on generate_series g
    ->  Materialize
-         ->  Remote Subquery Scan on all (datanode_1)
+         ->  Remote Subquery Scan on all
                ->  Append
                      ->  Seq Scan on int8_tbl a
                            Filter: (g.g = q1)
@@ -4000,17 +3929,17 @@ select * from generate_series(100,200) g,
 (3 rows)
 
 -- lateral with VALUES
-explain (costs off)
+explain (num_nodes off, nodes off, costs off)
   select count(*) from tenk1 a,
     tenk1 b join lateral (values(a.unique1)) ss(x) on b.unique2 = ss.x;
-                                 QUERY PLAN                                  
------------------------------------------------------------------------------
+                         QUERY PLAN                         
+------------------------------------------------------------
  Aggregate
-   ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+   ->  Remote Subquery Scan on all
          ->  Aggregate
                ->  Merge Join
                      Merge Cond: (b.unique2 = a.unique1)
-                     ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+                     ->  Remote Subquery Scan on all
                            Distribute results by H: unique2
                            ->  Sort
                                  Sort Key: b.unique2
@@ -4028,22 +3957,22 @@ select count(*) from tenk1 a,
 (1 row)
 
 -- lateral with VALUES, no flattening possible
-explain (costs off)
+explain (num_nodes off, nodes off, costs off)
   select count(*) from tenk1 a,
     tenk1 b join lateral (values(a.unique1),(-1)) ss(x) on b.unique2 = ss.x;
-                                 QUERY PLAN                                  
------------------------------------------------------------------------------
+                      QUERY PLAN                      
+------------------------------------------------------
  Aggregate
    ->  Merge Join
          Merge Cond: (b.unique2 = "*VALUES*".column1)
-         ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+         ->  Remote Subquery Scan on all
                ->  Sort
                      Sort Key: b.unique2
                      ->  Seq Scan on tenk1 b
          ->  Sort
                Sort Key: "*VALUES*".column1
                ->  Nested Loop
-                     ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+                     ->  Remote Subquery Scan on all
                            ->  Seq Scan on tenk1 a
                      ->  Values Scan on "*VALUES*"
 (13 rows)
@@ -4056,13 +3985,13 @@ select count(*) from tenk1 a,
 (1 row)
 
 -- lateral injecting a strange outer join condition
-explain (costs off)
+explain (num_nodes off, nodes off, costs off)
   select * from int8_tbl a,
     int8_tbl x left join lateral (select a.q1 from int4_tbl y) ss(z)
       on x.q2 = ss.z;
                    QUERY PLAN                   
 ------------------------------------------------
- Remote Subquery Scan on all (datanode_1)
+ Remote Subquery Scan on all
    ->  Nested Loop
          ->  Seq Scan on int8_tbl a
          ->  Hash Right Join
@@ -4360,13 +4289,13 @@ select v.* from
  -4567890123456789 |                  
 (20 rows)
 
-explain (verbose, costs off)
+explain (verbose, num_nodes off, nodes off, costs off)
 select * from
   int8_tbl a left join
   lateral (select *, a.q2 as x from int8_tbl b) ss on a.q2 = ss.q1;
                    QUERY PLAN                   
 ------------------------------------------------
- Remote Subquery Scan on all (datanode_1)
+ Remote Subquery Scan on all
    Output: a.q1, a.q2, b.q1, b.q2, a.q2
    ->  Nested Loop Left Join
          Output: a.q1, a.q2, b.q1, b.q2, (a.q2)
@@ -4400,7 +4329,7 @@ select * from
   lateral (select *, coalesce(a.q2, 42) as x from int8_tbl b) ss on a.q2 = ss.q1;
                                QUERY PLAN                               
 ------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode_1)
+ Remote Subquery Scan on all (datanode_2)
    Output: a.q1, a.q2, b.q1, b.q2, COALESCE(a.q2, '42'::bigint)
    ->  Nested Loop Left Join
          Output: a.q1, a.q2, b.q1, b.q2, (COALESCE(a.q2, '42'::bigint))
@@ -4430,21 +4359,21 @@ select * from
 
 -- lateral can result in join conditions appearing below their
 -- real semantic level
-explain (verbose, costs off)
+explain (num_nodes off, nodes off, verbose, costs off)
 select * from int4_tbl i left join
   lateral (select * from int2_tbl j where i.f1 = j.f1) k on true;
-                        QUERY PLAN                         
------------------------------------------------------------
+                   QUERY PLAN                    
+-------------------------------------------------
  Hash Right Join
    Output: i.f1, j.f1
    Hash Cond: (j.f1 = i.f1)
-   ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+   ->  Remote Subquery Scan on all
          Output: j.f1
          ->  Seq Scan on public.int2_tbl j
                Output: j.f1
    ->  Hash
          Output: i.f1
-         ->  Remote Subquery Scan on all (datanode_1)
+         ->  Remote Subquery Scan on all
                Output: i.f1
                ->  Seq Scan on public.int4_tbl i
                      Output: i.f1
@@ -4461,20 +4390,20 @@ select * from int4_tbl i left join
       123456 |   
 (5 rows)
 
-explain (verbose, costs off)
+explain (num_nodes off, nodes off, verbose, costs off)
 select * from int4_tbl i left join
   lateral (select coalesce(i) from int2_tbl j where i.f1 = j.f1) k on true;
-                           QUERY PLAN                            
------------------------------------------------------------------
+                   QUERY PLAN                    
+-------------------------------------------------
  Nested Loop Left Join
    Output: i.f1, (COALESCE(i.*))
-   ->  Remote Subquery Scan on all (datanode_2)
+   ->  Remote Subquery Scan on all
          Output: i.f1, i.*
          ->  Seq Scan on public.int4_tbl i
                Output: i.f1, i.*
    ->  Materialize
          Output: j.f1, (COALESCE(i.*))
-         ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+         ->  Remote Subquery Scan on all
                Output: j.f1, COALESCE(i.*)
                ->  Seq Scan on public.int2_tbl j
                      Output: j.f1, COALESCE(i.*)
@@ -4492,14 +4421,14 @@ select * from int4_tbl i left join
  -2147483647 | 
 (5 rows)
 
-explain (verbose, costs off)
+explain (num_nodes off, nodes off, verbose, costs off)
 select * from int4_tbl a,
   lateral (
     select * from int4_tbl b left join int8_tbl c on (b.f1 = q1 and a.f1 = q2)
   ) ss;
                       QUERY PLAN                       
 -------------------------------------------------------
- Remote Subquery Scan on all (datanode_1)
+ Remote Subquery Scan on all
    Output: a.f1, f1, q1, q2
    ->  Nested Loop
          Output: a.f1, b.f1, c.q1, c.q2
@@ -4551,7 +4480,7 @@ select * from int4_tbl a,
 (25 rows)
 
 -- lateral reference in a PlaceHolderVar evaluated at join level
-explain (verbose, costs off)
+explain (num_nodes off, nodes off, verbose, costs off)
 select * from
   int8_tbl a left join lateral
   (select b.q1 as bq1, c.q1 as cq1, least(a.q1,b.q1,c.q1) from
@@ -4559,7 +4488,7 @@ select * from
   on a.q2 = ss.bq1;
                             QUERY PLAN                             
 -------------------------------------------------------------------
- Remote Subquery Scan on all (datanode_2)
+ Remote Subquery Scan on all
    Output: a.q1, a.q2, b.q1, c.q1, LEAST(a.q1, b.q1, c.q1)
    ->  Nested Loop Left Join
          Output: a.q1, a.q2, b.q1, c.q1, (LEAST(a.q1, b.q1, c.q1))
@@ -4628,7 +4557,7 @@ select * from
 (42 rows)
 
 -- case requiring nested PlaceHolderVars
-explain (verbose, costs off)
+explain (num_nodes off, nodes off, verbose, costs off)
 select * from
   int8_tbl c left join (
     int8_tbl a left join (select q1, coalesce(q2,42) as x from int8_tbl b) ss1
@@ -4641,7 +4570,7 @@ select * from
 --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Nested Loop
    Output: c.q1, c.q2, a.q1, a.q2, b.q1, (COALESCE(b.q2, '42'::bigint)), d.q1, (COALESCE(COALESCE(b.q2, '42'::bigint), d.q2)), ((COALESCE(COALESCE(b.q2, '42'::bigint), d.q2)))
-   ->  Remote Subquery Scan on all (datanode_1)
+   ->  Remote Subquery Scan on all
          Output: c.q1, c.q2, a.q1, a.q2, b.q1, d.q1, COALESCE(b.q2, '42'::bigint), COALESCE(COALESCE(b.q2, '42'::bigint), d.q2)
          ->  Hash Right Join
                Output: c.q1, c.q2, a.q1, a.q2, b.q1, d.q1, (COALESCE(b.q2, '42'::bigint)), (COALESCE((COALESCE(b.q2, '42'::bigint)), d.q2))
@@ -4668,7 +4597,7 @@ select * from
 (26 rows)
 
 -- case that breaks the old ph_may_need optimization
-explain (verbose, costs off)
+explain (num_nodes off, nodes off, verbose, costs off)
 select c.*,a.*,ss1.q1,ss2.q1,ss3.* from
   int8_tbl c left join (
     int8_tbl a left join
@@ -4681,7 +4610,7 @@ select c.*,a.*,ss1.q1,ss2.q1,ss3.* from
   lateral (select * from int4_tbl i where ss2.y > f1) ss3;
                                                   QUERY PLAN                                                   
 ---------------------------------------------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode_1)
+ Remote Subquery Scan on all
    Output: c.q1, c.q2, a.q1, a.q2, b.q1, d.q1, i.f1
    ->  Nested Loop
          Output: c.q1, c.q2, a.q1, a.q2, b.q1, d.q1, i.f1
@@ -4720,7 +4649,7 @@ select c.*,a.*,ss1.q1,ss2.q1,ss3.* from
 (36 rows)
 
 -- check processing of postponed quals (bug #9041)
-explain (verbose, costs off)
+explain (num_nodes off, nodes off, verbose, costs off)
 select * from
   (select 1 as x offset 0) x cross join (select 2 as y offset 0) y
   left join lateral (

@@ -736,14 +736,12 @@ create temp table nt2 (
   id int primary key,
   nt1_id int,
   b1 boolean,
-  b2 boolean,
-  foreign key (nt1_id) references nt1(id)
+  b2 boolean
 );
 create temp table nt3 (
   id int primary key,
   nt2_id int,
-  c1 boolean,
-  foreign key (nt2_id) references nt2(id)
+  c1 boolean
 );
 
 insert into nt1 values (1,true,true);
@@ -756,65 +754,7 @@ insert into nt3 values (1,1,true);
 insert into nt3 values (2,2,false);
 insert into nt3 values (3,3,true);
 
-explain (costs off)
-select nt3.id
-from nt3 as nt3
-  left join
-    (select nt2.*, (nt2.b1 and ss1.a3) AS b3
-     from nt2 as nt2
-       left join
-         (select nt1.*, (nt1.id is not null) as a3 from nt1) as ss1
-         on ss1.id = nt2.nt1_id
-    ) as ss2
-    on ss2.id = nt3.nt2_id
-where nt3.id = 1 and ss2.b3;
-
-select nt3.id
-from nt3 as nt3
-  left join
-    (select nt2.*, (nt2.b1 and ss1.a3) AS b3
-     from nt2 as nt2
-       left join
-         (select nt1.*, (nt1.id is not null) as a3 from nt1) as ss1
-         on ss1.id = nt2.nt1_id
-    ) as ss2
-    on ss2.id = nt3.nt2_id
-where nt3.id = 1 and ss2.b3;
-
---
--- test case where a PlaceHolderVar is propagated into a subquery
---
-
-create temp table nt1 (
-  id int primary key,
-  a1 boolean,
-  a2 boolean
-);
-create temp table nt2 (
-  id int primary key,
-  nt1_id int,
-  b1 boolean,
-  b2 boolean,
-  foreign key (nt1_id) references nt1(id)
-);
-create temp table nt3 (
-  id int primary key,
-  nt2_id int,
-  c1 boolean,
-  foreign key (nt2_id) references nt2(id)
-);
-
-insert into nt1 values (1,true,true);
-insert into nt1 values (2,true,false);
-insert into nt1 values (3,false,false);
-insert into nt2 values (1,1,true,true);
-insert into nt2 values (2,2,true,false);
-insert into nt2 values (3,3,false,false);
-insert into nt3 values (1,1,true);
-insert into nt3 values (2,2,false);
-insert into nt3 values (3,3,true);
-
-explain (costs off)
+explain(num_nodes off, nodes off, costs off) 
 select nt3.id
 from nt3 as nt3
   left join
@@ -951,7 +891,7 @@ select b.unique1 from
   right join int4_tbl i2 on i2.f1 = b.tenthous
   order by 1;
 
-explain (costs off)
+explain (num_nodes off, nodes off, costs off)
 select * from
 (
   select unique1, q1, coalesce(unique1, -1) + q1 as fault
@@ -972,7 +912,7 @@ order by fault;
 -- test handling of potential equivalence clauses above outer joins
 --
 
-explain (costs off)
+explain (num_nodes off, nodes off, costs off)
 select q1, unique2, thousand, hundred
   from int8_tbl a left join tenk1 b on q1 = unique2
   where coalesce(thousand,123) = q1 and q1 = coalesce(hundred,123);
@@ -981,7 +921,7 @@ select q1, unique2, thousand, hundred
   from int8_tbl a left join tenk1 b on q1 = unique2
   where coalesce(thousand,123) = q1 and q1 = coalesce(hundred,123);
 
-explain (costs off)
+explain (num_nodes off, nodes off, costs off)
 select f1, unique2, case when unique2 is null then f1 else 0 end
   from int4_tbl a left join tenk1 b on f1 = unique2
   where (case when unique2 is null then f1 else 0 end) = 0;
@@ -1038,10 +978,10 @@ using (join_key);
 -- test ability to push constants through outer join clauses
 --
 
-explain (costs off)
+explain (num_nodes off, nodes off, costs off)
   select * from int4_tbl a left join tenk1 b on f1 = unique2 where f1 = 0;
 
-explain (costs off)
+explain (num_nodes off, nodes off, costs off)
   select * from tenk1 a full join tenk1 b using(unique2) where unique2 = 42;
 
 --
@@ -1259,7 +1199,7 @@ explain (costs off)
   select count(*) from tenk1 a, generate_series(1,two) g;
 
 -- lateral with UNION ALL subselect
-explain (costs off)
+explain (num_nodes off, nodes off, costs off)
   select * from generate_series(100,200) g,
     lateral (select * from int8_tbl a where g = q1 union all
              select * from int8_tbl b where g = q2) ss;
@@ -1268,21 +1208,21 @@ select * from generate_series(100,200) g,
            select * from int8_tbl b where g = q2) ss;
 
 -- lateral with VALUES
-explain (costs off)
+explain (num_nodes off, nodes off, costs off)
   select count(*) from tenk1 a,
     tenk1 b join lateral (values(a.unique1)) ss(x) on b.unique2 = ss.x;
 select count(*) from tenk1 a,
   tenk1 b join lateral (values(a.unique1)) ss(x) on b.unique2 = ss.x;
 
 -- lateral with VALUES, no flattening possible
-explain (costs off)
+explain (num_nodes off, nodes off, costs off)
   select count(*) from tenk1 a,
     tenk1 b join lateral (values(a.unique1),(-1)) ss(x) on b.unique2 = ss.x;
 select count(*) from tenk1 a,
   tenk1 b join lateral (values(a.unique1),(-1)) ss(x) on b.unique2 = ss.x;
 
 -- lateral injecting a strange outer join condition
-explain (costs off)
+explain (num_nodes off, nodes off, costs off)
   select * from int8_tbl a,
     int8_tbl x left join lateral (select a.q1 from int4_tbl y) ss(z)
       on x.q2 = ss.z;
@@ -1332,7 +1272,7 @@ select v.* from
   left join int4_tbl z on z.f1 = x.q2,
   lateral (select x.q1,y.q1 from dual union all select x.q2,y.q2 from dual) v(vx,vy);
 
-explain (verbose, costs off)
+explain (verbose, num_nodes off, nodes off, costs off)
 select * from
   int8_tbl a left join
   lateral (select *, a.q2 as x from int8_tbl b) ss on a.q2 = ss.q1;
@@ -1349,17 +1289,17 @@ select * from
 
 -- lateral can result in join conditions appearing below their
 -- real semantic level
-explain (verbose, costs off)
+explain (num_nodes off, nodes off, verbose, costs off)
 select * from int4_tbl i left join
   lateral (select * from int2_tbl j where i.f1 = j.f1) k on true;
 select * from int4_tbl i left join
   lateral (select * from int2_tbl j where i.f1 = j.f1) k on true;
-explain (verbose, costs off)
+explain (num_nodes off, nodes off, verbose, costs off)
 select * from int4_tbl i left join
   lateral (select coalesce(i) from int2_tbl j where i.f1 = j.f1) k on true;
 select * from int4_tbl i left join
   lateral (select coalesce(i) from int2_tbl j where i.f1 = j.f1) k on true;
-explain (verbose, costs off)
+explain (num_nodes off, nodes off, verbose, costs off)
 select * from int4_tbl a,
   lateral (
     select * from int4_tbl b left join int8_tbl c on (b.f1 = q1 and a.f1 = q2)
@@ -1370,7 +1310,7 @@ select * from int4_tbl a,
   ) ss;
 
 -- lateral reference in a PlaceHolderVar evaluated at join level
-explain (verbose, costs off)
+explain (num_nodes off, nodes off, verbose, costs off)
 select * from
   int8_tbl a left join lateral
   (select b.q1 as bq1, c.q1 as cq1, least(a.q1,b.q1,c.q1) from
@@ -1383,7 +1323,7 @@ select * from
   on a.q2 = ss.bq1;
 
 -- case requiring nested PlaceHolderVars
-explain (verbose, costs off)
+explain (num_nodes off, nodes off, verbose, costs off)
 select * from
   int8_tbl c left join (
     int8_tbl a left join (select q1, coalesce(q2,42) as x from int8_tbl b) ss1
@@ -1394,7 +1334,7 @@ select * from
   lateral (select ss2.y offset 0) ss3;
 
 -- case that breaks the old ph_may_need optimization
-explain (verbose, costs off)
+explain (num_nodes off, nodes off, verbose, costs off)
 select c.*,a.*,ss1.q1,ss2.q1,ss3.* from
   int8_tbl c left join (
     int8_tbl a left join
@@ -1407,7 +1347,7 @@ select c.*,a.*,ss1.q1,ss2.q1,ss3.* from
   lateral (select * from int4_tbl i where ss2.y > f1) ss3;
 
 -- check processing of postponed quals (bug #9041)
-explain (verbose, costs off)
+explain (num_nodes off, nodes off, verbose, costs off)
 select * from
   (select 1 as x offset 0) x cross join (select 2 as y offset 0) y
   left join lateral (
