@@ -3446,7 +3446,11 @@ static struct config_string ConfigureNamesString[] =
 			GUC_LIST_INPUT | GUC_LIST_QUOTE | GUC_SUPERUSER_ONLY
 		},
 		&storm_catalog_remap_string,
+#ifdef NOT_USED
 		"pg_roles, pg_shdescription, pg_database, pg_db_role_setting, pg_tablespace, pg_auth_members, pg_shdepend, pg_stat_database, pg_stat_database_conflicts, pg_stat_activity, pg_locks, pg_prepared_xacts, pg_settings, pg_user, pg_group, pg_shadow, pg_user_mappings, pg_database_size, pg_show_all_settings, pg_stat_get_activity, pg_lock_status",
+#else
+		"",
+#endif
 		check_storm_catalog_remap_string, NULL, NULL
 	},
 #endif
