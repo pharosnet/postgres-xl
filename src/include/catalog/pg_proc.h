@@ -2616,7 +2616,7 @@ DESCR("aggregate transition function");
 #ifdef PGXC
 DATA(insert OID = 7000 (  float8_collect			PGNSP PGUID 12 1 0 0 0 f f f f t f i 2 0 1022 "1022 1022" _null_ _null_ _null_ _null_ _null_ float8_collect _null_ _null_ _null_ ));
 DESCR("aggregate collection function");
-DATA(insert OID = 7002 (  numeric_collect			PGNSP PGUID 12 1 0 0 0 f f f f t f i 2 0 6013 "6013 6013" _null_ _null_ _null_ _null_ _null_ numeric_collect _null_ _null_ _null_ ));
+DATA(insert OID = 7002 (  numeric_collect			PGNSP PGUID 12 1 0 0 0 f f f f t f i 2 0 7018 "7018 7018" _null_ _null_ _null_ _null_ _null_ numeric_collect _null_ _null_ _null_ ));
 DESCR("aggregate collection function");
 DATA(insert OID = 7003 (  interval_collect			PGNSP PGUID 12 1 0 0 0 f f f f t f i 2 0 1187 "1187 1187" _null_ _null_ _null_ _null_ _null_ interval_collect _null_ _null_ _null_ ));
 DESCR("aggregate transition function");
