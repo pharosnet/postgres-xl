@@ -45,12 +45,12 @@ SELECT relname, spcname FROM pg_catalog.pg_tablespace t, pg_catalog.pg_class c
 PREPARE selectsource(int) AS SELECT $1;
 CREATE TABLE testschema.asexecute TABLESPACE testspace
     AS EXECUTE selectsource(2);
+ERROR:  CREATE TABLE AS EXECUTE not yet supported
 SELECT relname, spcname FROM pg_catalog.pg_tablespace t, pg_catalog.pg_class c
     where c.reltablespace = t.oid AND c.relname = 'asexecute';
-  relname  |  spcname  
------------+-----------
- asexecute | testspace
-(1 row)
+ relname | spcname 
+---------+---------
+(0 rows)
 
 -- index
 CREATE INDEX foo_idx on testschema.foo(i) TABLESPACE testspace;
@@ -101,10 +101,9 @@ NOTICE:  no matching relations in tablespace "testspace_renamed" found
 -- Should succeed
 DROP TABLESPACE testspace_renamed;
 DROP SCHEMA testschema CASCADE;
-NOTICE:  drop cascades to 4 other objects
+NOTICE:  drop cascades to 3 other objects
 DETAIL:  drop cascades to table testschema.foo
 drop cascades to table testschema.asselect
-drop cascades to table testschema.asexecute
 drop cascades to table testschema.atable
 DROP ROLE tablespace_testuser1;
 DROP ROLE tablespace_testuser2;
