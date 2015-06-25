@@ -2462,6 +2462,10 @@ ProcessUtilitySlow(Node *parsetree,
 
 			case T_AlterTableMoveAllStmt:
 				AlterTableMoveAll((AlterTableMoveAllStmt *) parsetree);
+#ifdef PGXC
+				if (IS_PGXC_LOCAL_COORDINATOR)
+					ExecUtilityStmtOnNodes(queryString, NULL, sentToRemote, false, EXEC_ON_ALL_NODES, false);
+#endif
 				/* commands are stashed in AlterTableMoveAll */
 				commandCollected = true;
 				break;
