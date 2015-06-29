@@ -3,7 +3,7 @@
 --
 -- check that non-updatable views and columns are rejected with useful error
 -- messages
-CREATE TABLE base_tbl (a int PRIMARY KEY, b text DEFAULT 'Unspecified');
+CREATE TABLE base_tbl (a int PRIMARY KEY, b text DEFAULT 'Unspecified') DISTRIBUTE BY REPLICATION;
 INSERT INTO base_tbl SELECT i, 'Row ' || i FROM generate_series(-2, 2) g(i);
 CREATE VIEW ro_view1 AS SELECT DISTINCT a, b FROM base_tbl; -- DISTINCT not supported
 CREATE VIEW ro_view2 AS SELECT a, b FROM base_tbl GROUP BY a, b; -- GROUP BY not supported
@@ -357,7 +357,7 @@ DROP VIEW ro_view10, ro_view12, ro_view18;
 DROP SEQUENCE seq CASCADE;
 NOTICE:  drop cascades to view ro_view19
 -- simple updatable view
-CREATE TABLE base_tbl (a int PRIMARY KEY, b text DEFAULT 'Unspecified');
+CREATE TABLE base_tbl (a int PRIMARY KEY, b text DEFAULT 'Unspecified') DISTRIBUTE BY REPLICATION;
 INSERT INTO base_tbl SELECT i, 'Row ' || i FROM generate_series(-2, 2) g(i);
 CREATE VIEW rw_view1 AS SELECT * FROM base_tbl WHERE a>0;
 SELECT table_name, is_insertable_into
@@ -402,25 +402,27 @@ SELECT * FROM base_tbl;
 (6 rows)
 
 EXPLAIN (costs off) UPDATE rw_view1 SET a=6 WHERE a=5;
-                    QUERY PLAN                    
---------------------------------------------------
- Update on base_tbl
-   ->  Index Scan using base_tbl_pkey on base_tbl
-         Index Cond: ((a > 0) AND (a = 5))
-(3 rows)
+                       QUERY PLAN                       
+--------------------------------------------------------
+ Remote Subquery Scan on any (datanode_1,datanode_2)
+   ->  Update on base_tbl
+         ->  Index Scan using base_tbl_pkey on base_tbl
+               Index Cond: ((a > 0) AND (a = 5))
+(4 rows)
 
 EXPLAIN (costs off) DELETE FROM rw_view1 WHERE a=5;
-                    QUERY PLAN                    
---------------------------------------------------
- Delete on base_tbl
-   ->  Index Scan using base_tbl_pkey on base_tbl
-         Index Cond: ((a > 0) AND (a = 5))
-(3 rows)
+                       QUERY PLAN                       
+--------------------------------------------------------
+ Remote Subquery Scan on any (datanode_1,datanode_2)
+   ->  Delete on base_tbl
+         ->  Index Scan using base_tbl_pkey on base_tbl
+               Index Cond: ((a > 0) AND (a = 5))
+(4 rows)
 
 DROP TABLE base_tbl CASCADE;
 NOTICE:  drop cascades to view rw_view1
 -- view on top of view
-CREATE TABLE base_tbl (a int PRIMARY KEY, b text DEFAULT 'Unspecified');
+CREATE TABLE base_tbl (a int PRIMARY KEY, b text DEFAULT 'Unspecified') DISTRIBUTE BY REPLICATION;
 INSERT INTO base_tbl SELECT i, 'Row ' || i FROM generate_series(-2, 2) g(i);
 CREATE VIEW rw_view1 AS SELECT b AS bb, a AS aa FROM base_tbl WHERE a>0;
 CREATE VIEW rw_view2 AS SELECT aa AS aaa, bb AS bbb FROM rw_view1 WHERE aa<10;
@@ -472,27 +474,29 @@ SELECT * FROM rw_view2;
 (3 rows)
 
 EXPLAIN (costs off) UPDATE rw_view2 SET aaa=5 WHERE aaa=4;
-                       QUERY PLAN                       
---------------------------------------------------------
- Update on base_tbl
-   ->  Index Scan using base_tbl_pkey on base_tbl
-         Index Cond: ((a < 10) AND (a > 0) AND (a = 4))
-(3 rows)
+                          QUERY PLAN                          
+--------------------------------------------------------------
+ Remote Subquery Scan on any (datanode_1,datanode_2)
+   ->  Update on base_tbl
+         ->  Index Scan using base_tbl_pkey on base_tbl
+               Index Cond: ((a < 10) AND (a > 0) AND (a = 4))
+(4 rows)
 
 EXPLAIN (costs off) DELETE FROM rw_view2 WHERE aaa=4;
-                       QUERY PLAN                       
---------------------------------------------------------
- Delete on base_tbl
-   ->  Index Scan using base_tbl_pkey on base_tbl
-         Index Cond: ((a < 10) AND (a > 0) AND (a = 4))
-(3 rows)
+                          QUERY PLAN                          
+--------------------------------------------------------------
+ Remote Subquery Scan on any (datanode_1,datanode_2)
+   ->  Delete on base_tbl
+         ->  Index Scan using base_tbl_pkey on base_tbl
+               Index Cond: ((a < 10) AND (a > 0) AND (a = 4))
+(4 rows)
 
 DROP TABLE base_tbl CASCADE;
 NOTICE:  drop cascades to 2 other objects
 DETAIL:  drop cascades to view rw_view1
 drop cascades to view rw_view2
 -- view on top of view with rules
-CREATE TABLE base_tbl (a int PRIMARY KEY, b text DEFAULT 'Unspecified');
+CREATE TABLE base_tbl (a int PRIMARY KEY, b text DEFAULT 'Unspecified') DISTRIBUTE BY REPLICATION;
 INSERT INTO base_tbl SELECT i, 'Row ' || i FROM generate_series(-2, 2) g(i);
 CREATE VIEW rw_view1 AS SELECT * FROM base_tbl WHERE a>0 OFFSET 0; -- not updatable without rules/triggers
 CREATE VIEW rw_view2 AS SELECT * FROM rw_view1 WHERE a<10;
@@ -664,41 +668,43 @@ SELECT * FROM rw_view2;
 (2 rows)
 
 EXPLAIN (costs off) UPDATE rw_view2 SET a=3 WHERE a=2;
-                           QUERY PLAN                           
-----------------------------------------------------------------
- Update on base_tbl
-   ->  Nested Loop
-         ->  Index Scan using base_tbl_pkey on base_tbl
-               Index Cond: (a = 2)
-         ->  Subquery Scan on rw_view1
-               Filter: ((rw_view1.a < 10) AND (rw_view1.a = 2))
-               ->  Bitmap Heap Scan on base_tbl base_tbl_1
-                     Recheck Cond: (a > 0)
-                     ->  Bitmap Index Scan on base_tbl_pkey
-                           Index Cond: (a > 0)
-(10 rows)
+                              QUERY PLAN                              
+----------------------------------------------------------------------
+ Remote Subquery Scan on any (datanode_1,datanode_2)
+   ->  Update on base_tbl
+         ->  Nested Loop
+               ->  Index Scan using base_tbl_pkey on base_tbl
+                     Index Cond: (a = 2)
+               ->  Subquery Scan on rw_view1
+                     Filter: ((rw_view1.a < 10) AND (rw_view1.a = 2))
+                     ->  Bitmap Heap Scan on base_tbl base_tbl_1
+                           Recheck Cond: (a > 0)
+                           ->  Bitmap Index Scan on base_tbl_pkey
+                                 Index Cond: (a > 0)
+(11 rows)
 
 EXPLAIN (costs off) DELETE FROM rw_view2 WHERE a=2;
-                           QUERY PLAN                           
-----------------------------------------------------------------
- Delete on base_tbl
-   ->  Nested Loop
-         ->  Index Scan using base_tbl_pkey on base_tbl
-               Index Cond: (a = 2)
-         ->  Subquery Scan on rw_view1
-               Filter: ((rw_view1.a < 10) AND (rw_view1.a = 2))
-               ->  Bitmap Heap Scan on base_tbl base_tbl_1
-                     Recheck Cond: (a > 0)
-                     ->  Bitmap Index Scan on base_tbl_pkey
-                           Index Cond: (a > 0)
-(10 rows)
+                              QUERY PLAN                              
+----------------------------------------------------------------------
+ Remote Subquery Scan on any (datanode_1,datanode_2)
+   ->  Delete on base_tbl
+         ->  Nested Loop
+               ->  Index Scan using base_tbl_pkey on base_tbl
+                     Index Cond: (a = 2)
+               ->  Subquery Scan on rw_view1
+                     Filter: ((rw_view1.a < 10) AND (rw_view1.a = 2))
+                     ->  Bitmap Heap Scan on base_tbl base_tbl_1
+                           Recheck Cond: (a > 0)
+                           ->  Bitmap Index Scan on base_tbl_pkey
+                                 Index Cond: (a > 0)
+(11 rows)
 
 DROP TABLE base_tbl CASCADE;
 NOTICE:  drop cascades to 2 other objects
 DETAIL:  drop cascades to view rw_view1
 drop cascades to view rw_view2
 -- view on top of view with triggers
-CREATE TABLE base_tbl (a int PRIMARY KEY, b text DEFAULT 'Unspecified');
+CREATE TABLE base_tbl (a int PRIMARY KEY, b text DEFAULT 'Unspecified') DISTRIBUTE BY REPLICATION;
 INSERT INTO base_tbl SELECT i, 'Row ' || i FROM generate_series(-2, 2) g(i);
 CREATE VIEW rw_view1 AS SELECT * FROM base_tbl WHERE a>0 OFFSET 0; -- not updatable without rules/triggers
 CREATE VIEW rw_view2 AS SELECT * FROM rw_view1 WHERE a<10;
@@ -755,6 +761,8 @@ $$
 LANGUAGE plpgsql;
 CREATE TRIGGER rw_view1_ins_trig INSTEAD OF INSERT ON rw_view1
   FOR EACH ROW EXECUTE PROCEDURE rw_view1_trig_fn();
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 SELECT table_name, is_insertable_into
   FROM information_schema.tables
  WHERE table_name LIKE 'rw_view%'
@@ -773,7 +781,7 @@ SELECT table_name, is_updatable, is_insertable_into,
  ORDER BY table_name;
  table_name | is_updatable | is_insertable_into | is_trigger_updatable | is_trigger_deletable | is_trigger_insertable_into 
 ------------+--------------+--------------------+----------------------+----------------------+----------------------------
- rw_view1   | NO           | NO                 | NO                   | NO                   | YES
+ rw_view1   | NO           | NO                 | NO                   | NO                   | NO
  rw_view2   | NO           | NO                 | NO                   | NO                   | NO
 (2 rows)
 
@@ -791,6 +799,8 @@ SELECT table_name, column_name, is_updatable
 
 CREATE TRIGGER rw_view1_upd_trig INSTEAD OF UPDATE ON rw_view1
   FOR EACH ROW EXECUTE PROCEDURE rw_view1_trig_fn();
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 SELECT table_name, is_insertable_into
   FROM information_schema.tables
  WHERE table_name LIKE 'rw_view%'
@@ -809,7 +819,7 @@ SELECT table_name, is_updatable, is_insertable_into,
  ORDER BY table_name;
  table_name | is_updatable | is_insertable_into | is_trigger_updatable | is_trigger_deletable | is_trigger_insertable_into 
 ------------+--------------+--------------------+----------------------+----------------------+----------------------------
- rw_view1   | NO           | NO                 | YES                  | NO                   | YES
+ rw_view1   | NO           | NO                 | NO                   | NO                   | NO
  rw_view2   | NO           | NO                 | NO                   | NO                   | NO
 (2 rows)
 
@@ -827,6 +837,8 @@ SELECT table_name, column_name, is_updatable
 
 CREATE TRIGGER rw_view1_del_trig INSTEAD OF DELETE ON rw_view1
   FOR EACH ROW EXECUTE PROCEDURE rw_view1_trig_fn();
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 SELECT table_name, is_insertable_into
   FROM information_schema.tables
  WHERE table_name LIKE 'rw_view%'
@@ -845,7 +857,7 @@ SELECT table_name, is_updatable, is_insertable_into,
  ORDER BY table_name;
  table_name | is_updatable | is_insertable_into | is_trigger_updatable | is_trigger_deletable | is_trigger_insertable_into 
 ------------+--------------+--------------------+----------------------+----------------------+----------------------------
- rw_view1   | NO           | NO                 | YES                  | YES                  | YES
+ rw_view1   | NO           | NO                 | NO                   | NO                   | NO
  rw_view2   | NO           | NO                 | NO                   | NO                   | NO
 (2 rows)
 
@@ -862,31 +874,24 @@ SELECT table_name, column_name, is_updatable
 (4 rows)
 
 INSERT INTO rw_view2 VALUES (3, 'Row 3') RETURNING *;
+ERROR:  cannot insert into view "rw_view1"
+DETAIL:  Views containing LIMIT or OFFSET are not automatically updatable.
+HINT:  To enable inserting into the view, provide an INSTEAD OF INSERT trigger or an unconditional ON INSERT DO INSTEAD rule.
+UPDATE rw_view2 SET b='Row three' WHERE a=3 RETURNING *;
+ERROR:  cannot update view "rw_view1"
+DETAIL:  Views containing LIMIT or OFFSET are not automatically updatable.
+HINT:  To enable updating the view, provide an INSTEAD OF UPDATE trigger or an unconditional ON UPDATE DO INSTEAD rule.
+SELECT * FROM rw_view2;
  a |   b   
 ---+-------
- 3 | Row 3
-(1 row)
-
-UPDATE rw_view2 SET b='Row three' WHERE a=3 RETURNING *;
- a |     b     
----+-----------
- 3 | Row three
-(1 row)
-
-SELECT * FROM rw_view2;
- a |     b     
----+-----------
  1 | Row 1
  2 | Row 2
- 3 | Row three
-(3 rows)
+(2 rows)
 
 DELETE FROM rw_view2 WHERE a=3 RETURNING *;
- a |     b     
----+-----------
- 3 | Row three
-(1 row)
-
+ERROR:  cannot delete from view "rw_view1"
+DETAIL:  Views containing LIMIT or OFFSET are not automatically updatable.
+HINT:  To enable deleting from the view, provide an INSTEAD OF DELETE trigger or an unconditional ON DELETE DO INSTEAD rule.
 SELECT * FROM rw_view2;
  a |   b   
 ---+-------
@@ -895,36 +900,20 @@ SELECT * FROM rw_view2;
 (2 rows)
 
 EXPLAIN (costs off) UPDATE rw_view2 SET a=3 WHERE a=2;
-                        QUERY PLAN                        
-----------------------------------------------------------
- Update on rw_view1 rw_view1_1
-   ->  Subquery Scan on rw_view1
-         Filter: ((rw_view1.a < 10) AND (rw_view1.a = 2))
-         ->  Bitmap Heap Scan on base_tbl
-               Recheck Cond: (a > 0)
-               ->  Bitmap Index Scan on base_tbl_pkey
-                     Index Cond: (a > 0)
-(7 rows)
-
+ERROR:  cannot update view "rw_view1"
+DETAIL:  Views containing LIMIT or OFFSET are not automatically updatable.
+HINT:  To enable updating the view, provide an INSTEAD OF UPDATE trigger or an unconditional ON UPDATE DO INSTEAD rule.
 EXPLAIN (costs off) DELETE FROM rw_view2 WHERE a=2;
-                        QUERY PLAN                        
-----------------------------------------------------------
- Delete on rw_view1 rw_view1_1
-   ->  Subquery Scan on rw_view1
-         Filter: ((rw_view1.a < 10) AND (rw_view1.a = 2))
-         ->  Bitmap Heap Scan on base_tbl
-               Recheck Cond: (a > 0)
-               ->  Bitmap Index Scan on base_tbl_pkey
-                     Index Cond: (a > 0)
-(7 rows)
-
+ERROR:  cannot delete from view "rw_view1"
+DETAIL:  Views containing LIMIT or OFFSET are not automatically updatable.
+HINT:  To enable deleting from the view, provide an INSTEAD OF DELETE trigger or an unconditional ON DELETE DO INSTEAD rule.
 DROP TABLE base_tbl CASCADE;
 NOTICE:  drop cascades to 2 other objects
 DETAIL:  drop cascades to view rw_view1
 drop cascades to view rw_view2
 DROP FUNCTION rw_view1_trig_fn();
 -- update using whole row from view
-CREATE TABLE base_tbl (a int PRIMARY KEY, b text DEFAULT 'Unspecified');
+CREATE TABLE base_tbl (a int PRIMARY KEY, b text DEFAULT 'Unspecified') DISTRIBUTE BY REPLICATION;
 INSERT INTO base_tbl SELECT i, 'Row ' || i FROM generate_series(-2, 2) g(i);
 CREATE VIEW rw_view1 AS SELECT b AS bb, a AS aa FROM base_tbl;
 CREATE FUNCTION rw_view1_aa(x rw_view1)
@@ -964,7 +953,7 @@ drop cascades to function rw_view1_aa(rw_view1)
 CREATE USER view_user1;
 CREATE USER view_user2;
 SET SESSION AUTHORIZATION view_user1;
-CREATE TABLE base_tbl(a int, b text, c float);
+CREATE TABLE base_tbl(a int, b text, c float) DISTRIBUTE BY REPLICATION;
 INSERT INTO base_tbl VALUES (1, 'Row 1', 1.0);
 CREATE VIEW rw_view1 AS SELECT b AS bb, c AS cc, a AS aa FROM base_tbl;
 INSERT INTO rw_view1 VALUES ('Row 2', 2.0, 2);
@@ -1068,7 +1057,7 @@ drop cascades to view rw_view2
 DROP USER view_user1;
 DROP USER view_user2;
 -- column defaults
-CREATE TABLE base_tbl (a int PRIMARY KEY, b text DEFAULT 'Unspecified', c serial);
+CREATE TABLE base_tbl (a int PRIMARY KEY, b text DEFAULT 'Unspecified', c serial) DISTRIBUTE BY REPLICATION;
 INSERT INTO base_tbl VALUES (1, 'Row 1');
 INSERT INTO base_tbl VALUES (2, 'Row 2');
 INSERT INTO base_tbl VALUES (3);
@@ -1089,7 +1078,7 @@ SELECT * FROM base_tbl;
 DROP TABLE base_tbl CASCADE;
 NOTICE:  drop cascades to view rw_view1
 -- Table having triggers
-CREATE TABLE base_tbl (a int PRIMARY KEY, b text DEFAULT 'Unspecified');
+CREATE TABLE base_tbl (a int PRIMARY KEY, b text DEFAULT 'Unspecified') DISTRIBUTE BY REPLICATION;
 INSERT INTO base_tbl VALUES (1, 'Row 1');
 INSERT INTO base_tbl VALUES (2, 'Row 2');
 CREATE FUNCTION rw_view1_trig_fn()
@@ -1106,22 +1095,25 @@ $$
 LANGUAGE plpgsql;
 CREATE TRIGGER rw_view1_ins_trig AFTER INSERT ON base_tbl
   FOR EACH ROW EXECUTE PROCEDURE rw_view1_trig_fn();
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 CREATE VIEW rw_view1 AS SELECT a AS aa, b AS bb FROM base_tbl;
 INSERT INTO rw_view1 VALUES (3, 'Row 3');
 select * from base_tbl;
  a |   b   
 ---+-------
+ 1 | Row 1
  2 | Row 2
  3 | Row 3
- 1 | Row 3
 (3 rows)
 
 DROP VIEW rw_view1;
 DROP TRIGGER rw_view1_ins_trig on base_tbl;
+ERROR:  trigger "rw_view1_ins_trig" for table "base_tbl" does not exist
 DROP FUNCTION rw_view1_trig_fn();
 DROP TABLE base_tbl;
 -- view with ORDER BY
-CREATE TABLE base_tbl (a int, b int);
+CREATE TABLE base_tbl (a int, b int) DISTRIBUTE BY REPLICATION;
 INSERT INTO base_tbl VALUES (1,2), (4,5), (3,-3);
 CREATE VIEW rw_view1 AS SELECT * FROM base_tbl ORDER BY a+b;
 SELECT * FROM rw_view1;
@@ -1143,13 +1135,15 @@ SELECT * FROM rw_view1;
 (4 rows)
 
 EXPLAIN (verbose, costs off) UPDATE rw_view1 SET b = b + 1 RETURNING *;
-                         QUERY PLAN                          
--------------------------------------------------------------
- Update on public.base_tbl
+                            QUERY PLAN                             
+-------------------------------------------------------------------
+ Remote Subquery Scan on any (datanode_1,datanode_2)
    Output: base_tbl.a, base_tbl.b
-   ->  Seq Scan on public.base_tbl
-         Output: base_tbl.a, (base_tbl.b + 1), base_tbl.ctid
-(4 rows)
+   ->  Update on public.base_tbl
+         Output: base_tbl.a, base_tbl.b
+         ->  Seq Scan on public.base_tbl
+               Output: base_tbl.a, (base_tbl.b + 1), base_tbl.ctid
+(6 rows)
 
 UPDATE rw_view1 SET b = b + 1 RETURNING *;
  a | b  
@@ -1172,7 +1166,7 @@ SELECT * FROM rw_view1;
 DROP TABLE base_tbl CASCADE;
 NOTICE:  drop cascades to view rw_view1
 -- multiple array-column updates
-CREATE TABLE base_tbl (a int, arr int[]);
+CREATE TABLE base_tbl (a int, arr int[]) DISTRIBUTE BY REPLICATION;
 INSERT INTO base_tbl VALUES (1,ARRAY[2]), (3,ARRAY[4]);
 CREATE VIEW rw_view1 AS SELECT * FROM base_tbl;
 UPDATE rw_view1 SET arr[1] = 42, arr[2] = 77 WHERE a = 3;
@@ -1186,7 +1180,7 @@ SELECT * FROM rw_view1;
 DROP TABLE base_tbl CASCADE;
 NOTICE:  drop cascades to view rw_view1
 -- views with updatable and non-updatable columns
-CREATE TABLE base_tbl(a float);
+CREATE TABLE base_tbl(a float) DISTRIBUTE BY REPLICATION;
 INSERT INTO base_tbl SELECT i/10.0 FROM generate_series(1,10) g(i);
 CREATE VIEW rw_view1 AS
   SELECT ctid, sin(a) s, a, cos(a) c
@@ -1328,8 +1322,8 @@ DETAIL:  drop cascades to view rw_view1
 drop cascades to view rw_view2
 drop cascades to view rw_view3
 -- inheritance tests
-CREATE TABLE base_tbl_parent (a int);
-CREATE TABLE base_tbl_child (CHECK (a > 0)) INHERITS (base_tbl_parent);
+CREATE TABLE base_tbl_parent (a int) DISTRIBUTE BY REPLICATION;
+CREATE TABLE base_tbl_child (CHECK (a > 0)) INHERITS (base_tbl_parent) DISTRIBUTE BY REPLICATION;
 INSERT INTO base_tbl_parent SELECT * FROM generate_series(-8, -1);
 INSERT INTO base_tbl_child SELECT * FROM generate_series(1, 8);
 CREATE VIEW rw_view1 AS SELECT * FROM base_tbl_parent;
@@ -1428,7 +1422,7 @@ NOTICE:  drop cascades to 2 other objects
 DETAIL:  drop cascades to view rw_view1
 drop cascades to view rw_view2
 -- simple WITH CHECK OPTION
-CREATE TABLE base_tbl (a int, b int DEFAULT 10);
+CREATE TABLE base_tbl (a int, b int DEFAULT 10) DISTRIBUTE BY REPLICATION;
 INSERT INTO base_tbl VALUES (1,2), (2,3), (1,-1);
 CREATE VIEW rw_view1 AS SELECT * FROM base_tbl WHERE a < b
   WITH LOCAL CHECK OPTION;
@@ -1482,7 +1476,7 @@ SELECT * FROM base_tbl;
 DROP TABLE base_tbl CASCADE;
 NOTICE:  drop cascades to view rw_view1
 -- WITH LOCAL/CASCADED CHECK OPTION
-CREATE TABLE base_tbl (a int);
+CREATE TABLE base_tbl (a int) DISTRIBUTE BY REPLICATION;
 CREATE VIEW rw_view1 AS SELECT * FROM base_tbl WHERE a > 0;
 CREATE VIEW rw_view2 AS SELECT * FROM rw_view1 WHERE a < 10
   WITH CHECK OPTION; -- implicitly cascaded
@@ -1599,7 +1593,7 @@ NOTICE:  drop cascades to 2 other objects
 DETAIL:  drop cascades to view rw_view1
 drop cascades to view rw_view2
 -- WITH CHECK OPTION with no local view qual
-CREATE TABLE base_tbl (a int);
+CREATE TABLE base_tbl (a int) DISTRIBUTE BY REPLICATION;
 CREATE VIEW rw_view1 AS SELECT * FROM base_tbl WITH CHECK OPTION;
 CREATE VIEW rw_view2 AS SELECT * FROM rw_view1 WHERE a > 0;
 CREATE VIEW rw_view3 AS SELECT * FROM rw_view2 WITH CHECK OPTION;
@@ -1629,7 +1623,7 @@ DETAIL:  drop cascades to view rw_view1
 drop cascades to view rw_view2
 drop cascades to view rw_view3
 -- WITH CHECK OPTION with scalar array ops
-CREATE TABLE base_tbl (a int, b int[]);
+CREATE TABLE base_tbl (a int, b int[]) DISTRIBUTE BY REPLICATION;
 CREATE VIEW rw_view1 AS SELECT * FROM base_tbl WHERE a = ANY (b)
   WITH CHECK OPTION;
 INSERT INTO rw_view1 VALUES (1, ARRAY[1,2,3]); -- ok
@@ -1649,8 +1643,8 @@ DEALLOCATE PREPARE ins;
 DROP TABLE base_tbl CASCADE;
 NOTICE:  drop cascades to view rw_view1
 -- WITH CHECK OPTION with subquery
-CREATE TABLE base_tbl (a int);
-CREATE TABLE ref_tbl (a int PRIMARY KEY);
+CREATE TABLE base_tbl (a int) DISTRIBUTE BY REPLICATION;
+CREATE TABLE ref_tbl (a int PRIMARY KEY) DISTRIBUTE BY REPLICATION;
 INSERT INTO ref_tbl SELECT * FROM generate_series(1,10);
 CREATE VIEW rw_view1 AS
   SELECT * FROM base_tbl b
@@ -1665,37 +1659,39 @@ UPDATE rw_view1 SET a = a + 5; -- should fail
 ERROR:  new row violates WITH CHECK OPTION for "rw_view1"
 DETAIL:  Failing row contains (15).
 EXPLAIN (costs off) INSERT INTO rw_view1 VALUES (5);
-                          QUERY PLAN                           
----------------------------------------------------------------
- Insert on base_tbl b
-   ->  Result
-         SubPlan 1
-           ->  Index Only Scan using ref_tbl_pkey on ref_tbl r
-                 Index Cond: (a = b.a)
-         SubPlan 2
-           ->  Seq Scan on ref_tbl r_1
-(7 rows)
+                                QUERY PLAN                                 
+---------------------------------------------------------------------------
+ Remote Subquery Scan on any (datanode_1,datanode_2)
+   ->  Insert on base_tbl b
+         ->  Remote Subquery Scan on all (datanode_1)
+               Distribute results by R
+               ->  Result
+               SubPlan 1
+                 ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+                       ->  Index Only Scan using ref_tbl_pkey on ref_tbl r
+                             Index Cond: (a = b.a)
+(9 rows)
 
 EXPLAIN (costs off) UPDATE rw_view1 SET a = a + 5;
-                           QUERY PLAN                            
------------------------------------------------------------------
- Update on base_tbl b
-   ->  Hash Semi Join
-         Hash Cond: (b.a = r.a)
-         ->  Seq Scan on base_tbl b
-         ->  Hash
-               ->  Seq Scan on ref_tbl r
-         SubPlan 1
-           ->  Index Only Scan using ref_tbl_pkey on ref_tbl r_1
-                 Index Cond: (a = b.a)
-         SubPlan 2
-           ->  Seq Scan on ref_tbl r_2
+                                 QUERY PLAN                                  
+-----------------------------------------------------------------------------
+ Remote Subquery Scan on any (datanode_1,datanode_2)
+   ->  Update on base_tbl b
+         ->  Hash Semi Join
+               Hash Cond: (b.a = r.a)
+               ->  Seq Scan on base_tbl b
+               ->  Hash
+                     ->  Seq Scan on ref_tbl r
+               SubPlan 1
+                 ->  Remote Subquery Scan on all (datanode_1)
+                       ->  Index Only Scan using ref_tbl_pkey on ref_tbl r_1
+                             Index Cond: (a = b.a)
 (11 rows)
 
 DROP TABLE base_tbl, ref_tbl CASCADE;
 NOTICE:  drop cascades to view rw_view1
 -- WITH CHECK OPTION with BEFORE trigger on base table
-CREATE TABLE base_tbl (a int, b int);
+CREATE TABLE base_tbl (a int, b int) DISTRIBUTE BY REPLICATION;
 CREATE FUNCTION base_tbl_trig_fn()
 RETURNS trigger AS
 $$
@@ -1707,6 +1703,8 @@ $$
 LANGUAGE plpgsql;
 CREATE TRIGGER base_tbl_trig BEFORE INSERT OR UPDATE ON base_tbl
   FOR EACH ROW EXECUTE PROCEDURE base_tbl_trig_fn();
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 CREATE VIEW rw_view1 AS SELECT * FROM base_tbl WHERE a < b WITH CHECK OPTION;
 INSERT INTO rw_view1 VALUES (5,0); -- ok
 INSERT INTO rw_view1 VALUES (15, 20); -- should fail
@@ -1719,7 +1717,7 @@ DROP TABLE base_tbl CASCADE;
 NOTICE:  drop cascades to view rw_view1
 DROP FUNCTION base_tbl_trig_fn();
 -- WITH LOCAL CHECK OPTION with INSTEAD OF trigger on base view
-CREATE TABLE base_tbl (a int, b int);
+CREATE TABLE base_tbl (a int, b int) DISTRIBUTE BY REPLICATION;
 CREATE VIEW rw_view1 AS SELECT a FROM base_tbl WHERE a < b;
 CREATE FUNCTION rw_view1_trig_fn()
 RETURNS trigger AS
@@ -1741,6 +1739,8 @@ LANGUAGE plpgsql;
 CREATE TRIGGER rw_view1_trig
   INSTEAD OF INSERT OR UPDATE OR DELETE ON rw_view1
   FOR EACH ROW EXECUTE PROCEDURE rw_view1_trig_fn();
+ERROR:  Postgres-XL does not support TRIGGER yet
+DETAIL:  The feature is not currently supported
 CREATE VIEW rw_view2 AS
   SELECT * FROM rw_view1 WHERE a > 0 WITH LOCAL CHECK OPTION;
 INSERT INTO rw_view2 VALUES (-5); -- should fail
@@ -1799,7 +1799,7 @@ NOTICE:  drop cascades to 2 other objects
 DETAIL:  drop cascades to view rw_view1
 drop cascades to view rw_view2
 DROP FUNCTION rw_view1_trig_fn();
-CREATE TABLE base_tbl (a int);
+CREATE TABLE base_tbl (a int) DISTRIBUTE BY REPLICATION;
 CREATE VIEW rw_view1 AS SELECT a,10 AS b FROM base_tbl;
 CREATE RULE rw_view1_ins_rule AS ON INSERT TO rw_view1
   DO INSTEAD INSERT INTO base_tbl VALUES (NEW.a);
@@ -1811,7 +1811,7 @@ NOTICE:  drop cascades to 2 other objects
 DETAIL:  drop cascades to view rw_view1
 drop cascades to view rw_view2
 -- security barrier view
-CREATE TABLE base_tbl (person text, visibility text);
+CREATE TABLE base_tbl (person text, visibility text) DISTRIBUTE BY REPLICATION;
 INSERT INTO base_tbl VALUES ('Tom', 'public'),
                             ('Dick', 'private'),
                             ('Harry', 'public');
@@ -1894,35 +1894,38 @@ DELETE FROM rw_view1 WHERE NOT snoop(person);
 NOTICE:  snooped value: Tom
 NOTICE:  snooped value: Harry
 EXPLAIN (costs off) SELECT * FROM rw_view1 WHERE snoop(person);
-                  QUERY PLAN                   
------------------------------------------------
- Subquery Scan on rw_view1
-   Filter: snoop(rw_view1.person)
-   ->  Seq Scan on base_tbl
-         Filter: (visibility = 'public'::text)
-(4 rows)
+                     QUERY PLAN                      
+-----------------------------------------------------
+ Remote Subquery Scan on all (datanode_2)
+   ->  Subquery Scan on rw_view1
+         Filter: snoop(rw_view1.person)
+         ->  Seq Scan on base_tbl
+               Filter: (visibility = 'public'::text)
+(5 rows)
 
 EXPLAIN (costs off) UPDATE rw_view1 SET person=person WHERE snoop(person);
-                        QUERY PLAN                         
------------------------------------------------------------
- Update on base_tbl base_tbl_1
-   ->  Subquery Scan on base_tbl
-         Filter: snoop(base_tbl.person)
-         ->  LockRows
-               ->  Seq Scan on base_tbl base_tbl_2
-                     Filter: (visibility = 'public'::text)
-(6 rows)
+                           QUERY PLAN                            
+-----------------------------------------------------------------
+ Remote Subquery Scan on all (datanode_2)
+   ->  Update on base_tbl base_tbl_1
+         ->  Subquery Scan on base_tbl
+               Filter: snoop(base_tbl.person)
+               ->  LockRows
+                     ->  Seq Scan on base_tbl base_tbl_2
+                           Filter: (visibility = 'public'::text)
+(7 rows)
 
 EXPLAIN (costs off) DELETE FROM rw_view1 WHERE NOT snoop(person);
-                        QUERY PLAN                         
------------------------------------------------------------
- Delete on base_tbl base_tbl_1
-   ->  Subquery Scan on base_tbl
-         Filter: (NOT snoop(base_tbl.person))
-         ->  LockRows
-               ->  Seq Scan on base_tbl base_tbl_2
-                     Filter: (visibility = 'public'::text)
-(6 rows)
+                           QUERY PLAN                            
+-----------------------------------------------------------------
+ Remote Subquery Scan on all (datanode_1)
+   ->  Delete on base_tbl base_tbl_1
+         ->  Subquery Scan on base_tbl
+               Filter: (NOT snoop(base_tbl.person))
+               ->  LockRows
+                     ->  Seq Scan on base_tbl base_tbl_2
+                           Filter: (visibility = 'public'::text)
+(7 rows)
 
 -- security barrier view on top of security barrier view
 CREATE VIEW rw_view2 WITH (security_barrier = true) AS
@@ -1974,48 +1977,51 @@ NOTICE:  snooped value: Tom
 NOTICE:  snooped value: Harry
 NOTICE:  snooped value: Harry
 EXPLAIN (costs off) SELECT * FROM rw_view2 WHERE snoop(person);
-                     QUERY PLAN                      
------------------------------------------------------
- Subquery Scan on rw_view2
-   Filter: snoop(rw_view2.person)
-   ->  Subquery Scan on rw_view1
-         Filter: snoop(rw_view1.person)
-         ->  Seq Scan on base_tbl
-               Filter: (visibility = 'public'::text)
-(6 rows)
+                        QUERY PLAN                         
+-----------------------------------------------------------
+ Remote Subquery Scan on all (datanode_2)
+   ->  Subquery Scan on rw_view2
+         Filter: snoop(rw_view2.person)
+         ->  Subquery Scan on rw_view1
+               Filter: snoop(rw_view1.person)
+               ->  Seq Scan on base_tbl
+                     Filter: (visibility = 'public'::text)
+(7 rows)
 
 EXPLAIN (costs off) UPDATE rw_view2 SET person=person WHERE snoop(person);
-                           QUERY PLAN                            
------------------------------------------------------------------
- Update on base_tbl base_tbl_1
-   ->  Subquery Scan on base_tbl
-         Filter: snoop(base_tbl.person)
-         ->  Subquery Scan on base_tbl_2
-               Filter: snoop(base_tbl_2.person)
-               ->  LockRows
-                     ->  Seq Scan on base_tbl base_tbl_3
-                           Filter: (visibility = 'public'::text)
-(8 rows)
+                              QUERY PLAN                               
+-----------------------------------------------------------------------
+ Remote Subquery Scan on all (datanode_1)
+   ->  Update on base_tbl base_tbl_1
+         ->  Subquery Scan on base_tbl
+               Filter: snoop(base_tbl.person)
+               ->  Subquery Scan on base_tbl_2
+                     Filter: snoop(base_tbl_2.person)
+                     ->  LockRows
+                           ->  Seq Scan on base_tbl base_tbl_3
+                                 Filter: (visibility = 'public'::text)
+(9 rows)
 
 EXPLAIN (costs off) DELETE FROM rw_view2 WHERE NOT snoop(person);
-                           QUERY PLAN                            
------------------------------------------------------------------
- Delete on base_tbl base_tbl_1
-   ->  Subquery Scan on base_tbl
-         Filter: (NOT snoop(base_tbl.person))
-         ->  Subquery Scan on base_tbl_2
-               Filter: snoop(base_tbl_2.person)
-               ->  LockRows
-                     ->  Seq Scan on base_tbl base_tbl_3
-                           Filter: (visibility = 'public'::text)
-(8 rows)
+                              QUERY PLAN                               
+-----------------------------------------------------------------------
+ Remote Subquery Scan on all (datanode_2)
+   ->  Delete on base_tbl base_tbl_1
+         ->  Subquery Scan on base_tbl
+               Filter: (NOT snoop(base_tbl.person))
+               ->  Subquery Scan on base_tbl_2
+                     Filter: snoop(base_tbl_2.person)
+                     ->  LockRows
+                           ->  Seq Scan on base_tbl base_tbl_3
+                                 Filter: (visibility = 'public'::text)
+(9 rows)
 
 DROP TABLE base_tbl CASCADE;
 NOTICE:  drop cascades to 2 other objects
 DETAIL:  drop cascades to view rw_view1
 drop cascades to view rw_view2
 -- security barrier view on top of table with rules
-CREATE TABLE base_tbl(id int PRIMARY KEY, data text, deleted boolean);
+CREATE TABLE base_tbl(id int PRIMARY KEY, data text, deleted boolean) DISTRIBUTE BY REPLICATION;
 INSERT INTO base_tbl VALUES (1, 'Row 1', false), (2, 'Row 2', true);
 CREATE RULE base_tbl_ins_rule AS ON INSERT TO base_tbl
   WHERE EXISTS (SELECT 1 FROM base_tbl t WHERE t.id = new.id)
@@ -2033,40 +2039,47 @@ SELECT * FROM rw_view1;
 (1 row)
 
 EXPLAIN (costs off) DELETE FROM rw_view1 WHERE id = 1 AND snoop(data);
-                               QUERY PLAN                                
--------------------------------------------------------------------------
- Update on base_tbl base_tbl_1
-   ->  Nested Loop
-         ->  Index Scan using base_tbl_pkey on base_tbl base_tbl_1
-               Index Cond: (id = 1)
-         ->  Subquery Scan on base_tbl
-               Filter: snoop(base_tbl.data)
-               ->  Index Scan using base_tbl_pkey on base_tbl base_tbl_2
+                                  QUERY PLAN                                   
+-------------------------------------------------------------------------------
+ Remote Subquery Scan on any (datanode_1,datanode_2)
+   ->  Update on base_tbl base_tbl_1
+         ->  Nested Loop
+               ->  Index Scan using base_tbl_pkey on base_tbl base_tbl_1
                      Index Cond: (id = 1)
-                     Filter: (NOT deleted)
-(9 rows)
+               ->  Subquery Scan on base_tbl
+                     Filter: snoop(base_tbl.data)
+                     ->  Index Scan using base_tbl_pkey on base_tbl base_tbl_2
+                           Index Cond: (id = 1)
+                           Filter: (NOT deleted)
+(10 rows)
 
 DELETE FROM rw_view1 WHERE id = 1 AND snoop(data);
 NOTICE:  snooped value: Row 1
 EXPLAIN (costs off) INSERT INTO rw_view1 VALUES (2, 'New row 2');
-                        QUERY PLAN                         
------------------------------------------------------------
- Insert on base_tbl
-   InitPlan 1 (returns $0)
-     ->  Index Only Scan using base_tbl_pkey on base_tbl t
-           Index Cond: (id = 2)
-   ->  Result
-         One-Time Filter: ($0 IS NOT TRUE)
+                              QUERY PLAN                               
+-----------------------------------------------------------------------
+ Remote Subquery Scan on any (datanode_1,datanode_2)
+   ->  Insert on base_tbl
+         InitPlan 1 (returns $0)
+           ->  Remote Subquery Scan on all (datanode_1)
+                 ->  Index Only Scan using base_tbl_pkey on base_tbl t
+                       Index Cond: (id = 2)
+         ->  Remote Subquery Scan on all (datanode_1)
+               Distribute results by R
+               ->  Result
+                     One-Time Filter: ($0 IS NOT TRUE)
  
- Update on base_tbl
-   InitPlan 1 (returns $0)
-     ->  Index Only Scan using base_tbl_pkey on base_tbl t
-           Index Cond: (id = 2)
-   ->  Result
-         One-Time Filter: $0
-         ->  Index Scan using base_tbl_pkey on base_tbl
-               Index Cond: (id = 2)
-(15 rows)
+ Remote Subquery Scan on any (datanode_1,datanode_2)
+   ->  Update on base_tbl
+         InitPlan 1 (returns $0)
+           ->  Remote Subquery Scan on all (datanode_1)
+                 ->  Index Only Scan using base_tbl_pkey on base_tbl t
+                       Index Cond: (id = 2)
+         ->  Result
+               One-Time Filter: $0
+               ->  Index Scan using base_tbl_pkey on base_tbl
+                     Index Cond: (id = 2)
+(21 rows)
 
 INSERT INTO rw_view1 VALUES (2, 'New row 2');
 SELECT * FROM base_tbl;
@@ -2079,22 +2092,22 @@ SELECT * FROM base_tbl;
 DROP TABLE base_tbl CASCADE;
 NOTICE:  drop cascades to view rw_view1
 -- security barrier view based on inheritance set
-CREATE TABLE t1 (a int, b float, c text);
+CREATE TABLE t1 (a int, b float, c text) DISTRIBUTE BY REPLICATION;
 CREATE INDEX t1_a_idx ON t1(a);
 INSERT INTO t1
 SELECT i,i,'t1' FROM generate_series(1,10) g(i);
 ANALYZE t1;
-CREATE TABLE t11 (d text) INHERITS (t1);
+CREATE TABLE t11 (d text) INHERITS (t1) DISTRIBUTE BY REPLICATION;
 CREATE INDEX t11_a_idx ON t11(a);
 INSERT INTO t11
 SELECT i,i,'t11','t11d' FROM generate_series(1,10) g(i);
 ANALYZE t11;
-CREATE TABLE t12 (e int[]) INHERITS (t1);
+CREATE TABLE t12 (e int[]) INHERITS (t1) DISTRIBUTE BY REPLICATION;
 CREATE INDEX t12_a_idx ON t12(a);
 INSERT INTO t12
 SELECT i,i,'t12','{1,2}'::int[] FROM generate_series(1,10) g(i);
 ANALYZE t12;
-CREATE TABLE t111 () INHERITS (t11, t12);
+CREATE TABLE t111 () INHERITS (t11, t12) DISTRIBUTE BY REPLICATION;
 NOTICE:  merging multiple inherited definitions of column "a"
 NOTICE:  merging multiple inherited definitions of column "b"
 NOTICE:  merging multiple inherited definitions of column "c"
@@ -2122,82 +2135,92 @@ SELECT * FROM v1 WHERE a=8;
 
 EXPLAIN (VERBOSE, COSTS OFF)
 UPDATE v1 SET a=100 WHERE snoop(a) AND leakproof(a) AND a = 3;
-                                                             QUERY PLAN                                                             
-------------------------------------------------------------------------------------------------------------------------------------
- Update on public.t1 t1_4
-   Update on public.t1 t1_4
-   Update on public.t11 t1
-   Update on public.t12 t1
-   Update on public.t111 t1
-   ->  Subquery Scan on t1
-         Output: 100, t1.b, t1.c, t1.ctid
-         Filter: snoop(t1.a)
-         ->  LockRows
-               Output: t1_5.ctid, t1_5.a, t1_5.b, t1_5.c, t1_5.ctid, t12.ctid, t12.tableoid
-               ->  Nested Loop Semi Join
-                     Output: t1_5.ctid, t1_5.a, t1_5.b, t1_5.c, t1_5.ctid, t12.ctid, t12.tableoid
-                     ->  Seq Scan on public.t1 t1_5
-                           Output: t1_5.ctid, t1_5.a, t1_5.b, t1_5.c
-                           Filter: ((t1_5.a > 5) AND (t1_5.a = 3) AND leakproof(t1_5.a))
-                     ->  Append
-                           ->  Seq Scan on public.t12
-                                 Output: t12.ctid, t12.tableoid, t12.a
-                                 Filter: (t12.a = 3)
-                           ->  Seq Scan on public.t111
-                                 Output: t111.ctid, t111.tableoid, t111.a
-                                 Filter: (t111.a = 3)
-   ->  Subquery Scan on t1_1
-         Output: 100, t1_1.b, t1_1.c, t1_1.d, t1_1.ctid
-         Filter: snoop(t1_1.a)
-         ->  LockRows
-               Output: t11.ctid, t11.a, t11.b, t11.c, t11.d, t11.ctid, t12_1.ctid, t12_1.tableoid
-               ->  Nested Loop Semi Join
-                     Output: t11.ctid, t11.a, t11.b, t11.c, t11.d, t11.ctid, t12_1.ctid, t12_1.tableoid
-                     ->  Seq Scan on public.t11
-                           Output: t11.ctid, t11.a, t11.b, t11.c, t11.d
-                           Filter: ((t11.a > 5) AND (t11.a = 3) AND leakproof(t11.a))
-                     ->  Append
-                           ->  Seq Scan on public.t12 t12_1
-                                 Output: t12_1.ctid, t12_1.tableoid, t12_1.a
-                                 Filter: (t12_1.a = 3)
-                           ->  Seq Scan on public.t111 t111_1
-                                 Output: t111_1.ctid, t111_1.tableoid, t111_1.a
-                                 Filter: (t111_1.a = 3)
-   ->  Subquery Scan on t1_2
-         Output: 100, t1_2.b, t1_2.c, t1_2.e, t1_2.ctid
-         Filter: snoop(t1_2.a)
-         ->  LockRows
-               Output: t12_2.ctid, t12_2.a, t12_2.b, t12_2.c, t12_2.e, t12_2.ctid, t12_3.ctid, t12_3.tableoid
-               ->  Nested Loop Semi Join
-                     Output: t12_2.ctid, t12_2.a, t12_2.b, t12_2.c, t12_2.e, t12_2.ctid, t12_3.ctid, t12_3.tableoid
-                     ->  Seq Scan on public.t12 t12_2
-                           Output: t12_2.ctid, t12_2.a, t12_2.b, t12_2.c, t12_2.e
-                           Filter: ((t12_2.a > 5) AND (t12_2.a = 3) AND leakproof(t12_2.a))
-                     ->  Append
-                           ->  Seq Scan on public.t12 t12_3
-                                 Output: t12_3.ctid, t12_3.tableoid, t12_3.a
-                                 Filter: (t12_3.a = 3)
-                           ->  Seq Scan on public.t111 t111_2
-                                 Output: t111_2.ctid, t111_2.tableoid, t111_2.a
-                                 Filter: (t111_2.a = 3)
-   ->  Subquery Scan on t1_3
-         Output: 100, t1_3.b, t1_3.c, t1_3.d, t1_3.e, t1_3.ctid
-         Filter: snoop(t1_3.a)
-         ->  LockRows
-               Output: t111_3.ctid, t111_3.a, t111_3.b, t111_3.c, t111_3.d, t111_3.e, t111_3.ctid, t12_4.ctid, t12_4.tableoid
-               ->  Nested Loop Semi Join
-                     Output: t111_3.ctid, t111_3.a, t111_3.b, t111_3.c, t111_3.d, t111_3.e, t111_3.ctid, t12_4.ctid, t12_4.tableoid
-                     ->  Seq Scan on public.t111 t111_3
-                           Output: t111_3.ctid, t111_3.a, t111_3.b, t111_3.c, t111_3.d, t111_3.e
-                           Filter: ((t111_3.a > 5) AND (t111_3.a = 3) AND leakproof(t111_3.a))
-                     ->  Append
-                           ->  Seq Scan on public.t12 t12_4
-                                 Output: t12_4.ctid, t12_4.tableoid, t12_4.a
-                                 Filter: (t12_4.a = 3)
-                           ->  Seq Scan on public.t111 t111_4
-                                 Output: t111_4.ctid, t111_4.tableoid, t111_4.a
-                                 Filter: (t111_4.a = 3)
-(73 rows)
+                                                                QUERY PLAN                                                                
+------------------------------------------------------------------------------------------------------------------------------------------
+ Remote Subquery Scan on any (datanode_1,datanode_2)
+   ->  Update on public.t1 t1_4
+         Update on public.t1 t1_4
+         Update on public.t11 t1
+         Update on public.t12 t1
+         Update on public.t111 t1
+         ->  Subquery Scan on t1
+               Output: 100, t1.b, t1.c, t1.a, t1.a, t1.a, t1.a, t1.a, t1.a, t1.ctid
+               Filter: snoop(t1.a)
+               ->  LockRows
+                     Output: t1_5.a, t1_5.ctid, t1_5.b, t1_5.c, t1_5.ctid, t12.ctid, t12.tableoid
+                     ->  Nested Loop Semi Join
+                           Output: t1_5.a, t1_5.ctid, t1_5.b, t1_5.c, t1_5.ctid, t12.ctid, t12.tableoid
+                           ->  Seq Scan on public.t1 t1_5
+                                 Output: t1_5.a, t1_5.ctid, t1_5.b, t1_5.c
+                                 Filter: ((t1_5.a > 5) AND (t1_5.a = 3) AND leakproof(t1_5.a))
+                           ->  Append
+                                 ->  Seq Scan on public.t12
+                                       Output: t12.ctid, t12.tableoid, t12.a
+                                       Filter: (t12.a = 3)
+                                 ->  Bitmap Heap Scan on public.t111
+                                       Output: t111.ctid, t111.tableoid, t111.a
+                                       Recheck Cond: (t111.a = 3)
+                                       ->  Bitmap Index Scan on t111_a_idx
+                                             Index Cond: (t111.a = 3)
+         ->  Subquery Scan on t1_1
+               Output: 100, t1_1.b, t1_1.c, t1_1.d, t1_1.a, t1_1.a, t1_1.a, t1_1.a, t1_1.a, t1_1.a, t1_1.ctid
+               Filter: snoop(t1_1.a)
+               ->  LockRows
+                     Output: t11.a, t11.ctid, t11.b, t11.c, t11.d, t11.ctid, t12_1.ctid, t12_1.tableoid
+                     ->  Nested Loop Semi Join
+                           Output: t11.a, t11.ctid, t11.b, t11.c, t11.d, t11.ctid, t12_1.ctid, t12_1.tableoid
+                           ->  Seq Scan on public.t11
+                                 Output: t11.a, t11.ctid, t11.b, t11.c, t11.d
+                                 Filter: ((t11.a > 5) AND (t11.a = 3) AND leakproof(t11.a))
+                           ->  Append
+                                 ->  Seq Scan on public.t12 t12_1
+                                       Output: t12_1.ctid, t12_1.tableoid, t12_1.a
+                                       Filter: (t12_1.a = 3)
+                                 ->  Bitmap Heap Scan on public.t111 t111_1
+                                       Output: t111_1.ctid, t111_1.tableoid, t111_1.a
+                                       Recheck Cond: (t111_1.a = 3)
+                                       ->  Bitmap Index Scan on t111_a_idx
+                                             Index Cond: (t111_1.a = 3)
+         ->  Subquery Scan on t1_2
+               Output: 100, t1_2.b, t1_2.c, t1_2.e, t1_2.a, t1_2.a, t1_2.a, t1_2.a, t1_2.a, t1_2.a, t1_2.ctid
+               Filter: snoop(t1_2.a)
+               ->  LockRows
+                     Output: t12_2.a, t12_2.ctid, t12_2.b, t12_2.c, t12_2.e, t12_2.ctid, t12_3.ctid, t12_3.tableoid
+                     ->  Nested Loop Semi Join
+                           Output: t12_2.a, t12_2.ctid, t12_2.b, t12_2.c, t12_2.e, t12_2.ctid, t12_3.ctid, t12_3.tableoid
+                           ->  Seq Scan on public.t12 t12_2
+                                 Output: t12_2.a, t12_2.ctid, t12_2.b, t12_2.c, t12_2.e
+                                 Filter: ((t12_2.a > 5) AND (t12_2.a = 3) AND leakproof(t12_2.a))
+                           ->  Append
+                                 ->  Seq Scan on public.t12 t12_3
+                                       Output: t12_3.ctid, t12_3.tableoid, t12_3.a
+                                       Filter: (t12_3.a = 3)
+                                 ->  Bitmap Heap Scan on public.t111 t111_2
+                                       Output: t111_2.ctid, t111_2.tableoid, t111_2.a
+                                       Recheck Cond: (t111_2.a = 3)
+                                       ->  Bitmap Index Scan on t111_a_idx
+                                             Index Cond: (t111_2.a = 3)
+         ->  Subquery Scan on t1_3
+               Output: 100, t1_3.b, t1_3.c, t1_3.d, t1_3.e, t1_3.a, t1_3.a, t1_3.a, t1_3.a, t1_3.a, t1_3.a, t1_3.ctid
+               Filter: snoop(t1_3.a)
+               ->  LockRows
+                     Output: t111_3.a, t111_3.ctid, t111_3.b, t111_3.c, t111_3.d, t111_3.e, t111_3.ctid, t12_4.ctid, t12_4.tableoid
+                     ->  Nested Loop Semi Join
+                           Output: t111_3.a, t111_3.ctid, t111_3.b, t111_3.c, t111_3.d, t111_3.e, t111_3.ctid, t12_4.ctid, t12_4.tableoid
+                           ->  Index Scan using t111_a_idx on public.t111 t111_3
+                                 Output: t111_3.a, t111_3.ctid, t111_3.b, t111_3.c, t111_3.d, t111_3.e
+                                 Index Cond: ((t111_3.a > 5) AND (t111_3.a = 3))
+                                 Filter: leakproof(t111_3.a)
+                           ->  Append
+                                 ->  Seq Scan on public.t12 t12_4
+                                       Output: t12_4.ctid, t12_4.tableoid, t12_4.a
+                                       Filter: (t12_4.a = 3)
+                                 ->  Bitmap Heap Scan on public.t111 t111_4
+                                       Output: t111_4.ctid, t111_4.tableoid, t111_4.a
+                                       Recheck Cond: (t111_4.a = 3)
+                                       ->  Bitmap Index Scan on t111_a_idx
+                                             Index Cond: (t111_4.a = 3)
+(83 rows)
 
 UPDATE v1 SET a=100 WHERE snoop(a) AND leakproof(a) AND a = 3;
 SELECT * FROM v1 WHERE a=100; -- Nothing should have been changed to 100
@@ -2212,82 +2235,92 @@ SELECT * FROM t1 WHERE a=100; -- Nothing should have been changed to 100
 
 EXPLAIN (VERBOSE, COSTS OFF)
 UPDATE v1 SET a=a+1 WHERE snoop(a) AND leakproof(a) AND a = 8;
-                                                             QUERY PLAN                                                             
-------------------------------------------------------------------------------------------------------------------------------------
- Update on public.t1 t1_4
-   Update on public.t1 t1_4
-   Update on public.t11 t1
-   Update on public.t12 t1
-   Update on public.t111 t1
-   ->  Subquery Scan on t1
-         Output: (t1.a + 1), t1.b, t1.c, t1.ctid
-         Filter: snoop(t1.a)
-         ->  LockRows
-               Output: t1_5.a, t1_5.ctid, t1_5.b, t1_5.c, t1_5.ctid, t12.ctid, t12.tableoid
-               ->  Nested Loop Semi Join
+                                                                QUERY PLAN                                                                
+------------------------------------------------------------------------------------------------------------------------------------------
+ Remote Subquery Scan on any (datanode_1,datanode_2)
+   ->  Update on public.t1 t1_4
+         Update on public.t1 t1_4
+         Update on public.t11 t1
+         Update on public.t12 t1
+         Update on public.t111 t1
+         ->  Subquery Scan on t1
+               Output: (t1.a + 1), t1.b, t1.c, t1.a, t1.a, t1.a, t1.a, t1.a, t1.a, t1.ctid
+               Filter: snoop(t1.a)
+               ->  LockRows
                      Output: t1_5.a, t1_5.ctid, t1_5.b, t1_5.c, t1_5.ctid, t12.ctid, t12.tableoid
-                     ->  Seq Scan on public.t1 t1_5
-                           Output: t1_5.a, t1_5.ctid, t1_5.b, t1_5.c
-                           Filter: ((t1_5.a > 5) AND (t1_5.a = 8) AND leakproof(t1_5.a))
-                     ->  Append
-                           ->  Seq Scan on public.t12
-                                 Output: t12.ctid, t12.tableoid, t12.a
-                                 Filter: (t12.a = 8)
-                           ->  Seq Scan on public.t111
-                                 Output: t111.ctid, t111.tableoid, t111.a
-                                 Filter: (t111.a = 8)
-   ->  Subquery Scan on t1_1
-         Output: (t1_1.a + 1), t1_1.b, t1_1.c, t1_1.d, t1_1.ctid
-         Filter: snoop(t1_1.a)
-         ->  LockRows
-               Output: t11.a, t11.ctid, t11.b, t11.c, t11.d, t11.ctid, t12_1.ctid, t12_1.tableoid
-               ->  Nested Loop Semi Join
+                     ->  Nested Loop Semi Join
+                           Output: t1_5.a, t1_5.ctid, t1_5.b, t1_5.c, t1_5.ctid, t12.ctid, t12.tableoid
+                           ->  Seq Scan on public.t1 t1_5
+                                 Output: t1_5.a, t1_5.ctid, t1_5.b, t1_5.c
+                                 Filter: ((t1_5.a > 5) AND (t1_5.a = 8) AND leakproof(t1_5.a))
+                           ->  Append
+                                 ->  Seq Scan on public.t12
+                                       Output: t12.ctid, t12.tableoid, t12.a
+                                       Filter: (t12.a = 8)
+                                 ->  Bitmap Heap Scan on public.t111
+                                       Output: t111.ctid, t111.tableoid, t111.a
+                                       Recheck Cond: (t111.a = 8)
+                                       ->  Bitmap Index Scan on t111_a_idx
+                                             Index Cond: (t111.a = 8)
+         ->  Subquery Scan on t1_1
+               Output: (t1_1.a + 1), t1_1.b, t1_1.c, t1_1.d, t1_1.a, t1_1.a, t1_1.a, t1_1.a, t1_1.a, t1_1.a, t1_1.ctid
+               Filter: snoop(t1_1.a)
+               ->  LockRows
                      Output: t11.a, t11.ctid, t11.b, t11.c, t11.d, t11.ctid, t12_1.ctid, t12_1.tableoid
-                     ->  Seq Scan on public.t11
-                           Output: t11.a, t11.ctid, t11.b, t11.c, t11.d
-                           Filter: ((t11.a > 5) AND (t11.a = 8) AND leakproof(t11.a))
-                     ->  Append
-                           ->  Seq Scan on public.t12 t12_1
-                                 Output: t12_1.ctid, t12_1.tableoid, t12_1.a
-                                 Filter: (t12_1.a = 8)
-                           ->  Seq Scan on public.t111 t111_1
-                                 Output: t111_1.ctid, t111_1.tableoid, t111_1.a
-                                 Filter: (t111_1.a = 8)
-   ->  Subquery Scan on t1_2
-         Output: (t1_2.a + 1), t1_2.b, t1_2.c, t1_2.e, t1_2.ctid
-         Filter: snoop(t1_2.a)
-         ->  LockRows
-               Output: t12_2.a, t12_2.ctid, t12_2.b, t12_2.c, t12_2.e, t12_2.ctid, t12_3.ctid, t12_3.tableoid
-               ->  Nested Loop Semi Join
+                     ->  Nested Loop Semi Join
+                           Output: t11.a, t11.ctid, t11.b, t11.c, t11.d, t11.ctid, t12_1.ctid, t12_1.tableoid
+                           ->  Seq Scan on public.t11
+                                 Output: t11.a, t11.ctid, t11.b, t11.c, t11.d
+                                 Filter: ((t11.a > 5) AND (t11.a = 8) AND leakproof(t11.a))
+                           ->  Append
+                                 ->  Seq Scan on public.t12 t12_1
+                                       Output: t12_1.ctid, t12_1.tableoid, t12_1.a
+                                       Filter: (t12_1.a = 8)
+                                 ->  Bitmap Heap Scan on public.t111 t111_1
+                                       Output: t111_1.ctid, t111_1.tableoid, t111_1.a
+                                       Recheck Cond: (t111_1.a = 8)
+                                       ->  Bitmap Index Scan on t111_a_idx
+                                             Index Cond: (t111_1.a = 8)
+         ->  Subquery Scan on t1_2
+               Output: (t1_2.a + 1), t1_2.b, t1_2.c, t1_2.e, t1_2.a, t1_2.a, t1_2.a, t1_2.a, t1_2.a, t1_2.a, t1_2.ctid
+               Filter: snoop(t1_2.a)
+               ->  LockRows
                      Output: t12_2.a, t12_2.ctid, t12_2.b, t12_2.c, t12_2.e, t12_2.ctid, t12_3.ctid, t12_3.tableoid
-                     ->  Seq Scan on public.t12 t12_2
-                           Output: t12_2.a, t12_2.ctid, t12_2.b, t12_2.c, t12_2.e
-                           Filter: ((t12_2.a > 5) AND (t12_2.a = 8) AND leakproof(t12_2.a))
-                     ->  Append
-                           ->  Seq Scan on public.t12 t12_3
-                                 Output: t12_3.ctid, t12_3.tableoid, t12_3.a
-                                 Filter: (t12_3.a = 8)
-                           ->  Seq Scan on public.t111 t111_2
-                                 Output: t111_2.ctid, t111_2.tableoid, t111_2.a
-                                 Filter: (t111_2.a = 8)
-   ->  Subquery Scan on t1_3
-         Output: (t1_3.a + 1), t1_3.b, t1_3.c, t1_3.d, t1_3.e, t1_3.ctid
-         Filter: snoop(t1_3.a)
-         ->  LockRows
-               Output: t111_3.a, t111_3.ctid, t111_3.b, t111_3.c, t111_3.d, t111_3.e, t111_3.ctid, t12_4.ctid, t12_4.tableoid
-               ->  Nested Loop Semi Join
+                     ->  Nested Loop Semi Join
+                           Output: t12_2.a, t12_2.ctid, t12_2.b, t12_2.c, t12_2.e, t12_2.ctid, t12_3.ctid, t12_3.tableoid
+                           ->  Seq Scan on public.t12 t12_2
+                                 Output: t12_2.a, t12_2.ctid, t12_2.b, t12_2.c, t12_2.e
+                                 Filter: ((t12_2.a > 5) AND (t12_2.a = 8) AND leakproof(t12_2.a))
+                           ->  Append
+                                 ->  Seq Scan on public.t12 t12_3
+                                       Output: t12_3.ctid, t12_3.tableoid, t12_3.a
+                                       Filter: (t12_3.a = 8)
+                                 ->  Bitmap Heap Scan on public.t111 t111_2
+                                       Output: t111_2.ctid, t111_2.tableoid, t111_2.a
+                                       Recheck Cond: (t111_2.a = 8)
+                                       ->  Bitmap Index Scan on t111_a_idx
+                                             Index Cond: (t111_2.a = 8)
+         ->  Subquery Scan on t1_3
+               Output: (t1_3.a + 1), t1_3.b, t1_3.c, t1_3.d, t1_3.e, t1_3.a, t1_3.a, t1_3.a, t1_3.a, t1_3.a, t1_3.a, t1_3.ctid
+               Filter: snoop(t1_3.a)
+               ->  LockRows
                      Output: t111_3.a, t111_3.ctid, t111_3.b, t111_3.c, t111_3.d, t111_3.e, t111_3.ctid, t12_4.ctid, t12_4.tableoid
-                     ->  Seq Scan on public.t111 t111_3
-                           Output: t111_3.a, t111_3.ctid, t111_3.b, t111_3.c, t111_3.d, t111_3.e
-                           Filter: ((t111_3.a > 5) AND (t111_3.a = 8) AND leakproof(t111_3.a))
-                     ->  Append
-                           ->  Seq Scan on public.t12 t12_4
-                                 Output: t12_4.ctid, t12_4.tableoid, t12_4.a
-                                 Filter: (t12_4.a = 8)
-                           ->  Seq Scan on public.t111 t111_4
-                                 Output: t111_4.ctid, t111_4.tableoid, t111_4.a
-                                 Filter: (t111_4.a = 8)
-(73 rows)
+                     ->  Nested Loop Semi Join
+                           Output: t111_3.a, t111_3.ctid, t111_3.b, t111_3.c, t111_3.d, t111_3.e, t111_3.ctid, t12_4.ctid, t12_4.tableoid
+                           ->  Index Scan using t111_a_idx on public.t111 t111_3
+                                 Output: t111_3.a, t111_3.ctid, t111_3.b, t111_3.c, t111_3.d, t111_3.e
+                                 Index Cond: ((t111_3.a > 5) AND (t111_3.a = 8))
+                                 Filter: leakproof(t111_3.a)
+                           ->  Append
+                                 ->  Seq Scan on public.t12 t12_4
+                                       Output: t12_4.ctid, t12_4.tableoid, t12_4.a
+                                       Filter: (t12_4.a = 8)
+                                 ->  Bitmap Heap Scan on public.t111 t111_4
+                                       Output: t111_4.ctid, t111_4.tableoid, t111_4.a
+                                       Recheck Cond: (t111_4.a = 8)
+                                       ->  Bitmap Index Scan on t111_a_idx
+                                             Index Cond: (t111_4.a = 8)
+(83 rows)
 
 UPDATE v1 SET a=a+1 WHERE snoop(a) AND leakproof(a) AND a = 8;
 NOTICE:  snooped value: 8

@@ -5,7 +5,7 @@
 -- check that non-updatable views and columns are rejected with useful error
 -- messages
 
-CREATE TABLE base_tbl (a int PRIMARY KEY, b text DEFAULT 'Unspecified');
+CREATE TABLE base_tbl (a int PRIMARY KEY, b text DEFAULT 'Unspecified') DISTRIBUTE BY REPLICATION;
 INSERT INTO base_tbl SELECT i, 'Row ' || i FROM generate_series(-2, 2) g(i);
 
 CREATE VIEW ro_view1 AS SELECT DISTINCT a, b FROM base_tbl; -- DISTINCT not supported
@@ -104,7 +104,7 @@ DROP SEQUENCE seq CASCADE;
 
 -- simple updatable view
 
-CREATE TABLE base_tbl (a int PRIMARY KEY, b text DEFAULT 'Unspecified');
+CREATE TABLE base_tbl (a int PRIMARY KEY, b text DEFAULT 'Unspecified') DISTRIBUTE BY REPLICATION;
 INSERT INTO base_tbl SELECT i, 'Row ' || i FROM generate_series(-2, 2) g(i);
 
 CREATE VIEW rw_view1 AS SELECT * FROM base_tbl WHERE a>0;
@@ -135,7 +135,7 @@ DROP TABLE base_tbl CASCADE;
 
 -- view on top of view
 
-CREATE TABLE base_tbl (a int PRIMARY KEY, b text DEFAULT 'Unspecified');
+CREATE TABLE base_tbl (a int PRIMARY KEY, b text DEFAULT 'Unspecified') DISTRIBUTE BY REPLICATION;
 INSERT INTO base_tbl SELECT i, 'Row ' || i FROM generate_series(-2, 2) g(i);
 
 CREATE VIEW rw_view1 AS SELECT b AS bb, a AS aa FROM base_tbl WHERE a>0;
@@ -168,7 +168,7 @@ DROP TABLE base_tbl CASCADE;
 
 -- view on top of view with rules
 
-CREATE TABLE base_tbl (a int PRIMARY KEY, b text DEFAULT 'Unspecified');
+CREATE TABLE base_tbl (a int PRIMARY KEY, b text DEFAULT 'Unspecified') DISTRIBUTE BY REPLICATION;
 INSERT INTO base_tbl SELECT i, 'Row ' || i FROM generate_series(-2, 2) g(i);
 
 CREATE VIEW rw_view1 AS SELECT * FROM base_tbl WHERE a>0 OFFSET 0; -- not updatable without rules/triggers
@@ -256,7 +256,7 @@ DROP TABLE base_tbl CASCADE;
 
 -- view on top of view with triggers
 
-CREATE TABLE base_tbl (a int PRIMARY KEY, b text DEFAULT 'Unspecified');
+CREATE TABLE base_tbl (a int PRIMARY KEY, b text DEFAULT 'Unspecified') DISTRIBUTE BY REPLICATION;
 INSERT INTO base_tbl SELECT i, 'Row ' || i FROM generate_series(-2, 2) g(i);
 
 CREATE VIEW rw_view1 AS SELECT * FROM base_tbl WHERE a>0 OFFSET 0; -- not updatable without rules/triggers
@@ -371,7 +371,7 @@ DROP FUNCTION rw_view1_trig_fn();
 
 -- update using whole row from view
 
-CREATE TABLE base_tbl (a int PRIMARY KEY, b text DEFAULT 'Unspecified');
+CREATE TABLE base_tbl (a int PRIMARY KEY, b text DEFAULT 'Unspecified') DISTRIBUTE BY REPLICATION;
 INSERT INTO base_tbl SELECT i, 'Row ' || i FROM generate_series(-2, 2) g(i);
 
 CREATE VIEW rw_view1 AS SELECT b AS bb, a AS aa FROM base_tbl;
@@ -395,7 +395,7 @@ CREATE USER view_user1;
 CREATE USER view_user2;
 
 SET SESSION AUTHORIZATION view_user1;
-CREATE TABLE base_tbl(a int, b text, c float);
+CREATE TABLE base_tbl(a int, b text, c float) DISTRIBUTE BY REPLICATION;
 INSERT INTO base_tbl VALUES (1, 'Row 1', 1.0);
 CREATE VIEW rw_view1 AS SELECT b AS bb, c AS cc, a AS aa FROM base_tbl;
 INSERT INTO rw_view1 VALUES ('Row 2', 2.0, 2);
@@ -464,7 +464,7 @@ DROP USER view_user2;
 
 -- column defaults
 
-CREATE TABLE base_tbl (a int PRIMARY KEY, b text DEFAULT 'Unspecified', c serial);
+CREATE TABLE base_tbl (a int PRIMARY KEY, b text DEFAULT 'Unspecified', c serial) DISTRIBUTE BY REPLICATION;
 INSERT INTO base_tbl VALUES (1, 'Row 1');
 INSERT INTO base_tbl VALUES (2, 'Row 2');
 INSERT INTO base_tbl VALUES (3);
@@ -481,7 +481,7 @@ DROP TABLE base_tbl CASCADE;
 
 -- Table having triggers
 
-CREATE TABLE base_tbl (a int PRIMARY KEY, b text DEFAULT 'Unspecified');
+CREATE TABLE base_tbl (a int PRIMARY KEY, b text DEFAULT 'Unspecified') DISTRIBUTE BY REPLICATION;
 INSERT INTO base_tbl VALUES (1, 'Row 1');
 INSERT INTO base_tbl VALUES (2, 'Row 2');
 
@@ -513,7 +513,7 @@ DROP TABLE base_tbl;
 
 -- view with ORDER BY
 
-CREATE TABLE base_tbl (a int, b int);
+CREATE TABLE base_tbl (a int, b int) DISTRIBUTE BY REPLICATION;
 INSERT INTO base_tbl VALUES (1,2), (4,5), (3,-3);
 
 CREATE VIEW rw_view1 AS SELECT * FROM base_tbl ORDER BY a+b;
@@ -531,7 +531,7 @@ DROP TABLE base_tbl CASCADE;
 
 -- multiple array-column updates
 
-CREATE TABLE base_tbl (a int, arr int[]);
+CREATE TABLE base_tbl (a int, arr int[]) DISTRIBUTE BY REPLICATION;
 INSERT INTO base_tbl VALUES (1,ARRAY[2]), (3,ARRAY[4]);
 
 CREATE VIEW rw_view1 AS SELECT * FROM base_tbl;
@@ -544,7 +544,7 @@ DROP TABLE base_tbl CASCADE;
 
 -- views with updatable and non-updatable columns
 
-CREATE TABLE base_tbl(a float);
+CREATE TABLE base_tbl(a float) DISTRIBUTE BY REPLICATION;
 INSERT INTO base_tbl SELECT i/10.0 FROM generate_series(1,10) g(i);
 
 CREATE VIEW rw_view1 AS
@@ -606,8 +606,8 @@ DROP TABLE base_tbl CASCADE;
 
 -- inheritance tests
 
-CREATE TABLE base_tbl_parent (a int);
-CREATE TABLE base_tbl_child (CHECK (a > 0)) INHERITS (base_tbl_parent);
+CREATE TABLE base_tbl_parent (a int) DISTRIBUTE BY REPLICATION;
+CREATE TABLE base_tbl_child (CHECK (a > 0)) INHERITS (base_tbl_parent) DISTRIBUTE BY REPLICATION;
 INSERT INTO base_tbl_parent SELECT * FROM generate_series(-8, -1);
 INSERT INTO base_tbl_child SELECT * FROM generate_series(1, 8);
 
@@ -638,7 +638,7 @@ DROP TABLE base_tbl_parent, base_tbl_child CASCADE;
 
 -- simple WITH CHECK OPTION
 
-CREATE TABLE base_tbl (a int, b int DEFAULT 10);
+CREATE TABLE base_tbl (a int, b int DEFAULT 10) DISTRIBUTE BY REPLICATION;
 INSERT INTO base_tbl VALUES (1,2), (2,3), (1,-1);
 
 CREATE VIEW rw_view1 AS SELECT * FROM base_tbl WHERE a < b
@@ -659,7 +659,7 @@ DROP TABLE base_tbl CASCADE;
 
 -- WITH LOCAL/CASCADED CHECK OPTION
 
-CREATE TABLE base_tbl (a int);
+CREATE TABLE base_tbl (a int) DISTRIBUTE BY REPLICATION;
 
 CREATE VIEW rw_view1 AS SELECT * FROM base_tbl WHERE a > 0;
 CREATE VIEW rw_view2 AS SELECT * FROM rw_view1 WHERE a < 10
@@ -700,7 +700,7 @@ DROP TABLE base_tbl CASCADE;
 
 -- WITH CHECK OPTION with no local view qual
 
-CREATE TABLE base_tbl (a int);
+CREATE TABLE base_tbl (a int) DISTRIBUTE BY REPLICATION;
 
 CREATE VIEW rw_view1 AS SELECT * FROM base_tbl WITH CHECK OPTION;
 CREATE VIEW rw_view2 AS SELECT * FROM rw_view1 WHERE a > 0;
@@ -718,7 +718,7 @@ DROP TABLE base_tbl CASCADE;
 
 -- WITH CHECK OPTION with scalar array ops
 
-CREATE TABLE base_tbl (a int, b int[]);
+CREATE TABLE base_tbl (a int, b int[]) DISTRIBUTE BY REPLICATION;
 CREATE VIEW rw_view1 AS SELECT * FROM base_tbl WHERE a = ANY (b)
   WITH CHECK OPTION;
 
@@ -737,8 +737,8 @@ DROP TABLE base_tbl CASCADE;
 
 -- WITH CHECK OPTION with subquery
 
-CREATE TABLE base_tbl (a int);
-CREATE TABLE ref_tbl (a int PRIMARY KEY);
+CREATE TABLE base_tbl (a int) DISTRIBUTE BY REPLICATION;
+CREATE TABLE ref_tbl (a int PRIMARY KEY) DISTRIBUTE BY REPLICATION;
 INSERT INTO ref_tbl SELECT * FROM generate_series(1,10);
 
 CREATE VIEW rw_view1 AS
@@ -759,7 +759,7 @@ DROP TABLE base_tbl, ref_tbl CASCADE;
 
 -- WITH CHECK OPTION with BEFORE trigger on base table
 
-CREATE TABLE base_tbl (a int, b int);
+CREATE TABLE base_tbl (a int, b int) DISTRIBUTE BY REPLICATION;
 
 CREATE FUNCTION base_tbl_trig_fn()
 RETURNS trigger AS
@@ -785,7 +785,7 @@ DROP FUNCTION base_tbl_trig_fn();
 
 -- WITH LOCAL CHECK OPTION with INSTEAD OF trigger on base view
 
-CREATE TABLE base_tbl (a int, b int);
+CREATE TABLE base_tbl (a int, b int) DISTRIBUTE BY REPLICATION;
 
 CREATE VIEW rw_view1 AS SELECT a FROM base_tbl WHERE a < b;
 
@@ -845,7 +845,7 @@ SELECT * FROM base_tbl;
 DROP TABLE base_tbl CASCADE;
 DROP FUNCTION rw_view1_trig_fn();
 
-CREATE TABLE base_tbl (a int);
+CREATE TABLE base_tbl (a int) DISTRIBUTE BY REPLICATION;
 CREATE VIEW rw_view1 AS SELECT a,10 AS b FROM base_tbl;
 CREATE RULE rw_view1_ins_rule AS ON INSERT TO rw_view1
   DO INSTEAD INSERT INTO base_tbl VALUES (NEW.a);
@@ -856,7 +856,7 @@ DROP TABLE base_tbl CASCADE;
 
 -- security barrier view
 
-CREATE TABLE base_tbl (person text, visibility text);
+CREATE TABLE base_tbl (person text, visibility text) DISTRIBUTE BY REPLICATION;
 INSERT INTO base_tbl VALUES ('Tom', 'public'),
                             ('Dick', 'private'),
                             ('Harry', 'public');
@@ -940,7 +940,7 @@ DROP TABLE base_tbl CASCADE;
 
 -- security barrier view on top of table with rules
 
-CREATE TABLE base_tbl(id int PRIMARY KEY, data text, deleted boolean);
+CREATE TABLE base_tbl(id int PRIMARY KEY, data text, deleted boolean) DISTRIBUTE BY REPLICATION;
 INSERT INTO base_tbl VALUES (1, 'Row 1', false), (2, 'Row 2', true);
 
 CREATE RULE base_tbl_ins_rule AS ON INSERT TO base_tbl
@@ -968,25 +968,25 @@ SELECT * FROM base_tbl;
 DROP TABLE base_tbl CASCADE;
 
 -- security barrier view based on inheritance set
-CREATE TABLE t1 (a int, b float, c text);
+CREATE TABLE t1 (a int, b float, c text) DISTRIBUTE BY REPLICATION;
 CREATE INDEX t1_a_idx ON t1(a);
 INSERT INTO t1
 SELECT i,i,'t1' FROM generate_series(1,10) g(i);
 ANALYZE t1;
 
-CREATE TABLE t11 (d text) INHERITS (t1);
+CREATE TABLE t11 (d text) INHERITS (t1) DISTRIBUTE BY REPLICATION;
 CREATE INDEX t11_a_idx ON t11(a);
 INSERT INTO t11
 SELECT i,i,'t11','t11d' FROM generate_series(1,10) g(i);
 ANALYZE t11;
 
-CREATE TABLE t12 (e int[]) INHERITS (t1);
+CREATE TABLE t12 (e int[]) INHERITS (t1) DISTRIBUTE BY REPLICATION;
 CREATE INDEX t12_a_idx ON t12(a);
 INSERT INTO t12
 SELECT i,i,'t12','{1,2}'::int[] FROM generate_series(1,10) g(i);
 ANALYZE t12;
 
-CREATE TABLE t111 () INHERITS (t11, t12);
+CREATE TABLE t111 () INHERITS (t11, t12) DISTRIBUTE BY REPLICATION;
 CREATE INDEX t111_a_idx ON t111(a);
 INSERT INTO t111
 SELECT i,i,'t111','t111d','{1,1,1}'::int[] FROM generate_series(1,10) g(i);
