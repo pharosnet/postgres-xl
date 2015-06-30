@@ -43,7 +43,7 @@ traverse_datadir(const char *datadir, process_file_callback_t callback)
 /*
  * recursive part of traverse_datadir
  *
- * parent_path is the current subdirectory's path relative to datadir,
+ * parentpath is the current subdirectory's path relative to datadir,
  * or NULL at the top level.
  */
 static void
@@ -148,7 +148,7 @@ recurse_dir(const char *datadir, const char *parentpath,
 				 fullparentpath, strerror(errno));
 
 	if (closedir(xldir))
-		pg_fatal("could not close archive location \"%s\": %s\n",
+		pg_fatal("could not close directory \"%s\": %s\n",
 				 fullparentpath, strerror(errno));
 }
 
@@ -199,7 +199,7 @@ copy_file_range(const char *path, off_t begin, off_t end, bool trunc)
 	}
 
 	if (close(srcfd) != 0)
-		pg_fatal("error closing file \"%s\": %s\n", srcpath, strerror(errno));
+		pg_fatal("could not close file \"%s\": %s\n", srcpath, strerror(errno));
 }
 
 /*
@@ -262,5 +262,5 @@ execute_pagemap(datapagemap_t *pagemap, const char *path)
 		copy_file_range(path, offset, offset + BLCKSZ, false);
 		/* Ok, this block has now been copied from new data dir to old */
 	}
-	free(iter);
+	pg_free(iter);
 }

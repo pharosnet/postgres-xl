@@ -93,7 +93,7 @@ process_source_file(const char *path, file_type_t type, size_t newsize,
 	 * regular file
 	 */
 	if (type != FILE_TYPE_REGULAR && isRelDataFile(path))
-		pg_fatal("data file in source \"%s\" is not a regular file\n", path);
+		pg_fatal("data file \"%s\" in source is not a regular file\n", path);
 
 	snprintf(localpath, sizeof(localpath), "%s/%s", datadir_target, path);
 
@@ -114,7 +114,7 @@ process_source_file(const char *path, file_type_t type, size_t newsize,
 		case FILE_TYPE_DIRECTORY:
 			if (exists && !S_ISDIR(statbuf.st_mode))
 			{
-				/* it's a directory in target, but not in source. Strange.. */
+				/* it's a directory in source, but not in target. Strange.. */
 				pg_fatal("\"%s\" is not a directory\n", localpath);
 			}
 
@@ -135,7 +135,7 @@ process_source_file(const char *path, file_type_t type, size_t newsize,
 				)
 			{
 				/*
-				 * It's a symbolic link in target, but not in source.
+				 * It's a symbolic link in source, but not in target.
 				 * Strange..
 				 */
 				pg_fatal("\"%s\" is not a symbolic link\n", localpath);
@@ -256,7 +256,7 @@ process_target_file(const char *path, file_type_t type, size_t oldsize,
 	if (lstat(localpath, &statbuf) < 0)
 	{
 		if (errno != ENOENT)
-			pg_fatal("could not stat file \"%s\": %s",
+			pg_fatal("could not stat file \"%s\": %s\n",
 					 localpath, strerror(errno));
 
 		exists = false;
@@ -354,7 +354,7 @@ process_block_change(ForkNumber forknum, RelFileNode rnode, BlockNumber blkno)
 		entry = *e;
 	else
 		entry = NULL;
-	free(path);
+	pfree(path);
 
 	if (entry)
 	{
@@ -530,7 +530,7 @@ print_filemap(void)
  * Does it look like a relation data file?
  *
  * For our purposes, only files belonging to the main fork are considered
- * relation files. Other forks are alwayes copied in toto, because we cannot
+ * relation files. Other forks are always copied in toto, because we cannot
  * reliably track changes to them, because WAL only contains block references
  * for the main fork.
  */

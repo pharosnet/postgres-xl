@@ -1266,6 +1266,8 @@ set_customscan_references(PlannerInfo *root,
 						  CustomScan *cscan,
 						  int rtoffset)
 {
+	ListCell   *lc;
+
 	/* Adjust scanrelid if it's valid */
 	if (cscan->scan.scanrelid > 0)
 		cscan->scan.scanrelid += rtoffset;
@@ -1331,6 +1333,12 @@ set_customscan_references(PlannerInfo *root,
 			fix_scan_list(root, cscan->scan.plan.qual, rtoffset);
 		cscan->custom_exprs =
 			fix_scan_list(root, cscan->custom_exprs, rtoffset);
+	}
+
+	/* Adjust child plan-nodes recursively, if needed */
+	foreach (lc, cscan->custom_plans)
+	{
+		lfirst(lc) = set_plan_refs(root, (Plan *) lfirst(lc), rtoffset);
 	}
 
 	/* Adjust custom_relids if needed */
@@ -1591,7 +1599,7 @@ fix_scan_expr_walker(Node *node, fix_scan_expr_context *context)
  *	  subplans, by setting the varnos to OUTER_VAR or INNER_VAR and setting
  *	  attno values to the result domain number of either the corresponding
  *	  outer or inner join tuple item.  Also perform opcode lookup for these
- *	  expressions. and add regclass OIDs to root->glob->relationOids.
+ *	  expressions, and add regclass OIDs to root->glob->relationOids.
  */
 static void
 set_join_references(PlannerInfo *root, Join *join, int rtoffset)

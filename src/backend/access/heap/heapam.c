@@ -7504,10 +7504,11 @@ heap_xlog_visible(XLogReaderState *record)
 	{
 		/*
 		 * We don't bump the LSN of the heap page when setting the visibility
-		 * map bit (unless checksums are enabled, in which case we must),
-		 * because that would generate an unworkable volume of full-page
-		 * writes.  This exposes us to torn page hazards, but since we're not
-		 * inspecting the existing page contents in any way, we don't care.
+		 * map bit (unless checksums or wal_hint_bits is enabled, in which
+		 * case we must), because that would generate an unworkable volume of
+		 * full-page writes.  This exposes us to torn page hazards, but since
+		 * we're not inspecting the existing page contents in any way, we
+		 * don't care.
 		 *
 		 * However, all operations that clear the visibility map bit *do* bump
 		 * the LSN, and those operations will only be replayed if the XLOG LSN
@@ -7522,10 +7523,10 @@ heap_xlog_visible(XLogReaderState *record)
 	else if (action == BLK_RESTORED)
 	{
 		/*
-		 * If heap block was backed up, restore it. This can only happen with
-		 * checksums enabled.
+		 * If heap block was backed up, we already restored it and there's
+		 * nothing more to do. (This can only happen with checksums or
+		 * wal_log_hints enabled.)
 		 */
-		Assert(DataChecksumsEnabled());
 	}
 	if (BufferIsValid(buffer))
 		UnlockReleaseBuffer(buffer);
@@ -7596,9 +7597,12 @@ heap_xlog_freeze_page(XLogReaderState *record)
 	if (InHotStandby)
 	{
 		RelFileNode rnode;
+		TransactionId latestRemovedXid = cutoff_xid;
+
+		TransactionIdRetreat(latestRemovedXid);
 
 		XLogRecGetBlockTag(record, 0, &rnode, NULL, NULL);
-		ResolveRecoveryConflictWithSnapshot(cutoff_xid, rnode);
+		ResolveRecoveryConflictWithSnapshot(latestRemovedXid, rnode);
 	}
 
 	if (XLogReadBufferForRedo(record, 0, &buffer) == BLK_NEEDS_REDO)

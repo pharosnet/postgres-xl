@@ -38,6 +38,7 @@
 #include "catalog/catversion.h"
 #include "catalog/pg_control.h"
 #include "catalog/pg_database.h"
+#include "commands/tablespace.h"
 #include "miscadmin.h"
 #ifdef PGXC
 #include "pgxc/barrier.h"
@@ -811,7 +812,7 @@ static bool XLogCheckpointNeeded(XLogSegNo new_segno);
 static void XLogWrite(XLogwrtRqst WriteRqst, bool flexible);
 static bool InstallXLogFileSegment(XLogSegNo *segno, char *tmppath,
 					   bool find_free, XLogSegNo max_segno,
-					   bool use_lock);
+					   bool use_lock, int elevel);
 static int XLogFileRead(XLogSegNo segno, int emode, TimeLineID tli,
 			 int source, bool notexistOk);
 static int	XLogFileReadAnyTLI(XLogSegNo segno, int emode, int source);
@@ -1987,9 +1988,9 @@ AdvanceXLInsertBuffer(XLogRecPtr upto, bool opportunistic)
 	LWLockRelease(WALBufMappingLock);
 
 #ifdef WAL_DEBUG
-	if (npages > 0)
+	if (XLOG_DEBUG && npages > 0)
 	{
-		elog(DEBUG1, "initialized %d pages, upto %X/%X",
+		elog(DEBUG1, "initialized %d pages, up to %X/%X",
 			 npages, (uint32) (NewPageEndPtr >> 32), (uint32) NewPageEndPtr);
 	}
 #endif
@@ -3016,7 +3017,7 @@ XLogFileInit(XLogSegNo logsegno, bool *use_existent, bool use_lock)
 	max_segno = logsegno + CheckPointSegments;
 	if (!InstallXLogFileSegment(&installed_segno, tmppath,
 								*use_existent, max_segno,
-								use_lock))
+								use_lock, LOG))
 	{
 		/*
 		 * No need for any more future segments, or InstallXLogFileSegment()
@@ -3045,18 +3046,16 @@ XLogFileInit(XLogSegNo logsegno, bool *use_existent, bool use_lock)
 /*
  * Copy a WAL segment file in pg_xlog directory.
  *
- * dstfname		destination filename
  * srcfname		source filename
  * upto			how much of the source file to copy? (the rest is filled with
  *				zeros)
+ * segno		identify segment to install.
  *
- * If dstfname is not given, the file is created with a temporary filename,
- * which is returned.  Both filenames are relative to the pg_xlog directory.
- *
- * NB: Any existing file with the same name will be overwritten!
+ * The file is first copied with a temporary filename, and then installed as
+ * a newly-created segment.
  */
-static char *
-XLogFileCopy(char *dstfname, char *srcfname, int upto)
+static void
+XLogFileCopy(char *srcfname, int upto, XLogSegNo segno)
 {
 	char		srcpath[MAXPGPATH];
 	char		tmppath[MAXPGPATH];
@@ -3154,25 +3153,9 @@ XLogFileCopy(char *dstfname, char *srcfname, int upto)
 
 	CloseTransientFile(srcfd);
 
-	/*
-	 * Now move the segment into place with its final name.  (Or just return
-	 * the path to the file we created, if the caller wants to handle the rest
-	 * on its own.)
-	 */
-	if (dstfname)
-	{
-		char		dstpath[MAXPGPATH];
-
-		snprintf(dstpath, MAXPGPATH, XLOGDIR "/%s", dstfname);
-		if (rename(tmppath, dstpath) < 0)
-			ereport(ERROR,
-					(errcode_for_file_access(),
-					 errmsg("could not rename file \"%s\" to \"%s\": %m",
-							tmppath, dstpath)));
-		return NULL;
-	}
-	else
-		return pstrdup(tmppath);
+	/* install the new file */
+	(void) InstallXLogFileSegment(&segno, tmppath, false,
+								  0, false, ERROR);
 }
 
 /*
@@ -3199,6 +3182,8 @@ XLogFileCopy(char *dstfname, char *srcfname, int upto)
  * place.  This should be TRUE except during bootstrap log creation.  The
  * caller must *not* hold the lock at call.
  *
+ * elevel: log level used by this routine.
+ *
  * Returns TRUE if the file was installed successfully.  FALSE indicates that
  * max_segno limit was exceeded, or an error occurred while renaming the
  * file into place.
@@ -3206,7 +3191,7 @@ XLogFileCopy(char *dstfname, char *srcfname, int upto)
 static bool
 InstallXLogFileSegment(XLogSegNo *segno, char *tmppath,
 					   bool find_free, XLogSegNo max_segno,
-					   bool use_lock)
+					   bool use_lock, int elevel)
 {
 	char		path[MAXPGPATH];
 	struct stat stat_buf;
@@ -3251,7 +3236,7 @@ InstallXLogFileSegment(XLogSegNo *segno, char *tmppath,
 	{
 		if (use_lock)
 			LWLockRelease(ControlFileLock);
-		ereport(LOG,
+		ereport(elevel,
 				(errcode_for_file_access(),
 				 errmsg("could not link file \"%s\" to \"%s\" (initialization of log file): %m",
 						tmppath, path)));
@@ -3263,7 +3248,7 @@ InstallXLogFileSegment(XLogSegNo *segno, char *tmppath,
 	{
 		if (use_lock)
 			LWLockRelease(ControlFileLock);
-		ereport(LOG,
+		ereport(elevel,
 				(errcode_for_file_access(),
 				 errmsg("could not rename file \"%s\" to \"%s\" (initialization of log file): %m",
 						tmppath, path)));
@@ -3752,7 +3737,7 @@ RemoveXlogFile(const char *segname, XLogRecPtr PriorRedoPtr, XLogRecPtr endptr)
 	if (endlogSegNo <= recycleSegNo &&
 		lstat(path, &statbuf) == 0 && S_ISREG(statbuf.st_mode) &&
 		InstallXLogFileSegment(&endlogSegNo, path,
-							   true, recycleSegNo, true))
+							   true, recycleSegNo, true, LOG))
 	{
 		ereport(DEBUG2,
 				(errmsg("recycled transaction log file \"%s\"",
@@ -5238,8 +5223,6 @@ exitArchiveRecovery(TimeLineID endTLI, XLogRecPtr endOfLog)
 	 */
 	if (endLogSegNo == startLogSegNo)
 	{
-		char	   *tmpfname;
-
 		XLogFileName(xlogfname, endTLI, endLogSegNo);
 
 		/*
@@ -5249,9 +5232,7 @@ exitArchiveRecovery(TimeLineID endTLI, XLogRecPtr endOfLog)
 		 * considerations. But we should be just as tense as XLogFileInit to
 		 * avoid emplacing a bogus file.
 		 */
-		tmpfname = XLogFileCopy(NULL, xlogfname, endOfLog % XLOG_SEG_SIZE);
-		if (!InstallXLogFileSegment(&endLogSegNo, tmpfname, false, 0, false))
-			elog(ERROR, "InstallXLogFileSegment should not have failed");
+		XLogFileCopy(xlogfname, endOfLog % XLOG_SEG_SIZE, endLogSegNo);
 	}
 	else
 	{
@@ -6164,7 +6145,6 @@ StartupXLOG(void)
 		if (read_tablespace_map(&tablespaces))
 		{
 			ListCell   *lc;
-			struct stat st;
 
 			foreach(lc, tablespaces)
 			{
@@ -6175,27 +6155,9 @@ StartupXLOG(void)
 
 				/*
 				 * Remove the existing symlink if any and Create the symlink
-				 * under PGDATA.  We need to use rmtree instead of rmdir as
-				 * the link location might contain directories or files
-				 * corresponding to the actual path. Some tar utilities do
-				 * things that way while extracting symlinks.
+				 * under PGDATA.
 				 */
-				if (lstat(linkloc, &st) == 0 && S_ISDIR(st.st_mode))
-				{
-					if (!rmtree(linkloc, true))
-						ereport(ERROR,
-								(errcode_for_file_access(),
-							  errmsg("could not remove directory \"%s\": %m",
-									 linkloc)));
-				}
-				else
-				{
-					if (unlink(linkloc) < 0 && errno != ENOENT)
-						ereport(ERROR,
-								(errcode_for_file_access(),
-						  errmsg("could not remove symbolic link \"%s\": %m",
-								 linkloc)));
-				}
+				remove_tablespace_symlink(linkloc);
 
 				if (symlink(ti->path, linkloc) < 0)
 					ereport(ERROR,
@@ -6293,7 +6255,7 @@ StartupXLOG(void)
 	 * safest to just remove them always and let them be rebuilt during the
 	 * first backend startup.  These files needs to be removed from all
 	 * directories including pg_tblspc, however the symlinks are created only
-	 * after reading tablesapce_map file in case of archive recovery from
+	 * after reading tablespace_map file in case of archive recovery from
 	 * backup, so needs to clear old relcache files here after creating
 	 * symlinks.
 	 */
@@ -7664,7 +7626,7 @@ HotStandbyActive(void)
 bool
 HotStandbyActiveInReplay(void)
 {
-	Assert(AmStartupProcess());
+	Assert(AmStartupProcess() || !IsPostmasterEnvironment);
 	return LocalHotStandbyActive;
 }
 
@@ -9825,7 +9787,7 @@ XLogFileNameP(TimeLineID tli, XLogSegNo segno)
  * A non-exclusive backup is used for the streaming base backups (see
  * src/backend/replication/basebackup.c). The difference to exclusive backups
  * is that the backup label and tablespace map files are not written to disk.
- * Instead, there would-be contents are returned in *labelfile and *tblspcmapfile,
+ * Instead, their would-be contents are returned in *labelfile and *tblspcmapfile,
  * and the caller is responsible for including them in the backup archive as
  * 'backup_label' and 'tablespace_map'. There can be many non-exclusive backups
  * active at the same time, and they don't conflict with an exclusive backup
@@ -11058,7 +11020,7 @@ XLogPageRead(XLogReaderState *xlogreader, XLogRecPtr targetPagePtr, int reqLen,
 		 * Request a restartpoint if we've replayed too much xlog since the
 		 * last one.
 		 */
-		if (StandbyModeRequested && bgwriterLaunched)
+		if (bgwriterLaunched)
 		{
 			if (XLogCheckpointNeeded(readSegNo))
 			{

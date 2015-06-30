@@ -3400,6 +3400,11 @@ jsonb_delete_idx(PG_FUNCTION_ARGS)
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				 errmsg("cannot delete from scalar")));
 
+	if (JB_ROOT_IS_OBJECT(in))
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("cannot delete from object using integer subscript")));
+
 	if (JB_ROOT_COUNT(in) == 0)
 		PG_RETURN_JSONB(in);
 
@@ -3809,11 +3814,14 @@ setPathArray(JsonbIterator **it, Datum *path_elems, bool *path_nulls,
 	if (level < path_len && !path_nulls[level])
 	{
 		char	   *c = VARDATA_ANY(path_elems[level]);
+		long		lindex;
 
 		errno = 0;
-		idx = (int) strtol(c, &badp, 10);
-		if (errno != 0 || badp == c)
+		lindex = strtol(c, &badp, 10);
+		if (errno != 0 || badp == c || lindex > INT_MAX || lindex < INT_MIN)
 			idx = nelems;
+		else
+			idx = lindex;
 	}
 	else
 		idx = nelems;

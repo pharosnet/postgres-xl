@@ -345,8 +345,10 @@ typedef enum
 
 static PMState pmState = PM_INIT;
 
-/* Start time of abort processing at immediate shutdown or child crash */
-static time_t AbortStartTime;
+/* Start time of SIGKILL timeout during immediate shutdown or child crash */
+/* Zero means timeout is not running */
+static time_t AbortStartTime = 0;
+/* Length of said timeout */
 #define SIGKILL_CHILDREN_AFTER_SECS		5
 
 static bool ReachedNormalRunning = false;		/* T if we've reached PM_RUN */
@@ -445,6 +447,17 @@ static bool CreateOptsFile(int argc, char *argv[], char *fullprogname);
 static pid_t StartChildProcess(AuxProcType type);
 static void StartAutovacuumWorker(void);
 static void InitPostmasterDeathWatchHandle(void);
+
+/*
+ * Archiver is allowed to start up at the current postmaster state?
+ *
+ * If WAL archiving is enabled always, we are allowed to start archiver
+ * even during recovery.
+ */
+#define PgArchStartupAllowed()	\
+	((XLogArchivingActive() && pmState == PM_RUN) ||	\
+	 (XLogArchivingAlways() &&	\
+	  (pmState == PM_RECOVERY || pmState == PM_HOT_STANDBY)))
 
 #ifdef EXEC_BACKEND
 
@@ -1545,7 +1558,8 @@ checkDataDir(void)
  * In normal conditions we wait at most one minute, to ensure that the other
  * background tasks handled by ServerLoop get done even when no requests are
  * arriving.  However, if there are background workers waiting to be started,
- * we don't actually sleep so that they are quickly serviced.
+ * we don't actually sleep so that they are quickly serviced.  Other exception
+ * cases are as shown in the code.
  */
 static void
 DetermineSleepTime(struct timeval * timeout)
@@ -1559,11 +1573,12 @@ DetermineSleepTime(struct timeval * timeout)
 	if (Shutdown > NoShutdown ||
 		(!StartWorkerNeeded && !HaveCrashedWorker))
 	{
-		if (AbortStartTime > 0)
+		if (AbortStartTime != 0)
 		{
 			/* time left to abort; clamp to 0 in case it already expired */
-			timeout->tv_sec = Max(SIGKILL_CHILDREN_AFTER_SECS -
-								  (time(NULL) - AbortStartTime), 0);
+			timeout->tv_sec = SIGKILL_CHILDREN_AFTER_SECS -
+				(time(NULL) - AbortStartTime);
+			timeout->tv_sec = Max(timeout->tv_sec, 0);
 			timeout->tv_usec = 0;
 		}
 		else
@@ -1795,21 +1810,10 @@ ServerLoop(void)
 #endif /* XCP */
 			PgPoolerPID = StartPoolManager();
 #endif /* PGXC */
-		/*
-		 * If we have lost the archiver, try to start a new one.
-		 *
-		 * If WAL archiving is enabled always, we try to start a new archiver
-		 * even during recovery.
-		 */
-		if (PgArchPID == 0 && wal_level >= WAL_LEVEL_ARCHIVE)
-		{
-			if ((pmState == PM_RUN && XLogArchiveMode > ARCHIVE_MODE_OFF) ||
-				((pmState == PM_RECOVERY || pmState == PM_HOT_STANDBY) &&
-				 XLogArchiveMode == ARCHIVE_MODE_ALWAYS))
-			{
+
+		/* If we have lost the archiver, try to start a new one. */
+		if (PgArchPID == 0 && PgArchStartupAllowed())
 				PgArchPID = pgarch_start();
-			}
-		}
 
 		/* If we need to signal the autovacuum launcher, do so now */
 		if (avlauncher_needs_signal)
@@ -1854,20 +1858,13 @@ ServerLoop(void)
 		 * Note we also do this during recovery from a process crash.
 		 */
 		if ((Shutdown >= ImmediateShutdown || (FatalError && !SendStop)) &&
-			AbortStartTime > 0 &&
-			now - AbortStartTime >= SIGKILL_CHILDREN_AFTER_SECS)
+			AbortStartTime != 0 &&
+			(now - AbortStartTime) >= SIGKILL_CHILDREN_AFTER_SECS)
 		{
 			/* We were gentle with them before. Not anymore */
 			TerminateChildren(SIGKILL);
 			/* reset flag so we don't SIGKILL again */
 			AbortStartTime = 0;
-
-			/*
-			 * Additionally, unless we're recovering from a process crash,
-			 * it's now the time for postmaster to abandon ship.
-			 */
-			if (!FatalError)
-				ExitPostmaster(1);
 		}
 	}
 }
@@ -2865,7 +2862,7 @@ reaper(SIGNAL_ARGS)
 			 */
 			if (!IsBinaryUpgrade && AutoVacuumingActive() && AutoVacPID == 0)
 				AutoVacPID = StartAutoVacLauncher();
-			if (XLogArchivingActive() && PgArchPID == 0)
+			if (PgArchStartupAllowed() && PgArchPID == 0)
 				PgArchPID = pgarch_start();
 			if (PgStatPID == 0)
 				PgStatPID = pgstat_start();
@@ -3014,7 +3011,7 @@ reaper(SIGNAL_ARGS)
 			if (!EXIT_STATUS_0(exitstatus))
 				LogChildExit(LOG, _("archiver process"),
 							 pid, exitstatus);
-			if (XLogArchivingActive() && pmState == PM_RUN)
+			if (PgArchStartupAllowed())
 				PgArchPID = pgarch_start();
 			continue;
 		}
@@ -3188,7 +3185,8 @@ CleanupBackgroundWorker(int pid,
 		rw->rw_child_slot = 0;
 		ReportBackgroundWorkerPID(rw);	/* report child death */
 
-		LogChildExit(LOG, namebuf, pid, exitstatus);
+		LogChildExit(EXIT_STATUS_0(exitstatus) ? DEBUG1 : LOG,
+							    namebuf, pid, exitstatus);
 
 		return true;
 	}
@@ -5101,11 +5099,8 @@ sigusr1_handler(SIGNAL_ARGS)
 		 * files.
 		 */
 		Assert(PgArchPID == 0);
-		if (wal_level >= WAL_LEVEL_ARCHIVE &&
-			XLogArchiveMode == ARCHIVE_MODE_ALWAYS)
-		{
+		if (XLogArchivingAlways())
 			PgArchPID = pgarch_start();
-		}
 
 		pmState = PM_RECOVERY;
 	}
@@ -5747,7 +5742,7 @@ do_start_bgworker(RegisteredBgWorker *rw)
 {
 	pid_t		worker_pid;
 
-	ereport(LOG,
+	ereport(DEBUG1,
 			(errmsg("starting background worker process \"%s\"",
 					rw->rw_worker.bgw_name)));
 
