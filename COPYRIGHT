@@ -3,8 +3,30 @@ Postgres-XL Cluster Database Management System
 Portions Copyright (c) 2012-2014, TransLattice, Inc.
 Portions Copyright (c) 2010-2013, Postgres-XC Development Group
 Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
+Portions Copyright (c) 2015, 2ndQuadrant Limited
 
 Portions Copyright (c) 1994, The Regents of the University of California
+
+History
+=======
+
+Postgres-XL project is based on prior work of Postgres-XC project. The
+Postgres-XC project itself is based on PostgreSQL and is available under
+PostgreSQL license. The work done by the PostgreSQL community is copyrighted
+by the PostgreSQL Global Development Group. The work done by the Postgres-XC
+community is copyrighted by the Postgres-XC Development Group.
+
+All the exclusive work in Postgres-XL from 2012 to 2014 is copyrighted by
+TransLattice Inc. Whereas work done from April 2015 onwards is copyrighted by
+2ndQuandrant Limited. This work includes, but not limited to, merge with major
+PostgreSQL release such as 9.3, 9.4 and 9.5 and relevant bug fixes/enhancements. 
+
+Note: 2ndQuadrant hopes that future versions of Postgres-XL will be released
+under the PostgreSQL Licence. 2ndQuadrant will change the licence over to the
+PostgreSQL Licence within one month of us receiving public notification that
+all other copyright holders have also agreed to change to the PostgreSQL
+Licence. Contributions to this code are accepted only on this understanding,
+which will be presumed for any patch or pull request submitted.
 
 Mozilla Public License Version 2.0
 ==================================
