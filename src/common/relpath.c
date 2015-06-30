@@ -24,7 +24,9 @@
 #include "storage/backendid.h"
 
 #ifdef PGXC
+#ifndef FRONTEND
 #include "pgxc/pgxc.h"
+#endif
 #endif
 
 /*
