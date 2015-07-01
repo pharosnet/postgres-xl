@@ -138,13 +138,14 @@ AggregateCreate(const char *aggName,
 							   FUNC_MAX_ARGS - 1)));
 
 #ifdef PGXC
+#ifndef XCP
 
 	if (aggTransType == INTERNALOID)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_FUNCTION_DEFINITION),
 				 errmsg("unsafe use of pseudo-type \"internal\""),
 				 errdetail("Transition type can not be \"internal\".")));
-
+#endif
 #endif
 	/* check for polymorphic and INTERNAL arguments */
 	hasPolyArg = false;
