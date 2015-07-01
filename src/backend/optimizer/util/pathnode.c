@@ -1681,6 +1681,19 @@ create_samplescan_path(PlannerInfo *root, RelOptInfo *rel, Relids required_outer
 													 required_outer);
 	pathnode->pathkeys = NIL;	/* samplescan has unordered result */
 
+#ifdef XCP
+	set_scanpath_distribution(root, rel, pathnode);
+	if (rel->baserestrictinfo)
+	{
+		ListCell *lc;
+		foreach (lc, rel->baserestrictinfo)
+		{
+			RestrictInfo *ri = (RestrictInfo *) lfirst(lc);
+			restrict_distribution(root, ri, pathnode);
+		}
+	}
+#endif
+
 	cost_samplescan(pathnode, root, rel);
 
 	return pathnode;
