@@ -3,22 +3,26 @@ INSERT INTO test_tablesample SELECT i, repeat(i::text, 200) FROM generate_series
 SELECT t.id FROM test_tablesample AS t TABLESAMPLE SYSTEM (50) REPEATABLE (10);
  id 
 ----
-  0
   1
   2
+  5
+  6
+  8
+  9
+  0
   3
   4
-  5
-  9
-(7 rows)
+  7
+(10 rows)
 
 SELECT id FROM test_tablesample TABLESAMPLE SYSTEM (100.0/11) REPEATABLE (9999);
  id 
 ----
   6
-  7
   8
-(3 rows)
+  9
+  7
+(4 rows)
 
 SELECT count(*) FROM test_tablesample TABLESAMPLE SYSTEM (100);
  count 
@@ -29,31 +33,38 @@ SELECT count(*) FROM test_tablesample TABLESAMPLE SYSTEM (100);
 SELECT id FROM test_tablesample TABLESAMPLE SYSTEM (50) REPEATABLE (100);
  id 
 ----
-  0
   1
   2
+  5
   6
-  7
   8
   9
-(7 rows)
+  0
+  3
+  4
+  7
+(10 rows)
 
 SELECT id FROM test_tablesample TABLESAMPLE BERNOULLI (50) REPEATABLE (100);
  id 
 ----
-  0
   1
+  2
+  6
+  8
+  9
+  0
   3
-  4
-  5
-(5 rows)
+  7
+(8 rows)
 
 SELECT id FROM test_tablesample TABLESAMPLE BERNOULLI (5.5) REPEATABLE (1);
  id 
 ----
+  1
+  9
   0
-  5
-(2 rows)
+(3 rows)
 
 CREATE VIEW test_tablesample_v1 AS SELECT id FROM test_tablesample TABLESAMPLE SYSTEM (10*2) REPEATABLE (2);
 CREATE VIEW test_tablesample_v2 AS SELECT id FROM test_tablesample TABLESAMPLE SYSTEM (99);
@@ -76,12 +87,6 @@ DECLARE tablesample_cur CURSOR FOR SELECT id FROM test_tablesample TABLESAMPLE S
 FETCH FIRST FROM tablesample_cur;
  id 
 ----
-  0
-(1 row)
-
-FETCH NEXT FROM tablesample_cur;
- id 
-----
   1
 (1 row)
 
@@ -89,19 +94,28 @@ FETCH NEXT FROM tablesample_cur;
  id 
 ----
   2
+(1 row)
+
+FETCH NEXT FROM tablesample_cur;
+ id 
+----
+  5
 (1 row)
 
 SELECT id FROM test_tablesample TABLESAMPLE SYSTEM (50) REPEATABLE (10);
  id 
 ----
-  0
   1
   2
+  5
+  6
+  8
+  9
+  0
   3
   4
-  5
-  9
-(7 rows)
+  7
+(10 rows)
 
 FETCH NEXT FROM tablesample_cur;
  id 
@@ -112,24 +126,18 @@ FETCH NEXT FROM tablesample_cur;
 FETCH NEXT FROM tablesample_cur;
  id 
 ----
-  7
+  8
 (1 row)
 
 FETCH NEXT FROM tablesample_cur;
  id 
 ----
-  8
+  9
 (1 row)
 
 FETCH FIRST FROM tablesample_cur;
  id 
 ----
-  0
-(1 row)
-
-FETCH NEXT FROM tablesample_cur;
- id 
-----
   1
 (1 row)
 
@@ -142,13 +150,13 @@ FETCH NEXT FROM tablesample_cur;
 FETCH NEXT FROM tablesample_cur;
  id 
 ----
-  6
+  5
 (1 row)
 
 FETCH NEXT FROM tablesample_cur;
  id 
 ----
-  7
+  6
 (1 row)
 
 FETCH NEXT FROM tablesample_cur;
@@ -157,19 +165,27 @@ FETCH NEXT FROM tablesample_cur;
   8
 (1 row)
 
+FETCH NEXT FROM tablesample_cur;
+ id 
+----
+  9
+(1 row)
+
 CLOSE tablesample_cur;
 END;
 EXPLAIN SELECT id FROM test_tablesample TABLESAMPLE SYSTEM (50) REPEATABLE (10);
-                                  QUERY PLAN                                   
--------------------------------------------------------------------------------
- Sample Scan (system) on test_tablesample  (cost=0.00..26.35 rows=635 width=4)
-(1 row)
+                                        QUERY PLAN                                        
+------------------------------------------------------------------------------------------
+ Remote Subquery Scan on all (datanode_1,datanode_2)  (cost=0.00..26.35 rows=635 width=4)
+   ->  Sample Scan (system) on test_tablesample  (cost=0.00..26.35 rows=635 width=4)
+(2 rows)
 
 EXPLAIN SELECT * FROM test_tablesample_v1;
-                                  QUERY PLAN                                   
--------------------------------------------------------------------------------
- Sample Scan (system) on test_tablesample  (cost=0.00..10.54 rows=254 width=4)
-(1 row)
+                                        QUERY PLAN                                        
+------------------------------------------------------------------------------------------
+ Remote Subquery Scan on all (datanode_1,datanode_2)  (cost=0.00..10.54 rows=254 width=4)
+   ->  Sample Scan (system) on test_tablesample  (cost=0.00..10.54 rows=254 width=4)
+(2 rows)
 
 -- errors
 SELECT id FROM test_tablesample TABLESAMPLE FOOBAR (1);
