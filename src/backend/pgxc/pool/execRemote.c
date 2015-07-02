@@ -363,6 +363,7 @@ CreateResponseCombiner(int node_count, CombineType combine_type)
 	combiner->copy_file = NULL;
 	combiner->errorMessage = NULL;
 	combiner->errorDetail = NULL;
+	combiner->errorHint = NULL;
 	combiner->tuple_desc = NULL;
 #ifdef XCP
 	combiner->probing_primary = false;
@@ -987,6 +988,7 @@ HandleError(RemoteQueryState *combiner, char *msg_body, size_t len)
 	char *code = NULL;
 	char *message = NULL;
 	char *detail = NULL;
+	char *hint = NULL;
 	int   offset = 0;
 
 	/*
@@ -1009,10 +1011,13 @@ HandleError(RemoteQueryState *combiner, char *msg_body, size_t len)
 				detail = str;
 				break;
 
+			case 'H':	/* hint */
+				hint = str;
+				break;
+
 			/* Fields not yet in use */
 			case 'S':	/* severity */
 			case 'R':	/* routine */
-			case 'H':	/* hint */
 			case 'P':	/* position string */
 			case 'p':	/* position int */
 			case 'q':	/* int query */
@@ -1050,6 +1055,8 @@ HandleError(RemoteQueryState *combiner, char *msg_body, size_t len)
 			memcpy(combiner->errorCode, code, 5);
 		if (detail)
 			combiner->errorDetail = pstrdup(detail);
+		if (hint)
+			combiner->errorHint = pstrdup(hint);
 	}
 
 	/*
@@ -1245,6 +1252,8 @@ CloseCombiner(ResponseCombiner *combiner)
 		pfree(combiner->errorMessage);
 	if (combiner->errorDetail)
 		pfree(combiner->errorDetail);
+	if (combiner->errorHint)
+		pfree(combiner->errorHint);
 	if (combiner->cursor_connections)
 		pfree(combiner->cursor_connections);
 	if (combiner->tapenodes)
@@ -4681,17 +4690,7 @@ DataNodeCopyFinish(PGXCNodeHandle** copy_connections, int primary_dn_index, Comb
 	if (!validate_combiner(&combiner) || error)
 	{
 		if (combiner.errorMessage)
-		{
-			char *code = combiner.errorCode;
-			if (combiner.errorDetail)
-				ereport(ERROR,
-						(errcode(MAKE_SQLSTATE(code[0], code[1], code[2], code[3], code[4])),
-						 errmsg("%s", combiner.errorMessage), errdetail("%s", combiner.errorDetail) ));
-			else
-				ereport(ERROR,
-						(errcode(MAKE_SQLSTATE(code[0], code[1], code[2], code[3], code[4])),
-						 errmsg("%s", combiner.errorMessage)));
-		}
+			pgxc_node_report_error(&combiner);
 		else
 			ereport(ERROR,
 					(errcode(ERRCODE_INTERNAL_ERROR),
@@ -7571,17 +7570,7 @@ ExecRemoteQuery(RemoteQueryState *node)
 							 errmsg("Unexpected response from data node")));
 			}
 			if (combiner->errorMessage)
-			{
-				char *code = combiner->errorCode;
-				if (combiner->errorDetail != NULL)
-					ereport(ERROR,
-							(errcode(MAKE_SQLSTATE(code[0], code[1], code[2], code[3], code[4])),
-							 errmsg("%s", combiner->errorMessage), errdetail("%s", combiner->errorDetail) ));
-				else
-					ereport(ERROR,
-							(errcode(MAKE_SQLSTATE(code[0], code[1], code[2], code[3], code[4])),
-							 errmsg("%s", combiner->errorMessage)));
-			}
+				pgxc_node_report_error(combiner);
 		}
 
 		for (i = 0; i < regular_conn_count; i++)
@@ -7663,17 +7652,7 @@ ExecRemoteQuery(RemoteQueryState *node)
 	}
 
 	if (combiner->errorMessage)
- 	{
-		char *code = combiner->errorCode;
-		if (combiner->errorDetail != NULL)
- 			ereport(ERROR,
- 					(errcode(MAKE_SQLSTATE(code[0], code[1], code[2], code[3], code[4])),
-						errmsg("%s", combiner->errorMessage), errdetail("%s", combiner->errorDetail) ));
- 		else
- 			ereport(ERROR,
- 					(errcode(MAKE_SQLSTATE(code[0], code[1], code[2], code[3], code[4])),
-						errmsg("%s", combiner->errorMessage)));
-	}
+		pgxc_node_report_error(combiner);
 
 	return NULL;
 }
@@ -8975,17 +8954,8 @@ primary_mode_phase_two:
 			goto primary_mode_phase_two;
 	}
 	if (combiner->errorMessage)
-	{
-		char *code = combiner->errorCode;
-		if (combiner->errorDetail)
-			ereport(ERROR,
-					(errcode(MAKE_SQLSTATE(code[0], code[1], code[2], code[3], code[4])),
-					 errmsg("%s", combiner->errorMessage), errdetail("%s", combiner->errorDetail) ));
-		else
-			ereport(ERROR,
-					(errcode(MAKE_SQLSTATE(code[0], code[1], code[2], code[3], code[4])),
-					 errmsg("%s", combiner->errorMessage)));
-	}
+		pgxc_node_report_error(combiner);
+
 	return NULL;
 }
 
@@ -9227,14 +9197,26 @@ pgxc_node_report_error(RemoteQueryState *combiner)
 	if (combiner->errorMessage)
 	{
 		char *code = combiner->errorCode;
-		if (combiner->errorDetail != NULL)
-			ereport(ERROR,
-					(errcode(MAKE_SQLSTATE(code[0], code[1], code[2], code[3], code[4])),
-					errmsg("%s", combiner->errorMessage), errdetail("%s", combiner->errorDetail) ));
-		else
+		if ((combiner->errorDetail == NULL) && (combiner->errorHint == NULL))
 			ereport(ERROR,
 					(errcode(MAKE_SQLSTATE(code[0], code[1], code[2], code[3], code[4])),
 					errmsg("%s", combiner->errorMessage)));
+		else if ((combiner->errorDetail != NULL) && (combiner->errorHint != NULL))
+			ereport(ERROR,
+					(errcode(MAKE_SQLSTATE(code[0], code[1], code[2], code[3], code[4])),
+					errmsg("%s", combiner->errorMessage),
+					errdetail("%s", combiner->errorDetail),
+					errhint("%s", combiner->errorHint)));
+		else if (combiner->errorDetail != NULL)
+			ereport(ERROR,
+					(errcode(MAKE_SQLSTATE(code[0], code[1], code[2], code[3], code[4])),
+					errmsg("%s", combiner->errorMessage),
+					errdetail("%s", combiner->errorDetail)));
+		else
+			ereport(ERROR,
+					(errcode(MAKE_SQLSTATE(code[0], code[1], code[2], code[3], code[4])),
+					errmsg("%s", combiner->errorMessage),
+					errhint("%s", combiner->errorHint)));
 	}
 }
 
