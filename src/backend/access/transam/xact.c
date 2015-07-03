@@ -2269,6 +2269,27 @@ CommitTransaction(void)
 		elog(WARNING, "CommitTransaction while in %s state",
 			 TransStateAsString(s->state));
 	Assert(s->parent == NULL);
+	/*
+	 * Do pre-commit processing that involves calling user-defined code, such
+	 * as triggers.  Since closing cursors could queue trigger actions,
+	 * triggers could open cursors, etc, we have to keep looping until there's
+	 * nothing left to do.
+	 */
+	for (;;)
+	{
+		/*
+		 * Fire all currently pending deferred triggers.
+		 */
+		AfterTriggerFireDeferred();
+
+		/*
+		 * Close open portals (converting holdable ones into static portals).
+		 * If there weren't any, we are done ... otherwise loop back to check
+		 * if they queued deferred triggers.  Lather, rinse, repeat.
+		 */
+		if (!PreCommit_Portals(false))
+			break;
+	}
 
 #ifdef PGXC
 	/*
@@ -2381,27 +2402,6 @@ CommitTransaction(void)
 	}
 #endif
 
-	/*
-	 * Do pre-commit processing that involves calling user-defined code, such
-	 * as triggers.  Since closing cursors could queue trigger actions,
-	 * triggers could open cursors, etc, we have to keep looping until there's
-	 * nothing left to do.
-	 */
-	for (;;)
-	{
-		/*
-		 * Fire all currently pending deferred triggers.
-		 */
-		AfterTriggerFireDeferred();
-
-		/*
-		 * Close open portals (converting holdable ones into static portals).
-		 * If there weren't any, we are done ... otherwise loop back to check
-		 * if they queued deferred triggers.  Lather, rinse, repeat.
-		 */
-		if (!PreCommit_Portals(false))
-			break;
-	}
 
 	CallXactCallbacks(is_parallel_worker ? XACT_EVENT_PARALLEL_PRE_COMMIT
 					  : XACT_EVENT_PRE_COMMIT);
