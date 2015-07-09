@@ -968,10 +968,14 @@ get_snapshot(GTM_Conn *conn, GlobalTransactionId gxid, bool canbe_grouped)
 {
 	GTM_Result *res = NULL;
 	time_t finish_time;
+	GTM_ResultType res_type;
+
+	res_type = canbe_grouped ? SNAPSHOT_GET_MULTI_RESULT : SNAPSHOT_GET_RESULT;
 
 	 /* Start the message. */
 	if (gtmpqPutMsgStart('C', true, conn) ||
 		gtmpqPutInt(canbe_grouped ? MSG_SNAPSHOT_GET_MULTI : MSG_SNAPSHOT_GET, sizeof (GTM_MessageType), conn) ||
+		gtmpqPutInt(1, sizeof (int), conn) ||
 		gtmpqPutnchar((char *)&gxid, sizeof (GlobalTransactionId), conn))
 		goto send_failed;
 
@@ -993,7 +997,7 @@ get_snapshot(GTM_Conn *conn, GlobalTransactionId gxid, bool canbe_grouped)
 
 	if (res->gr_status == GTM_RESULT_OK)
 	{
-		Assert(res->gr_type == SNAPSHOT_GET_RESULT);
+		Assert(res->gr_type == res_type);
 		/*
 		 * !!FIXME - The following assertion fails when snapshots are requested
 		 * in non-grouping mode. We did some investigations and it appears that

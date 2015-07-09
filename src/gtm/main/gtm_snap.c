@@ -287,8 +287,11 @@ ProcessGetSnapshotCommand(Port *myport, StringInfo message, bool get_gxid)
 	GTM_Snapshot snapshot;
 	MemoryContext oldContext;
 	int status;
-	int txn_count = 1;
+	int txn_count;
 	const char *data = NULL;
+
+	txn_count = pq_getmsgint(message, sizeof (int));
+	Assert(txn_count == 1);
 
 	data = pq_getmsgbytes(message, sizeof (gxid));
 	if (data == NULL)

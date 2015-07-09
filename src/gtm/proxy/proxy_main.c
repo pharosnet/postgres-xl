@@ -1911,8 +1911,7 @@ ProcessResponse(GTMProxy_ThreadInfo *thrinfo, GTMProxy_CommandInfo *cmdinfo,
 				int status = STATUS_OK;
 
 				pq_beginmessage(&buf, 'S');
-				pq_sendint(&buf, SNAPSHOT_GET_RESULT, 4);
-				pq_sendbytes(&buf, (char *)&cmdinfo->ci_data.cd_snap.gxid, sizeof (GlobalTransactionId));
+				pq_sendint(&buf, SNAPSHOT_GET_MULTI_RESULT, 4);
 				pq_sendbytes(&buf, (char *)&txn_count, sizeof (txn_count));
 				pq_sendbytes(&buf, (char *)&status, sizeof (status));
 				pq_sendbytes(&buf, (char *)&res->gr_snapshot.sn_xmin, sizeof (GlobalTransactionId));
@@ -2331,6 +2330,7 @@ ProcessSnapshotCommand(GTMProxy_ConnectionInfo *conninfo, GTM_Conn *gtm_conn,
 		case MSG_SNAPSHOT_GET_MULTI:
 			{
 				{
+					int txn_count = pq_getmsgint(message, sizeof (int));
 					const char *data = pq_getmsgbytes(message,
 							sizeof (GlobalTransactionId));
 					if (data == NULL)
