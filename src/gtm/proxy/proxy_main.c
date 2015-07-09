@@ -68,6 +68,7 @@ extern char *optarg;
 #endif
 #endif
 
+static int poll_timeout_ms = 10;
 static char *progname = "gtm_proxy";
 char	   *ListenAddresses;
 int			GTMProxyPortNumber;
@@ -1314,7 +1315,8 @@ GTMProxy_ThreadMain(void *argp)
 			while (true)
 			{
 				Enable_Longjmp();
-				nrfds = poll(thrinfo->thr_poll_fds, thrinfo->thr_conn_count, 1000);
+				nrfds = poll(thrinfo->thr_poll_fds, thrinfo->thr_conn_count,
+							poll_timeout_ms);
 				Disable_Longjmp();
 
 				if (nrfds < 0)
