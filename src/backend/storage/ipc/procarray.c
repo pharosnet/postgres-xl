@@ -3105,7 +3105,38 @@ GetSnapshotDataFromGTM(Snapshot snapshot)
 	GTM_Snapshot gtm_snapshot;
 	bool canbe_grouped = (!FirstSnapshotSet) || (!IsolationUsesXactSnapshot());
 
-	gtm_snapshot = GetSnapshotGTM(GetCurrentTransactionIdIfAny(), canbe_grouped);
+	/*
+	 * A transaction requesting a snapshot typically does not need an XID
+	 * assigned to it and we recently made a provision for backends to obtain
+	 * snapshots from the GTM without first obtaining an XID. But this lead to
+	 * an interesting situation.
+	 *
+	 * If a backend can request a snapshot without associated XID, GTM has no
+	 * information about such transactions or snapshots (we don't report BEGIN
+	 * TRANSACTION * to GTM until an XID is assigned). So it may advance
+	 * RecentGlobalXmin beyond the horizon mandated by a snapshot currently
+	 * being used by a backend. That would most likely result in tuples being
+	 * removed while they are still visible to an on-going scan.
+	 *
+	 * Ideally we need a mechanism for GTM to track active snapshots and ensure
+	 * that RecentGlobalXmin does not go past the lowest xmins of all such
+	 * snapshots. But since we currently don't have a mechanism to do so, we
+	 * force an XID assignment for this transaction which then acts as an
+	 * anchor to track xmin at the GTM.
+	 *
+	 * XXX We do it only when snapshots are obtained on a local coordinator.
+	 * That means for cases where a datanode or a remote coordinator gets a
+	 * direct snapshot from the GTM, it is still vulerable to tuples getting
+	 * removed underneath a scan. But the requirements for a direct datanode
+	 * snapshot are limited such as pgxc_node catalog scan at connection
+	 * establishment or auto-analyze scans. Nevertheless, we MUST fix this
+	 * before going to production release
+	 */ 
+	if (IS_PGXC_LOCAL_COORDINATOR)
+		gtm_snapshot = GetSnapshotGTM(GetCurrentTransactionId(), canbe_grouped);
+	else
+		gtm_snapshot = GetSnapshotGTM(GetCurrentTransactionIdIfAny(), canbe_grouped);
+
 	
 	if (!gtm_snapshot)
 		ereport(ERROR,
