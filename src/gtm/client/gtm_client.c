@@ -418,13 +418,12 @@ send_failed:
  */
 
 int
-bkup_begin_transaction(GTM_Conn *conn, GTM_TransactionHandle txn, GTM_IsolationLevel isolevel,
+bkup_begin_transaction(GTM_Conn *conn, GTM_IsolationLevel isolevel,
 					   bool read_only, uint32 client_id, GTM_Timestamp timestamp)
 {
 	 /* Start the message. */
 	if (gtmpqPutMsgStart('C', true, conn) ||
 		gtmpqPutInt(MSG_BKUP_TXN_BEGIN, sizeof (GTM_MessageType), conn) ||
-		gtmpqPutInt(txn, sizeof(GTM_TransactionHandle), conn) ||
 		gtmpqPutInt(isolevel, sizeof (GTM_IsolationLevel), conn) ||
 		gtmpqPutc(read_only, conn) ||
 		gtmpqPutInt(client_id, sizeof (uint32), conn) ||
@@ -447,14 +446,13 @@ send_failed:
 }
 
 int
-bkup_begin_transaction_gxid(GTM_Conn *conn, GTM_TransactionHandle txn, GlobalTransactionId gxid,
+bkup_begin_transaction_gxid(GTM_Conn *conn, GlobalTransactionId gxid,
 							GTM_IsolationLevel isolevel, bool read_only,
 							uint32 client_id, GTM_Timestamp timestamp)
 {
 	 /* Start the message. */
 	if (gtmpqPutMsgStart('C', true, conn) ||
 		gtmpqPutInt(MSG_BKUP_TXN_BEGIN_GETGXID, sizeof (GTM_MessageType), conn) ||
-		gtmpqPutInt(txn, sizeof(GTM_TransactionHandle), conn) ||
 		gtmpqPutInt(gxid, sizeof(GlobalTransactionId), conn) ||
 		gtmpqPutInt(isolevel, sizeof (GTM_IsolationLevel), conn) ||
 		gtmpqPutc(read_only, conn) ||
@@ -525,13 +523,12 @@ send_failed:
 
 
 int
-bkup_begin_transaction_autovacuum(GTM_Conn *conn, GTM_TransactionHandle txn, GlobalTransactionId gxid,
+bkup_begin_transaction_autovacuum(GTM_Conn *conn, GlobalTransactionId gxid,
 								  GTM_IsolationLevel isolevel, uint32 client_id)
 {
 	 /* Start the message. */
 	if (gtmpqPutMsgStart('C', true, conn) ||
 		gtmpqPutInt(MSG_BKUP_TXN_BEGIN_GETGXID_AUTOVACUUM, sizeof (GTM_MessageType), conn) ||
-		gtmpqPutInt(txn, sizeof(GTM_TransactionHandle), conn) ||
 		gtmpqPutInt(gxid, sizeof(GlobalTransactionId), conn) ||
 		gtmpqPutInt(isolevel, sizeof (GTM_IsolationLevel), conn) ||
 		gtmpqPutInt(client_id, sizeof (uint32), conn))
@@ -1983,7 +1980,7 @@ send_failed:
 
 int
 bkup_begin_transaction_multi(GTM_Conn *conn, int txn_count,
-							 GTM_TransactionHandle *txn, GlobalTransactionId start_gxid, GTM_IsolationLevel *isolevel,
+							 GlobalTransactionId start_gxid, GTM_IsolationLevel *isolevel,
 							 bool *read_only, uint32 *client_id,
 							 GTMProxy_ConnID *txn_connid)
 {
@@ -2002,8 +1999,7 @@ bkup_begin_transaction_multi(GTM_Conn *conn, int txn_count,
 	{
 		if (gxid == InvalidGlobalTransactionId)
 			gxid = FirstNormalGlobalTransactionId;
-		if (gtmpqPutInt(txn[ii], sizeof(GTM_TransactionHandle), conn) ||
-			gtmpqPutInt(gxid, sizeof(GlobalTransactionId), conn) ||
+		if (gtmpqPutInt(gxid, sizeof(GlobalTransactionId), conn) ||
 			gtmpqPutInt(isolevel[ii], sizeof(GTM_IsolationLevel), conn) ||
 			gtmpqPutc(read_only[ii], conn) ||
 			gtmpqPutInt(client_id[ii], sizeof (uint32), conn) ||
@@ -2039,8 +2035,7 @@ bkup_commit_transaction_multi(GTM_Conn *conn, int txn_count, GlobalTransactionId
 
 	for (ii = 0; ii < txn_count; ii++)
 	{
-		if (gtmpqPutc(false, conn) ||
-		    gtmpqPutnchar((char *)&gxid[ii],
+		if (gtmpqPutnchar((char *)&gxid[ii],
 				  sizeof (GlobalTransactionId), conn))
 			  goto send_failed;
 	}

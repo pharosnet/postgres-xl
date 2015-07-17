@@ -225,8 +225,7 @@ void GTM_FreeCachedTransInfo(void);
 
 void ProcessBeginTransactionCommand(Port *myport, StringInfo message);
 void ProcessBkupBeginTransactionCommand(Port *myport, StringInfo message);
-void GTM_BkupBeginTransactionMulti(GTM_TransactionHandle *txn,
-								   GTM_IsolationLevel *isolevel,
+void GTM_BkupBeginTransactionMulti(GTM_IsolationLevel *isolevel,
 								   bool *readonly,
 								   uint32 *client_id,
 								   GTMProxy_ConnID *connid,
@@ -253,8 +252,7 @@ void ProcessRollbackTransactionCommandMulti(Port *myport, StringInfo message, bo
 
 void GTM_SaveTxnInfo(FILE *ctlf);
 void GTM_RestoreTxnInfo(FILE *ctlf, GlobalTransactionId next_gxid);
-void GTM_BkupBeginTransaction(GTM_TransactionHandle txn,
-							  GTM_IsolationLevel isolevel,
+void GTM_BkupBeginTransaction(GTM_IsolationLevel isolevel,
 							  bool readonly,
 							  uint32 client_id);
 void ProcessBkupBeginTransactionGetGXIDCommand(Port *myport, StringInfo message);
