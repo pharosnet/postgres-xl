@@ -27,7 +27,8 @@ extern void InitGTM(void);
 extern void CloseGTM(void);
 extern GlobalTransactionId BeginTranGTM(GTM_Timestamp *timestamp);
 extern GlobalTransactionId BeginTranAutovacuumGTM(void);
-extern int CommitTranGTM(GlobalTransactionId gxid);
+extern int CommitTranGTM(GlobalTransactionId gxid, int waited_xid_count,
+		GlobalTransactionId *waited_xids);
 extern int RollbackTranGTM(GlobalTransactionId gxid);
 extern int StartPreparedTranGTM(GlobalTransactionId gxid,
 								char *gid,
@@ -38,7 +39,9 @@ extern int GetGIDDataGTM(char *gid,
 						 GlobalTransactionId *prepared_gxid,
 						 char **nodestring);
 extern int CommitPreparedTranGTM(GlobalTransactionId gxid,
-								 GlobalTransactionId prepared_gxid);
+								 GlobalTransactionId prepared_gxid,
+								 int waited_xid_count,
+								 GlobalTransactionId *waited_xids);
 
 extern GTM_Snapshot GetSnapshotGTM(GlobalTransactionId gxid, bool canbe_grouped);
 

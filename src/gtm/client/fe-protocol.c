@@ -396,6 +396,7 @@ gtmpqParseSuccess(GTM_Conn *conn, GTM_Result *result)
 		case TXN_BEGIN_GETGXID_AUTOVACUUM_RESULT:
 		case TXN_PREPARE_RESULT:
 		case TXN_START_PREPARED_RESULT:
+		case TXN_ROLLBACK_RESULT:
 			if (gtmpqGetnchar((char *)&result->gr_resdata.grd_gxid,
 						   sizeof (GlobalTransactionId), conn))
 				result->gr_status = GTM_RESULT_ERROR;
@@ -403,9 +404,11 @@ gtmpqParseSuccess(GTM_Conn *conn, GTM_Result *result)
 
 		case TXN_COMMIT_RESULT:
 		case TXN_COMMIT_PREPARED_RESULT:
-		case TXN_ROLLBACK_RESULT:
-			if (gtmpqGetnchar((char *)&result->gr_resdata.grd_gxid,
+			if (gtmpqGetnchar((char *)&result->gr_resdata.grd_eof_txn.gxid,
 						   sizeof (GlobalTransactionId), conn))
+				result->gr_status = GTM_RESULT_ERROR;
+			if (gtmpqGetnchar((char *)&result->gr_resdata.grd_eof_txn.status,
+						   sizeof (int), conn))
 				result->gr_status = GTM_RESULT_ERROR;
 			break;
 

@@ -1193,6 +1193,31 @@ HandleDatanodeCommandId(RemoteQueryState *combiner, char *msg_body, size_t len)
 }
 
 /*
+ * Record waited-for XIDs received from the remote nodes into the transaction
+ * state
+ */
+static void
+HandleWaitXids(char *msg_body, size_t len)
+{
+	int xid_count;
+	uint32		n32;
+	int cur;
+	int i;
+
+	/* Get the xid count */
+	xid_count = len / sizeof (TransactionId);
+
+	cur = 0;
+	for (i = 0; i < xid_count; i++)
+	{
+		Assert(cur < len);
+		memcpy(&n32, &msg_body[cur], sizeof (TransactionId));
+		cur = cur + sizeof (TransactionId);
+		TransactionRecordXidWait(ntohl(n32));
+	}
+}
+
+/*
  * Examine the specified combiner state and determine if command was completed
  * successfully
  */
@@ -2207,6 +2232,9 @@ pgxc_node_receive_responses(const int conn_count, PGXCNodeHandle ** connections,
 				case RESPONSE_ERROR:
 					/* no handling needed, just wait for ReadyForQuery */
 					break;
+
+				case RESPONSE_WAITXIDS:
+					break;
 #endif
 				default:
 					/* Inconsistent responses */
@@ -2370,6 +2398,11 @@ handle_response(PGXCNodeHandle *conn, ResponseCombiner *combiner)
 				return RESPONSE_BARRIER_OK;
 			case 'I':			/* EmptyQuery */
 				return RESPONSE_COMPLETE;
+#ifdef XCP
+			case 'W':
+				HandleWaitXids(msg, msg_len);	
+				return RESPONSE_WAITXIDS;
+#endif
 			default:
 				/* sync lost? */
 				elog(WARNING, "Received unsupported message type: %c", msg_type);
@@ -7098,7 +7131,7 @@ FinishRemotePreparedTransaction(char *prepareGID, bool commit)
 		if (commit)
 		{
 			pgxc_node_remote_commit();
-			CommitPreparedTranGTM(prepare_gxid, gxid);
+			CommitPreparedTranGTM(prepare_gxid, gxid, 0, NULL);
 		}
 		else
 		{
@@ -7133,7 +7166,12 @@ FinishRemotePreparedTransaction(char *prepareGID, bool commit)
 
 	if (commit)
 	{
-		CommitPreparedTranGTM(prepare_gxid, gxid);
+		/*
+		 * XXX For explicit 2PC, there will be enough delay for any
+		 * waited-committed transactions to send a final COMMIT message to the
+		 * GTM.
+		 */
+		CommitPreparedTranGTM(prepare_gxid, gxid, 0, NULL);
 	}
 	else
 	{

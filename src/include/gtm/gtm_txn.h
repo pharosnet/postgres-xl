@@ -184,6 +184,7 @@ extern GTM_Transactions	GTMTransactions;
 GTM_TransactionInfo *GTM_HandleToTransactionInfo(GTM_TransactionHandle handle);
 GTM_TransactionHandle GTM_GXIDToHandle(GlobalTransactionId gxid);
 GTM_TransactionHandle GTM_GIDToHandle(char *gid);
+bool GTM_IsGXIDInProgress(GlobalTransactionId gxid);
 
 /* Transaction Control */
 void GTM_InitTxnManager(void);
@@ -197,8 +198,11 @@ int GTM_BeginTransactionMulti(GTM_IsolationLevel isolevel[],
 int GTM_RollbackTransaction(GTM_TransactionHandle txn);
 int GTM_RollbackTransactionMulti(GTM_TransactionHandle txn[], int txn_count, int status[]);
 int GTM_RollbackTransactionGXID(GlobalTransactionId gxid);
-int GTM_CommitTransaction(GTM_TransactionHandle txn);
-int GTM_CommitTransactionMulti(GTM_TransactionHandle txn[], int txn_count, int status[]);
+int GTM_CommitTransaction(GTM_TransactionHandle txn,
+		int waited_xid_count, GlobalTransactionId *waited_xids);
+int GTM_CommitTransactionMulti(GTM_TransactionHandle txn[], int txn_count,
+		int waited_xid_count, GlobalTransactionId *waited_xids,
+		int status[]);
 int GTM_CommitTransactionGXID(GlobalTransactionId gxid);
 int GTM_PrepareTransaction(GTM_TransactionHandle txn);
 int GTM_StartPreparedTransaction(GTM_TransactionHandle txn,

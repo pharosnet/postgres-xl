@@ -542,6 +542,10 @@ XactLockTableWait(TransactionId xid, Relation rel, ItemPointer ctid,
 		error_context_stack = &callback;
 	}
 
+#ifdef XCP
+	TransactionRecordXidWait(xid);	
+#endif
+
 	for (;;)
 	{
 		Assert(TransactionIdIsValid(xid));

@@ -48,6 +48,8 @@ void GTM_FreeResult(GTM_Result *result, GTM_PGXCNodeType remote_type);
 static GTM_Result *makeEmptyResultIfIsNull(GTM_Result *oldres);
 static int commit_prepared_transaction_internal(GTM_Conn *conn,
 												GlobalTransactionId gxid, GlobalTransactionId prepared_gxid,
+												int waited_xid_count,
+												GlobalTransactionId *waited_xids,
 												bool is_backup);
 static int start_prepared_transaction_internal(GTM_Conn *conn, GlobalTransactionId gxid, char *gid,
 											   char *nodestring, bool is_backup);
@@ -70,7 +72,10 @@ static GTM_Sequence get_next_internal(GTM_Conn *conn, GTM_SequenceKey key, bool 
 static int set_val_internal(GTM_Conn *conn, GTM_SequenceKey key, GTM_Sequence nextval, bool iscalled, bool is_backup);
 #endif
 static int reset_sequence_internal(GTM_Conn *conn, GTM_SequenceKey key, bool is_backup);
-static int commit_transaction_internal(GTM_Conn *conn, GlobalTransactionId gxid, bool is_backup);
+static int commit_transaction_internal(GTM_Conn *conn, GlobalTransactionId gxid,
+		int waited_xid_count,
+		GlobalTransactionId *waited_xids,
+		bool is_backup);
 static int close_sequence_internal(GTM_Conn *conn, GTM_SequenceKey key, bool is_backup);
 static int rename_sequence_internal(GTM_Conn *conn, GTM_SequenceKey key, GTM_SequenceKey newkey, bool is_backup);
 static int alter_sequence_internal(GTM_Conn *conn, GTM_SequenceKey key, GTM_Sequence increment,
@@ -596,28 +601,51 @@ send_failed:
 int
 bkup_commit_transaction(GTM_Conn *conn, GlobalTransactionId gxid)
 {
-	return commit_transaction_internal(conn, gxid, true);
+	return commit_transaction_internal(conn, gxid, 0, NULL, true);
 }
 
 
 int
-commit_transaction(GTM_Conn *conn, GlobalTransactionId gxid)
+commit_transaction(GTM_Conn *conn, GlobalTransactionId gxid,
+		int waited_xid_count, GlobalTransactionId *waited_xids)
 {
-	return commit_transaction_internal(conn, gxid, false);
+	if (waited_xid_count == 0)
+	{
+		int txn_count_out;
+		int status_out;
+		int status;
+		status = commit_transaction_multi(conn, 1, &gxid, &txn_count_out,
+				&status_out);
+		Assert(txn_count_out == 1);
+		return status;
+	}
+	else
+		return commit_transaction_internal(conn, gxid, waited_xid_count,
+				waited_xids, false);
 }
 
 
 static int
-commit_transaction_internal(GTM_Conn *conn, GlobalTransactionId gxid, bool is_backup)
+commit_transaction_internal(GTM_Conn *conn, GlobalTransactionId gxid,
+		int waited_xid_count, GlobalTransactionId *waited_xids,
+		bool is_backup)
 {
 	GTM_Result *res = NULL;
 	time_t finish_time;
 
+retry:
 	 /* Start the message. */
 	if (gtmpqPutMsgStart('C', true, conn) ||
 		gtmpqPutInt(is_backup ? MSG_BKUP_TXN_COMMIT : MSG_TXN_COMMIT, sizeof (GTM_MessageType), conn) ||
-		gtmpqPutnchar((char *)&gxid, sizeof (GlobalTransactionId), conn))
+		gtmpqPutnchar((char *)&gxid, sizeof (GlobalTransactionId), conn) ||
+		gtmpqPutInt(waited_xid_count, sizeof (int), conn))
 		goto send_failed;
+
+	if (waited_xid_count > 0)
+	{
+		if (gtmpqPutnchar((char *) waited_xids, waited_xid_count * sizeof (GlobalTransactionId), conn))
+			goto send_failed;
+	}
 
 	/* Finish the message. */
 	if (gtmpqPutMsgEnd(conn))
@@ -641,6 +669,33 @@ commit_transaction_internal(GTM_Conn *conn, GlobalTransactionId gxid, bool is_ba
 		{
 			Assert(res->gr_type == TXN_COMMIT_RESULT);
 			Assert(res->gr_resdata.grd_gxid == gxid);
+
+			if (waited_xid_count > 0)
+			{
+				if (res->gr_resdata.grd_eof_txn.status == STATUS_DELAYED)
+				{
+					/*
+					 * GTM may decide to delay the transaction commit if one or
+					 * more of the XIDs we had waited to finish for hasn't yet
+					 * made to the GTM. While this window is very small, we
+					 * need to guard against that to ensure that a transaction
+					 * which is already seen as committed by datanodes is not
+					 * reported as in-progress by GTM. Also, we don't wait at
+					 * the GTM for other transactions to finish because that
+					 * could potentially lead to deadlocks. So instead just
+					 * sleep for a while (1ms right now) and retry the
+					 * operation.
+					 *
+					 * Since the transactions we are waiting for are in fact
+					 * already committed and hence we don't see a reason why we
+					 * might end up in an inifinite loop. Nevertheless, it
+					 * might make sense to flash a warning and proceed after
+					 * certain number of retries
+					 */
+					pg_usleep(1000);
+					goto retry;
+				}
+			}
 		}
 
 		return res->gr_status;
@@ -655,29 +710,48 @@ send_failed:
 }
 
 int
-commit_prepared_transaction(GTM_Conn *conn, GlobalTransactionId gxid, GlobalTransactionId prepared_gxid)
+commit_prepared_transaction(GTM_Conn *conn,
+		GlobalTransactionId gxid,
+		GlobalTransactionId prepared_gxid,
+		int waited_xid_count,
+		GlobalTransactionId *waited_xids)
 {
-	return commit_prepared_transaction_internal(conn, gxid, prepared_gxid, false);
+	return commit_prepared_transaction_internal(conn, gxid, prepared_gxid,
+			waited_xid_count, waited_xids, false);
 }
 
 int
 bkup_commit_prepared_transaction(GTM_Conn *conn, GlobalTransactionId gxid, GlobalTransactionId prepared_gxid)
 {
-	return commit_prepared_transaction_internal(conn, gxid, prepared_gxid, true);
+	return commit_prepared_transaction_internal(conn, gxid, prepared_gxid, 0,
+			NULL, true);
 }
 
 static int
-commit_prepared_transaction_internal(GTM_Conn *conn, GlobalTransactionId gxid, GlobalTransactionId prepared_gxid, bool is_backup)
+commit_prepared_transaction_internal(GTM_Conn *conn,
+		GlobalTransactionId gxid,
+		GlobalTransactionId prepared_gxid,
+		int waited_xid_count,
+		GlobalTransactionId *waited_xids,
+		bool is_backup)
 {
 	GTM_Result *res = NULL;
 	time_t finish_time;
 
+retry:
 	/* Start the message */
 	if (gtmpqPutMsgStart('C', true, conn) ||
 		gtmpqPutInt(is_backup ? MSG_BKUP_TXN_COMMIT_PREPARED : MSG_TXN_COMMIT_PREPARED, sizeof (GTM_MessageType), conn) ||
 		gtmpqPutnchar((char *)&gxid, sizeof (GlobalTransactionId), conn) ||
-		gtmpqPutnchar((char *)&prepared_gxid, sizeof (GlobalTransactionId), conn))
+		gtmpqPutnchar((char *)&prepared_gxid, sizeof (GlobalTransactionId), conn) ||
+		gtmpqPutInt(waited_xid_count, sizeof (int), conn))
 		goto send_failed;
+
+	if (waited_xid_count > 0)
+	{
+		if (gtmpqPutnchar((char *) waited_xids, waited_xid_count * sizeof (GlobalTransactionId), conn))
+			goto send_failed;
+	}
 
 	/* Finish the message */
 	if (gtmpqPutMsgEnd(conn))
@@ -701,6 +775,15 @@ commit_prepared_transaction_internal(GTM_Conn *conn, GlobalTransactionId gxid, G
 		{
 			Assert(res->gr_type == TXN_COMMIT_PREPARED_RESULT);
 			Assert(res->gr_resdata.grd_gxid == gxid);
+			if (waited_xid_count > 0)
+			{
+				if (res->gr_resdata.grd_eof_txn.status == STATUS_DELAYED)
+				{
+					/* See comments in commit_transaction_internal() */
+					pg_usleep(1000);
+					goto retry;
+				}
+			}
 		}
 
 		return res->gr_status;
@@ -2022,7 +2105,8 @@ send_failed:
 }
 
 int
-bkup_commit_transaction_multi(GTM_Conn *conn, int txn_count, GlobalTransactionId *gxid)
+bkup_commit_transaction_multi(GTM_Conn *conn, int txn_count,
+		GlobalTransactionId *gxid)
 {
 	int ii;
 
@@ -2035,8 +2119,7 @@ bkup_commit_transaction_multi(GTM_Conn *conn, int txn_count, GlobalTransactionId
 
 	for (ii = 0; ii < txn_count; ii++)
 	{
-		if (gtmpqPutnchar((char *)&gxid[ii],
-				  sizeof (GlobalTransactionId), conn))
+		if (gtmpqPutnchar((char *)&gxid[ii], sizeof (GlobalTransactionId), conn))
 			  goto send_failed;
 	}
 

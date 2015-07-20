@@ -149,8 +149,8 @@ GlobalTransactionIdGetStatus(GlobalTransactionId transactionId)
 /*
  * Given the GXID, find the corresponding transaction handle.
  */
-GTM_TransactionHandle
-GTM_GXIDToHandle(GlobalTransactionId gxid)
+static GTM_TransactionHandle
+GTM_GXIDToHandle_Internal(GlobalTransactionId gxid, bool warn)
 {
 	gtm_ListCell *elem = NULL;
    	GTM_TransactionInfo *gtm_txninfo = NULL;
@@ -174,13 +174,26 @@ GTM_GXIDToHandle(GlobalTransactionId gxid)
 		return gtm_txninfo->gti_handle;
 	else
 	{
-		ereport(WARNING,
+		if (warn)
+			ereport(WARNING,
 				(ERANGE, errmsg("No transaction handle for gxid: %d",
 								gxid)));
 		return InvalidTransactionHandle;
 	}
 }
 
+GTM_TransactionHandle
+GTM_GXIDToHandle(GlobalTransactionId gxid)
+{
+	return GTM_GXIDToHandle_Internal(gxid, true);
+}
+
+bool
+GTM_IsGXIDInProgress(GlobalTransactionId gxid)
+{
+	return (GTM_GXIDToHandle_Internal(gxid, false) !=
+			InvalidTransactionHandle);
+}
 /*
  * Given the GID (for a prepared transaction), find the corresponding
  * transaction handle.
@@ -979,20 +992,27 @@ int
 GTM_CommitTransactionGXID(GlobalTransactionId gxid)
 {
 	GTM_TransactionHandle txn = GTM_GXIDToHandle(gxid);
-	return GTM_CommitTransaction(txn);
+	return GTM_CommitTransaction(txn, 0, NULL);
 }
 
 /*
  * Commit multiple transactions in one go
  */
 int
-GTM_CommitTransactionMulti(GTM_TransactionHandle txn[], int txn_count, int status[])
+GTM_CommitTransactionMulti(GTM_TransactionHandle txn[], int txn_count,
+		int waited_xid_count, GlobalTransactionId *waited_xids,
+		int status[])
 {
 	GTM_TransactionInfo *gtm_txninfo[txn_count];
+	GTM_TransactionInfo *remove_txninfo[txn_count];
+	int remove_count = 0;
 	int ii;
 
 	for (ii = 0; ii < txn_count; ii++)
 	{
+		int jj;
+		bool waited_xid_running = false;
+
 		gtm_txninfo[ii] = GTM_HandleToTransactionInfo(txn[ii]);
 
 		if (gtm_txninfo[ii] == NULL)
@@ -1000,6 +1020,28 @@ GTM_CommitTransactionMulti(GTM_TransactionHandle txn[], int txn_count, int statu
 			status[ii] = STATUS_ERROR;
 			continue;
 		}
+
+		/*
+		 * If any of the waited_xids is still running, we must delay commit for
+		 * this transaction till all such waited_xids are finished
+		 */
+		for (jj = 0; jj < waited_xid_count; jj++)
+		{
+			if (GTM_IsGXIDInProgress(waited_xids[jj]))
+			{
+				elog(DEBUG1, "Xact %d not yet finished, xact %d will be delayed",
+						waited_xids[jj], gtm_txninfo[ii]->gti_gxid);
+				waited_xid_running = true;
+				break;
+			}
+		}
+
+		if (waited_xid_running) 
+		{
+			status[ii] = STATUS_DELAYED;
+			continue;
+		}
+
 		/*
 		 * Mark the transaction as being aborted
 		 */
@@ -1007,11 +1049,13 @@ GTM_CommitTransactionMulti(GTM_TransactionHandle txn[], int txn_count, int statu
 		gtm_txninfo[ii]->gti_state = GTM_TXN_COMMIT_IN_PROGRESS;
 		GTM_RWLockRelease(&gtm_txninfo[ii]->gti_lock);
 		status[ii] = STATUS_OK;
+
+		remove_txninfo[remove_count++] = gtm_txninfo[ii];
 	}
 
-	GTM_RemoveTransInfoMulti(gtm_txninfo, txn_count);
+	GTM_RemoveTransInfoMulti(remove_txninfo, remove_count);
 
-	return txn_count;
+	return remove_count;
 }
 
 /*
@@ -1041,10 +1085,11 @@ GTM_PrepareTransaction(GTM_TransactionHandle txn)
  * Commit a transaction
  */
 int
-GTM_CommitTransaction(GTM_TransactionHandle txn)
+GTM_CommitTransaction(GTM_TransactionHandle txn, int waited_xid_count,
+		GlobalTransactionId *waited_xids)
 {
 	int status;
-	GTM_CommitTransactionMulti(&txn, 1, &status);
+	GTM_CommitTransactionMulti(&txn, 1, waited_xid_count, waited_xids, &status);
 	return status;
 }
 
@@ -1714,6 +1759,9 @@ ProcessCommitTransactionCommand(Port *myport, StringInfo message, bool is_backup
 	GlobalTransactionId gxid;
 	MemoryContext oldContext;
 	int status = STATUS_OK;
+	int waited_xid_count;
+	GlobalTransactionId *waited_xids;
+
 	const char *data = pq_getmsgbytes(message, sizeof (gxid));
 
 	if (data == NULL)
@@ -1723,6 +1771,13 @@ ProcessCommitTransactionCommand(Port *myport, StringInfo message, bool is_backup
 	memcpy(&gxid, data, sizeof (gxid));
 	txn = GTM_GXIDToHandle(gxid);
 
+	waited_xid_count = pq_getmsgint(message, sizeof (int));
+	if (waited_xid_count > 0)
+	{
+		waited_xids = pq_getmsgbytes(message,
+				waited_xid_count * sizeof (GlobalTransactionId));
+	}
+
 	pq_getmsgend(message);
 
 	oldContext = MemoryContextSwitchTo(TopMemoryContext);
@@ -1730,13 +1785,17 @@ ProcessCommitTransactionCommand(Port *myport, StringInfo message, bool is_backup
 	/*
 	 * Commit the transaction
 	 */
-	status = GTM_CommitTransaction(txn);
+	status = GTM_CommitTransaction(txn, waited_xid_count, waited_xids);
 
 	MemoryContextSwitchTo(oldContext);
 
 	if(!is_backup)
 	{
-		if (GetMyThreadInfo->thr_conn->standby)
+		/*
+		 * If the transaction is successfully committed on the GTM master then
+		 * send a backup message to the GTM slave to redo the action locally
+		 */
+		if ((GetMyThreadInfo->thr_conn->standby) && (status == STATUS_OK))
 		{
 			/*
 			 * Backup first
@@ -1769,7 +1828,7 @@ ProcessCommitTransactionCommand(Port *myport, StringInfo message, bool is_backup
 			pq_sendbytes(&buf, (char *)&proxyhdr, sizeof (GTM_ProxyMsgHeader));
 		}
 		pq_sendbytes(&buf, (char *)&gxid, sizeof(gxid));
-		pq_sendint(&buf, status, sizeof(status));
+		pq_sendbytes(&buf, (char *)&status, sizeof(status));
 		pq_endmessage(myport, &buf);
 
 		if (myport->remote_type != GTM_NODE_GTM_PROXY)
@@ -1801,6 +1860,8 @@ ProcessCommitPreparedTransactionCommand(Port *myport, StringInfo message, bool i
 	MemoryContext oldContext;
 	int status[txn_count];
 	int ii;
+	int waited_xid_count;
+	GlobalTransactionId *waited_xids;
 
 	for (ii = 0; ii < txn_count; ii++)
 	{
@@ -1814,6 +1875,13 @@ ProcessCommitPreparedTransactionCommand(Port *myport, StringInfo message, bool i
 		elog(DEBUG1, "ProcessCommitTransactionCommandMulti: gxid(%u), handle(%u)", gxid[ii], txn[ii]);
 	}
 
+	waited_xid_count = pq_getmsgint(message, sizeof (int));
+	if (waited_xid_count > 0)
+	{
+		waited_xids = pq_getmsgbytes(message,
+				waited_xid_count * sizeof (GlobalTransactionId));
+	}
+
 	pq_getmsgend(message);
 
 	oldContext = MemoryContextSwitchTo(TopMemoryContext);
@@ -1823,13 +1891,26 @@ ProcessCommitPreparedTransactionCommand(Port *myport, StringInfo message, bool i
 	/*
 	 * Commit the prepared transaction.
 	 */
-	GTM_CommitTransactionMulti(txn, txn_count, status);
+	GTM_CommitTransactionMulti(txn, txn_count, waited_xid_count,
+			waited_xids, status);
 
 	MemoryContextSwitchTo(oldContext);
 
 	if (!is_backup)
 	{
-		if (GetMyThreadInfo->thr_conn->standby)
+		/*
+		 * If we successfully committed the transaction on the GTM master, then
+		 * also send a backup message to the GTM slave to redo the action
+		 * locally
+		 *
+		 * GTM_CommitTransactionMulti() above is used to only commit the main
+		 * and the auxiliary GXID. Since we either commit or delay both of
+		 * these GXIDs together, its enough to just test for one of the GXIDs.
+		 * If the transaction commit is delayed, the backup message will be
+		 * sent when the GTM master receives COMMIT message again and
+		 * successfully commits the transaction
+		 */
+		if ((GetMyThreadInfo->thr_conn->standby) && (status[0] == STATUS_OK))
 		{
 			/* Backup first */
 			int _rc;
@@ -1862,7 +1943,7 @@ ProcessCommitPreparedTransactionCommand(Port *myport, StringInfo message, bool i
 			pq_sendbytes(&buf, (char *)&proxyhdr, sizeof (GTM_ProxyMsgHeader));
 		}
 		pq_sendbytes(&buf, (char *)&gxid[0], sizeof(GlobalTransactionId));
-		pq_sendint(&buf, status[0], 4);
+		pq_sendbytes(&buf, (char *)&status[0], 4);
 		pq_endmessage(myport, &buf);
 
 		if (myport->remote_type != GTM_NODE_GTM_PROXY)
@@ -2193,7 +2274,7 @@ ProcessCommitTransactionCommandMulti(Port *myport, StringInfo message, bool is_b
 	/*
 	 * Commit the transaction
 	 */
-	GTM_CommitTransactionMulti(txn, txn_count, status);
+	GTM_CommitTransactionMulti(txn, txn_count, 0, NULL, status);
 
 	MemoryContextSwitchTo(oldContext);
 

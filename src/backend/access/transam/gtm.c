@@ -187,7 +187,8 @@ BeginTranAutovacuumGTM(void)
 }
 
 int
-CommitTranGTM(GlobalTransactionId gxid)
+CommitTranGTM(GlobalTransactionId gxid, int waited_xid_count,
+		GlobalTransactionId *waited_xids)
 {
 	int ret;
 
@@ -198,7 +199,7 @@ CommitTranGTM(GlobalTransactionId gxid)
 	ret = -1;
 	if (conn)
 #endif
-	ret = commit_transaction(conn, gxid);
+	ret = commit_transaction(conn, gxid, waited_xid_count, waited_xids);
 
 	/*
 	 * If something went wrong (timeout), try and reset GTM connection.
@@ -211,7 +212,7 @@ CommitTranGTM(GlobalTransactionId gxid)
 		InitGTM();
 #ifdef XCP
 		if (conn)
-			ret = commit_transaction(conn, gxid);
+			ret = commit_transaction(conn, gxid, waited_xid_count, waited_xids);
 #endif
 	}
 
@@ -228,7 +229,9 @@ CommitTranGTM(GlobalTransactionId gxid)
  * and for COMMIT PREPARED.
  */
 int
-CommitPreparedTranGTM(GlobalTransactionId gxid, GlobalTransactionId prepared_gxid)
+CommitPreparedTranGTM(GlobalTransactionId gxid,
+		GlobalTransactionId prepared_gxid, int waited_xid_count,
+		GlobalTransactionId *waited_xids)
 {
 	int ret = 0;
 
@@ -239,7 +242,8 @@ CommitPreparedTranGTM(GlobalTransactionId gxid, GlobalTransactionId prepared_gxi
 	ret = -1;
 	if (conn)
 #endif
-	ret = commit_prepared_transaction(conn, gxid, prepared_gxid);
+	ret = commit_prepared_transaction(conn, gxid, prepared_gxid,
+			waited_xid_count, waited_xids);
 
 	/*
 	 * If something went wrong (timeout), try and reset GTM connection.
@@ -253,7 +257,8 @@ CommitPreparedTranGTM(GlobalTransactionId gxid, GlobalTransactionId prepared_gxi
 		InitGTM();
 #ifdef XCP
 		if (conn)
-			ret = commit_prepared_transaction(conn, gxid, prepared_gxid);
+			ret = commit_prepared_transaction(conn, gxid, prepared_gxid,
+					waited_xid_count, waited_xids);
 #endif
 	}
 	currentGxid = InvalidGlobalTransactionId;

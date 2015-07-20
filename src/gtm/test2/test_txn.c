@@ -65,7 +65,7 @@ test_txn_02()
 	rc = prepare_transaction(conn, gxid);
 	_ASSERT( rc>=0 );
 
-	rc = commit_transaction(conn, gxid);
+	rc = commit_transaction(conn, gxid, 0, NULL);
 	_ASSERT( rc>=0 );
 
 	TEARDOWN();
@@ -82,7 +82,7 @@ test_txn_03()
 	gxid = begin_transaction_autovacuum(conn, GTM_ISOLATION_SERIALIZABLE);
 	_ASSERT( gxid != InvalidGlobalTransactionId );
 
-	rc = commit_transaction(conn, gxid);
+	rc = commit_transaction(conn, gxid, 0, NULL);
 	_ASSERT( rc>=0 );
 
 	TEARDOWN();
@@ -116,7 +116,7 @@ test_txn_11()
 	printf("test_txn_11: prepared_gxid=%d\n", prepared_gxid);
 	_ASSERT( rc>=0 );
 
-	rc = commit_prepared_transaction(conn, gxid, prepared_gxid);
+	rc = commit_prepared_transaction(conn, gxid, prepared_gxid, 0, NULL);
 	_ASSERT( rc>=0 );
 
 	TEARDOWN();
@@ -159,7 +159,7 @@ test_txn_53()
 
 	SETUP();
 
-	rc = commit_transaction(conn, InvalidGlobalTransactionId);
+	rc = commit_transaction(conn, InvalidGlobalTransactionId, 0, NULL);
 	_ASSERT( rc==-1 );
 
 	TEARDOWN();

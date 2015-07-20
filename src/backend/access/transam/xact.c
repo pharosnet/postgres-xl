@@ -73,6 +73,9 @@
 #include "storage/procarray.h"
 #include "storage/sinvaladt.h"
 #include "storage/smgr.h"
+#ifdef XCP
+#include "tcop/tcopprot.h"
+#endif
 #include "utils/builtins.h"
 #include "utils/catcache.h"
 #include "utils/combocid.h"
@@ -223,6 +226,10 @@ typedef struct TransactionStateData
 	bool		didLogXid;		/* has xid been included in WAL record? */
 	int			parallelModeLevel;		/* Enter/ExitParallelMode counter */
 	struct TransactionStateData *parent;		/* back link to parent */
+#ifdef XCP
+	int				waitedForXidsCount;	/* count of xids we waited to finish */
+	TransactionId	*waitedForXids;		/* xids we waited to finish */
+#endif
 } TransactionStateData;
 
 typedef TransactionStateData *TransactionState;
@@ -425,6 +432,14 @@ static void AtSubAbort_ResourceOwner(void);
 static void AtSubCommit_Memory(void);
 static void AtSubStart_Memory(void);
 static void AtSubStart_ResourceOwner(void);
+
+#ifdef XCP
+static void AtSubCommit_WaitedXids(void);
+static void AtSubAbort_WaitedXids(void);
+static void AtEOXact_WaitedXids(void);
+static void TransactionRecordXidWait_Internal(TransactionState s,
+		TransactionId xid);
+#endif
 
 static void ShowTransactionState(const char *str);
 static void ShowTransactionStateRec(TransactionState state);
@@ -2498,6 +2513,10 @@ CommitTransaction(void)
 	}
 #endif
 
+#ifdef XCP
+	AtEOXact_WaitedXids();
+#endif
+
 	/* Prevent cancel/die interrupt while cleaning up */
 	HOLD_INTERRUPTS();
 
@@ -2712,11 +2731,15 @@ AtEOXact_GlobalTxn(bool commit)
 			if (GlobalTransactionIdIsValid(s->auxilliaryTransactionId) &&
 				GlobalTransactionIdIsValid(s->topGlobalTransansactionId))
 				CommitPreparedTranGTM(s->topGlobalTransansactionId,
-						s->auxilliaryTransactionId);
+						s->auxilliaryTransactionId,
+						s->waitedForXidsCount,
+						s->waitedForXids);
 			else if (GlobalTransactionIdIsValid(s->topGlobalTransansactionId))
-				CommitTranGTM(s->topGlobalTransansactionId);
+				CommitTranGTM(s->topGlobalTransansactionId,
+						s->waitedForXidsCount,
+						s->waitedForXids);
 			else if (GlobalTransactionIdIsValid(s->auxilliaryTransactionId))
-				CommitTranGTM(s->auxilliaryTransactionId);
+				CommitTranGTM(s->auxilliaryTransactionId, 0, NULL);
 		}
 		else
 		{
@@ -2740,7 +2763,7 @@ AtEOXact_GlobalTxn(bool commit)
 	{
 		IsXidFromGTM = false;
 		if (commit)
-			CommitTranGTM(s->topGlobalTransansactionId);
+			CommitTranGTM(s->topGlobalTransansactionId, 0, NULL);
 		else
 			RollbackTranGTM(s->topGlobalTransansactionId);
 		
@@ -2773,6 +2796,14 @@ AtEOXact_GlobalTxn(bool commit)
 #endif
 	s->topGlobalTransansactionId = InvalidGlobalTransactionId;
 	s->auxilliaryTransactionId = InvalidGlobalTransactionId;
+
+	if (IS_PGXC_LOCAL_COORDINATOR)
+	{
+		if (s->waitedForXids)
+			pfree(s->waitedForXids);
+	}
+	s->waitedForXids = NULL;
+	s->waitedForXidsCount = 0;
 
 	SetNextTransactionId(InvalidTransactionId);
 }
@@ -2994,6 +3025,10 @@ PrepareTransaction(void)
 	AtPrepare_MultiXact();
 	AtPrepare_RelationMap();
 
+#ifdef XCP
+	AtEOXact_WaitedXids();
+#endif
+
 	/*
 	 * Here is where we really truly prepare.
 	 *
@@ -3138,6 +3173,16 @@ PrepareTransaction(void)
 			s->topGlobalTransansactionId = InvalidGlobalTransactionId;
 		ForgetTransactionLocalNode();
 	}
+#ifdef XCP
+	if (IS_PGXC_LOCAL_COORDINATOR)
+	{
+		if (s->waitedForXids)
+			pfree(s->waitedForXids);
+	}
+	s->waitedForXids = NULL;
+	s->waitedForXidsCount = 0;
+#endif
+
 	SetNextTransactionId(InvalidTransactionId);
 
 	/*
@@ -3420,6 +3465,16 @@ CleanupTransaction(void)
 
 	XactTopTransactionId = InvalidTransactionId;
 	nParallelCurrentXids = 0;
+
+#ifdef XCP
+	if (IS_PGXC_LOCAL_COORDINATOR)
+	{
+		if (s->waitedForXids)
+			pfree(s->waitedForXids);
+	}
+	s->waitedForXids = NULL;
+	s->waitedForXidsCount = 0;
+#endif
 
 	/*
 	 * done with abort processing, set current transaction state back to
@@ -5369,6 +5424,9 @@ CommitSubTransaction(void)
 	AtEOSubXact_HashTables(true, s->nestingLevel);
 	AtEOSubXact_PgStat(true, s->nestingLevel);
 	AtSubCommit_Snapshot(s->nestingLevel);
+#ifdef XCP
+	AtSubCommit_WaitedXids();
+#endif
 
 	/*
 	 * We need to restore the upper transaction's read-only state, in case the
@@ -5516,6 +5574,9 @@ AbortSubTransaction(void)
 		AtEOSubXact_HashTables(false, s->nestingLevel);
 		AtEOSubXact_PgStat(false, s->nestingLevel);
 		AtSubAbort_Snapshot(s->nestingLevel);
+#ifdef XCP
+		AtSubAbort_WaitedXids();
+#endif
 	}
 
 	/*
@@ -6666,4 +6727,142 @@ IsPGXCNodeXactDatanodeDirect(void)
 #endif
 		   !IsConnFromCoord();
 }
+
+#ifdef XCP
+static void
+TransactionRecordXidWait_Internal(TransactionState s, TransactionId xid)
+{
+	int i;
+
+	if (s->waitedForXids == NULL)
+	{
+		/*
+		 * XIDs recorded on the local coordinator, which are mostly collected
+		 * from various remote nodes, must survive across transaction
+		 * boundaries since they are sent to the GTM after local transaction is
+		 * committed. So we track them in the TopMemoryContext and make extra
+		 * efforts to free that memory later. Note that we do this only when we
+		 * are running in the top-level transaction. For subtranctions, they
+		 * will be copied to the parent transaction at the commit time. So at
+		 * subtranction level, they can be tracked in a transaction-local
+		 * memory without any problem
+		 */
+		if (IS_PGXC_LOCAL_COORDINATOR && (s->parent == NULL))
+			s->waitedForXids = (TransactionId *)
+				MemoryContextAlloc(TopMemoryContext, sizeof (TransactionId) *
+						MaxConnections);
+		else
+			s->waitedForXids = (TransactionId *)
+				MemoryContextAlloc(CurTransactionContext, sizeof (TransactionId) *
+						MaxConnections);
+
+		s->waitedForXidsCount = 0;
+	}
+
+	elog(DEBUG2, "TransactionRecordXidWait_Internal - recording %d", xid);
+
+	for (i = 0; i < s->waitedForXidsCount; i++)
+	{
+		if (TransactionIdEquals(xid, s->waitedForXids[i]))
+		{
+			elog(DEBUG2, "TransactionRecordXidWait_Internal - xid %d already recorded", xid);
+			return;
+		}
+	}
+
+	/*
+	 * We track maximum MaxConnections xids. In case of overflow, we forget the
+	 * earliest recorded xid. That should be enough for all practical purposes
+	 * since what we are guarding against is a very small window where a
+	 * transaction which is already committed on a datanode has not yet got an
+	 * opportunity to send its status to the GTM. Such transactions can only be
+	 * running on a different coordinator session. So tracking MaxConnections
+	 * worth xids seems like more than enough
+	 */
+	if (s->waitedForXidsCount == MaxConnections)
+	{
+		memmove(&s->waitedForXids[0],
+				&s->waitedForXids[1],
+				(s->waitedForXidsCount - 1) * sizeof (TransactionId));
+		s->waitedForXids[s->waitedForXidsCount - 1] = xid;
+	}
+	else
+		s->waitedForXids[s->waitedForXidsCount++] = xid;
+
+}
+
+void
+TransactionRecordXidWait(TransactionId xid)
+{
+	TransactionRecordXidWait_Internal(CurrentTransactionState, xid);
+}
+
+static void
+AtSubCommit_WaitedXids()
+{
+	TransactionState s = CurrentTransactionState;
+	int i;
+
+	Assert(s->parent != NULL);
+
+	/*
+	 * Move the recorded XIDs to the parent structure
+	 */
+	for (i = 0; i < s->waitedForXidsCount; i++)
+		TransactionRecordXidWait_Internal(s->parent, s->waitedForXids[i]);
+
+	/* And we can safely free them now */
+	if (s->waitedForXids != NULL)
+		pfree(s->waitedForXids);
+	s->waitedForXids = NULL;
+	s->waitedForXidsCount = 0;
+}
+
+static void
+AtSubAbort_WaitedXids()
+{
+	TransactionState s = CurrentTransactionState;
+
+	if (s->waitedForXids != NULL)
+		pfree(s->waitedForXids);
+	s->waitedForXids = NULL;
+	s->waitedForXidsCount = 0;
+
+}
+
+static void
+AtEOXact_WaitedXids(void)
+{
+	TransactionState s = CurrentTransactionState;
+	TransactionId *sendXids;
+
+	/*
+	 * Report the set of XIDs this transaction (and its committed
+	 * subtransactions) had waited-for to the coordinator. The coordinator will
+	 * then forward the list to the GTM who ensures that the logical ordering
+	 * between these transactions and this transaction is correctly followed.
+	 */
+	if (whereToSendOutput == DestRemote && !IS_PGXC_LOCAL_COORDINATOR)
+	{
+		if (s->waitedForXidsCount > 0)
+		{
+			int i;
+
+			/*
+			 * Convert the XIDs in network order and send to the client
+			 */
+			sendXids = (TransactionId *) palloc (sizeof (TransactionId) *
+					s->waitedForXidsCount);
+			for (i = 0; i < s->waitedForXidsCount; i++)
+				sendXids[i] = htonl(s->waitedForXids[i]);
+
+			pq_putmessage('W',
+					(const char *)sendXids,
+					s->waitedForXidsCount * sizeof (TransactionId));
+			pfree(sendXids);
+		}
+	}
+
+}
+#endif
 #endif

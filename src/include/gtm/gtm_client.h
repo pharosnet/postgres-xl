@@ -36,12 +36,17 @@ typedef union GTM_ResultData
 		GTM_Timestamp			timestamp;
 	} grd_gxid_tp;								/* TXN_BEGIN_GETGXID */
 
-	GlobalTransactionId			grd_gxid;		/* TXN_PREPARE
-												 * TXN_START_PREPARED
-												 * TXN_COMMIT
-												 * TXN_COMMIT_PREPARED
-												 * TXN_ROLLBACK
-												 */
+	GlobalTransactionId			grd_gxid;			/* TXN_PREPARE		
+													 * TXN_START_PREPARED
+													 * TXN_ROLLBACK
+													 */
+	struct {
+		GlobalTransactionId			gxid;
+													/* TXN_COMMIT
+													 * TXN_COMMIT_PREPARED
+													 */
+		int							status;
+	} grd_eof_txn;
 
 	GlobalTransactionId			grd_next_gxid;
 
@@ -185,9 +190,14 @@ GlobalTransactionId begin_transaction_autovacuum(GTM_Conn *conn, GTM_IsolationLe
 int bkup_begin_transaction_autovacuum(GTM_Conn *conn, GlobalTransactionId gxid,
 									  GTM_IsolationLevel isolevel,
 									  uint32 client_id);
-int commit_transaction(GTM_Conn *conn, GlobalTransactionId gxid);
+int commit_transaction(GTM_Conn *conn, GlobalTransactionId gxid,
+					   int waited_xid_count,
+					   GlobalTransactionId *waited_xids);
 int bkup_commit_transaction(GTM_Conn *conn, GlobalTransactionId gxid);
-int commit_prepared_transaction(GTM_Conn *conn, GlobalTransactionId gxid, GlobalTransactionId prepared_gxid);
+int commit_prepared_transaction(GTM_Conn *conn, GlobalTransactionId gxid,
+								GlobalTransactionId prepared_gxid,
+								int waited_xid_count,
+								GlobalTransactionId *waited_xids);
 int bkup_commit_prepared_transaction(GTM_Conn *conn, GlobalTransactionId gxid, GlobalTransactionId prepared_gxid);
 int abort_transaction(GTM_Conn *conn, GlobalTransactionId gxid);
 int bkup_abort_transaction(GTM_Conn *conn, GlobalTransactionId gxid);
@@ -218,7 +228,8 @@ int
 commit_transaction_multi(GTM_Conn *conn, int txn_count, GlobalTransactionId *gxid,
 						 int *txn_count_out, int *status_out);
 int
-bkup_commit_transaction_multi(GTM_Conn *conn, int txn_count, GlobalTransactionId *gxid);
+bkup_commit_transaction_multi(GTM_Conn *conn, int txn_count,
+		GlobalTransactionId *gxid);
 int
 abort_transaction_multi(GTM_Conn *conn, int txn_count, GlobalTransactionId *gxid,
 			int *txn_count_out, int *status_out);

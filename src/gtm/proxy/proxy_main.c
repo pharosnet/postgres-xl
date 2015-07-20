@@ -1596,6 +1596,7 @@ ProcessCommand(GTMProxy_ConnectionInfo *conninfo, GTM_Conn *gtm_conn,
 		case MSG_SEQUENCE_RENAME:
 		case MSG_SEQUENCE_ALTER:
 		case MSG_BARRIER:
+		case MSG_TXN_COMMIT:
 #ifdef XCP
 		case MSG_REGISTER_SESSION:
 #endif
@@ -1610,7 +1611,7 @@ ProcessCommand(GTMProxy_ConnectionInfo *conninfo, GTM_Conn *gtm_conn,
 
 		case MSG_TXN_BEGIN:
 		case MSG_TXN_BEGIN_GETGXID:
-		case MSG_TXN_COMMIT:
+		case MSG_TXN_COMMIT_MULTI:
 		case MSG_TXN_ROLLBACK:
 		case MSG_TXN_GET_GXID:
 			ProcessTransactionCommand(conninfo, gtm_conn, mtype, input_message);
@@ -1655,7 +1656,6 @@ ProcessCommand(GTMProxy_ConnectionInfo *conninfo, GTM_Conn *gtm_conn,
 static GTM_Conn *
 HandleGTMError(GTM_Conn *gtm_conn)
 {
-	Assert(gtm_conn && gtm_conn->last_errno != 0);
 
 	elog(NOTICE,
 		 "GTM communication error was detected.  Retrying connection, interval = %d.",
@@ -1758,6 +1758,7 @@ IsProxiedMessage(GTM_MessageType mtype)
 		case MSG_SEQUENCE_RENAME:
 		case MSG_SEQUENCE_ALTER:
 		case MSG_SNAPSHOT_GET:
+		case MSG_TXN_COMMIT:
 			return true;
 
 		default:
@@ -1823,7 +1824,7 @@ ProcessResponse(GTMProxy_ThreadInfo *thrinfo, GTMProxy_CommandInfo *cmdinfo,
 			ReleaseCmdBackup(cmdinfo);
 			break;
 
-		case MSG_TXN_COMMIT:
+		case MSG_TXN_COMMIT_MULTI:
 			if (res->gr_type != TXN_COMMIT_MULTI_RESULT)
 			{
 				ReleaseCmdBackup(cmdinfo);
@@ -1842,9 +1843,13 @@ ProcessResponse(GTMProxy_ThreadInfo *thrinfo, GTMProxy_CommandInfo *cmdinfo,
 
 			if (res->gr_resdata.grd_txn_rc_multi.status[cmdinfo->ci_res_index] == STATUS_OK)
 			{
+				int txn_count = 1;
+				int status = STATUS_OK;
+
 				pq_beginmessage(&buf, 'S');
-				pq_sendint(&buf, TXN_COMMIT_RESULT, 4);
-				pq_sendbytes(&buf, (char *)&cmdinfo->ci_data.cd_rc.gxid, sizeof (GlobalTransactionId));
+				pq_sendint(&buf, TXN_COMMIT_MULTI_RESULT, 4);
+				pq_sendbytes(&buf, &txn_count, sizeof (int));
+				pq_sendbytes(&buf, &status, sizeof (int));
 				pq_endmessage(cmdinfo->ci_conn->con_port, &buf);
 				pq_flush(cmdinfo->ci_conn->con_port);
 			}
@@ -1958,6 +1963,7 @@ ProcessResponse(GTMProxy_ThreadInfo *thrinfo, GTMProxy_CommandInfo *cmdinfo,
 		case MSG_SEQUENCE_RENAME:
 		case MSG_SEQUENCE_ALTER:
 		case MSG_SNAPSHOT_GET:
+		case MSG_TXN_COMMIT:
 			Assert(IsProxiedMessage(cmdinfo->ci_mtype));
 			if ((res->gr_proxyhdr.ph_conid == InvalidGTMProxyConnID) ||
 				(res->gr_proxyhdr.ph_conid >= GTM_PROXY_MAX_CONNECTIONS) ||
@@ -2296,7 +2302,12 @@ ProcessTransactionCommand(GTMProxy_ConnectionInfo *conninfo, GTM_Conn *gtm_conn,
 			GTMProxy_CommandPending(conninfo, mtype, cmd_data);
 			break;
 
-		case MSG_TXN_COMMIT:
+		case MSG_TXN_COMMIT_MULTI:
+			{
+				int txn_count = pq_getmsgint(message, sizeof (int));
+				Assert (txn_count == 1);
+			}
+			/* fall through */
 		case MSG_TXN_ROLLBACK:
 			{
 				const char *data = pq_getmsgbytes(message,
@@ -2694,7 +2705,7 @@ GTMProxy_ProcessPendingCommands(GTMProxy_ThreadInfo *thrinfo)
 				thrinfo->thr_pending_commands[ii] = gtm_NIL;
 				break;
 
-			case MSG_TXN_COMMIT:
+			case MSG_TXN_COMMIT_MULTI:
 				if (gtmpqPutInt(MSG_TXN_COMMIT_MULTI, sizeof (GTM_MessageType), gtm_conn) ||
 					gtmpqPutInt(gtm_list_length(thrinfo->thr_pending_commands[ii]), sizeof(int), gtm_conn))
 					elog(ERROR, "Error sending data");

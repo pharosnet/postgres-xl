@@ -50,6 +50,7 @@ extern bool EnforceTwoPhaseCommit;
 #ifdef XCP
 #define RESPONSE_ERROR 6
 #define RESPONSE_READY 10
+#define RESPONSE_WAITXIDS 11
 #endif
 
 typedef enum
