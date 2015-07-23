@@ -31,6 +31,11 @@ CREATE USER MAPPING FOR { <replaceable class="parameter">user_name</replaceable>
   <title>Description</title>
 
   <para>
+   <command>USER MAPPING</> is not yet supported
+   in <productname>Postgres-XL</>.
+  </para>
+
+  <para>
    <command>CREATE USER MAPPING</command> defines a mapping of a user
    to a foreign server.  A user mapping typically encapsulates
    connection information that a foreign-data wrapper uses together

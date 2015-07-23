@@ -16,7 +16,7 @@ PostgreSQL documentation
 
  <refnamediv>
   <refname id="postmaster-ref">postmaster</refname>
-  <refpurpose><productname>PostgreSQL</productname> database server</refpurpose>
+  <refpurpose><productname>Postgres-XL</productname> database server for Coordinator or Datanode</refpurpose>
  </refnamediv>
 
  <refsynopsisdiv>

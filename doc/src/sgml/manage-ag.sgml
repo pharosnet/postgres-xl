@@ -276,6 +276,16 @@ createdb -T template0 <replaceable>dbname</>
     users and applications to connect to. It is simply a copy of
     <literal>template1</> and can be dropped and recreated if necessary.
    </para>
+
+   <para>
+    <emphasis>For Postgres-XL only.</>
+   </para>
+   <para>
+    In <productname>Postgres-XL</>, template databases are held in
+    each Coordinator and Datanode.  They are locally copied when new
+    database is created.
+   </para>
+
   </note>
  </sect1>
 

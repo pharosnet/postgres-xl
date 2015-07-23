@@ -211,6 +211,19 @@ pgbench <optional> <replaceable>options</> </optional> <replaceable>dbname</>
      </varlistentry>
 
      <varlistentry>
+      <term><option>-k</option></term>
+      <listitem>
+       <para>
+        Use column <structname>bid</> as hash distribution key for tables
+        <structname>pgbench_accounts</>, <structname>pgbench_tellers</>,
+        <structname>pgbench_branches</>. This limits the selectivity of
+        remote nodes to a single node for each transaction as all the tables
+        are distributed respecting the same key.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
       <term><option>--foreign-keys</option></term>
       <listitem>
        <para>
@@ -548,6 +561,18 @@ pgbench <optional> <replaceable>options</> </optional> <replaceable>dbname</>
         With neither <option>-n</> nor <option>-v</>, pgbench will vacuum the
         <structname>pgbench_tellers</> and <structname>pgbench_branches</>
         tables, and will truncate <structname>pgbench_history</>.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-k</option></term>
+      <listitem>
+       <para>
+        Add an additional condition based on column <structname>bid</> based
+        on its values as a hash key to enforce selectivity of all write queries
+        to a single remote node. This functionality permits to check the
+        write-scalability performance of the system by distributing data among cluster nodes.
        </para>
       </listitem>
      </varlistentry>

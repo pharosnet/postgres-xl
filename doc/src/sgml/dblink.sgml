@@ -8,6 +8,14 @@
  </indexterm>
 
  <para>
+  <filename>dblink</> module has not been tested
+  with <productname>Postges-XL</> yet.  Although there're no reason
+  that <filename>dblink</> does not run
+  in <productname>Postgres-XL</>, the development team leaves the test
+  and the use of this module entirely to users.
+ </para>
+
+ <para>
   <filename>dblink</> is a module that supports connections to
   other <productname>PostgreSQL</> databases from within a database
   session.

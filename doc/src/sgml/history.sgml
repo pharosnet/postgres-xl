@@ -219,4 +219,29 @@
    then can be found in <xref linkend="release">.
   </para>
  </sect2>
+<sect2 id="pgxc-history">
+ <title><productname>Postgres-XL</productname></title>
+
+ <indexterm zone="pgxc-history">
+ <primary>history</primary>
+ <secondary>of Postgres-XL</secondary>
+ </indexterm>
+
+ <para>
+  In 2010, NTT's Open Source Software Center approached EnterpriseDB
+  to build off of NTT OSSC's experience with a project called RitaDB
+  and EnterpriseDB's experience with a project called GridSQL,
+  and the result was a new project, Postgres-XC.
+ </para>
+ <para>
+  In 2012, a company called StormDB was formed with some of the original key Postgres-XC developers. StormDB added enhancements, including MPP parallelism for performance and multi-tenant security.
+ </para>
+ <para>
+  In 2013, TransLattice acquired StormDB, and in 2014, open sourced it as Postgres-XL.
+ </para>
+ <para>
+  In 2015, 2ndQuandrant started further work on Postgres-XL.
+ </para>
+
+</sect2>
 </sect1>

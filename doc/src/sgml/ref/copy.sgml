@@ -205,6 +205,12 @@ COPY { <replaceable class="parameter">table_name</replaceable> [ ( <replaceable 
       have OIDs, or in the case of copying a <replaceable
       class="parameter">query</replaceable>.)
      </para>
+
+     <para>
+      In <productname>Postgres-XL</>, OIDs are only maintained locally
+      in Coordinators and Datanodes.  The value of <literal>OIDs</>
+      may conflict if you copy this value to another table.
+     </para>
     </listitem>
    </varlistentry>
 

@@ -8,6 +8,12 @@
  </indexterm>
 
  <para>
+  <productname>Postgres-XL</> doesn't support the
+  module <filename>lo</> because it depends upon
+  consistent <literal>OID</> and triggers.
+ </para>
+
+ <para>
   The <filename>lo</> module provides support for managing Large Objects
   (also called LOs or BLOBs).  This includes a data type <type>lo</>
   and a trigger <function>lo_manage</>.

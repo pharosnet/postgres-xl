@@ -714,6 +714,11 @@ CREATE TRIGGER trig_mytab_modcount BEFORE INSERT OR UPDATE ON mytab
      name; that's supplied from the trigger arguments.  This lets the
      trigger procedure be reused with different tables.
     </para>
+
+    <para>
+     Trigger is not supported in the current release
+     of <productname>Postgres-XL</>. 
+    </para>
    </sect1>
 
    <sect1 id="pltcl-event-trigger">

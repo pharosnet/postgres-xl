@@ -785,4 +785,70 @@
    seem to be a problem in practice.
   </para>
  </sect1>
+ <sect1 id="barriers">
+  <title>Barrier</title>
+  <para>
+   Its important to ensure that any global transactions in the cluster
+   must either be committed on all the nodes or none of the nodes. If
+   global recovery is done in a way such that on one node the
+   <acronym>WAL</acronym> recovery stops after a commit record of some
+   global transaction is processed, but stops before the commit record for
+   the same transaction is processed on some other node, the cluster may
+   be left in an inconsistent state. Since the commit messages of global
+   transactions can arrive out-of-order on different nodes, its very hard
+   to find a common synchronization point. For example, for two global
+   transactions T1 and T2, the commit messages for these transactions
+   can arrive on nodes N1 and N2 such that N1 receives commit message
+   for T1 first and N2 receives commit message T2 first. In this case,
+   during <acronym>PITR</acronym>, irrespective of whether we stop at
+   T1 or T2, the cluster would lose its consistency since at least one
+   transaction will be marked as committed on one node and as aborted
+   on the other node.
+  </para>
+
+  <para>
+   During recovery, it can be hard and even impossible to find
+   cluster-wide consistent synchronization points. In fact, such
+   synchronization points may not exists at all. Postgres-XL provides
+   a mechanism to create such synchronization points, called barriers,
+   during normal operation. A barrier can be created by using a SQL
+   command <command>BARRIER</command>
+  </para>
+
+  <para>
+   The user must connect to one of the Coordinators and issue the
+   <command>BARRIER</command> command, optionally followed by an
+   identifier. If the user does not specify an identifier, an unique
+   identifier will be generated and returned to the caller.  Upon
+   receiving the <command>BARRIER</command> command, the Coordinator
+   temporarily pauses any new two-phase commits. It also communicates with
+   other Coordinators to ensure that there are no in-progress two-phase
+   commits in the cluster. At that point, a barrier <acronym>WAL</acronym>
+   record along with the user-given or system-generated BARRIER identifier
+   is writtent to the <acronym>WAL</acronym> stream of all Datanodes and
+   the Coordinators.
+  </para>
+
+  <para>
+   The user can create as many barriers as she wants to. At the time of
+   point-in-time-recovery, the same barrier id must be specified in the
+   <filename>recovery.conf</filename> files of all the Coordinators and
+   Datanodes. When every node in the cluster recovers to the same barrier
+   id, a cluster-wide consistent state is reached. Its important that
+   the recovery must be started from a backup taken before the barrier
+   was generated. If no matching barrier record is found, either because
+   the barrier was created before the base backup used for the recovery
+   or the said barrier was never created, the recovery is run to the end.
+  </para>
+  
+  <para>
+   Note that in the current release, Postgres-XL has no means to detect
+   if another barrier with the same name already exists. So the user
+   must be careful while choosing a barrier identifier and ensure
+   that an unique identifier is used for every barrier. Similarly, at
+   the time of recovery, the user must specify the same barrier id in the
+   <filename>recovery.conf</filename> file on all the nodes. Otherwise,
+   the cluster would not recover to a global consistent image.
+  </para>
+ </sect1>
 </chapter>

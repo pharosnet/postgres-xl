@@ -31,6 +31,8 @@ CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } | UNLOGGED ] TABLE [ IF NOT EXI
 [ WITH ( <replaceable class="PARAMETER">storage_parameter</replaceable> [= <replaceable class="PARAMETER">value</replaceable>] [, ... ] ) | WITH OIDS | WITHOUT OIDS ]
 [ ON COMMIT { PRESERVE ROWS | DELETE ROWS | DROP } ]
 [ TABLESPACE <replaceable class="PARAMETER">tablespace_name</replaceable> ]
+[ DISTRIBUTE BY { REPLICATION | ROUNDROBIN | { [HASH | MODULO ] ( <replaceable class="PARAMETER">column_name</replaceable> ) } } ]
+[ TO { GROUP <replaceable class="PARAMETER">groupname</replaceable> | NODE ( <replaceable class="PARAMETER">nodename</replaceable> [, ... ] ) } ]
 
 CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } | UNLOGGED ] TABLE [ IF NOT EXISTS ] <replaceable class="PARAMETER">table_name</replaceable>
     OF <replaceable class="PARAMETER">type_name</replaceable> [ (
@@ -41,6 +43,8 @@ CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } | UNLOGGED ] TABLE [ IF NOT EXI
 [ WITH ( <replaceable class="PARAMETER">storage_parameter</replaceable> [= <replaceable class="PARAMETER">value</replaceable>] [, ... ] ) | WITH OIDS | WITHOUT OIDS ]
 [ ON COMMIT { PRESERVE ROWS | DELETE ROWS | DROP } ]
 [ TABLESPACE <replaceable class="PARAMETER">tablespace_name</replaceable> ]
+[ DISTRIBUTE BY { REPLICATION | ROUNDROBIN | { [HASH | MODULO ] ( <replaceable class="PARAMETER">column_name</replaceable> ) } } ]
+[ TO { GROUP <replaceable class="PARAMETER">groupname</replaceable> | NODE ( <replaceable class="PARAMETER">nodename</replaceable> [, ... ] ) } ]
 
 <phrase>where <replaceable class="PARAMETER">column_constraint</replaceable> is:</phrase>
 
@@ -307,6 +311,10 @@ CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } | UNLOGGED ] TABLE [ IF NOT EXI
      </para>
 
      <para>
+      In <productname>Postgres-XL</>, it is currently not possible to distribute a table with more than one parent.
+     </para>
+
+     <para>
       Column <literal>STORAGE</> settings are also copied from parent tables.
      </para>
 
@@ -493,6 +501,12 @@ CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } | UNLOGGED ] TABLE [ IF NOT EXI
      </para>
 
      <para>
+      In <productname>Postgres-XL</>, if <command>DISTRIBUTE BY
+      REPLICATION</> is not specified, only the distribution key is
+      allowed to have this constraint.
+     </para>
+
+     <para>
       Each unique table constraint must name a set of columns that is
       different from the set of columns named by any other unique or
       primary key constraint defined for the table.  (Otherwise it
@@ -525,6 +539,12 @@ CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } | UNLOGGED ] TABLE [ IF NOT EXI
       The primary key constraint should name a set of columns that is
       different from other sets of columns named by any unique
       constraint defined for the same table.
+     </para>
+
+     <para>
+      In <productname>Postgres-XL</>, if <command>DISTRIBUTE BY REPLICATION</> is not specified, the
+      distribution key must be included in the set of primary key
+      columns.
      </para>
     </listitem>
    </varlistentry>
@@ -575,6 +595,11 @@ CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } | UNLOGGED ] TABLE [ IF NOT EXI
       The <replaceable class="parameter">predicate</> allows you to specify an
       exclusion constraint on a subset of the table; internally this creates a
       partial index. Note that parentheses are required around the predicate.
+     </para>
+
+     <para>
+      In <productname>Postgres-XL</>, exclusion constraints are currently not
+      supported.
      </para>
     </listitem>
    </varlistentry>
@@ -788,6 +813,12 @@ CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } | UNLOGGED ] TABLE [ IF NOT EXI
       both an <literal>OIDS</> setting and storage parameters, you must use
       the <literal>WITH ( ... )</> syntax; see above.
      </para>
+
+     <para>
+      In <productname>Postgres-XL</>, OID is managed locally in each
+      Datanode and Coordinator.  The OID value may be inconsistent for
+      rows stored in different Datanodes.
+     </para>
     </listitem>
    </varlistentry>
 
@@ -846,6 +877,116 @@ CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } | UNLOGGED ] TABLE [ IF NOT EXI
       <xref linkend="guc-temp-tablespaces"> if the table is temporary.
      </para>
     </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>DISTRIBUTE BY</literal></term>
+    <listitem>
+     <para>
+      This clause specifies how the table is distributed or replicated among Datanodes.
+     </para>
+
+      <variablelist>
+
+       <varlistentry>
+        <term><literal>REPLICATION</literal></term>
+        <listitem>
+         <para>
+          Each row of the table will be replicated to all the
+          Datanode of the <productname>Postgres-XL</> database
+          cluster.
+         </para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>ROUNDROBIN</literal></term>
+        <listitem>
+         <para>
+          Each row of the table will be placed in one of the Datanodes
+          in a round-robin manner.  The value of the row will not be
+          needed to determine what Datanode to go.
+         </para>
+        </listitem>
+       </varlistentry>
+
+      <varlistentry>
+       <term><literal>HASH ( <replaceable class="PARAMETER">column_name</> )</literal></term>
+       <listitem>
+        <para>
+         Each row of the table will be placed based on the hash value
+         of the specified column.  Following type is allowed as
+         distribution column: INT8, INT2, OID, INT4, BOOL, INT2VECTOR,
+         OIDVECTOR, CHAR, NAME, TEXT, BPCHAR, BYTEA, VARCHAR, FLOAT4,
+         FLOAT8, NUMERIC, CASH, ABSTIME, RELTIME, DATE, TIME,
+         TIMESTAMP, TIMESTAMPTZ, INTERVAL, and TIMETZ.
+        </para>
+        <para>
+         Please note that floating point is not allowed as a basis of
+         the distribution column.
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><literal>MODULO ( <replaceable class="PARAMETER">column_name</> )</literal></term>
+       <listitem>
+        <para>
+         Each row of the table will be placed based on the modulo
+         of the specified column.  Following type is allowed as
+         distribution column: INT8, INT2, OID, INT4, BOOL, INT2VECTOR,
+         OIDVECTOR, CHAR, NAME, TEXT, BPCHAR, BYTEA, VARCHAR, FLOAT4,
+         FLOAT8, NUMERIC, CASH, ABSTIME, RELTIME, DATE, TIME,
+         TIMESTAMP, TIMESTAMPTZ, INTERVAL, and TIMETZ.
+        </para>
+        <para>
+         Please note that floating point is not allowed as a basis of
+         the distribution column.
+        </para>
+       </listitem>
+      </varlistentry>
+
+     </variablelist>
+    <para>
+     If <literal>DISTRIBUTE BY</> is not specified, columns with
+     UNIQUE constraint will be chosen as the distribution key.  If no
+     such column is specified, distribution column is the first
+     eligible column in the definition.  If no such column is found,
+     then the table will be distributed by <literal>ROUNDROBIN</>.
+    </para>
+
+   </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>TO GROUP</literal></term>
+    <term><literal>TO NODE</literal></term>
+      <listitem>
+       <para>
+        This defines on the list of nodes on which table data exists.
+        If this is not specified table data is present on all Datanodes.
+       </para>
+      </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="PARAMETER">nodename</replaceable></term>
+      <listitem>
+       <para>
+        Associated with <literal>TO NODE</literal>, it defines a <productname>
+        Postgres-XL</productname> node of catalog pgxc_node.
+       </para>
+      </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="PARAMETER">groupname</replaceable></term>
+      <listitem>
+       <para>
+        Associated with <literal>TO GROUP</literal>, it defines a <productname>
+        Postgres-XL</productname> node group in catalog pgxc_group.
+       </para>
+      </listitem>
    </varlistentry>
 
    <varlistentry>
@@ -1329,7 +1470,7 @@ CREATE TABLE circles (
 
 <programlisting>
 CREATE TABLE cinemas (
-        id serial,
+        id integer,
         name text,
         location text
 ) TABLESPACE diskvol1;
@@ -1515,6 +1656,30 @@ CREATE TABLE employees OF employee_type (
     support these self-referencing columns explicitly, but the same
     effect can be had using the OID feature.
    </para>
+  </refsect2>
+  <refsect2>
+   <title><productname>Postgres-XL</> Specifics</title>
+
+   <para>
+    Currently, non-immutable functions are not allowed
+    as <literal>DEFAULT</> values.
+   </para>
+   <para>
+    <literal>PRIMARY KEY</> and foreign key must include the
+    distribution column.
+   </para>
+   <para>
+    <literal>TEMP</> tables and exclusion constraint are not supported
+    yet.
+   </para>
+   <para>
+   </para>
+   <para>
+    In <productname>Postgres-XL</>, OID is maintained locally in each
+    Datanode and Coordinator.  The OID value may be inconsistent for rows
+    stored in different Datanodes.
+   </para>
+
   </refsect2>
  </refsect1>
 

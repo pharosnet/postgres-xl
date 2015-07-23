@@ -32,6 +32,14 @@ LOAD 'auto_explain';
   that.
  </para>
 
+ <para>
+  To log plans on Datanodes, you must preload this module in each
+  Datanode.  This module will log local plans of each node.  For
+  example, a Coordinator log will include the plan for Coordinator only.
+  the Corresponding plan in Datanodes will be found in each Datanode's
+  log.
+ </para>
+
  <sect2>
   <title>Configuration Parameters</title>
 

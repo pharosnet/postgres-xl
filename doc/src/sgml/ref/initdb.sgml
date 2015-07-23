@@ -16,7 +16,8 @@ PostgreSQL documentation
 
  <refnamediv>
   <refname>initdb</refname>
-  <refpurpose>create a new <productname>PostgreSQL</productname> database cluster</refpurpose>
+  <refpurpose>create a new <productname>Postgres-XL</productname> Coordinator
+  or Datanode database cluster</refpurpose>
  </refnamediv>
 
  <refsynopsisdiv>
@@ -39,7 +40,8 @@ PostgreSQL documentation
   </title>
   <para>
    <command>initdb</command> creates a new
-   <productname>PostgreSQL</productname> database cluster.  A database
+   <productname>Postgres-XL</productname> database cluster for Coordinator or
+Datanode.  A database
    cluster is a collection of databases that are managed by a single
    server instance.
   </para>
@@ -108,6 +110,11 @@ PostgreSQL documentation
    More details can be found in <xref linkend="multibyte">.
   </para>
 
+  <para>
+   <command>initdb</> will be performed locally.  This has to be
+   performed for each Coordinators and Datanodes manually.
+  </para>
+
  </refsect1>
 
  <refsect1>
@@ -165,6 +172,18 @@ PostgreSQL documentation
         directory later by the same variable.
        </para>
       </listitem>
+     </varlistentry>
+
+     <varlistentry>
+       <term><option>--nodename=<replaceable class="parameter">nodename</replaceable></option></term>
+       <listitem>
+       <para>
+       Set the name of Postgres-XL node initialized. This option is mandatory when setting a node.
+       It permits one to define the node itself in cluster node catalog
+       <link linkend="catalog-pgxc-node"><structname>pgxc_node</structname></link>. The node name
+       specified is also added in <filename>postgresql.conf</> as value of <varname>pgxc_node_name</>.
+       </para>
+       </listitem>
      </varlistentry>
 
      <varlistentry>
@@ -437,6 +456,11 @@ PostgreSQL documentation
 
  <refsect1>
   <title>Notes</title>
+
+  <para>
+   <command>initdb</> runs only locally.  You should
+   run <command>initdb</> for each Coordinator and Datanode.
+  </para>
 
   <para>
    <command>initdb</command> can also be invoked via

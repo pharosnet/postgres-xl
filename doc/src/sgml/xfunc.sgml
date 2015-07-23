@@ -705,6 +705,12 @@ DROP FUNCTION sum_n_product (int, int);
     </indexterm>
 
     <para>
+     It is highly recommended not to use <literal>VARIADIC</> in the
+     current <productname>Postgres-XL</>.  It is not well reviewed and
+     may return wrong result.
+    </para>
+
+    <para>
      <acronym>SQL</acronym> functions can be declared to accept
      variable numbers of arguments, so long as all the <quote>optional</>
      arguments are of the same data type.  The optional arguments will be

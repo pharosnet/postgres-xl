@@ -1,7 +1,7 @@
 <!-- doc/src/sgml/config.sgml -->
 
 <chapter id="runtime-config">
-  <title>Server Configuration</title>
+  <title>Coordinator and Datanode Configuration</title>
 
   <indexterm>
    <primary>configuration</primary>
@@ -10,9 +10,10 @@
 
   <para>
    There are many configuration parameters that affect the behavior of
-   the database system. In the first section of this chapter we
-   describe how to interact with configuration parameters. The subsequent sections
-   discuss each parameter in detail.
+   the database system. In the first section of this chapter, we
+   describe how to set configuration parameters for Coordinator and
+   Datanodes. The subsequent sections discuss each parameter in
+   detail.
   </para>
 
   <sect1 id="config-setting">
@@ -153,7 +154,7 @@ shared_buffers = 128MB
      receives a <systemitem>SIGHUP</> signal; this signal is most easily
      sent by running <literal>pg_ctl reload</> from the command line or by
      calling the SQL function <function>pg_reload_conf()</function>. The main
-     server process also propagates this signal to all currently running
+     Coordinator/Datanode process also propagates this signal to all currently running
      server processes, so that existing sessions also adopt the new values
      (this will happen after they complete any currently-executing client
      command).  Alternatively, you can
@@ -300,7 +301,7 @@ UPDATE pg_settings SET setting = reset_val WHERE name = 'configuration_parameter
        passed to the <command>postgres</command> command via the
        <option>-c</> command-line parameter.  For example,
 <programlisting>
-postgres -c log_connections=yes -c log_destination='syslog'
+postgres --coordinator -c log_connections=yes -c log_destination='syslog'
 </programlisting>
        Settings provided in this way override those set via
        <filename>postgresql.conf</> or <command>ALTER SYSTEM</>,
@@ -670,6 +671,18 @@ include_dir 'conf.d'
         same or higher value than on the master server. Otherwise, queries
         will not be allowed in the standby server.
        </para>
+
+       <para>
+        In the case of the Coordinator, this parameter determines how many 
+        connections can each Coordinator accept.
+       </para>
+
+       <para>
+        In the case of the Datanode, number of connection to each
+        Datanode may become as large as <varname>max_connections</>
+        multiplied by the number of Coordinators.
+       </para>
+
       </listitem>
      </varlistentry>
 
@@ -1443,6 +1456,14 @@ include_dir 'conf.d'
         When running a standby server, you must set this parameter to the
         same or higher value than on the master server. Otherwise, queries
         will not be allowed in the standby server.
+       </para>
+
+       <para>
+        Even though your application does not issue <command>PREPARE
+        TRANSACTION</> explicitly, Coordinator may generate this
+        command when an updating transaction involves more than one
+        Coordinators and Datanodes. For Datanodes, you should specify
+        this value as the same value as <varname>max_connections</>.
        </para>
       </listitem>
      </varlistentry>
@@ -2636,6 +2657,11 @@ include_dir 'conf.d'
 
    <sect1 id="runtime-config-replication">
     <title>Replication</title>
+
+     <para>
+      Streaming replication only been thoroughly tested in asynchronous mode
+      with <productname>Postgres-XL</productname>.
+     </para>
 
     <para>
      These settings control the behavior of the built-in
@@ -5703,6 +5729,14 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
         to problems such as forward references.  Set this parameter
         to <literal>off</> before loading functions on behalf of other
         users; <application>pg_dump</> does so automatically.
+        <note>
+         <para>
+          In <productname>Postgres-XL</> setting <varname>check_function_bodies</varname>
+          to <literal>off</> is not recommended. If SQL functions are created after setting
+          <varname>check_function_bodies</varname> to <literal>off</>, the behaviour of the
+          function when executed is un-defined.
+         </para>
+        </note>
        </para>
       </listitem>
      </varlistentry>
@@ -6617,6 +6651,15 @@ dynamic_library_path = 'C:\tools\postgresql;H:\my_project\lib;$libdir'
         a log message is issued about the lock wait.  If you are trying
         to investigate locking delays you might want to set a shorter than
         normal <varname>deadlock_timeout</varname>.
+       </para>
+       <para>
+        <productname>Postgres-XL</> does not detect global deadlocks
+        where multiple node (Coordinators and/or Datanodes) are
+        involved. To get around this it is recommended to set
+        <varname>statement_timeout</varname> to cause those statements to
+        fail in a normal processing environment. If however, it is a reporting
+        environment, you may want to set this higher globally, or just for
+        the session temporarily.
        </para>
       </listitem>
      </varlistentry>
@@ -7617,6 +7660,11 @@ LOG:  CleanUpLock: deleting: lock(0xb7acd844) id(24688,24696,0,0,0,1)
         macro was defined when <productname>PostgreSQL</productname> was
         compiled.
        </para>
+       <para>
+        <productname>Postgres-XL</> does not detect global deadlocks
+        where multiple nodes (Coordinators and/or Datanodes) are
+        involved.
+       </para>
       </listitem>
      </varlistentry>
 
@@ -7817,6 +7865,285 @@ LOG:  CleanUpLock: deleting: lock(0xb7acd844) id(24688,24696,0,0,0,1)
       </tbody>
      </tgroup>
     </table>
+
+  </sect1>
+  <sect1 id="pg-xc-specifics">
+   <title>Postgres-XL Specific Parameters</title>
+   <para>
+    Because <productname>Postgres-XL</> distributes data into multiple
+    Datanodes and multiple Coordinators can accept transactions in
+    parallel, the Coordinators must know what Coordinators and
+    Datanodes to connect to.  The Coordinators and Datanodes also must know
+    where they can request transaction information.  The following
+    describes these additional GUC parameters.
+   </para>
+
+    <variablelist>
+
+     <varlistentry id="guc-max-pool-size" xreflabel="max_pool_size">
+      <term><varname>max_pool_size</varname> (<type>integer</type>)
+       <indexterm>
+        <primary><varname>max_pool_size</> configuration parameter</primary>
+       </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Specify the maximum connection pool of the Coordinator to Datanodes.
+        Because each transaction can be involved by all the Datanodes,
+        this parameter should at least be <varname>max_connections</>
+        multiplied by number of Datanodes.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-min-pool-size" xreflabel="min_pool_size">
+      <term><varname>min_pool_size</varname> (<type>integer</type>)
+       <indexterm>
+        <primary><varname>min_pool_size</> configuration parameter</primary>
+       </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Minumum number of the connection from the Coordinator to Datanodes.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-pool-maintenance-timeout" xreflabel="pool_maintenance_timeout">
+     <term><varname>pool_maintenance_timeout</varname> (<type>integer</type>)
+       <indexterm>
+        <primary><varname>pool_maintenance_timeout</> configuration parameter</primary>
+       </indexterm>
+      </term>
+      <listitem>
+       <para>
+        This parameter specifies how long to wait until pooler
+        maintenance is performed. During such maintenance,
+        old idle connections are discarded.
+        This parameter is useful in multi-tenant environments where
+        many connections to many different databases may be used,
+        so that idle connections may cleaned up.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-remote-query-cost" xreflabel="remote_query_cost">
+     <term><varname>remote_query_cost</varname> (<type>integer</type>)
+       <indexterm>
+        <primary><varname>remote_query_cost</> configuration parameter</primary>
+       </indexterm>
+      </term>
+      <listitem>
+       <para>
+        This parameter specifies the cost overhead of setting up
+        a remote query to obtain remote data. It is used by
+        the planner in costing queries.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-network-byte-cost" xreflabel="network_byte_cost">
+      <term><varname>network_byte_cost</varname> (<type>integer</type>)
+       <indexterm>
+        <primary><varname>network_byte_cost</> configuration parameter</primary>
+       </indexterm>
+      </term> 
+      <listitem>
+       <para>
+        This parameter is used in query cost planning to
+        estimate the cost involved in row shipping and obtaining
+        remote data based on the expected data size.
+        Row shipping is expensive and adds latency, so this
+        setting helps to favor plans that minimizes row shipping.
+       </para>
+      </listitem>
+     </varlistentry>
+ 
+     <varlistentry id="guc-sequence-range" xreflabel="sequence_range">
+      <term><varname>sequence_range</varname> (<type>integer</type>)
+       <indexterm>
+        <primary><varname>sequence_range</> configuration parameter</primary>
+       </indexterm>
+      </term>
+      <listitem>
+       <para>
+        This parameter is used to get several sequence values
+        at once from GTM.  This greatly speeds up COPY and INSERT SELECT
+        operations where the target table uses sequences.
+        <productname>Postgres-XL</productname> will not use this entire
+        amount at once, but will increase the request size over
+        time if many requests are done in a short time frame in
+        the same session.
+        After a short time without any sequence requests, decreases back down to 1.
+        Note that any settings here are overriden if the CACHE clause was
+        used in <xref linkend='sql-createsequence'> or <xref linkend='sql-altersequence'>.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-max-coordinators" xreflabel="max_coordinators">
+      <term><varname>max_coordinators</varname> (<type>integer</type>)
+       <indexterm>
+        <primary><varname>max_coordinators</> configuration parameter</primary>
+       </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Maximum number of Coordinators that can be configured in the cluster.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-max-datanodes" xreflabel="max_datanodes">
+      <term><varname>max_datanodes</varname> (<type>integer</type>)
+       <indexterm>
+        <primary><varname>max_datanodes</> configuration parameter</primary>
+       </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Maximum number of Datanodes that can be configured in the cluster.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-pgxc-node-name" xreflabel="pgxc_node_name">
+      <term><varname>pgxc_node_name</varname> (<type>integer</type>)
+       <indexterm>
+        <primary><varname>pgxc_node_name</> configuration parameter</primary>
+       </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Specifies the node name. A node uses this parameter to identify itself
+        with <link linkend="catalog-pgxc-node"><structname>pgxc_node</structname>
+        </link>.nodename
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-pooler-port" xreflabel="pooler_port">
+      <term><varname>pooler_port</varname> (<type>integer</type>)
+       <indexterm>
+        <primary><varname>pooler_port</> configuration parameter</primary>
+       </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Specifies the port number assigned to the connection pooler process.
+        This is used in both the Coordinator and Datanode processes to
+        connect to other nodes.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-gtm-host" xreflabel="gtm_host">
+      <term><varname>gtm_host</varname> (<type>string</type>)
+       <indexterm>
+        <primary><varname>gtm_host</> configuration parameter</primary>
+       </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Specifies the host name or IP address of the <filename>GTM</>.  If you use <filename>GTM-Proxy</>, specify the <filename>GTM-Proxy</>'s one.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-gtm-port" xreflabel="gtm_port">
+      <term><varname>gtm_port</varname> (<type>integer</type>)
+      <indexterm>
+       <primary><varname>gtm_port</> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Specifieis the port number of GTM.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-xc-maintenance-mode" xreflabel="xc_maintenance_mode">
+      <term><varname>xc_maintenance_mode</varname> (<type>bool</type>)
+      <indexterm>
+       <primary><varname>xc_maintenance_mode</> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Specify to enter into maintenance mode. Turning this parameter to on will
+        change behavior of several statements. Each statement
+        behavior may not be compatible in future releases, so users
+        must be extremely careful when they attempt to set this
+        value to <literal>on</literal>.
+       </para>
+       <para>
+        Behavior of <xref linkend="sql-commit-prepared"> and
+        <xref linkend="sql-rollback-prepared"> statements are affected by
+        this parameter.
+       </para>
+       <para>
+        If this is set to ON, you can do maintenance work to update
+        Datanode locally through <literal>EXECUTE DIRECT</literal> or connecting
+        directly to Datanodes. As a DBA, you are totally responsible to any side
+        effects. You must be extremely careful not to bring in any inconsistencies
+        to Postgres-XL database cluster.
+       </para>
+       <para>
+        This parameter can only be set by superuser
+        with <literal>SET</literal> command. Otherwise, the setting
+        will be ignored.
+       </para>
+       <para>
+        As a session parameter, this parameter is shared among all
+        the connections of the session. It affects originating Coordinator as
+        well as remote nodes involved in session.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-shared-queues" xreflabel="shared_queues">
+      <term><varname>shared_queues</varname> (<type>integer</type>)
+      <indexterm>
+       <primary><varname>shared_queues</> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Datanode Only
+       </para>
+       <para>
+        For some joins that occur in queries, data from one Datanode may
+        need to be joined with data from another Datanode.
+        <productname>Postgres-XL</productname> uses shared queues for this purpose.
+        During execution each Datanode knows if it needs to produce or consume
+        tuples, or both.
+       </para>
+       <para>
+        Note that there may be mulitple shared_queues used even for a single
+        query. So a value should be set taking into account the number of
+        connections it can accept and expected number of such joins occurring
+        simultaneously.
+       </para>
+     </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-shared-queue-size" xreflabel="shared_queue_size">
+      <term><varname>shared_queue_size</varname> (<type>integer</type>)
+      <indexterm>
+       <primary><varname>shared_queue_size</> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Datanode Only
+       </para>
+       <para>
+        This parameter sets the size of each each shared queue allocated.
+       </para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
 
   </sect1>
 </chapter>

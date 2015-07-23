@@ -32,6 +32,10 @@ ALTER SERVER <replaceable class="PARAMETER">name</replaceable> RENAME TO <replac
   <title>Description</title>
 
   <para>
+   <command>SERVER</> is not yet supported in <productname>Postgres-XL</>.
+  </para>
+
+  <para>
    <command>ALTER SERVER</command> changes the definition of a foreign
    server.  The first form changes the server version string or the
    generic options of the server (at least one clause is required).

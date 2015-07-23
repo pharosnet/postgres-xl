@@ -34,6 +34,12 @@ ROLLBACK [ WORK | TRANSACTION ] TO [ SAVEPOINT ] <replaceable>savepoint_name</re
   <title>Description</title>
 
   <para>
+   <command>ROLLBACK TO</> is not yet supported
+   in <productname>Postgres-XL</>.  This may be supported in the
+   future releases.
+  </para>
+
+  <para>
    Roll back all commands that were executed after the savepoint was
    established.  The savepoint remains valid and can be rolled back to
    again later, if needed.

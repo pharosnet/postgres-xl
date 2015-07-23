@@ -24,10 +24,12 @@ PostgreSQL documentation
 CREATE AGGREGATE <replaceable class="parameter">name</replaceable> ( [ <replaceable class="parameter">argmode</replaceable> ] [ <replaceable class="parameter">argname</replaceable> ] <replaceable class="parameter">arg_data_type</replaceable> [ , ... ] ) (
     SFUNC = <replaceable class="PARAMETER">sfunc</replaceable>,
     STYPE = <replaceable class="PARAMETER">state_data_type</replaceable>
+    [ , CFUNC = <replaceable class="PARAMETER">cfunc</replaceable> ]
     [ , SSPACE = <replaceable class="PARAMETER">state_data_size</replaceable> ]
     [ , FINALFUNC = <replaceable class="PARAMETER">ffunc</replaceable> ]
     [ , FINALFUNC_EXTRA ]
     [ , INITCOND = <replaceable class="PARAMETER">initial_condition</replaceable> ]
+    [ , INITCOLLECT = <replaceable class="PARAMETER">initial_collection_condition</replaceable> ]
     [ , MSFUNC = <replaceable class="PARAMETER">msfunc</replaceable> ]
     [ , MINVFUNC = <replaceable class="PARAMETER">minvfunc</replaceable> ]
     [ , MSTYPE = <replaceable class="PARAMETER">mstate_data_type</replaceable> ]
@@ -42,10 +44,12 @@ CREATE AGGREGATE <replaceable class="parameter">name</replaceable> ( [ [ <replac
                         ORDER BY [ <replaceable class="parameter">argmode</replaceable> ] [ <replaceable class="parameter">argname</replaceable> ] <replaceable class="parameter">arg_data_type</replaceable> [ , ... ] ) (
     SFUNC = <replaceable class="PARAMETER">sfunc</replaceable>,
     STYPE = <replaceable class="PARAMETER">state_data_type</replaceable>
+    [ , CFUNC = <replaceable class="PARAMETER">cfunc</replaceable> ]
     [ , SSPACE = <replaceable class="PARAMETER">state_data_size</replaceable> ]
     [ , FINALFUNC = <replaceable class="PARAMETER">ffunc</replaceable> ]
     [ , FINALFUNC_EXTRA ]
     [ , INITCOND = <replaceable class="PARAMETER">initial_condition</replaceable> ]
+    [ , INITCOLLECT = <replaceable class="PARAMETER">initial_collection_condition</replaceable> ]
     [ , HYPOTHETICAL ]
 )
 
@@ -55,10 +59,12 @@ CREATE AGGREGATE <replaceable class="PARAMETER">name</replaceable> (
     BASETYPE = <replaceable class="PARAMETER">base_type</replaceable>,
     SFUNC = <replaceable class="PARAMETER">sfunc</replaceable>,
     STYPE = <replaceable class="PARAMETER">state_data_type</replaceable>
+    [ , CFUNC = <replaceable class="PARAMETER">cfunc</replaceable> ]
     [ , SSPACE = <replaceable class="PARAMETER">state_data_size</replaceable> ]
     [ , FINALFUNC = <replaceable class="PARAMETER">ffunc</replaceable> ]
     [ , FINALFUNC_EXTRA ]
     [ , INITCOND = <replaceable class="PARAMETER">initial_condition</replaceable> ]
+    [ , INITCOLLECT = <replaceable class="PARAMETER">initial_collection_condition</replaceable> ]
     [ , MSFUNC = <replaceable class="PARAMETER">msfunc</replaceable> ]
     [ , MINVFUNC = <replaceable class="PARAMETER">minvfunc</replaceable> ]
     [ , MSTYPE = <replaceable class="PARAMETER">mstate_data_type</replaceable> ]
@@ -101,36 +107,76 @@ CREATE AGGREGATE <replaceable class="PARAMETER">name</replaceable> (
   </para>
 
   <para>
-   A simple aggregate function is made from one or two ordinary
+   A simple aggregate function is made from one to maximum three ordinary
    functions:
    a state transition function
    <replaceable class="PARAMETER">sfunc</replaceable>,
+   an optional collection function
+   <replaceable class="PARAMETER">cfunc</replaceable>,
    and an optional final calculation function
    <replaceable class="PARAMETER">ffunc</replaceable>.
    These are used as follows:
 <programlisting>
 <replaceable class="PARAMETER">sfunc</replaceable>( internal-state, next-data-values ) ---> next-internal-state
+<replaceable class="PARAMETER">cfunc</replaceable>( internal-state, internal-state ) ---> next-internal-state
 <replaceable class="PARAMETER">ffunc</replaceable>( internal-state ) ---> aggregate-value
 </programlisting>
   </para>
 
   <para>
-   <productname>PostgreSQL</productname> creates a temporary variable
+   In <productname>Postgres-XL</productname> the aggregation works in two
+   different modes. 
+   <itemizedlist>
+   <listitem>
+   <para>
+   Two phased aggregation - is used when the entire aggregation takes place on
+   the Coordinator node. In first phase called transition phase,
+   <productname>Postgres-XL</productname> creates a temporary variable
    of data type <replaceable class="PARAMETER">stype</replaceable>
    to hold the current internal state of the aggregate.  At each input row,
    the aggregate argument value(s) are calculated and
    the state transition function is invoked with the current state value
    and the new argument value(s) to calculate a new
-   internal state value.  After all the rows have been processed,
-   the final function is invoked once to calculate the aggregate's return
-   value.  If there is no final function then the ending state value
+   internal state value.  After all the rows have been processed, in the second
+   phase or finalization phase the final function is invoked once to calculate
+   the aggregate's return value.  If there is no final function then the ending
+   state value is returned as-is.
+   </para>
+   </listitem>
+   <listitem>
+   <para>
+   Three phased aggregation - is used when the process of aggregation is divided
+   between Coordinator and Datanodes. In this mode, each 
+   <productname>Postgres-XL</productname> Datanode involved in the query carries
+   out the first phase named transition phase. This phase is similar to the first
+   phase in the two phased aggregation mode discussed above, except that, every
+   Datanode applies this phase on the rows available at the Datanode. The
+   result of transition phase is then transferred to the Coordinator node.
+   Second phase called collection phase takes place on the Coordinator.
+   <productname>Postgres-XL</productname> Coordinator node creates a temporary variable
+   of data type <replaceable class="PARAMETER">stype</replaceable>
+   to hold the current internal state of the collection phase.  For every input
+   from the Datanode (result of transition phase on that node), the collection
+   function is invoked with the current collection state value and the new
+   transition value (obtained from the Datanode) to calculate a new
+   internal collection state value.  After all the transition values from data
+   nodes have been processed, in the third or finalization phase the final
+   function is invoked once to calculate the aggregate's return
+   value.  If there is no final function then the ending collection state value
    is returned as-is.
+   </para>
+   </listitem>
+   </itemizedlist>
+   Irrespective of the mode used for aggregation, the result of aggregation
+   should be same if the same set of data rows is participating in the
+   aggregate. <productname>Postgres-XL</productname> planner chooses the cheapest
+   feasible mode of the above two, during planning.
   </para>
 
   <para>
    An aggregate function can provide an initial condition,
-   that is, an initial value for the internal state value.
-   This is specified and stored in the database as a value of type
+   that is, an initial value for the internal transition or collection state
+   value. This is specified and stored in the database as a value of type
    <type>text</type>, but it must be a valid external representation
    of a constant of the state value data type.  If it is not supplied
    then the state value starts out null.
@@ -155,10 +201,15 @@ CREATE AGGREGATE <replaceable class="PARAMETER">name</replaceable> (
   </para>
 
   <para>
-   If the state transition function is not strict, then it will be called
-   unconditionally at each input row, and must deal with null inputs
-   and null state values for itself.  This allows the aggregate
-   author to have full control over the aggregate's handling of null values.
+   If the collection function is declared <quote>strict</quote>,
+   then it cannot be called with null inputs.  With such a collection 
+   function, aggregate execution behaves as follows.  Null state transition
+   results are ignored (the function is not called and the previous collection
+   state value is retained).  If the initial state value is null, then at the
+   first non-null state transition result replaces the collection state
+   value, and the collection function is invoked at subsequent rows with
+   all-nonnull transition values.
+   This is handy for implementing aggregates like <function>max</function>.
   </para>
 
   <para>
@@ -336,6 +387,26 @@ SELECT col FROM tab ORDER BY col USING sortop LIMIT 1;
    </varlistentry>
 
    <varlistentry>
+    <term><replaceable class="PARAMETER">cfunc</replaceable></term>
+    <listitem>
+     <para>
+      The name of the state collection function to be called for each
+      input row.  The <replaceable class="PARAMETER">sfunc</> must
+      take <replaceable class="PARAMETER">2 arguments</replaceable>, both of them
+      being of
+      type <replaceable class="PARAMETER">state_data_type</replaceable>.
+      The function must return a value of
+      type <replaceable class="PARAMETER">state_data_type</replaceable>.
+      This function takes the current collection state value and the
+      current transition value, and returns the next collection state
+      value.  If cfunc is omitted for an aggregate, the two phase
+      aggregation mode is used for that aggregate. All the aggregates
+      involed in a query use the same aggregation mode.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
     <term><replaceable class="PARAMETER">state_data_type</replaceable></term>
     <listitem>
      <para>
@@ -401,6 +472,21 @@ SELECT col FROM tab ORDER BY col USING sortop LIMIT 1;
       constant in the form accepted for the data type <replaceable
       class="PARAMETER">state_data_type</replaceable>.  If not
       specified, the state value starts out null.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="PARAMETER">initial_collection_condition</replaceable></term>
+    <listitem>
+     <para>
+      The initial setting for the state collection value.  This must
+      be a string constant in the form accepted for the data
+      type <replaceable class="PARAMETER">state_data_type</replaceable>.
+      If not specified, the collection state value starts out null. If
+      the collection
+      function <replaceable class="PARAMETER">cfunc</replaceable> is
+      not supplied, this parameter is stored but not used.
      </para>
     </listitem>
    </varlistentry>

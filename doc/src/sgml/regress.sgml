@@ -12,6 +12,13 @@
   </indexterm>
 
   <para>
+   Current version of <productname>Postgres-XL</productname> doesn't
+   support the regression test to run after building but before
+   installation.  You can use each test manually but it is left to
+   users.
+  </para>
+
+  <para>
    The regression tests are a comprehensive set of tests for the SQL
    implementation in <productname>PostgreSQL</productname>.  They test
    standard SQL operations as well as the extended capabilities of

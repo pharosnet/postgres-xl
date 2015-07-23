@@ -44,6 +44,12 @@
  </note>
 
   <para>
+   Please note that you can issue this command to each Datanode or
+   Coordinator.  The result is the information local to Datanode or
+   Coordinator specified.
+  </para>
+
+  <para>
    <application>oid2name</application> connects to a target database and
    extracts OID, filenode, and/or table name information.  You can also have
    it show database OIDs or tablespace OIDs.

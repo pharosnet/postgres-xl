@@ -157,8 +157,8 @@ restore_command = 'copy "C:\\server\\archivedir\\%f" "%p"'  # Windows
       By default, recovery will recover to the end of the WAL log. The
       following parameters can be used to specify an earlier stopping point.
       At most one of <varname>recovery_target</>,
-      <varname>recovery_target_name</>, <varname>recovery_target_time</>, or
-      <varname>recovery_target_xid</> can be used; if more than one of these
+      <varname>recovery_target_name</>, <varname>recovery_target_time</>,
+      <varname>recovery_target_xid</> or <varname>recovery_target_barrier</> can be used; if more than one of these
       is specified in the configuration file, the last entry will be used.
      </para>
 
@@ -229,6 +229,23 @@ restore_command = 'copy "C:\\server\\archivedir\\%f" "%p"'  # Windows
         before (and optionally including) the specified one.
         The precise stopping point is also influenced by
         <xref linkend="recovery-target-inclusive">.
+       </para>
+      </listitem>
+     </varlistentry>
+     <varlistentry id="recovery-target-barrier" xreflabel="recovery_target_barrier">
+      <term><varname>recovery_target_barrier</varname> (<type>string</type>)
+       <indexterm>
+         <primary><varname>recovery_target_barrier</> recovery parameter</primary>
+       </indexterm>
+      </term>
+      <listitem>
+       <para>
+        This parameter specifies the barrier ID up to which recovery
+        will proceed. A global consistency is guaranteed when recovery is
+        stopped at a previously successfully completed barrier. At most
+        one of <varname>recovery_target_xid</>,
+        <xref linkend="recovery-target-time"> and 
+        <varname>recovery_target_barrier</> can be specified.
        </para>
       </listitem>
      </varlistentry>

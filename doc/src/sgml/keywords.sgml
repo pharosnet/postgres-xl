@@ -371,6 +371,14 @@
     <entry></entry>
    </row>
    <row>
+    <entry><token>BARRIER</token></entry>
+    <entry>non-reserved (XL only)</entry>
+    <entry></entry>
+    <entry></entry>
+    <entry></entry>
+    <entry></entry>
+   </row>
+   <row>
     <entry><token>BASE64</token></entry>
     <entry></entry>
     <entry>non-reserved</entry>
@@ -684,6 +692,14 @@
     <entry>non-reserved</entry>
     <entry>non-reserved</entry>
     <entry>non-reserved</entry>
+   </row>
+   <row>
+    <entry><token>CLEAN</token></entry>
+    <entry>non-reserved (XL only)</entry>
+    <entry></entry>
+    <entry></entry>
+    <entry></entry>
+    <entry></entry>
    </row>
    <row>
     <entry><token>CLOB</token></entry>
@@ -1414,6 +1430,14 @@
     <entry>reserved</entry>
    </row>
    <row>
+    <entry><token>DISTRIBUTE</token></entry>
+    <entry>non-reserved (XL only)</entry>
+    <entry></entry>
+    <entry></entry>
+    <entry></entry>
+    <entry></entry>
+   </row>
+   <row>
     <entry><token>DLNEWCOPY</token></entry>
     <entry></entry>
     <entry>reserved</entry>
@@ -2046,6 +2070,14 @@
    <row>
     <entry><token>HANDLER</token></entry>
     <entry>non-reserved</entry>
+    <entry></entry>
+    <entry></entry>
+    <entry></entry>
+   </row>
+   <row>
+    <entry><token>HASH</token></entry>
+    <entry>non-reserved (XL only)</entry>
+    <entry></entry>
     <entry></entry>
     <entry></entry>
     <entry></entry>
@@ -2784,6 +2816,14 @@
     <entry>reserved</entry>
     <entry>reserved</entry>
     <entry>reserved</entry>
+   </row>
+   <row>
+    <entry><token>MODULO</token></entry>
+    <entry>non-reserved (XL only)</entry>
+    <entry></entry>
+    <entry></entry>
+    <entry></entry>
+    <entry></entry>
    </row>
    <row>
     <entry><token>MONTH</token></entry>
@@ -3766,6 +3806,14 @@
     <entry></entry>
    </row>
    <row>
+    <entry><token>REPLICATION</token></entry>
+    <entry>non-reserved (XL only)</entry>
+    <entry></entry>
+    <entry></entry>
+    <entry></entry>
+    <entry></entry>
+   </row>
+   <row>
     <entry><token>REQUIRING</token></entry>
     <entry></entry>
     <entry>non-reserved</entry>
@@ -3878,6 +3926,14 @@
     <entry>reserved</entry>
    </row>
    <row>
+    <entry><token>ROBIN</token></entry>
+    <entry>non-reserved (XL only)</entry>
+    <entry></entry>
+    <entry></entry>
+    <entry></entry>
+    <entry></entry>
+   </row>
+   <row>
     <entry><token>ROLE</token></entry>
     <entry>non-reserved</entry>
     <entry>non-reserved</entry>
@@ -3896,6 +3952,14 @@
     <entry></entry>
     <entry>reserved</entry>
     <entry>reserved</entry>
+    <entry></entry>
+   </row>
+   <row>
+    <entry><token>ROUND</token></entry>
+    <entry>non-reserved (XL only)</entry>
+    <entry></entry>
+    <entry></entry>
+    <entry></entry>
     <entry></entry>
    </row>
    <row>

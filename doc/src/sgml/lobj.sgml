@@ -7,6 +7,12 @@
   <indexterm><primary>BLOB</><see>large object</></>
 
    <para>
+    Large objects are not supported by <productname>Postgres-XL</>.
+    <productname>Postgres-XL</> does not provide consistent means
+    to handle the large object as OID is inconsistent among cluster nodes.
+   </para>
+
+   <para>
     <productname>PostgreSQL</productname> has a <firstterm>large object</>
     facility, which provides stream-style access to user data that is stored
     in a special large-object structure.  Streaming access is useful

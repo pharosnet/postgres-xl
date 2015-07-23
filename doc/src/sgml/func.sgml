@@ -14841,6 +14841,11 @@ SELECT * FROM pg_ls_dir('.') WITH ORDINALITY AS t(ls,n);
        <entry><type>text</type></entry>
        <entry><productname>PostgreSQL</> version information. See also <xref linkend="guc-server-version-num"> for a machine-readable version.</entry>
       </row>
+      <row>
+       <entry><literal><function>pgxc_version()</function></literal></entry>
+       <entry><type>text</type></entry>
+       <entry><productname>Postgres-XL Cluster</> version information</entry>
+      </row>
      </tbody>
     </tgroup>
    </table>
@@ -15604,6 +15609,13 @@ SELECT pg_type_is_visible('myschema.widget'::regtype);
     type name in this way &mdash; if the name can be recognized at all, it must be visible.
    </para>
 
+   <para>
+    Because value of OID is enforced unique only in each Coordinator
+    or Datanode in <productname>Postgres-XL</>, you should use these
+    functions locally, typically through <type>EXECUTE DIRECT</>
+    statement.
+   </para>
+
    <indexterm>
     <primary>format_type</primary>
    </indexterm>
@@ -16014,6 +16026,13 @@ SELECT typlen FROM pg_type WHERE oid = pg_typeof(33);
   </para>
 
   <para>
+   Please note that OID is valid locally only in each Coordinator and
+   Datanode.  You should use specific OID value in statements
+   targeted to specific Coordinator or Datanode by <type>EXECUTE
+   DIRECT</> statement.
+  </para>
+
+  <para>
    The expression <literal>collation for</literal> returns the collation of the
    value that is passed to it.  Example:
 <programlisting>
@@ -16237,6 +16256,12 @@ SELECT collation for ('foo' COLLATE "de_DE");
     are stored globally as well.
    </para>
 
+   <para>
+    In <productname>Postgres-XL</>, OID is maintained locally in each Coordinator and Datanode.
+    If you specify specific OID value, you should do it in SQL statements targeted to a specific
+    Coordinator or Datanode by <type>EXECUTE DIRECT</> statement.
+   </para>
+
    <indexterm>
     <primary>txid_current</primary>
    </indexterm>
@@ -16276,6 +16301,11 @@ SELECT collation for ('foo' COLLATE "de_DE");
      </thead>
 
      <tbody>
+      <row>
+       <entry><literal><function>pgxc_is_committed(transaction_id)</function></literal></entry>
+       <entry><type>bool</type></entry>
+       <entry>If given xid (gxid) is committed or aborted.  NULL indicates the status is unknown (running, not yet started, prepared, frozen, etc).</entry>
+      </row>
       <row>
        <entry><literal><function>txid_current()</function></literal></entry>
        <entry><type>bigint</type></entry>
@@ -16513,6 +16543,13 @@ SELECT set_config('log_statement_stats', 'off', false);
 </programlisting>
    </para>
 
+   <para>
+    Similar to the SET command, the set_config() function makes sure
+    that as long as the session/transaction is active, the new parameter
+    value is set across all the nodes on which the SQL queries are being run
+    as part of that particular session or transaction.
+   </para>
+
   </sect2>
 
   <sect2 id="functions-admin-signal">
@@ -16623,6 +16660,11 @@ SELECT set_config('log_statement_stats', 'off', false);
     subprocess.
    </para>
 
+   <para>
+    Please note that these functions works just locally.  To issue
+    these functions to another Coordinators or Datanodes, you should
+    issue these functions through <type>EXECUTE DIRECT</> statement.
+   </para>
   </sect2>
 
   <sect2 id="functions-admin-backup">
@@ -16854,6 +16896,12 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
    </para>
 
    <para>
+    Please note that these functions works just locally.  To issue
+    these functions to another Coordinators or Datanodes, you should
+    issue these functions through <type>EXECUTE DIRECT</> statement.
+   </para>
+
+   <para>
     <function>pg_xlog_location_diff</> calculates the difference in bytes
     between two transaction log locations. It can be used with
     <structname>pg_stat_replication</structname> or some functions shown in
@@ -17006,6 +17054,12 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
      </tbody>
     </tgroup>
    </table>
+
+   <para>
+    Please note that these functions works just locally.  To issue
+    these functions to another Coordinators or Datanodes, you should
+    issue these functions through <type>EXECUTE DIRECT</> statement.
+   </para>
 
    <para>
     While recovery is paused no further database changes are applied.
@@ -17705,6 +17759,19 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
    </para>
 
    <para>
+    The object size functions pg_database_size, pg_indexes_size, pg_relation_size,
+    pg_table_size, and pg_total_relation_size return the cumulative size
+    from all the Datanodes. For e.g., pg_relation_size returns the sum of disk
+    space used up by the specified fork at all the Datanodes where the table is
+    distributed or replicated. If the table is replicated on 3 tables, the size
+    will be  3 times that of individual nodes. If you need to retrieve the local
+    results from a particular Coordinator or Datanode, you should issue these
+    function calls explicitly through <type>EXECUTE DIRECT</> statement. All other
+    system functions run locally at the Coordinator, unless explicitly specified
+    otherwise in this document.
+   </para>
+
+   <para>
     The functions shown in <xref linkend="functions-admin-dblocation"> assist
     in identifying the specific disk files associated with database objects.
    </para>
@@ -17776,6 +17843,12 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
     <function>pg_relation_filenode</>, but it returns the entire file path name
     (relative to the database cluster's data directory <varname>PGDATA</>) of
     the relation.
+   </para>
+
+   <para>
+    Please note that these functions works just locally.  To issue
+    these functions to another Coordinators or Datanodes, you should
+    issue these functions through <type>EXECUTE DIRECT</> statement.
    </para>
 
    <para>
@@ -18157,6 +18230,392 @@ SELECT (pg_stat_file('filename')).modification;
     at session end, even if the client disconnects ungracefully.)
    </para>
 
+   <para>
+    The advisory lock functions are aware of the Postgres XL cluster. Hence,
+    if you use a function like pg_advisory_lock() from a particular Coordinator,
+    the resource will be locked across the complete cluster, so another
+    application calling the same function from a different Coordinator will see
+    this lock, and will wait on the resource until the lock is released.
+    This applies to both transaction and session level advisory locks.
+   </para>
+
+   <para>
+    The functions shown in <xref linkend="functions-pgxc-pooler"> manage
+    Postgres-XL pooler.  For details about the Postgres-XL pooler, see
+    <xref linkend="xc-overview-pooler">.
+   </para>
+   <table id="functions-pgxc-pooler">
+    <title>Postgres-XL pooler functions</title>
+    <tgroup cols="3">
+     <thead>
+      <row><entry>Name</entry> <entry>Return Type</entry> <entry>Description</entry>
+      </row>
+     </thead>
+     <tbody>
+      <row>
+       <entry>
+        <literal><function>pgxc_pool_check()</function></literal>
+       </entry>
+       <entry><type>boolean</type></entry>
+       <entry>Check if connection data cached in pooler is consistent with
+              <link linkend="catalog-pgxc-node"><structname>pgxc_node</structname></link>.
+       </entry>
+      </row>
+      <row>
+       <entry>
+        <literal><function>pgxc_pool_reload()</function></literal>
+       </entry>
+       <entry><type>boolean</type></entry>
+       <entry>Reload connection data cached in pooler and reload sessions in server</entry>
+      </row>
+     </tbody>
+    </tgroup>
+   </table>
+
+   <indexterm>
+    <primary>pgxc_pool_check</primary>
+   </indexterm>
+   <para>
+    <function>pgxc_pool_check</> verifies if connection data cached in Postgres-XL pooler
+    is consistent with <link linkend="catalog-pgxc-node"><structname>pgxc_node</structname></link>
+    catalog. Data checked for consistency is Node Oid (<literal><link linkend="catalog-pgxc-node"><structname>pgxc_node</structname></link>.oid</literal>),
+    node port (<literal><link linkend="catalog-pgxc-node"><structname>pgxc_node</structname></link>.node_port</literal>)
+    and node host (<literal><link linkend="catalog-pgxc-node"><structname>pgxc_node</structname></link>.node_host</literal>).
+   </para>
+   <indexterm>
+    <primary>pgxc_pool_reload</primary>
+   </indexterm>
+   <para>
+    <function>pgxc_pool_reload</> reloads connection data cached in pooler from
+    <link linkend="catalog-pgxc-node"><structname>pgxc_node</structname></link> catalog
+    and reloads all the information info cached in pooler. All the active transactions
+    are aborted and all existing pooler connections are dropped. This results in having
+    all the temporary and prepared objects dropped on remote and local node for session.
+   </para>
+
+   <para>
+    The functions shown in <xref linkend="functions-pgxc-add-new-node"> manage
+    addition of a new node to Postgres-XL cluster.
+   </para>
+   <table id="functions-pgxc-add-new-node">
+    <title>Postgres-XL functions to manage addition of a new node</title>
+    <tgroup cols="3">
+     <thead>
+      <row><entry>Name</entry> <entry>Return Type</entry> <entry>Description</entry>
+      </row>
+     </thead>
+     <tbody>
+      <row>
+       <entry>
+        <literal><function>pgxc_lock_for_backup()</function></literal>
+       </entry>
+       <entry><type>boolean</type></entry>
+       <entry>Locks the cluster for taking backup that would be restored on the new node to be added.
+       </entry>
+      </row>
+     </tbody>
+    </tgroup>
+   </table>
+
+   <indexterm>
+    <primary>pgxc_lock_for_backup</primary>
+   </indexterm>
+   <para>
+    <function>pgxc_lock_for_backup</> locks the cluster for taking backup using <application>pg_dump/pg_dumpall</application>.
+    Locking means that we disallow the statemets that change the portions of the catalog which are
+    backed up by <application>pg_dump/pg_dumpall</application>. When locked only the following utility statemets are allowed.
+    Please note that this function does not impact SELECTs or DMLs.
+   </para>
+
+   <table id="utility-statements-allowed-while-locked">
+    <title>Utility statements allowed while the cluster is locked for backup</title>
+    <tgroup cols="1">
+     <thead>
+      <row><entry>Statement</entry>
+      </row>
+     </thead>
+
+     <tbody>
+
+
+      <row>
+       <entry>
+        <literal><command>EXECUTE</command></literal>
+       </entry>
+      </row>
+
+
+      <row>
+       <entry>
+        <literal><command>CREATE NODE</command></literal>
+       </entry>
+      </row>
+
+
+      <row>
+       <entry>
+        <literal><command>START TRANSACTION</command></literal>
+       </entry>
+      </row>
+
+
+      <row>
+       <entry>
+        <literal><command>BEGIN</command></literal>
+       </entry>
+      </row>
+
+
+      <row>
+       <entry>
+        <literal><command>COMMIT</command></literal>
+       </entry>
+      </row>
+
+
+      <row>
+       <entry>
+        <literal><command>ROLLBACK</command></literal>
+       </entry>
+      </row>
+
+
+      <row>
+       <entry>
+        <literal><command>PREPARE TRANSACTION</command></literal>
+       </entry>
+      </row>
+
+
+      <row>
+       <entry>
+        <literal><command>COMMIT PREPARED</command></literal>
+       </entry>
+      </row>
+
+
+      <row>
+       <entry>
+        <literal><command>ROLLBACK PREPARED</command></literal>
+       </entry>
+      </row>
+
+
+      <row>
+       <entry>
+        <literal><command>DECLARE CURSOR</command></literal>
+       </entry>
+      </row>
+
+
+      <row>
+       <entry>
+        <literal><command>CLOSE CURSOR</command></literal>
+       </entry>
+      </row>
+
+
+      <row>
+       <entry>
+        <literal><command>FETCH</command></literal>
+       </entry>
+      </row>
+
+
+      <row>
+       <entry>
+        <literal><command>TRUNCATE</command></literal>
+       </entry>
+      </row>
+
+
+      <row>
+       <entry>
+        <literal><command>COPY</command></literal>
+       </entry>
+      </row>
+
+
+      <row>
+       <entry>
+        <literal><command>PREPARE</command></literal>
+       </entry>
+      </row>
+
+
+      <row>
+       <entry>
+        <literal><command>DEALLOCATE</command></literal>
+       </entry>
+      </row>
+
+
+      <row>
+       <entry>
+        <literal><command>DO</command></literal>
+       </entry>
+      </row>
+
+
+      <row>
+       <entry>
+        <literal><command>NOTIFY</command></literal>
+       </entry>
+      </row>
+
+
+      <row>
+       <entry>
+        <literal><command>LISTEN</command></literal>
+       </entry>
+      </row>
+
+
+      <row>
+       <entry>
+        <literal><command>UNLISTEN</command></literal>
+       </entry>
+      </row>
+
+
+      <row>
+       <entry>
+        <literal><command>LOAD</command></literal>
+       </entry>
+      </row>
+
+
+      <row>
+       <entry>
+        <literal><command>CLUSTER</command></literal>
+       </entry>
+      </row>
+
+
+      <row>
+       <entry>
+        <literal><command>VACUUM</command></literal>
+       </entry>
+      </row>
+
+
+      <row>
+       <entry>
+        <literal><command>EXPLAIN</command></literal>
+       </entry>
+      </row>
+
+
+      <row>
+       <entry>
+        <literal><command>SET</command></literal>
+       </entry>
+      </row>
+
+
+      <row>
+       <entry>
+        <literal><command>SHOW</command></literal>
+       </entry>
+      </row>
+
+
+      <row>
+       <entry>
+        <literal><command>DISCARD</command></literal>
+       </entry>
+      </row>
+
+
+      <row>
+       <entry>
+        <literal><command>LOCK</command></literal>
+       </entry>
+      </row>
+
+
+      <row>
+       <entry>
+        <literal><command>SET CONSTRAINTS</command></literal>
+       </entry>
+      </row>
+
+
+      <row>
+       <entry>
+        <literal><command>CHECKPOINT</command></literal>
+       </entry>
+      </row>
+
+
+      <row>
+       <entry>
+        <literal><command>CREATE BARRIER</command></literal>
+       </entry>
+      </row>
+
+
+      <row>
+       <entry>
+        <literal><command>REINDEX</command></literal>
+       </entry>
+      </row>
+
+
+      <row>
+       <entry>
+        <literal><command>CLEAN CONNECTION</command></literal>
+       </entry>
+      </row>
+
+
+     </tbody>
+    </tgroup>
+   </table>
+
+   <para>
+   To lock the cluster for backup while adding a new node <productname>Postgres-XL</productname> uses advisory locks.
+   Every time a disallowed statement is issued the system tries to acquire a transaction
+   level advisory lock in shared mode and the lock is released when
+   the DDL or the transaction issuing the DDL ends. The function <function>pgxc_lock_for_backup</>
+   tries to acquire the same advisory lock in exclusive mode at session level. It is therefore necessary
+   to keep the session issuing <function>pgxc_lock_for_backup</> alive as long as the issuer wants
+   the system to keep the lock.
+   <productname>Postgres-XL</productname> uses the key pair (0xFFFF, 0xFFFF) as object ID while using
+   advisory lock for backup.
+   The function fails to acquire the lock if any one of the following is true:
+
+    <itemizedlist>
+     <listitem>
+      <para>
+       The caller of the function is not a superuser.
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       There are some uncommitted prepared transactions, because they might
+       contain any utility statement belonging to the disallowed group.
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       The lock is already held by an uncommitted transaction that has issued
+       a utility statement belonging to the disallowed group.
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       The lock is already held by a previous call to the same function
+       and current request is being issued from a different session.
+      </para>
+     </listitem>
+
+    </itemizedlist>
+
+   </para>
    <indexterm>
     <primary>pg_advisory_xact_lock</primary>
    </indexterm>
@@ -18205,6 +18664,12 @@ SELECT (pg_stat_file('filename')).modification;
    <indexterm>
      <primary>suppress_redundant_updates_trigger</primary>
    </indexterm>
+
+   <note>
+    <para>
+     Triggers are currently not supported in <productname>Postgres-XL</productname>.
+    </para>
+   </note>
 
    <para>
       Currently <productname>PostgreSQL</> provides one built in trigger
@@ -18271,6 +18736,11 @@ FOR EACH ROW EXECUTE PROCEDURE suppress_redundant_updates_trigger();
     <primary>pg_event_trigger_ddl_commands</primary>
    </indexterm>
 
+   <note>
+    <para>
+      Event triggers are currently not supported in <productname>Postgres-XL</productname>.
+    </para>
+   </note>
    <para>
     <function>pg_event_trigger_ddl_commands</> returns a list of
     <acronym>DDL</acronym> commands executed by each user action,

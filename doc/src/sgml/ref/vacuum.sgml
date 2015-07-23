@@ -74,6 +74,11 @@ VACUUM [ FULL ] [ FREEZE ] [ VERBOSE ] ANALYZE [ <replaceable class="PARAMETER">
    <productname>PostgreSQL</productname> 9.0;  the unparenthesized
    syntax is deprecated.
   </para>
+
+  <para>
+   In <productname>Postgres-XL</>, <command>VACUUM</> will be performed
+   on all the Datanodes as well.
+  </para>
  </refsect1>
 
  <refsect1>

@@ -50,6 +50,7 @@
    &alterLanguage;
    &alterLargeObject;
    &alterMaterializedView;
+   &alterNode;
    &alterOperator;
    &alterOperatorClass;
    &alterOperatorFamily;
@@ -74,6 +75,7 @@
    &analyze;
    &begin;
    &checkpoint;
+   &cleanConnection;
    &close;
    &cluster;
    &commentOn;
@@ -81,6 +83,7 @@
    &commitPrepared;
    &copyTable;
    &createAggregate;
+   &createBarrier;
    &createCast;
    &createCollation;
    &createConversion;
@@ -95,6 +98,8 @@
    &createIndex;
    &createLanguage;
    &createMaterializedView;
+   &createNode;
+   &createNodeGroup;
    &createOperator;
    &createOperatorClass;
    &createOperatorFamily;
@@ -137,6 +142,8 @@
    &dropIndex;
    &dropLanguage;
    &dropMaterializedView;
+   &dropNode;
+   &dropNodeGroup;
    &dropOperator;
    &dropOperatorClass;
    &dropOperatorFamily;
@@ -161,6 +168,7 @@
    &dropView;
    &end;
    &execute;
+   &executeDirect;
    &explain;
    &fetch;
    &grant;
@@ -171,6 +179,7 @@
    &lock;
    &move;
    &notify;
+   &pauseCluster;
    &prepare;
    &prepareTransaction;
    &reassignOwned;
@@ -195,6 +204,7 @@
    &startTransaction;
    &truncate;
    &unlisten;
+   &unpauseCluster;
    &update;
    &vacuum;
    &values;
@@ -259,7 +269,11 @@
    </para>
   </partintro>
 
+   &gtm;
+   &gtmPxy;
+   &gtmCtl;
    &initdb;
+   &initgtm;
    &pgarchivecleanup;
    &pgControldata;
    &pgCtl;

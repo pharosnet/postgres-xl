@@ -4522,6 +4522,11 @@ SELECT * FROM pg_attribute
     (The system columns are further explained in <xref
     linkend="ddl-system-columns">.)
    </para>
+   <para>
+    Please note that <productname>Postgres-XL</> enforces OID identity only locally.
+    Different object at different Coordinator or Datanode may be assigned the same
+    OID value.
+   </para>
   </sect1>
 
   <sect1 id="datatype-pg-lsn">

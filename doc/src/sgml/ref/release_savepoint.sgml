@@ -34,6 +34,11 @@ RELEASE [ SAVEPOINT ] <replaceable>savepoint_name</replaceable>
   <title>Description</title>
 
   <para>
+   <command>RELEASE SAVEPOINT</command> is not supported by the
+   current release of <productname>Postgres-XL</productname>.
+  </para>
+
+  <para>
    <command>RELEASE SAVEPOINT</command> destroys a savepoint previously defined
    in the current transaction.
   </para>

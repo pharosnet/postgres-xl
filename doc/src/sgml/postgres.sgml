@@ -12,11 +12,11 @@
 ]>
 
 <book id="postgres">
- <title>PostgreSQL &version; Documentation</title>
+ <title>Postgres-XL &version; Documentation</title>
 
  <bookinfo>
-  <corpauthor>The PostgreSQL Global Development Group</corpauthor>
-  <productname>PostgreSQL</productname>
+  <corpauthor>The Postgres-XL Global Development Group</corpauthor>
+  <productname>Postgres-XL</productname>
   <productnumber>&version;</productnumber>
   &legal;
  </bookinfo>
@@ -28,16 +28,26 @@
 
   <partintro>
    <para>
-    Welcome to the <productname>PostgreSQL</productname> Tutorial.  The
+    Welcome to the <productname>Postgres-XL</productname> Tutorial.  The
     following few chapters are intended to give a simple introduction
-    to <productname>PostgreSQL</productname>, relational database
+    to <productname>Postgres-XL</productname>, relational database
     concepts, and the SQL language to those who are new to any one of
     these aspects.  We only assume some general knowledge about how to
     use computers.  No particular Unix or programming experience is
     required.  This part is mainly intended to give you some hands-on
     experience with important aspects of the
-    <productname>PostgreSQL</productname> system.  It makes no attempt
+    <productname>Postgres-XL</productname> system.  It makes no attempt
     to be a complete or thorough treatment of the topics it covers.
+   </para>
+
+   <para>
+    Throughout this documentation, the term <productname>PostgreSQL</> also refers to
+    <productname>Postgres-XL</> unless specifically stated otherwise. We have
+    deliberately retained the name <productname>PostgreSQL</> to emphasise that
+    <productname>Postgres-XL</> inherits many things from
+    <productname>PostgreSQL</> and is very similar to the parent product. The
+    differeneces are clearly mentioned and also documented separately for easy
+    reference (link required).
    </para>
 
    <para>

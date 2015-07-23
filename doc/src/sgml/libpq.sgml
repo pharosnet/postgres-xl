@@ -4862,6 +4862,12 @@ typedef struct
   </indexterm>
 
   <para>
+   <productname>Postgres-XL</> does not
+   support <command>NOTIFY</>, <command>LISTEN</>
+   and <command>UNLISTEN</> commands yet.
+  </para>
+
+  <para>
    <productname>PostgreSQL</productname> offers asynchronous notification
    via the <command>LISTEN</command> and <command>NOTIFY</command>
    commands.  A client session registers its interest in a particular

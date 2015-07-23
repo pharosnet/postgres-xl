@@ -75,6 +75,11 @@ CLUSTER [VERBOSE]
    database operations (both reads and writes) from operating on the
    table until the <command>CLUSTER</command> is finished.
   </para>
+
+  <para>
+   In <productname>Postgres-XL</>, <command>CLUSTER</> will be
+   executed on all the Datanodes as well.
+  </para>
  </refsect1>
 
  <refsect1>

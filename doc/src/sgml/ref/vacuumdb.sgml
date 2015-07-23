@@ -68,6 +68,11 @@ PostgreSQL documentation
    server.
   </para>
 
+  <para>
+   In <productname>Postgres-XL</>, <command>VACUUM</> will be
+   performed in all the Datanodes as well.
+  </para>
+
  </refsect1>
 
 

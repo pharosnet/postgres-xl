@@ -95,6 +95,13 @@ ALTER DATABASE <replaceable class="PARAMETER">name</replaceable> RESET ALL
    database.  Certain variables cannot be set this way, or can only be
    set by a superuser.
   </para>
+
+  <para>
+   If there are any live connections to any of the template databases in
+   one of the Coordinators or Datanodes, you will have an error message.  In this
+   case, you should clean these connections using <command>CLEAN
+   CONNECITON</> statement.
+  </para>
  </refsect1>
 
  <refsect1>

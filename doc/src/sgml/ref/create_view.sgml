@@ -65,6 +65,10 @@ CREATE [ OR REPLACE ] [ TEMP | TEMPORARY ] [ RECURSIVE ] VIEW <replaceable class
     <term><literal>TEMPORARY</> or <literal>TEMP</></term>
     <listitem>
      <para>
+      <literal>TEMPORARY</> views are not yet supported
+      in <productname>Postgres-XL</>.
+     </para>
+     <para>
       If specified, the view is created as a temporary view.
       Temporary views are automatically dropped at the end of the
       current session.  Existing

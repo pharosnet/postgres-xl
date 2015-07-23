@@ -135,6 +135,11 @@ SHOW ALL
    system view produces the same information.
 
   </para>
+
+  <para>
+   <productname>Postgres-XL</> only shows local settings of the node to which
+   client has connected.
+  </para>
  </refsect1>
 
  <refsect1>

@@ -1,0 +1,38 @@
+<!-- doc/src/sgml/release-9.5.sgml -->
+<!-- See header comment in release.sgml about typical markup -->
+
+ <sect1 id="release-xl-9-5">
+  <title>Postgres-XL Release 9.5</title>
+
+  <note>
+   <title>Release Date</title>
+   <simpara>2015-??-??</simpara>
+   <simpara>Current as of 2015-06-01</simpara>
+  </note>
+
+  <sect2>
+   <title>Overview</title>
+
+   <para>
+    Major enhancements in <productname>Postgres-XL</> 9.5 include:
+   </para>
+
+   <!-- This list duplicates items below, but without authors or details-->
+
+   <itemizedlist>
+
+    <listitem>
+     <para>
+      ... to be filled in ...
+     </para>
+    </listitem>
+
+   </itemizedlist>
+
+   <para>
+    The above items are explained in more detail in the sections below.
+   </para>
+
+  </sect2>
+
+ </sect1>

@@ -39,6 +39,7 @@ PostgreSQL documentation
    <arg choice="opt"><option>-o</option> <replaceable>options</replaceable></arg>
    <arg choice="opt"><option>-p</option> <replaceable>path</replaceable></arg>
    <arg choice="opt"><option>-c</option></arg>
+   <arg>-Z <replaceable>nodeopt</replaceable></arg>
   </cmdsynopsis>
 
   <cmdsynopsis>
@@ -73,6 +74,7 @@ PostgreSQL documentation
      </group>
    </arg>
    <arg choice="opt"><option>-o</option> <replaceable>options</replaceable></arg>
+   <arg>-Z <replaceable>nodeopt</replaceable></arg>
   </cmdsynopsis>
 
   <cmdsynopsis>
@@ -347,6 +349,22 @@ PostgreSQL documentation
      </varlistentry>
 
      <varlistentry>
+      <term><option>-Z <replaceable class="parameter">nodeopt</replaceable></option></term>
+      <listitem>
+       <para>
+        Specifies to run node as a Coordinator, as a Datanode or in restore mode.
+        <replaceable>nodeopt</replaceable> can be respectively
+        <literal>coordinator</literal>,  <literal>datanode</literal> or
+        <literal>restoremode</literal>.
+       </para>
+       <para>
+        With restore mode, you can import Postgres-XL's catalog data from other coordinator
+        or datanode
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
       <term><option>-s</option></term>
       <term><option>--silent</option></term>
       <listitem>
@@ -504,6 +522,10 @@ PostgreSQL documentation
    also uses the environment variables supported by <application>libpq</>
    (see <xref linkend="libpq-envars">).
    For additional server variables, see <xref linkend="app-postgres">.
+  </para>
+
+  <para>
+   In <productname>Postgres-XL</>, this command controls individual Coordinator or Datanode.
   </para>
  </refsect1>
 

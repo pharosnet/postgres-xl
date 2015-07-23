@@ -29,6 +29,11 @@ LISTEN <replaceable class="PARAMETER">channel</replaceable>
   <title>Description</title>
 
   <para>
+   The <command>LISTEN</> statement is not yet supported
+   in <productname>Postgres-XL</>.
+  </para>
+
+  <para>
    <command>LISTEN</command> registers the current session as a
    listener on the notification channel named <replaceable
    class="PARAMETER">channel</replaceable>.

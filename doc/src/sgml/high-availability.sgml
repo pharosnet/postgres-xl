@@ -1554,6 +1554,11 @@ if (!triggered)
     explained below.
    </para>
 
+   <para>
+    Hot Standby is not supported by the current version
+    of <productname>Postgres-XL</productname>.
+   </para>
+
   <sect2 id="hot-standby-users">
    <title>User's Overview</title>
 

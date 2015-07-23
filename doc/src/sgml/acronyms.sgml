@@ -266,6 +266,15 @@
    </varlistentry>
 
    <varlistentry>
+    <term><acronym>GTM</acronym></term>
+    <listitem>
+     <para>
+      Global Transaction Manager
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
     <term><acronym>GSSAPI</acronym></term>
     <listitem>
      <para>
@@ -282,6 +291,15 @@
      <para>
       <link linkend="config-setting">Grand Unified Configuration</link>,
       the <productname>PostgreSQL</> subsystem that handles server configuration
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>GXID</acronym></term>
+    <listitem>
+     <para>
+      Global Transaction Identifier
      </para>
     </listitem>
    </varlistentry>

@@ -22,6 +22,7 @@ Complete list of usable sgml source files in this directory.
 <!ENTITY alterLanguage      SYSTEM "alter_language.sgml">
 <!ENTITY alterLargeObject   SYSTEM "alter_large_object.sgml">
 <!ENTITY alterMaterializedView SYSTEM "alter_materialized_view.sgml">
+<!entity alterNode          SYSTEM "alter_node.sgml">
 <!ENTITY alterOperator      SYSTEM "alter_operator.sgml">
 <!ENTITY alterOperatorClass SYSTEM "alter_opclass.sgml">
 <!ENTITY alterOperatorFamily SYSTEM "alter_opfamily.sgml">
@@ -46,6 +47,7 @@ Complete list of usable sgml source files in this directory.
 <!ENTITY analyze            SYSTEM "analyze.sgml">
 <!ENTITY begin              SYSTEM "begin.sgml">
 <!ENTITY checkpoint         SYSTEM "checkpoint.sgml">
+<!ENTITY cleanConnection    system "clean_connection.sgml">
 <!ENTITY close              SYSTEM "close.sgml">
 <!ENTITY cluster            SYSTEM "cluster.sgml">
 <!ENTITY commentOn          SYSTEM "comment.sgml">
@@ -53,6 +55,7 @@ Complete list of usable sgml source files in this directory.
 <!ENTITY commitPrepared     SYSTEM "commit_prepared.sgml">
 <!ENTITY copyTable          SYSTEM "copy.sgml">
 <!ENTITY createAggregate    SYSTEM "create_aggregate.sgml">
+<!ENTITY createBarrier      system "create_barrier.sgml">
 <!ENTITY createCast         SYSTEM "create_cast.sgml">
 <!ENTITY createCollation    SYSTEM "create_collation.sgml">
 <!ENTITY createConversion   SYSTEM "create_conversion.sgml">
@@ -67,6 +70,8 @@ Complete list of usable sgml source files in this directory.
 <!ENTITY createIndex        SYSTEM "create_index.sgml">
 <!ENTITY createLanguage     SYSTEM "create_language.sgml">
 <!ENTITY createMaterializedView SYSTEM "create_materialized_view.sgml">
+<!ENTITY createNode         SYSTEM "create_node.sgml">
+<!ENTITY createNodeGroup    SYSTEM "create_nodegroup.sgml">
 <!ENTITY createOperator     SYSTEM "create_operator.sgml">
 <!ENTITY createOperatorClass SYSTEM "create_opclass.sgml">
 <!ENTITY createOperatorFamily SYSTEM "create_opfamily.sgml">
@@ -109,6 +114,8 @@ Complete list of usable sgml source files in this directory.
 <!ENTITY dropIndex          SYSTEM "drop_index.sgml">
 <!ENTITY dropLanguage       SYSTEM "drop_language.sgml">
 <!ENTITY dropMaterializedView SYSTEM "drop_materialized_view.sgml">
+<!ENTITY dropNode           SYSTEM "drop_node.sgml">
+<!ENTITY dropNodeGroup      SYSTEM "drop_nodegroup.sgml">
 <!ENTITY dropOperator       SYSTEM "drop_operator.sgml">
 <!ENTITY dropOperatorClass  SYSTEM "drop_opclass.sgml">
 <!ENTITY dropOperatorFamily  SYSTEM "drop_opfamily.sgml">
@@ -133,6 +140,7 @@ Complete list of usable sgml source files in this directory.
 <!ENTITY dropView           SYSTEM "drop_view.sgml">
 <!ENTITY end                SYSTEM "end.sgml">
 <!ENTITY execute            SYSTEM "execute.sgml">
+<!ENTITY executeDirect      system "execute_direct.sgml">
 <!ENTITY explain            SYSTEM "explain.sgml">
 <!ENTITY fetch              SYSTEM "fetch.sgml">
 <!ENTITY grant              SYSTEM "grant.sgml">
@@ -143,6 +151,7 @@ Complete list of usable sgml source files in this directory.
 <!ENTITY lock               SYSTEM "lock.sgml">
 <!ENTITY move               SYSTEM "move.sgml">
 <!ENTITY notify             SYSTEM "notify.sgml">
+<!ENTITY pauseCluster       SYSTEM "pause_cluster.sgml">
 <!ENTITY prepare            SYSTEM "prepare.sgml">
 <!ENTITY prepareTransaction SYSTEM "prepare_transaction.sgml">
 <!ENTITY reassignOwned      SYSTEM "reassign_owned.sgml">
@@ -167,6 +176,7 @@ Complete list of usable sgml source files in this directory.
 <!ENTITY startTransaction   SYSTEM "start_transaction.sgml">
 <!ENTITY truncate           SYSTEM "truncate.sgml">
 <!ENTITY unlisten           SYSTEM "unlisten.sgml">
+<!ENTITY unpauseCluster     SYSTEM "unpause_cluster.sgml">
 <!ENTITY update             SYSTEM "update.sgml">
 <!ENTITY vacuum             SYSTEM "vacuum.sgml">
 <!ENTITY values             SYSTEM "values.sgml">
@@ -180,7 +190,11 @@ Complete list of usable sgml source files in this directory.
 <!ENTITY droplang           SYSTEM "droplang.sgml">
 <!ENTITY dropuser           SYSTEM "dropuser.sgml">
 <!ENTITY ecpgRef            SYSTEM "ecpg-ref.sgml">
+<!ENTITY gtm                system "gtm.sgml">
+<!ENTITY gtmPxy             system "gtm_proxy.sgml">
+<!ENTITY gtmCtl             system "gtm_ctl.sgml">
 <!ENTITY initdb             SYSTEM "initdb.sgml">
+<!ENTITY initgtm            SYSTEM "initgtm.sgml">
 <!ENTITY pgarchivecleanup   SYSTEM "pgarchivecleanup.sgml">
 <!ENTITY pgBasebackup       SYSTEM "pg_basebackup.sgml">
 <!ENTITY pgbench            SYSTEM "pgbench.sgml">

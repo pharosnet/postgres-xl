@@ -32,6 +32,10 @@ CREATE FOREIGN DATA WRAPPER <replaceable class="parameter">name</replaceable>
   <title>Description</title>
 
   <para>
+   <command>FOREIGN DATA WRAPPER</> has not been supported
+   by <productname>Postgres-XL</> yet.
+  </para>
+  <para>
    <command>CREATE FOREIGN DATA WRAPPER</command> creates a new
    foreign-data wrapper.  The user who defines a foreign-data wrapper
    becomes its owner.
