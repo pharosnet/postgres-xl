@@ -115,6 +115,15 @@ PostgreSQL documentation
      </varlistentry>
 
      <varlistentry>
+      <term><option>--coordinator</option></term>
+      <listitem>
+       <para>
+        Specifies postgres server should run as a Coordinator.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
       <term><option>-c <replaceable>name</replaceable>=<replaceable>value</replaceable></option></term>
       <listitem>
        <para>
@@ -347,6 +356,15 @@ PostgreSQL documentation
      </varlistentry>
 
      <varlistentry>
+      <term><option>--datanode</option></term>
+      <listitem>
+       <para>
+        Specifies postgres server should run as a Datanode.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
       <term><option>-V</></term>
       <term><option>--version</></term>
       <listitem>
@@ -515,6 +533,18 @@ PostgreSQL documentation
         is started, after it conducts the authentication procedure.
         This is intended to give an opportunity to attach to the
         server process with a debugger.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--localxid</option></term>
+      <listitem>
+       <para>
+        Use local transaction IDs rather than GXID. This option applies
+        only to <productname>Postgres-XL</productname>. It is only
+        used by initdb. Explicit use of this option may cause
+        database inconsistency.
        </para>
       </listitem>
      </varlistentry>
@@ -809,19 +839,28 @@ PostgreSQL documentation
   <title>Examples</title>
 
   <para>
-   To start <command>postgres</command> in the background
+   To start <command>postgres</command> as a Datanode in the background
    using default values, type:
 
 <screen>
-<prompt>$</prompt> <userinput>nohup postgres &gt;logfile 2&gt;&amp;1 &lt;/dev/null &amp;</userinput>
+<prompt>$</prompt> <userinput>nohup postgres --datanode &gt;logfile 2&gt;&amp;1 &lt;/dev/null &amp;</userinput>
 </screen>
   </para>
 
   <para>
-   To start <command>postgres</command> with a specific
+   To start <command>postgres</command> as a Coordinator in the background
+   using default values, type:
+
+<screen>
+<prompt>$</prompt> <userinput>nohup postgres --coordinator &gt;logfile 2&gt;&amp;1 &lt;/dev/null &amp;</userinput>
+</screen>
+  </para>
+
+  <para>
+   To start <command>postgres</command> as a Coordinator with a specific
    port, e.g. 1234:
 <screen>
-<prompt>$</prompt> <userinput>postgres -p 1234</userinput>
+<prompt>$</prompt> <userinput>postgres --coordinator -p 1234</userinput>
 </screen>
    To connect to this server using <application>psql</>, specify this port with the -p option:
 <screen>
@@ -837,8 +876,8 @@ PostgreSQL documentation
   <para>
    Named run-time parameters can be set in either of these styles:
 <screen>
-<prompt>$</prompt> <userinput>postgres -c work_mem=1234</userinput>
-<prompt>$</prompt> <userinput>postgres --work-mem=1234</userinput>
+<prompt>$</prompt> <userinput>postgres --coordinator -c work_mem=1234</userinput>
+<prompt>$</prompt> <userinput>postgres --coordinator --work-mem=1234</userinput>
 </screen>
    Either form overrides whatever setting might exist for
    <varname>work_mem</> in <filename>postgresql.conf</>.  Notice that

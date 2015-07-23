@@ -8,6 +8,10 @@
   </indexterm>
 
   <para>
+   In <productname>Postgres-XL</>, triggers are not currently supported.
+  </para>
+
+  <para>
    This chapter provides general information about writing trigger functions.
    Trigger functions can be written in most of the available procedural
    languages, including

@@ -569,6 +569,13 @@ SELECT * from lotsa_md5(500);
      </term>
 
     <listitem>
+
+     <para>
+      <command>PREPARE</> is not supported in the current release
+      of <productname>Postgres-XL</>.  This may be supported in the
+      future releases.
+     </para>
+
     <para>
     <literal>spi_prepare</literal>, <literal>spi_query_prepared</literal>, <literal>spi_exec_prepared</literal>,
     and <literal>spi_freeplan</literal> implement the same functionality but for prepared queries.

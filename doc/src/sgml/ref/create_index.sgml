@@ -114,6 +114,10 @@ CREATE [ UNIQUE ] INDEX [ CONCURRENTLY ] [ [ IF NOT EXISTS ] <replaceable class=
      <varlistentry>
       <term><literal>CONCURRENTLY</literal></term>
       <listitem>
+      <para>
+       <productname>Postgres-XL</productname> does not
+       support <literal>CONCURRENTLY</literal> in the current release.
+      </para>
        <para>
         When this option is used, <productname>PostgreSQL</> will build the
         index without taking any locks that prevent concurrent inserts,

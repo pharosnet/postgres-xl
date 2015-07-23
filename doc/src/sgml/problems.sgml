@@ -4,11 +4,11 @@
  <title>Bug Reporting Guidelines</title>
 
  <para>
-  When you find a bug in <productname>PostgreSQL</productname> we want to
+  When you find a bug in <productname>Postgres-XL</productname> we want to
   hear about it. Your bug reports play an important part in making
-  <productname>PostgreSQL</productname> more reliable because even the utmost
+  <productname>Postgres-XL</productname> more reliable because even the utmost
   care cannot guarantee that every part of
-  <productname>PostgreSQL</productname>
+  <productname>Postgres-XL</productname> 
   will work on every platform under every circumstance.
  </para>
 
@@ -236,9 +236,9 @@
       If your version is older than &version; we will almost certainly
       tell you to upgrade. There are many bug fixes and improvements
       in each new release, so it is quite possible that a bug you have
-      encountered in an older release of <productname>PostgreSQL</>
+      encountered in an older release of <productname>Postgres-XL</>
       has already been fixed. We can only provide limited support for
-      sites using older releases of <productname>PostgreSQL</>; if you
+      sites using older releases of <productname>Postgres-XL</>; if you
       require more than we can provide, consider acquiring a
       commercial support contract.
      </para>
@@ -278,11 +278,14 @@
 
   <para>
    When writing a bug report, please avoid confusing terminology.
-   The software package in total is called <quote>PostgreSQL</quote>,
-   sometimes <quote>Postgres</quote> for short. If you
-   are specifically talking about the backend process, mention that, do not
-   just say <quote>PostgreSQL crashes</quote>.  A crash of a single
-   backend process is quite different from crash of the parent
+   The software package in total is called <quote>Postgres-XL</quote>.
+   If you
+   are specifically talking about the backend server, mention that, do not
+   just say <quote>Postgres-XL crashes</quote>.  
+   <quote>Postgres-XL</> consists of several separate component.   Please
+   write which component crashes.
+   A crash of a single
+   backend server process is quite different from crash of the parent
    <quote>postgres</> process; please don't say <quote>the server
    crashed</> when you mean a single backend process went down, nor vice versa.
    Also, client programs such as the interactive frontend <quote><application>psql</application></quote>
@@ -295,58 +298,39 @@
   <title>Where to Report Bugs</title>
 
   <para>
-   In general, send bug reports to the bug report mailing list at
-   <email>pgsql-bugs@postgresql.org</email>.
+   In general, send bug reports to the bug report mailing list.
+  <footnote>
+   <para>
+   <email>postgres-xl-bugs@lists.sourceforge.net</email>
+   </para>
+   </footnote>
    You are requested to use a descriptive subject for your email
    message, perhaps parts of the error message.
   </para>
 
   <para>
-   Another method is to fill in the bug report web-form available
-   at the project's
-   <ulink url="http://www.postgresql.org/">web site</ulink>.
-   Entering a bug report this way causes it to be mailed to the
-   <email>pgsql-bugs@postgresql.org</email> mailing list.
-  </para>
-
-  <para>
-   If your bug report has security implications and you'd prefer that it
-   not become immediately visible in public archives, don't send it to
-   <literal>pgsql-bugs</literal>.  Security issues can be
-   reported privately to <email>security@postgresql.org</email>.
-  </para>
-
-  <para>
-   Do not send bug reports to any of the user mailing lists, such as
-   <email>pgsql-sql@postgresql.org</email> or
-   <email>pgsql-general@postgresql.org</email>.
-   These mailing lists are for answering
-   user questions, and their subscribers normally do not wish to receive
-   bug reports. More importantly, they are unlikely to fix them.
-  </para>
-
-  <para>
    Also, please do <emphasis>not</emphasis> send reports to
-   the developers' mailing list <email>pgsql-hackers@postgresql.org</email>.
+   the developers' mailing list <email>postgres-xl-developers@lists.sourceforge.net</email>.
    This list is for discussing the
-   development of <productname>PostgreSQL</productname>, and it would be nice
+   development of <productname>Postgres-XL</productname>, and it would be nice
    if we could keep the bug reports separate. We might choose to take up a
-   discussion about your bug report on <literal>pgsql-hackers</literal>,
+   discussion about your bug report on <literal>postgres-xl-developers</literal>,
    if the problem needs more review.
   </para>
 
   <para>
    If you have a problem with the documentation, the best place to report it
-   is the documentation mailing list <email>pgsql-docs@postgresql.org</email>.
+   is the documentation mailing list
+<email>postgres-xl-developers@lists.sourceforge.net</email>.
    Please be specific about what part of the documentation you are unhappy
    with.
   </para>
 
   <para>
    If your bug is a portability problem on a non-supported platform,
-   send mail to <email>pgsql-hackers@postgresql.org</email>,
+   send mail to <email>postgres-xl-developers@lists.sourceforge.net</email>,
    so we (and you) can work on
-   porting <productname>PostgreSQL</productname> to your platform.
+   porting <productname>Postgres-XL</productname> to your platform.
   </para>
 
   <note>
@@ -357,9 +341,6 @@
     subscribed to use the bug-report web form, however.)
     If you would like to send mail but do not want to receive list traffic,
     you can subscribe and set your subscription option to <literal>nomail</>.
-    For more information send mail to
-    <email>majordomo@postgresql.org</email>
-    with the single word <literal>help</> in the body of the message.
    </para>
   </note>
  </sect2>

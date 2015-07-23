@@ -64,10 +64,77 @@
    </para>
 
    <para>
-    In database jargon, <productname>PostgreSQL</productname> uses a
-    client/server model.  A <productname>PostgreSQL</productname>
-    session consists of the following cooperating processes
-    (programs):
+    <productname>Postgres-XL</>, in short, is a collection
+    of <productname>PostgreSQL</> database clusters which act as if the whole
+    collection is a single database cluster.  Based on your database design,
+    each table is replicated or distributed among member databases.
+   </para>
+
+  <para>
+    To provide this capability, <productname>Postgres-XL</> is
+    composed of three major components called the GTM, Coordinator and
+    Datanode.  The GTM is responsible to provide ACID property of
+    transactions. The Datanode stores table data and handle SQL statements
+    locally.  The Coordinator handles each SQL statements from
+    applications, determines which Datanode to go, and sends plans on
+    to the appropriate Datanodes.
+   </para>
+
+   <para>
+    You usually should run GTM on a separate server because GTM has to take
+    care of transaction requirements from all the Coordinators and
+    Datanodes.  To group multiple requests and responses from
+    Coordinator and Datanode processes running on the same server, you can
+    configure GTM-Proxy.  GTM-Proxy reduces the number of interactions
+    and the amount of data to GTM.  GTM-Proxy also helps handle
+    GTM failures.
+   </para>
+
+   <para>
+    It is often good practice to run both Coordinator and Datanode on the
+    same server because we don't have to worry about workload balance
+    between the two, and you can often get at data from replicated tables locally
+    without sending an additional request out on the network.
+    You can have any number of servers where these
+    two components are running.  Because both Coordinator and Datanode
+    are essentially PostgreSQL instances, you should configure them to
+    avoid resource conflict.  It is very important to assign them
+    different working directories and port numbers.
+   </para>
+
+   <para>
+    Postgres-XL allows multiple Coordinators to accept statements
+    from applications independently but in an integrated way.  Any
+    writes from any Coordinator is available from any other
+    Coordinators.  They acts as if they are single database.
+    The Coordinator's role is to accept statements, find what Datanodes are
+    involved, send query plans on to the appropriate Datanodes if
+    needed, collect the results
+    and write them back to applications.
+   </para>
+
+   <para>
+    The Coordinator does not store any user data.  It stores only catalog
+    data to determine how to process statements, where the target
+    Datanodes are, among others.  Therefore, you don't have to worry
+    about Coordinator failure much.  When the Coordinator fails, you
+    can just switch to the other one.
+   </para>
+
+   <para>
+    The GTM could be single point of failure (SPOF).  To prevent this, you
+    can run another GTM as GTM-Standby to backup GTM's status.  When
+    GTM fails, GTM-Proxy can switch to the standby on the fly.  This
+    will be described in detail in high-availability sections.
+   </para>
+
+   <para>
+    As described above, the Coordinators and Datanodes
+    of <productname>Postgres-XL</> are
+    essentially <productname>PostgreSQL</> database servers. In database
+    jargon, <productname>PostgreSQL</productname> uses a client/server
+    model.  A <productname>PostgreSQL</productname> session consists
+    of the following cooperating processes (programs):
 
     <itemizedlist>
      <listitem>

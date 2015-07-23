@@ -65,6 +65,11 @@
     administrators could choose to remove it.
    </para>
 
+   <para>
+    At present, in <productname>Postgres-XL</>, only one SQL statment
+    can be handled in a function.
+   </para>
+
   <sect2 id="plpgsql-advantages">
    <title>Advantages of Using <application>PL/pgSQL</application></title>
 
@@ -1020,6 +1025,11 @@ DELETE ... RETURNING <replaceable>expressions</replaceable> INTO <optional>STRIC
      <command>SELECT</> result inside a
      <application>PL/pgSQL</application> function, use the syntax
      <command>CREATE TABLE ... AS SELECT</command>.
+    </para>
+
+    <para>
+     <command>SELECT INTO</> command of <productname>PostgerSQL</>,
+     is not supported by <productname>Postgres-XL</> yet.
     </para>
    </tip>
 

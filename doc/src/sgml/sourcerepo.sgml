@@ -52,7 +52,7 @@
      To begin using the Git repository, make a clone of the official mirror:
 
 <programlisting>
-git clone git://git.postgresql.org/git/postgresql.git
+git clone git://git.postgresql.org/git/postgres-xl.git
 </programlisting>
 
      This will copy the full repository to your local machine, so it may take
@@ -67,7 +67,7 @@ git clone git://git.postgresql.org/git/postgresql.git
      prefix to <literal>http</>, as in:
 
 <programlisting>
-git clone http://git.postgresql.org/git/postgresql.git
+git clone http://git.postgresql.org/git/postgres-xl.git
 </programlisting>
 
      The HTTP protocol is less efficient than the Git protocol, so it will be

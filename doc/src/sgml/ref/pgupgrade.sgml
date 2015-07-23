@@ -34,6 +34,12 @@
  <refsect1>
   <title>Description</title>
 
+  <para>
+   <application>pg_updrade</> is not compatible
+   with <productname>Postgres-XL</> due to the difference of internal
+   catalog.
+  </para>
+
  <para>
   <application>pg_upgrade</> (formerly called <application>pg_migrator</>) allows data
   stored in <productname>PostgreSQL</> data files to be upgraded to a later <productname>PostgreSQL</>

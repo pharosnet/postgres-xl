@@ -111,6 +111,14 @@ SELECT [ ALL | DISTINCT [ ON ( <replaceable class="parameter">expression</replac
    variable.  Alternatively, <command>CREATE TABLE AS</command> can be
    used with the <literal>WITH OIDS</literal> clause.
   </para>
+
+  <para>
+   In <productname>Postgres-XL</>, the <command>SELECT INTO</command> distributes data
+   of the newly-created table on all the nodes respecting the default
+   distribution which is <literal>HASH</literal> on the first column
+   having a type that can be distributed. If no columns are found,
+   distribution is done by <literal>ROUNDROBIN</literal>.
+  </para>
  </refsect1>
 
  <refsect1>

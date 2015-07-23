@@ -39,6 +39,13 @@
   as described below.
  </para>
 
+ <important>
+  <para>
+   <productname>Postgres-XL</productname> does not support exclusion constraint
+currently.
+  </para>
+ </important>
+
  <para>
   Also, for data types for which there is a natural distance metric,
   <filename>btree_gist</> defines a distance operator <literal>&lt;-&gt;</>,

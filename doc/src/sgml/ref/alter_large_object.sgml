@@ -28,6 +28,10 @@ ALTER LARGE OBJECT <replaceable class="PARAMETER">large_object_oid</replaceable>
  <refsect1>
   <title>Description</title>
 
+   <para>
+    <command>LARGE OBJECT</> is not supported by <productname>Postgres-XL</> yet.
+   </para>
+
   <para>
    <command>ALTER LARGE OBJECT</command> changes the definition of a
    large object. The only functionality is to assign a new owner.

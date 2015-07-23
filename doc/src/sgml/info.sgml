@@ -13,12 +13,9 @@
     <term>Wiki</term>
     <listitem>
      <para>
-      The <productname>PostgreSQL</productname> <ulink
-      url="http://wiki.postgresql.org">wiki</ulink> contains the project's <ulink
-      url="http://wiki.postgresql.org/wiki/Frequently_Asked_Questions">FAQ</>
-      (Frequently Asked Questions) list, <ulink
-      url="http://wiki.postgresql.org/wiki/Todo">TODO</> list, and
-      detailed information about many more topics.
+      The <productname>Postgres-XL</productname> <ulink
+      url="http://sourceforge.net/p/postgres-xl/wiki/Home/">wiki</ulink> contains the project's 
+      information, links to related pages and various development information.
      </para>
     </listitem>
    </varlistentry>
@@ -27,11 +24,11 @@
     <term>Web Site</term>
     <listitem>
      <para>
-      The <productname>PostgreSQL</productname>
-      <ulink url="http://www.postgresql.org">web site</ulink>
+      The <productname>Postgres-XL</productname> 
+      <ulink url="http://postgres-xl.sourceforge.net/">web site</ulink>
       carries details on the latest release and other
       information to make your work or play with
-      <productname>PostgreSQL</productname> more productive.
+      <productname>Postgres-XL</productname> more productive.
      </para>
     </listitem>
    </varlistentry>
@@ -42,7 +39,7 @@
      <para>
       The mailing lists are a good place to have your questions
       answered, to share experiences with other users, and to contact
-      the developers.  Consult the <productname>PostgreSQL</> web site
+      the developers.  Consult the <productname>Postgres-XL</> web site
       for details.
      </para>
     </listitem>

@@ -134,6 +134,20 @@ DETAIL:  Key (city)=(Berkeley) is not present in table "cities".
     foreign keys will definitely improve the quality of your database
     applications, so you are strongly encouraged to learn about them.
    </para>
+
+   <para>
+    Please note that primary key and reference key are both allowed
+    only when these columns are distribution keys when tables are
+    distributed.  As a default, <productname>Postgres-XC</>
+    distributes each row of tables based upon the value of the first
+    column of the table.  You can choose any column as a basis of
+    table distribution, or you can have copies of a table in all the
+    Datanodes.
+   </para>
+
+   <para>
+    Please refer to <xref linkend="sql-select"> for details.
+   </para>
   </sect1>
 
 

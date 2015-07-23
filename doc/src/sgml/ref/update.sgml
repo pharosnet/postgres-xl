@@ -203,6 +203,12 @@ UPDATE [ ONLY ] <replaceable class="PARAMETER">table_name</replaceable> [ * ] [ 
       <xref linkend="sql-declare">
       for more information about using cursors with
       <literal>WHERE CURRENT OF</>.
+      <footnote>
+       <para>
+        <literal>WHERE CURRENT OF</literal> clause is not supported by
+        the current release of <productname>Postgres-XL</productname>.
+       </para>
+      </footnote>
      </para>
     </listitem>
    </varlistentry>

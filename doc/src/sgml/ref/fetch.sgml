@@ -78,6 +78,12 @@ FETCH [ <replaceable class="PARAMETER">direction</replaceable> [ FROM | IN ] ] <
   </para>
 
   <para>
+   The forms <literal>PRIOR</>, <literal>FIRST</>, <literal>LAST</>
+   and <literal>ABSOLUTE</> are not supported by the current release
+   of <productname>Postgres-XL</>
+  </para>
+
+  <para>
    The forms using <literal>FORWARD</> and <literal>BACKWARD</>
    retrieve the indicated number of rows moving in the forward or
    backward direction, leaving the cursor positioned on the
@@ -87,11 +93,21 @@ FETCH [ <replaceable class="PARAMETER">direction</replaceable> [ FROM | IN ] ] <
   </para>
 
   <para>
+   The form using <literal>BACKWARD</> is not supported in the current
+   release of <productname>Postgres-XL</>.
+  </para>
+
+  <para>
    <literal>RELATIVE 0</>, <literal>FORWARD 0</>, and
    <literal>BACKWARD 0</> all request fetching the current row without
    moving the cursor, that is, re-fetching the most recently fetched
    row.  This will succeed unless the cursor is positioned before the
    first row or after the last row; in which case, no row is returned.
+  </para>
+
+  <para>
+   The form using <literal>BACKWARD</> is not supported in the current
+   release of <productname>Postgres-XL</>.
   </para>
 
   <note>
@@ -132,6 +148,23 @@ FETCH [ <replaceable class="PARAMETER">direction</replaceable> [ FROM | IN ] ] <
          <para>
           Fetch the prior row.
          </para>
+         <para>
+          <literal>PRIOR</literal> is not supported by the current
+          release of <productname>Postgres-XL</>.
+         </para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>FIRST</literal></term>
+        <listitem>
+         <para>
+          Fetch the first row of the query (same as <literal>ABSOLUTE 1</literal>).
+         </para>
+         <para>
+          <literal>FIRST</literal> is not supported by the current
+          release of <productname>Postgres-XL</>.
+         </para>
         </listitem>
        </varlistentry>
 
@@ -150,6 +183,10 @@ FETCH [ <replaceable class="PARAMETER">direction</replaceable> [ FROM | IN ] ] <
          <para>
           Fetch the last row of the query (same as <literal>ABSOLUTE -1</literal>).
          </para>
+         <para>
+          <literal>LAST</literal> is not supported by the current
+          release of <productname>Postgres-XC</>.
+         </para>
         </listitem>
        </varlistentry>
 
@@ -167,6 +204,10 @@ FETCH [ <replaceable class="PARAMETER">direction</replaceable> [ FROM | IN ] ] <
           class="PARAMETER">count</replaceable> is out of range; in
           particular, <literal>ABSOLUTE 0</literal> positions before
           the first row.
+         </para>
+         <para>
+          <literal>ABSOLUTE</literal> is not supported by the current
+          release of <productname>Postgres-XL</>.
          </para>
         </listitem>
        </varlistentry>
@@ -242,6 +283,10 @@ FETCH [ <replaceable class="PARAMETER">direction</replaceable> [ FROM | IN ] ] <
          <para>
           Fetch the prior row (same as <literal>PRIOR</literal>).
          </para>
+         <para>
+          <literal>BACKWARD</literal> is not supported by the current
+          release of <productname>Postgres-XL</>.
+         </para>
         </listitem>
        </varlistentry>
 
@@ -254,6 +299,10 @@ FETCH [ <replaceable class="PARAMETER">direction</replaceable> [ FROM | IN ] ] <
           backwards).  <literal>BACKWARD 0</literal> re-fetches the
           current row.
          </para>
+         <para>
+          <literal>BACKWARD <replaceable class="PARAMETER">count</replaceable></literal> is not supported by the current
+          release of <productname>Postgres-XL</>.
+         </para>
         </listitem>
        </varlistentry>
 
@@ -262,6 +311,10 @@ FETCH [ <replaceable class="PARAMETER">direction</replaceable> [ FROM | IN ] ] <
         <listitem>
          <para>
           Fetch all prior rows (scanning backwards).
+         </para>
+         <para>
+          <literal>BACKWARD ALL</literal> is not supported by the current
+          release of <productname>Postgres-XL</>.
          </para>
         </listitem>
        </varlistentry>

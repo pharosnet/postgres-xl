@@ -1468,6 +1468,11 @@ SELECT S.SNO, S.SNAME, COUNT(SE.PNO)
      <title>Subqueries</title>
 
      <para>
+      Subqueries in <productname>Postgres-XL</> have restrictions.
+      You may be warned if some of them cannot be handled.
+     </para>
+
+     <para>
       In the WHERE and HAVING clauses the use of subqueries (subselects) is
       allowed in every place where a value is expected. In this case the
       value must be derived by evaluating the subquery first. The usage of

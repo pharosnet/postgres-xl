@@ -12,6 +12,11 @@
  </indexterm>
 
   <para>
+   This chapter describes database maintenance tasks
+   of individual Coordinators and Datanodes.  
+  </para>
+
+  <para>
    <productname>PostgreSQL</>, like any database software, requires that certain tasks
    be performed regularly to achieve optimum performance. The tasks
    discussed here are <emphasis>required</emphasis>, but they
@@ -67,6 +72,11 @@
   </indexterm>
 
   <para>
+   Please note that this section describes the task of individual
+   Coordinator and Datanode.  It should be done for each of them.
+  </para>
+
+  <para>
    <productname>PostgreSQL</productname> databases require periodic
    maintenance known as <firstterm>vacuuming</>.  For many installations, it
    is sufficient to let vacuuming be performed by the <firstterm>autovacuum
@@ -84,6 +94,11 @@
 
   <sect2 id="vacuum-basics">
    <title>Vacuuming Basics</title>
+
+  <para>
+   Please note that this section describes the task of individual
+   Coordinator and Datanode.  It should be done for each of them.
+  </para>
 
    <para>
     <productname>PostgreSQL</productname>'s
@@ -149,6 +164,11 @@
    <indexterm zone="vacuum-for-space-recovery">
     <primary>disk space</primary>
    </indexterm>
+
+   <para>
+    Please note that this section describes the task of individual
+    Coordinator and Datanode.  It should be done for each of them.
+   </para>
 
    <para>
     In <productname>PostgreSQL</productname>, an
@@ -263,6 +283,11 @@
    <indexterm zone="vacuum-for-statistics">
     <primary>ANALYZE</primary>
    </indexterm>
+
+   <para>
+    Please note that this section describes the task of individual
+    Coordinator and Datanode.  It should be done for each of them.
+   </para>
 
    <para>
     The <productname>PostgreSQL</productname> query planner relies on
@@ -386,6 +411,11 @@
     </indexterm>
 
    <para>
+    Please note that this section describes the task of individual
+    Coordinator and Datanode.  It should be done for each of them.
+   </para>
+
+   <para>
     <productname>PostgreSQL</productname>'s MVCC transaction semantics
     depend on being able to compare transaction ID (<acronym>XID</>)
     numbers: a row version with an insertion XID greater than the current
@@ -399,6 +429,12 @@
     (Actually the data is still there, but that's cold comfort if you cannot
     get at it.)  To avoid this, it is necessary to vacuum every table
     in every database at least once every two billion transactions.
+   </para>
+
+   <para>
+    Please note that <productname>Postgres-XL</>'s transaction is
+    called global transaction ID (<acronym>GXID</>) and is supplied by
+    global transaction manager (<acronym>GTM</>).
    </para>
 
    <para>
@@ -675,6 +711,12 @@ HINT:  Stop the postmaster and vacuum that database in single-user mode.
     <primary>autovacuum</primary>
     <secondary>general information</secondary>
    </indexterm>
+   
+   <para>
+    Please note that this section describes the task of individual
+    Coordinator and Datanode.  It should be done for each of them.
+   </para>
+   
    <para>
     <productname>PostgreSQL</productname> has an optional but highly
     recommended feature called <firstterm>autovacuum</firstterm>,

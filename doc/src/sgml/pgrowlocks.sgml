@@ -12,6 +12,13 @@
   locking information for a specified table.
  </para>
 
+ <para>
+  Functions of this module return information from the 
+  Coordinator that the session is currently connect to.  
+  To get information about a Datanode, you can
+  use <command>EXECUTE DIRECT</command>.
+ </para>
+
  <sect2>
   <title>Overview</title>
 

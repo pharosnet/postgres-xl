@@ -13,6 +13,11 @@
   Extensive facilities for searching through label trees are provided.
  </para>
 
+ <para>
+  Please note that a column of the type <type>ltree</> cannot be a
+  distribution column.
+ </para>
+
  <sect2>
   <title>Definitions</title>
 

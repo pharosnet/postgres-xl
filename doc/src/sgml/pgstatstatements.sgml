@@ -8,6 +8,11 @@
  </indexterm>
 
  <para>
+  The module <filename>pg_stat_statments</filename> does not work
+  correctly with <productname>Postgres-XL</productname>.
+ </para>
+
+ <para>
   The <filename>pg_stat_statements</filename> module provides a means for
   tracking execution statistics of all SQL statements executed by a server.
  </para>

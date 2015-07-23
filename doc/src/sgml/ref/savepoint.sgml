@@ -34,6 +34,12 @@ SAVEPOINT <replaceable>savepoint_name</replaceable>
   <title>Description</title>
 
   <para>
+   <command>SAVEPOINT</> has not been supported
+   by <productname>Postgres-XL</> yet.  This command may be supported
+   in the future releases.
+  </para>
+
+  <para>
    <command>SAVEPOINT</command> establishes a new savepoint within
    the current transaction.
   </para>

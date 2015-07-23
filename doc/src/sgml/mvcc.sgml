@@ -17,6 +17,15 @@
    in this chapter.
   </para>
 
+  <para>
+   <productname>Postgres-XL</> inherited concurrency control
+   from <productname>PostgreSQL</> and extended it globally to all of the
+   Coordinators and Datanodes involved.  Regardless of what
+   Coordinator is connected to, all of the transactions
+   in the <productname>Postgres-XL</> database cluster behaves in
+   a consistent way as if they are running in single database.
+  </para>
+
   <sect1 id="mvcc-intro">
    <title>Introduction</title>
 
@@ -1414,6 +1423,15 @@ UPDATE accounts SET balance = balance - 100.00 WHERE acctnum = 22222;
      applications to hold transactions open for long periods of time
      (e.g., while waiting for user input).
     </para>
+
+    <para>
+     Please note that <productname>Postgres-XL</> does not detect
+     deadlocks which are spread  among multiple Coordinators and/or
+     Datanodes, known as global deadlocks. 
+     Until this is implemented in
+     <productname>Postgres-XL</>, global deadlocks can be 
+     detected based on statement_timeout.
+    </para>
    </sect2>
 
    <sect2 id="advisory-locks">
@@ -1486,6 +1504,13 @@ UPDATE accounts SET balance = balance - 100.00 WHERE acctnum = 22222;
      This imposes an upper limit on the number of advisory locks
      grantable by the server, typically in the tens to hundreds of thousands
      depending on how the server is configured.
+    </para>
+
+    <para>
+     Please note that <productname>Postgres-XL</>'s advisory lock is
+     local to each Coordinator or Datanode.  If you wish to acquire
+     advisory locks on different Coordinator, you should do it manually
+     using <type>EXECUTE DIRECT</> statement.
     </para>
 
     <para>
@@ -1738,6 +1763,78 @@ SELECT pg_advisory_lock(q.id) FROM
     applications that need to index scalar data. When dealing with
     non-scalar data, B-trees are not useful, and GiST, SP-GiST or GIN
     indexes should be used instead.
+   </para>
+  </sect1>
+  <sect1 id="global-transaction-management">
+   <title><productname>Postgres-XL</productname>'s Global Transaction Management</title>
+
+   <indexterm>
+    <primary>Global Transaction Management</primary>
+   </indexterm>
+
+
+   <para>
+    The above sections
+    described <productname>Postgres-XL</productname>'s concurrency
+    control and MVCC common to <productname>PostgreSQL</productname>.
+    This section describes how <productname>Postgres-XL</productname>
+    implements global concurrency control and MVCC among multiple
+    Coordinators and Datanodes.
+   </para>
+
+   <para>
+    In conventional replication clusters, you can run read
+    transactions concurrently in multiple standby, or slave
+    servers. Replication servers provide read scalability. However,
+    you cannot issue write transactions to standby servers because
+    they don't have means to propagate changes safely. They cannot
+    maintain consistent view of database to applications for write
+    operations, unless you issue write transactions to single master
+    server.
+   </para>
+
+   <para>
+    Postgres-XL is different.
+   </para>
+
+   <para>
+    As described
+    in <xref linkend="intro-whatis">, <productname>Postgres-XL</productname>
+    is composed of a GTM (Global Transaction Manager), Coordinators and
+    Datanodes.
+   </para>
+
+   <para>
+    In <productname>Postgres-XL</productname>, any Coordinator can
+    accept any transaction, regardless whether it is read only or
+    read/write.  Transaction integrity is enforced by GTM (Global
+    Transaction Manager).  Because we have multiple Coordinators, each
+    of them can handle incoming transactions and statements in
+    parallel.
+   </para>
+
+   <para>
+    Analyzed statements are converted into internal plans, which
+    include SQL statements targeted to Datanodes.  Plans are sent on to
+    each target Datanode, handled, and the result is sent back to
+    the originating Coordinator where all the results from target
+    Datanodes will be combined into the result to be sent back to the
+    application.
+   </para>
+
+   <para>
+    Each table can be distributed or replicated as described
+    in <xref linkend="intro-whatis">.  If you design each table's
+    distribution carefully, most of the statements may end up targeting
+    just one Datanode, which is most effecient.  In this way, Coordinators and Datanodes
+    runs transactions in parallel which scales out both read and write
+    operations.
+   </para>
+
+   <para>
+    More detailed internals
+    about <productname>Postgres-XL</productname>'s transaction
+    management will be found in <xref linkend="overview">.
    </para>
   </sect1>
  </chapter>

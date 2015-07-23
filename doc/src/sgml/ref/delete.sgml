@@ -81,6 +81,10 @@ DELETE FROM [ ONLY ] <replaceable class="PARAMETER">table_name</replaceable> [ *
     <term><replaceable class="parameter">with_query</replaceable></term>
     <listitem>
      <para>
+      <replaceable class="parameter">with_query</replaceable> is not
+      supported by current release of <productname>Postgres-XL</>.
+     </para>
+     <para>
       The <literal>WITH</literal> clause allows you to specify one or more
       subqueries that can be referenced by name in the <command>DELETE</>
       query. See <xref linkend="queries-with"> and <xref linkend="sql-select">
@@ -157,6 +161,12 @@ DELETE FROM [ ONLY ] <replaceable class="PARAMETER">table_name</replaceable> [ *
       <xref linkend="sql-declare">
       for more information about using cursors with
       <literal>WHERE CURRENT OF</>.
+      <footnote>
+       <para>
+        <literal>WHERE CURRENT OF</literal> is not supported in the
+        current version of <productname>Postgres-XL</productname>.
+       </para>
+      </footnote>
      </para>
     </listitem>
    </varlistentry>

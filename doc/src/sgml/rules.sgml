@@ -657,6 +657,12 @@ SELECT shoe_ready.shoename, shoe_ready.sh_avail,
 <title>View Rules in Non-<command>SELECT</command> Statements</title>
 
 <para>
+     Non-<command>SELECT</command> statements in rules are not
+     supported by the current version
+     of <productname>Postgres-XL</productname>.
+</para>
+
+<para>
     Two details of the query tree aren't touched in the description of
     view rules above. These are the command type and the result relation.
     In fact, the command type is not needed by view rules, but the result
@@ -2247,6 +2253,12 @@ CREATE VIEW phone_number WITH (security_barrier) AS
  <primary>trigger</primary>
  <secondary sortas="Regeln">compared with rules</secondary>
 </indexterm>
+
+<para>
+    Trigger is not supported by the current release
+    of <productname>Postgres-XL</>.  This may be supported in the
+    future releases.
+</para>
 
 <para>
     Many things that can be done using triggers can also be

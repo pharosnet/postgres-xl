@@ -29,6 +29,12 @@ DROP USER MAPPING [ IF EXISTS ] FOR { <replaceable class="parameter">user_name</
   <title>Description</title>
 
   <para>
+   <command>USER MAPPING</> has not been supported
+   by <productname>Postgres-XL</> yet.  This command may be supported
+   in the future releases.
+  </para>
+
+  <para>
    <command>DROP USER MAPPING</command> removes an existing user
    mapping from foreign server.
   </para>

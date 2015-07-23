@@ -16,7 +16,8 @@ PostgreSQL documentation
 
  <refnamediv>
   <refname>pg_controldata</refname>
-  <refpurpose>display control information of a <productname>PostgreSQL</productname> database cluster</refpurpose>
+  <refpurpose>display control information of a
+<productname>Postgres-XL</productname> Coordinator or Datanode database cluster</refpurpose>
  </refnamediv>
 
  <refsynopsisdiv>
@@ -46,6 +47,11 @@ PostgreSQL documentation
    <application>pg_controldata</application> version and exit.  It also
    supports options <option>-?</> and <option>--help</>, which output the
    supported arguments.
+  </para>
+
+  <para>
+   To print information of each Datanode and Coordinator, you should
+   issue <command>pg_controldata</> against each of them.
   </para>
  </refsect1>
 

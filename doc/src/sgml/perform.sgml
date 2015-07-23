@@ -914,6 +914,19 @@ EXPLAIN ANALYZE SELECT * FROM tenk1 WHERE unique1 &lt; 100 AND unique2 &gt; 9000
   </para>
 
   <para>
+    <productname>Postgres-XL</productname> pulls up statistics 
+   from the Datanodes and stores it in each of the Coordinator's catalog
+   table to help make query planning decisions.
+  </para>
+
+  <para>
+   Traditional PostgreSQL costing applies, but <productname>Postgres-XL</productname>
+   also tries to take into consideration the cost of shipping rows around the
+   network for internode joins, which is an expensive operation.
+   Below general PostgreSQL handling is described.
+  </para>
+
+  <para>
    One component of the statistics is the total number of entries in
    each table and index, as well as the number of disk blocks occupied
    by each table and index.  This information is kept in the table
@@ -1081,6 +1094,17 @@ SELECT * FROM a, b, c WHERE a.id = b.id AND b.ref = c.id;
    results but might have hugely different execution costs.  Therefore,
    the planner will explore all of them to try to find the most
    efficient query plan.
+  </para>
+
+  <para>
+   <productname>Postgres-XL</> stores table data in a distributed or
+   replicated fashion.  To leverage this, the planner tries to find
+   the best way to use as much of Datanode power as possible.  If the
+   equi-join is done by distribution columns and they share the
+   distribution method (hash/modulo), the Coordinator can tell
+   the Datanode to perform join.  
+   If not, it may tell Datanodes to ship rows to other Datanodes
+   and expect rows from other Datanodes to be shipped to it.
   </para>
 
   <para>
@@ -1358,6 +1382,11 @@ SELECT * FROM x, y, a, b, c WHERE something AND somethingelse;
     It won't do much for <command>COPY</> itself, so this advice is
     only useful when you are using one or both of the above techniques.
    </para>
+
+   <para>
+    In <productname>Postgres-XL</>, only the distribution column can have foreign key
+    constraint.
+   </para>
   </sect2>
 
   <sect2 id="populate-max-wal-size">
@@ -1375,6 +1404,13 @@ SELECT * FROM x, y, a, b, c WHERE something AND somethingelse;
     <varname>max_wal_size</varname> temporarily during bulk
     data loads, the number of checkpoints that are required can be
     reduced.
+   </para>
+
+   <para>
+    Please note that you should tune the configuration variables in
+    all the nodes involved.  Keep in mind that the Datanodes
+    are more important and will need more resources than Coordinators.
+    by <acronym>DDL</>s.
    </para>
   </sect2>
 
@@ -1449,6 +1485,13 @@ SELECT * FROM x, y, a, b, c WHERE something AND somethingelse;
     run <command>ANALYZE</command> automatically; see
     <xref linkend="vacuum-for-statistics">
     and <xref linkend="autovacuum"> for more information.
+   </para>
+
+   <para>
+    In <productname>Postgres-XL</>, a manual <command>VACUUM</> will be
+    pushed down to all the Datanodes as well.  
+    Depending on your workload, if you have a highly loaded cluster,
+    you may wish to disable autovacuum and vacuum at specific times.
    </para>
   </sect2>
 

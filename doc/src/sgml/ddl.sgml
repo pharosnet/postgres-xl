@@ -133,6 +133,78 @@ CREATE TABLE products (
 
   <indexterm>
    <primary>table</primary>
+   <secondary>replication</secondary>
+  </indexterm>
+
+
+  <para>
+   In <productname>Postgres-XL</>, each table can be distributed or replicated
+   among Datanodes.  By distributing tables each query
+   has the potential to be handled by a single or small
+   subset of the Datanodes and more transactions can be handled in parallel.
+   If you replicate tables, they can be read from just a single location, though
+   all writes will need to take place on all nodes.
+  </para>
+
+  <para>
+   When you distribute a table, you can choose almost any column of a fundamental data type as distribution
+   column.
+   For details, please refer to <xref linkend="SQL-CREATETABLE">.
+   The Datanode for a particular row is determined based upon the value of the distribution
+   column, chosen if DISTRIBUTE BY HASH was used.
+   If not used, the first column of a primary key or unique constraint is used
+   if present in the CREATE TABLE clause.
+   If neither of those are present, the first column of a foreign key constraint 
+   is used, the idea being that child data can be col-located on the same node
+   as the parent table.
+   If no such constraint is defined, Postgres-XL will choose the first reasonable
+   column it can find, that is the first column that has a deterministically 
+   distributable data type.
+
+   You may also choose another distribution method such as <type>MODULO</> and
+   <type>ROUNDROBIN</>.
+   To specify what column to choose as the distribution column and what value test to
+   choose, you can do as follows:
+<programlisting>
+CREATE TABLE products (
+    product_no integer,
+    name text,
+    price numeric
+) DISTRIBUTE BY HASH(product_no);
+</programlisting>
+   In this case, the column <type>product_no</> is chosen as the distribute column and
+   the target Datanode of each row is determined based upon the hash value of the column.
+   You can use <type>MODULO</> to specify modulo to test and determine the target Datanode.
+   You can also specify <type>ROUNDROBIN</> to determine the Datanode by the order each
+   row is inserted.
+  </para>
+
+  <para>
+   Please note that with <type>HASH</> and <type>MODULO</>, the Coordinator may be able to determine the
+   exact location of target row from incoming statement.   This reduces the number of involved Datanodes
+   and can increase the number of transaction handled in parallel.
+  </para>
+
+  <para>
+   On the other hand, if exact location cannot be obtained from incoming statement, the
+   Coordinator will have to involve all of the Datanodes on which the involved table 
+   is distributed.
+  </para>
+
+  <para>
+   To replicate a table into all the Datanodes, specify <type>DISTRIBUTE BY REPLICATION</> as
+   follows:
+<programlisting>
+CREATE TABLE products (
+    product_no integer,
+    name text,
+    price numeric
+) DISTRIBUTE BY REPLICATION;
+</programlisting>
+
+  </para>
+  <indexterm>
+   <primary>table</primary>
    <secondary>removing</secondary>
   </indexterm>
 
@@ -569,6 +641,27 @@ CREATE TABLE products (
     careful when developing applications that are intended to be
     portable.
    </para>
+
+   <para>
+    In <productname>Postgres-XL</>, in distributed
+    tables, <literal>UNIQUE</literal> constraints must include the
+    distribution column of the table. 
+    This is because Postgres-XL currently only allows that it can
+    push down to the Datanodes to be enforced locally. If we include
+    the distribution column in unique constraints, it stands to
+    reason that it can be enforced locally.
+
+    If a table is distributed
+    by <type>ROUNDROBIN</type>, we cannot enforce <type>UNIQUE</>
+    constraints because it does not have a distribution column;
+    it is possible that the same value for a column exists on
+    multiple nodes.
+
+    There's no restriction in <type>UNIQUE</> constraint in replicated
+    tables. When an expression is used on a <type>UNIQUE</> constraint,
+    this expression must contain the distribution column of its parent
+    table. It cannot use other columns as well.
+   </para>
   </sect2>
 
   <sect2 id="ddl-constraints-primary-keys">
@@ -643,6 +736,15 @@ CREATE TABLE example (
     not enforced by <productname>PostgreSQL</productname>, but it is
     usually best to follow it.
    </para>
+
+   <para>
+    As mentioned when discussing <type>UNIQUE</> constraint, the distribution column
+    must be included in <type>PRIMARY KEY</type>.  Other restrictions
+    apply to the <type>PRIMARY KEY</> as well.  When an expression is used on
+    a <type>PRIMARY KEY</> constraint, this expression must contain
+    the distribution column of its parent table. It cannot use other
+    columns as well.
+   </para>
   </sect2>
 
   <sect2 id="ddl-constraints-fk">
@@ -678,18 +780,27 @@ CREATE TABLE products (
     price numeric
 );
 </programlisting>
+
     Let's also assume you have a table storing orders of those
     products.  We want to ensure that the orders table only contains
     orders of products that actually exist.  So we define a foreign
     key constraint in the orders table that references the products
-    table:
+    table.
 <programlisting>
 CREATE TABLE orders (
-    order_id integer PRIMARY KEY,
+    order_id integer,
     product_no integer <emphasis>REFERENCES products (product_no)</emphasis>,
     quantity integer
-);
+) DISTRIBUTE BY HASH(product_no);
 </programlisting>
+   </para>
+   <para>
+    Please note that column with <type>REFERENCES</> should be the distribution column.
+    In this case, we cannot add <type>PRIMARY KEY</> to <type>order_id</>
+    because <type>PRIMARY KEY</type> must be the distribution column as well.
+    This limitation is introduced because constraints are enforced only locally in each Datanode.
+   </para>
+   <para>
     Now it is impossible to create orders with non-NULL
     <structfield>product_no</structfield> entries that do not appear in the
     products table.
@@ -713,6 +824,13 @@ CREATE TABLE orders (
 </programlisting>
     because in absence of a column list the primary key of the
     referenced table is used as the referenced column(s).
+
+    <note>
+     <para>
+      In <productname>Postgres-XL</productname>, you cannot omit the column name
+      in REFERENCES clause.
+     </para>
+    </note>
    </para>
 
    <para>
@@ -729,6 +847,12 @@ CREATE TABLE t1 (
 </programlisting>
     Of course, the number and type of the constrained columns need to
     match the number and type of the referenced columns.
+    <note>
+     <para>
+      In <productname>Postgres-XL</productname>, you cannot specify both PRIMARY
+      KEY and REFERENCES key for different columns.
+     </para>
+    </note>
    </para>
 
    <para>
@@ -764,6 +888,13 @@ CREATE TABLE order_items (
 </programlisting>
     Notice that the primary key overlaps with the foreign keys in
     the last table.
+
+    <note>
+     <para>
+     In <productname>Postgres-XL</productname>, you cannot specifiy more than
+one foreign key constraints.
+     </para>
+    </note>
    </para>
 
    <indexterm>
@@ -913,6 +1044,12 @@ CREATE TABLE circles (
     Adding an exclusion constraint will automatically create an index
     of the type specified in the constraint declaration.
    </para>
+   <note>
+     <para>
+      <productname>Postgres-XL</productname> does not support exclusion
+      constraints.
+     </para>
+   </note>
   </sect2>
  </sect1>
 
@@ -950,6 +1087,13 @@ CREATE TABLE circles (
       <type>oid</type> (same name as the column); see <xref
       linkend="datatype-oid"> for more information about the type.
      </para>
+     <para>
+      Please note that <productname>Postgres-XL</> does not enforce
+      OID integrity among the cluster.  OIDs are assigned locally in
+      each Coordinator and Datanode.  You can use this in expressions
+      but you should not expect OID values are the same throughout the
+      <productname>XL</> cluster.
+     </para>
     </listitem>
    </varlistentry>
 
@@ -968,6 +1112,13 @@ CREATE TABLE circles (
       <structfield>tableoid</structfield> can be joined against the
       <structfield>oid</structfield> column of
       <structname>pg_class</structname> to obtain the table name.
+     </para>
+     <para>
+      Please note that <productname>Postgres-XL</> does not enforce
+      OID integrity among the cluster.  OIDs are assigned locally in
+      each Coordinator and Datanode.  You can use this in expressions,
+      but you should not expect OID values are the same throughout the
+      <productname>XL</> cluster.
      </para>
     </listitem>
    </varlistentry>
@@ -1048,6 +1199,12 @@ CREATE TABLE circles (
       <structfield>ctid</structfield> is useless as a long-term row
       identifier.  The OID, or even better a user-defined serial
       number, should be used to identify logical rows.
+     </para>
+     <para>
+      In <productname>Postgres-XL</>, ctid is local to Coordinators
+      and Datanodes.  It is not good practice to use this value in
+      SQL statements and can be very dangerous when using it to update
+      data. 
      </para>
     </listitem>
    </varlistentry>
@@ -1169,6 +1326,33 @@ CREATE TABLE circles (
    here.
   </para>
 
+  <para>
+   In addition to these actions, in <productname>Postgres-XL</productname> you
+   can also use <command>ALTER TABLE</> command to:
+   <itemizedlist spacing="compact">
+    <listitem>
+     <para>Change distribution strategy</para>
+    </listitem>
+    <listitem>
+     <para>Add a node to existing distribution target</para>
+    </listitem>
+    <listitem>
+     <para>Remove a node from existing distribution target</para>
+    </listitem>
+   </itemizedlist>
+  </para>
+  <para>
+   In <productname>Postgres-XL</> the following are not allowed:
+   <itemizedlist spacing="compact">
+    <listitem>
+     <para>Modifying distribution columns definition</para>
+    </listitem>
+    <listitem>
+     <para>Modifying distribution column values</para>
+    </listitem>
+   </itemizedlist>
+  </para>
+
   <sect2 id="ddl-alter-adding-a-column">
    <title>Adding a Column</title>
 
@@ -1265,6 +1449,9 @@ ALTER TABLE products ALTER COLUMN product_no SET NOT NULL;
    <para>
     The constraint will be checked immediately, so the table data must
     satisfy the constraint before it can be added.
+   </para>
+   <para>
+    Please remember that the distribution column has to be included in UNIQUE and REFERENCE constraints.
    </para>
   </sect2>
 
@@ -1396,6 +1583,76 @@ ALTER TABLE products RENAME COLUMN product_no TO product_number;
 <programlisting>
 ALTER TABLE products RENAME TO items;
 </programlisting>
+   </para>
+  </sect2>
+  <sect2>
+   <title>Adding a Node to Distribution Target</title>
+
+   <indexterm>
+    <primary>table</primary>
+    <secondary>distribution</secondary>
+   </indexterm>
+   <para>
+    To add a new node to existing distribution:
+<programlisting>
+ALTER TABLE products ADD NODE (datanode_3);
+</programlisting>
+  The datanode must be a valid datanode name. If its a new datanode, then it
+must have been added to the cluster by appropriate mechanism.
+<!-- To learn how to
+add a node to the cluster, please see <xref linkend="add-node">. -->
+   </para>
+   <para>
+    This command will redistribute the existing table data so as to include the
+    new node. For example, in case of <type>DISTRIBUTE BY HASH</> strategy, hash
+    value for each row must be recomputed and the row must be moved to the selected
+    node based on the new count of datanodes in the distribution list. This
+    operation requires an exclusive lock on the table and hence all read and write
+    access to the table is temporarily blocked. This can be important especially if
+    the table is large and requires considerable time for
+    redistribution.
+   </para>
+  </sect2>
+  <sect2>
+   <title>Removing a Node from Distribution Target</title>
+
+   <indexterm>
+    <primary>table</primary>
+    <secondary>distribution</secondary>
+   </indexterm>
+   <para>
+    To remove a node from existing distribution:
+<programlisting>
+ALTER TABLE products DELETE NODE (datanode_3);
+</programlisting>
+  It must be noted that if you want to remove a node from the cluster, its
+  important that you first remove such node from all existing tables using that
+  node and then only remove the node from the cluster.
+   </para>
+   <para>
+    Like the previous command, this also takes an exclusive lock on the table,
+    blocking all read and write access to the table.
+   </para>
+  </sect2>
+  <sect2>
+   <title>Changing Distribution Strategy</title>
+
+   <indexterm>
+    <primary>table</primary>
+    <secondary>distribution</secondary>
+   </indexterm>
+   <para>
+    To change distribution strategy for a table:
+<programlisting>
+ALTER TABLE products DISSTRIBUTE BY REPLICATION;
+</programlisting>
+You can change distribution strategy for a table with this command. For
+example, a table which was previously distributed by <type>HASH</> can now be
+distributed by <type>REPLICATION</type>.
+   </para>
+   <para>
+    Like the previous command, this also takes an exclusive lock on the table,
+    blocking all read and write access to the table.
    </para>
   </sect2>
  </sect1>

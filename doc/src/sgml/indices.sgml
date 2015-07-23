@@ -15,6 +15,12 @@
   sensibly.
  </para>
 
+   <para>
+    Each index is maintained locally in Coordinator and Datanode
+    in <productname>Postgres-XL</>.
+    Cross validation of index entries among Coordinators and Datanodes is
+    not performed in the current implementation.
+   </para>
 
  <sect1 id="indexes-intro">
   <title>Introduction</title>
@@ -628,6 +634,12 @@ CREATE INDEX test3_desc_index ON test3 (id DESC NULLS LAST);
    <primary>index</primary>
    <secondary>unique</secondary>
   </indexterm>
+
+  <para>
+   In <productname>Postgres-XL</>, unique indexes on distributed tables
+   must contain the distribution column.  For replicated
+   tables, there's no such restriction.
+  </para>
 
   <para>
    Indexes can also be used to enforce uniqueness of a column's value,
