@@ -18,7 +18,6 @@ SUBDIRS = \
 	timezone \
 	gtm \
 	interfaces \
-	pgxc \
 	backend \
 	backend/utils/mb/conversion_procs \
 	backend/snowball \
