@@ -70,8 +70,8 @@ CLEAN CONNECTION TO { COORDINATOR ( <replaceable class="parameter">nodename</rep
     <term><replaceable class="parameter">username</replaceable></term>
     <listitem>
      <para>
-      If specified in the optional clause <literal>TO USER</literal>,
-      pooler connections are cleaned for given role.
+      If specified in the optional clause <literal>TO USER</literal>, pooler
+      connections are cleaned for the given role.
      </para>
     </listitem>
    </varlistentry>
@@ -80,10 +80,9 @@ CLEAN CONNECTION TO { COORDINATOR ( <replaceable class="parameter">nodename</rep
     <term><replaceable class="parameter">nodename</replaceable></term>
     <listitem>
      <para>
-      In the case of cleaning connections to a given list of
-      Coordinator, <replaceable class="parameter">nodename</replaceable>
-      has to be specified with the clause <literal>TO COORDINATOR
-      </literal>.
+      In the case of cleaning connections to a given list of Coordinators,
+      <replaceable class="parameter">nodename</replaceable> has to be specified
+      with the clause <literal>TO COORDINATOR </literal>.
      </para>
      <para>
        In the case of cleaning connections to a given list of

@@ -29,7 +29,7 @@ WITH ( <replaceable class="parameter">nodename</replaceable> [, ... ] )
   <para>
    <command>CREATE NODE GROUP</command> is a SQL command specific
    to <productname>Postgres-XL</productname> that creates
-   node group information in catalog pgxc_group.
+   node group information in catalog table pgxc_group.
   </para>
 
   <para>
@@ -65,8 +65,8 @@ WITH ( <replaceable class="parameter">nodename</replaceable> [, ... ] )
  <refsect1>
   <title>Notes</title>
   <para>
-   A group of nodes works as an alias for node lists when defining tables
-   on sub-clusters. Only Datanode can be included in node groups.
+   A group of nodes works as an alias for node lists when defining tables on
+   sub-clusters. Only Datanodes can be included in node groups.
   </para>
  </refsect1>
 

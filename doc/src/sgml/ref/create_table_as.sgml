@@ -233,9 +233,9 @@ CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } | UNLOGGED ] TABLE [ IF NOT EXI
         <term><literal>ROUNDROBIN</literal></term>
         <listitem>
          <para>
-          Each row of the table will be placed in one of the Datanodes
-          by round-robin manner.  The value of the row will not be
-          needed to determine what Datanode to go.
+          Each row of the table will be placed in one of the Datanodes in a
+          round-robin manner.  The value of the row will not be needed to
+          determine what Datanode to go to.
          </para>
         </listitem>
        </varlistentry>

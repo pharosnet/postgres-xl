@@ -44,9 +44,9 @@
  </note>
 
   <para>
-   Please note that you can issue this command to each Datanode or
-   Coordinator.  The result is the information local to Datanode or
-   Coordinator specified.
+   Please note that you can issue this command to each Datanode or Coordinator.
+   The result is the information local to the Datanode or Coordinator
+   specified.
   </para>
 
   <para>

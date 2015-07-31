@@ -26,10 +26,10 @@ EXECUTE DIRECT ON ( <replaceable class="parameter">nodename</replaceable> [, ...
   <title>Description</title>
 
   <para>
-   <command>EXECUTE DIRECT</command> is a SQL command specially created
-   for <productname>Postgres-XL</productname> to allow to launch queries directly to dedicated
-   nodes determined by a list of nodes <replaceable class="parameter">
-   nodelist</replaceable>. 
+   <command>EXECUTE DIRECT</command> is a SQL command specially created for
+   <productname>Postgres-XL</productname> to allow launching queries directly
+   on one of the nodes determined by a list of nodes <replaceable
+   class="parameter"> nodelist</replaceable>. 
   </para>
 
   <para>

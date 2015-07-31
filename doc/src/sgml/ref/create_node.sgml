@@ -100,12 +100,13 @@ CREATE NODE <replaceable class="parameter">nodename</replaceable> WITH
         value can be specified. In case no value is specified, <literal>PREFERRED</literal>
         acts like <literal>false</>.
        </para>
-       <para>
-        You can specify different <literal>PREFERRED</literal> node at different coordinator.
-        This parameter affects performance of your <literal>Postgres-XL</literal> cluster.
-        If you configure a datanode where you configure a coordinator, 
-        you should specify <literal>PREFERRED</literal> for the coordinator to such a local datanode.
-        This will save network communication and improve cluster-wide performance.
+       <para> You can specify different <literal>PREFERRED</literal> nodes at
+       different Coordinators.  This parameter affects performance of your
+       <literal>Postgres-XL</literal> cluster.  If you configure a Datanode
+       where you configure a Coordinator, you should specify
+       <literal>PREFERRED</literal> for the Coordinator to such a local
+       Datanode.  This will save network communication and improve cluster-wide
+       performance.
        </para>
         
       </listitem>

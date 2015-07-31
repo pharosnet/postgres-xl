@@ -26,15 +26,16 @@
 
   <para>
    You should build pgxc_ctl using your Postgres-XL build environment.
-   <application>pgxc_ctl</application> source code comes with Postgres-XL source code tarball.
-   The latest version of the source code will be available at its home repository,
+   <application>pgxc_ctl</application> source code comes with the Postgres-XL
+   source code tarball.  The latest version of the source code will be
+   available at its home repository,
 <programlisting>
 http://  pgxc_ctl
 </programlisting>
-   If you would like to use the latest version from pgxc_ctl home repository,
-   get the source code tarball and expand it in the source's contrib
-   directory of your Postgres-XL build environment.  
-   If you are using pgxc_ctl in Postgres-XL tarball, you don't have to do this.
+   If you would like to use the latest version from the pgxc_ctl home
+   repository, get the source code tarball and expand it in the source's
+   contrib directory of your Postgres-XL build environment.  If you are using
+   pgxc_ctl from the Postgres-XL tarball, you don't have to do this.
   </para>
 
   <para>
@@ -60,18 +61,17 @@ $ cd contrib/pgxc_ctl
 $ make
 $ make install
 </programlisting>
-   The <application>pgxc_ctl</application> binary will be installed in the
-   same directory as <application>Postgres-XL</application> binaries. 
+   The <application>pgxc_ctl</application> binary will be installed in the same
+   directory as the <application>Postgres-XL</application> binaries. 
   </para>
 
   <para>
-   <application>Postgres-XL</application> consists of many components
-   (or called "nodes") running in various physical or virtual
-   machines.
-   Because pgxc_ctl relies on ssh connections between the machines where
-   <application>pgxc_ctl</application> and other nodes are running,
-   you should setup ssh-agent authentication to avoid typing password
-   each time pgcx_ctl issues ssh.
+   <application>Postgres-XL</application> consists of many components (or
+   "nodes") running in various physical or virtual machines.  Because pgxc_ctl
+   relies on ssh connections between the machines where
+   <application>pgxc_ctl</application> and other nodes are running, you should
+   setup ssh-agent authentication to avoid typing a password each time pgcx_ctl
+   issues ssh.
   </para>
 
  </sect2>
@@ -109,14 +109,12 @@ $ make install
   <title>pgxc_ctl configuration file</title>
 
   <para>
-   pgxc_ctl uses configuration file.  
-   The default name and the location is
-   <literal>$PGXC_CTL_HOME/pgxc_ctl.conf</literal>. 
-   When you change Postgres-XL cluster configuration using pgxc_ctl
-   commands, this file will be updated.
-   Depending upon your configuration,
-   <application>pgxc_ctl</application> will back up this file
-   according to your configuration.
+   pgxc_ctl uses a configuration file.  The default name and the location is
+   <literal>$PGXC_CTL_HOME/pgxc_ctl.conf</literal>.  When you change
+   Postgres-XL cluster configuration using pgxc_ctl commands, this file will be
+   updated.  Depending upon your configuration,
+   <application>pgxc_ctl</application> will back up this file according to your
+   configuration.
   </para>
 
   <para>
@@ -132,13 +130,12 @@ $ make install
   <title>pgxc_ctl initialization file</title>
 
   <para>
-   You can specify your preferred parameters of pgxc_ctl behavior. 
-   You can specify parameters in <literal>/etc/pgxc_ctl</literal>
-   and/or <literal>$HOME/.pgxc_ctl</literal> file.
-   Setups in <literal>$HOME/.pgxc_ctl</literal> have higher priority
-   so you can specify system-wide setups at
-   <literal>/etc/pgxc_ctl</literal> and then your personal preferences
-   in <literal>$HOME/.pgxc_ctl</literal>.
+   You can specify your preferred parameters of pgxc_ctl behavior.  You can
+   specify parameters in <literal>/etc/pgxc_ctl</literal> and/or
+   <literal>$HOME/.pgxc_ctl</literal>.  Setups in
+   <literal>$HOME/.pgxc_ctl</literal> have higher priority so you can specify
+   system-wide setups at <literal>/etc/pgxc_ctl</literal> and then your
+   personal preferences in <literal>$HOME/.pgxc_ctl</literal>.
   </para>
 
   <para>
@@ -183,10 +180,9 @@ PGXC$ pwd
 /home/postgres-xl/my_pgxc_ctl
 PGXC$
 </programlisting>
-   You can specify your pgxc_ctl_home as environment variable
-   <literal>PGXC_CTL_HOME</literal>, or you can specify this as
-   variable <literal>pgxc_ctl_home</literal> in your initialization
-   files.
+   You can specify your pgxc_ctl_home with the environment variable
+   <literal>PGXC_CTL_HOME</literal>, or you can specify this as variable
+   <literal>pgxc_ctl_home</literal> in your initialization files.
   </para>
 
   <para>
@@ -197,10 +193,9 @@ PGXC$
 
   <para>
    Type prepare or prepare config to get a configuration template file
-   <filename>pgxc_ctl.conf</filename> at
-   <literal>$PGXC_CTL_HOME</literal>.
-   You may add file name as an option to get configuration template in
-   your favorite file.  For example:
+   <filename>pgxc_ctl.conf</filename> at <literal>$PGXC_CTL_HOME</literal>.
+   You may add a file name as an option to get a configuration template in your
+   favorite file.  For example:
 <programlisting>
 PGXC$ prepare
 PGXC$
@@ -267,8 +262,8 @@ gtmProxyServers=(node06 node07 node08 node09)       # Specify none if you dont' 
 gtmProxyPorts=(20001 20001 20001 20001)             # Not used if it is not configured.
 gtmProxyDirs=($gtmProxyDir $gtmProxyDir $gtmProxyDir $gtmProxyDir) # Not used if it is not configured.
 </programlisting>
-   This section specifies the gtm proxy configuration.
-   We have four <literal>gtm proxies</literal> in each of the server.
+   This section specifies the GTM proxy configuration.
+   We have four <literal>GTM proxies</literal> in each of the server.
    They share working directory path and is specified as a shortcut
    which is referred to later.
   </para>
@@ -308,10 +303,9 @@ pgxc [options ... ] [pgxc_command]
       <term><option>--configuration <replaceable class="parameter">configuration_file</replaceable></></term>
       <listitem>
       <para>
-       Specifies configuration file.
-       The default is <filename>pgxc_ctl_conf</filename>, or the value
-       of <literal>configFile</literal> option
-       found in the initialization file.
+       Specifies configuration file.  The default is
+       <filename>pgxc_ctl.conf</filename>, or the value of
+       <literal>configFile</literal> option found in the initialization file.
       </para>
       </listitem>
     </varlistentry>
@@ -431,9 +425,9 @@ name value [ value ... ] # comment
 </programlisting>
   </para>
   <para>
-   Blank lines or lines beginning with '#' are simply ignored.  If
-   you'd like to include space or tab in the variable name, enclose
-   the name with <literal>'...'</literal> or <literal>"..."</literal>.
+   Blank lines or lines beginning with '#' are simply ignored.  If you'd like
+   to include spaces or tabs in the variable name, enclose the name with
+   <literal>'...'</literal> or <literal>"..."</literal>.
   </para>
   <para>
    Please note that this file is not a bash script.
@@ -604,13 +598,12 @@ $
      <term>GTM</term>
      <listitem>
       <para>
-       GTM stands for global transaction manager.
-       You must have one in the cluster.
-       For production, GTM should be configured in a separate server.
-       GTM can have a slave which can fail over when GTM fails.
-       GTM slave can be installed (hopefully) in a separate server but
-       can be installed in one of the others where you have gtm_proxy,
-       coordinators and datanodes.
+       GTM stands for global transaction manager.  You must have one in the
+       cluster.  For production, the GTM should be configured on a separate
+       server.  The GTM can have a slave which can be failed over to.  The GTM
+       slave can be installed (hopefully) in a separate server but can be
+       installed in one of the others where you have a gtm_proxy, coordinators
+       and datanodes.
       </para>
      </listitem>
     </varlistentry>
@@ -619,10 +612,9 @@ $
      <term>GTM-Proxy</term>
      <listitem>
       <para>
-       GTM proxy reduces the communication load between coordinator and
-       GTM and helps GTM failover.
-       You should configure one gtm_proxy in each server where you have
-       coordinator or datanode as described below.
+       The GTM proxy reduces the communication load between Coordinator and GTM
+       and helps GTM failover.  You should configure one gtm_proxy on each
+       server where you have a Coordinator or Datanode as described below.
       </para>
      </listitem>
     </varlistentry>
@@ -631,13 +623,11 @@ $
      <term>Coordinator</term>
      <listitem>
       <para>
-       Coordinator handles application connection and statement
-       handling.
-       For simplicity and load balancing, it is a good idea to
-       install coordinator to each server other than where GTM (and GTM
-       slave) are configured.  Coordinator can have a slave.  Slave can
-       be configured in one of the servers where other coordinator
-       master is installed.
+       The Coordinator handles application connections and statement handling.
+       For simplicity and load balancing, it is a good idea to install a
+       Coordinator on each server other than where GTM (and GTM slave) are
+       configured.  Coordinators can have a slave.  Slaves can be configured in
+       one of the servers where another Coordinator master is installed.
       </para>
      </listitem>
     </varlistentry>
@@ -646,9 +636,9 @@ $
      <term>Datanode</term>
      <listitem>
       <para>
-       Datanode stores the data and run local SQL statement supplied by
-       a coordinator.  Datanode should also be configured in all the
-       servers except those for GTM (and GTM slave).
+       A Datanode stores the data and runs local SQL statement supplied by a
+       Coordinator.  A Datanode should also be configured on all the servers
+       except those for the GTM (and GTM slave).
       </para>
      </listitem>
     </varlistentry>
@@ -664,7 +654,7 @@ $
     <itemizedlist>
      <listitem>
       <para>
-       hostname, IP address or host name you can refer through DNS,
+       hostname, IP address or host name you can refer to through DNS,
        <filename>/etc/hosts</filename> or by equivalent means. 
       </para>
      </listitem>
@@ -684,19 +674,19 @@ $
    </para>
 
    <para>
-    Also, coordinator and datanode needs additional port for connection pooling to
-    other nodes.
+    Also, Coordinators and Datanodes need an additional port for connection
+    pooling to other nodes.
    </para>
 
    <para>
     In the same host, you must not assign the same port and the same
-    work directory to nodes.
+    work directory between nodes.
     <application>pgxc_ctl</application> checks this.
    </para>
 
    <para>
-    When assign the port, you should be careful not to assign already
-    assigned one to other service. 
+    When assigning the port, you should be careful not to assign an already
+    assigned one to other services. 
    </para>
 
    <para>
@@ -704,8 +694,7 @@ $
     <itemizedlist>
      <listitem>
       <para>
-       You should not assign the same port to GTM master and GTM
-       slave. 
+       You should not assign the same port to the GTM master and GTM slave. 
       </para>
      </listitem>
      
@@ -713,20 +702,18 @@ $
    </para>
 
    <para>
-    GTM, coordinators and datanodes can configure their slave.
-    <application>pgxc_ctl</application> does not support cascaded
-    slave or more than one slave for coordinator and datanode.
-    It is not a restriction of <application>postgres-XL</application>,
-    it is a restriction of <application>pgxc_ctl</application>.
+    GTM, Coordinators and Datanodes can configure their slaves.
+    <application>pgxc_ctl</application> does not support cascaded slaves or
+    more than one slave per Coordinator and Datanode.  It is not a restriction
+    of <application>postgres-XL</application>, it is a restriction of
+    <application>pgxc_ctl</application>.
    </para>
 
    <para>
-    At present, coordinator and datanode slaves are connected using
-    synchronous replication in pgxc_ctl.  
-    This is not a <application>Posgres-XL</application> restriction
-    either.
-    In the future, asynchronous, cascaded and multiple slaves may be
-    supported.
+    At present, Coordinator and Datanode slaves are connected using synchronous
+    replication in pgxc_ctl.  This is not a
+    <application>Posgres-XL</application> restriction either.  In the future,
+    asynchronous, cascaded and multiple slaves may be supported.
    </para>
 
   </sect3>
@@ -738,11 +725,10 @@ $
   <para>
    As described in the previous section, you can configure your
    <application>Postgres-XL</application> cluster by editing
-   <filename>pgxc_ctl.conf</filename> or other configuration files
-   manually.
-   But editing the file from the scratch can be a mess.
-   It is much better to have separate configuration file.
-   You can create configuration file template by typing
+   <filename>pgxc_ctl.conf</filename> or other configuration files manually.
+   But editing the file from the scratch can be a mess.  It is much better to
+   have a separate configuration file.  You can create a configuration file
+   template by typing
 
 <programlisting>
 PGXC$ prepare config
@@ -765,17 +751,16 @@ PGXC$ prepare config my_config.conf
 </programlisting>
   </para>
   <para>
-   Then you can edit this file to configure you
-   <application>postgres-XL</application> cluster. 
-   This file is actually a bash script file defining many variables
-   to define the cluster configuration.
-   With template values and comments, it will be easy to understand
-   what they mean.
+   Then you can edit this file to configure your
+   <application>postgres-XL</application> cluster.  This file is actually a
+   bash script file defining many variables to define the cluster
+   configuration.  With template values and comments, it will be easy to
+   understand what they mean.
    </para>
    <para>
-   You can also generate a minimal configuration file, god enough to test
-<application>Postgres-XL</application> on the localhost by specifying
-<literal>minimal</literal>. For example:
+   You can also generate a minimal configuration file, good enough to test
+   <application>Postgres-XL</application> on the localhost by specifying
+   <literal>minimal</literal>. For example:
 <programlisting>
 PGXC$ prepare config minimal
 PGXC$ prepare config minimal my_minimal_config.conf
@@ -830,9 +815,8 @@ PGXC$ prepare config minimal my_minimal_config.conf
        You need full access to this directory.
       </para>
       <para>
-       This parameter was left here to make it compatible with
-       bash-version.
-       It is recommended to configure this parameter in
+       This parameter was left here to make it compatible with the
+       bash-version.  It is recommended to configure this parameter in
        initialization file.
       </para>
      </listitem>
@@ -842,15 +826,12 @@ PGXC$ prepare config minimal my_minimal_config.conf
      <term><option>pgxcInstallDir</option></term>
      <listitem>
       <para>
-         <application>Postgres-XL</application> should at least be
-        installed in the server you are running
-        <application>pgxc_ctl</application>.
-        This variable specifies this installation directory, as you
-        specify with <option>--prefix=</option> option of configure
-        command when you build it.
-        All the installation will be copied to the same directory at
-        each servers and you should give appropriate privilege to this
-        directory in advance.
+         <application>Postgres-XL</application> should at least be installed in
+         the server you are running <application>pgxc_ctl</application>.  This
+         variable specifies the installation directory, as you specify with the
+         <option>--prefix=</option> option to the configure script.  All of the
+         installation will be copied to the same directory at each servers and
+         you should give appropriate privilege to this directory in advance.
        </para>
       </listitem>
      </varlistentry>
@@ -888,9 +869,8 @@ PGXC$ prepare config minimal my_minimal_config.conf
         all the servers.
        </para>
        <para>
-        This parameter was left here to make it compatible with
-        bash-version.
-        It is recommended to configure this parameter in
+        This parameter was left here to make it compatible with the
+        bash-version.  It is recommended to configure this parameter in
         initialization file.
        </para>
       </listitem>
@@ -909,7 +889,7 @@ PGXC$ prepare config minimal my_minimal_config.conf
       <term><option>gtmName</option></term>
       <listitem>
        <para>
-        Node name of GTM master.
+        Node name of the GTM master.
        </para>
       </listitem>
      </varlistentry>
@@ -918,10 +898,9 @@ PGXC$ prepare config minimal my_minimal_config.conf
       <term><option>gtmExtraConfig</option></term>
       <listitem>
        <para>
-        If you'd like to add specific configuration to both GTM master
-        and slave, specify the file which contains such lines for
-        gtm.config file.
-        Otherwise, specify <literal>none</literal>.
+        If you'd like to add specific configuration parameters to both the GTM
+        master and slave, specify the file that contains such lines for the
+        gtm.config file.  Otherwise, specify <literal>none</literal>.
        </para>
       </listitem>
      </varlistentry>
@@ -957,10 +936,10 @@ PGXC$ prepare config minimal my_minimal_config.conf
       <term><option>gtmMasterSpecificExtraConfig</option></term>
       <listitem>
        <para>
-        If you'd like to add specific configuration only to GTM
-        master, specify the file which contains such lines for
-        <filename>gtm.config</filename> file.
-        Otherwise, specify <literal>none</literal>
+        If you'd like to add specific configuration parameters only to the GTM
+        master, specify the file which contains such lines for the
+        <filename>gtm.config</filename> file.  Otherwise, specify
+        <literal>none</literal>
        </para>
       </listitem>
      </varlistentry>
@@ -969,9 +948,8 @@ PGXC$ prepare config minimal my_minimal_config.conf
       <term><option>gtmSlave</option></term>
       <listitem>
        <para>
-        Option to enable GTM slave.
-        Specify <literal>y</literal> to enable, <literal>n</literal>
-        otherwise.
+        Option to enable a GTM slave.  Specify <literal>y</literal> to enable,
+        <literal>n</literal> otherwise.
        </para>
       </listitem>
      </varlistentry>
@@ -1007,7 +985,8 @@ PGXC$ prepare config minimal my_minimal_config.conf
       <term><option>gtmSlaveServer</option></term>
       <listitem>
        <para>
-        Host name where GTM slave runs.  Effective only when GTM slave is effective.
+        Host name of where the GTM slave runs.  Effective only when a GTM slave
+        is configured.
        </para>
       </listitem>
      </varlistentry>
@@ -1016,10 +995,10 @@ PGXC$ prepare config minimal my_minimal_config.conf
       <term><option>gtmSlaveSpecificExtraConfig</option></term>
       <listitem>
        <para>
-        If you'd like to add specific configuration only to GTM slave,
-        specify the file which contains such lines for
-        <filename>gtm.config</filename> file.
-        Otherwise, specify <literal>none</literal>.
+        If you'd like to add specific configuration parameters only to the GTM
+        slave, specify the file which contains such lines for the
+        <filename>gtm.config</filename> file.  Otherwise, specify
+        <literal>none</literal>.
        </para>
       </listitem>
      </varlistentry>
@@ -1038,12 +1017,11 @@ PGXC$ prepare config minimal my_minimal_config.conf
       <listitem>
        <para>
         This specifies if you configure any GTM proxy in your
-        <application>Postgres-XL</application> cluster.
-        Specify the value <literal>y</literal> if you configure gtm
-        proxy in your <application>Postgres-XL</application> cluster.
-        Otherwise specify <literal>n</literal>.
-        If you specify <literal>n</literal>, all the other parameters
-        for gtm_proxy will be ignored.
+        <application>Postgres-XL</application> cluster.  Specify the value
+        <literal>y</literal> if you configure the GTM proxy in your
+        <application>Postgres-XL</application> cluster.  Otherwise specify
+        <literal>n</literal>.  If you specify <literal>n</literal>, all the
+        other parameters for gtm_proxy will be ignored.
        </para>
       </listitem>
      </varlistentry>
@@ -1052,10 +1030,9 @@ PGXC$ prepare config minimal my_minimal_config.conf
       <term><option>gtmProxyDir</option></term>
       <listitem>
        <para>
-        This is a shortcut used to assign same work directory to all
-        the GTM proxies.
-        You don't have to worry about it when you specify these values
-        manually.
+        This is a shortcut used to assign the same work directory to all GTM
+        proxies.  You don't have to worry about it when you specify these
+        values manually.
        </para>
       </listitem>
      </varlistentry>
@@ -1073,10 +1050,10 @@ PGXC$ prepare config minimal my_minimal_config.conf
       <term><option>gtmPxyExtraConfig</option></term>
       <listitem>
        <para>
-        If you'd like to add configuration value to all the GTM proxy,
-        specify the file name which contains such lines for
-        <filename>gtm_proxy.conf</filename>.
-        Otherwise specify <literal>none</literal>.
+        If you'd like to add configuration values to all GTM proxies, specify
+        the file name which contains such lines for the
+        <filename>gtm_proxy.conf</filename>.  Otherwise specify
+        <literal>none</literal>.
        </para>
       </listitem>
      </varlistentry>
@@ -1087,8 +1064,8 @@ PGXC$ prepare config minimal my_minimal_config.conf
        <para>
         Specify unique name for each GTM proxy.
         This is an array.
-        In the template, we have four servers for coordinator and
-        datanode and we have four gtm proxy as well.
+        In the template, we have four servers for Coordinators and
+        Datanodes and we have four GTM Proxies as well.
        </para>
       </listitem>
      </varlistentry>
@@ -1137,8 +1114,8 @@ PGXC$ prepare config minimal my_minimal_config.conf
       <term><option>coordArchLogDir</option></term>
       <listitem>
        <para>
-        Shortcut to assign the same WAL archive directory to all the
-        coordinator slaves.
+        Shortcut to assign the same WAL archive directory to all
+        Coordinator slaves.
         Not needed if you specify these manually.
        </para>
       </listitem>
@@ -1148,10 +1125,10 @@ PGXC$ prepare config minimal my_minimal_config.conf
       <term><option>coordArchLogDirs</option></term>
       <listitem>
        <para>
-        Array of WAL archive log directory for each datanode slave.
-        If you don't configure coordinator slaves and specify
-        coordSlave variable value to <literal>n</literal>, you don't
-        have to worry about this variable.
+        Array of WAL archive log directory for each datanode slave.  If you
+        don't configure Coordinator slaves and specify a coordSlave variable
+        value to <literal>n</literal>, you don't have to worry about this
+        variable.
        </para>
       </listitem>
      </varlistentry>
@@ -1160,10 +1137,10 @@ PGXC$ prepare config minimal my_minimal_config.conf
       <term><option>coordExtraConfig</option></term>
       <listitem>
        <para>
-        If you would like to add extra configuration value for all the
+        If you would like to add extra configuration values for all
         coordinators, specify the file name containing such lines for
-        <filename>postgresql.conf</filename>.
-        Specify <literal>none</literal> otherwise.
+        <filename>postgresql.conf</filename>.  Specify <literal>none</literal>
+        otherwise.
        </para>
       </listitem>
      </varlistentry>
@@ -1172,10 +1149,9 @@ PGXC$ prepare config minimal my_minimal_config.conf
       <term><option>coordExtraPgHba</option></term>
       <listitem>
        <para>
-        File name which contains entries of
-        <filename>pg_hba.conf</filename> file for all the
-        coordinators.
-        Specify <literal>none</literal> if you do not have such file.
+        File name which contains entries for the
+        <filename>pg_hba.conf</filename> file for all coordinators.  Specify
+        <literal>none</literal> if you do not have such file.
        </para>
       </listitem>
      </varlistentry>
@@ -1184,8 +1160,7 @@ PGXC$ prepare config minimal my_minimal_config.conf
       <term><option>coordMasterDir</option></term>
       <listitem>
        <para>
-        Shortcut to assign the same work directory to all the
-        coordinator masters.
+        Shortcut to assign the same work directory to all coordinator masters.
         Not needed if you specify these manually.
        </para>
       </listitem>
@@ -1236,8 +1211,8 @@ PGXC$ prepare config minimal my_minimal_config.conf
       <term><option>coordNames</option></term>
       <listitem>
        <para>
-        Array to specify coordinator names.
-        Coordinator slave uses the same name as the master.
+        Array to specify Coordinator names.  A Coordinator slave uses the same
+        name as the master.
        </para>
       </listitem>
      </varlistentry>
@@ -1267,9 +1242,9 @@ PGXC$ prepare config minimal my_minimal_config.conf
       <term><option>poolerPorts</option></term>
       <listitem>
        <para>
-        Array of the port number for each pooler.  Pooler takes
-          care of the connection between coordinator and datanode and
-          needs separate port.
+        Array of the port number for each pooler.  The pooler takes care of the
+        connection between a Coordinator and Datanode and needs a separate
+        port.
        </para>
       </listitem>
      </varlistentry>
@@ -1278,11 +1253,9 @@ PGXC$ prepare config minimal my_minimal_config.conf
       <term><option>coordSlave</option></term>
       <listitem>
        <para>
-        Specify <literal>y</literal> if you configure coordinator
-        slave.
-        <literal>n</literal> otherwise.   If you specify
-        <literal>n</literal>, then all the other variables for
-        coordinator slave will be ignored.
+        Specify <literal>y</literal> if you configure a Coordinator slave.
+        <literal>n</literal> otherwise.   If you specify <literal>n</literal>,
+        then all the other variables for coordinator slave will be ignored.
        </para>
       </listitem>
      </varlistentry>
@@ -1291,9 +1264,8 @@ PGXC$ prepare config minimal my_minimal_config.conf
       <term><option>coordSlaveDir</option></term>
       <listitem>
        <para>
-        Shortcut to assign the same work directory to all the
-          coordinator slaves.  Not needed if you specify these
-          manually.
+        Shortcut to assign the same work directory to all the Coordinator
+        slaves.  Not needed if you specify these manually.
        </para>
       </listitem>
      </varlistentry>
@@ -1302,7 +1274,7 @@ PGXC$ prepare config minimal my_minimal_config.conf
       <term><option>coordSlaveDirs</option></term>
       <listitem>
        <para>
-        Array of work directory for each coordinator slaves.
+        Array of work directories for each Coordinator slaves.
        </para>
       </listitem>
      </varlistentry>
@@ -1311,9 +1283,9 @@ PGXC$ prepare config minimal my_minimal_config.conf
       <term><option>coordSlaveServers</option></term>
       <listitem>
        <para>
-        Array of the hostname where slave of each
-          coordinator runs.  Specify <literal>none</literal> if you don't configure the
-          slave for specific coordinator.
+        Array of the hostname where the slave of each Coordinator runs.
+        Specify <literal>none</literal> if you don't configure the slave for
+        specific coordinator.
        </para>
       </listitem>
      </varlistentry>
@@ -1331,9 +1303,9 @@ PGXC$ prepare config minimal my_minimal_config.conf
       <term><option>coordSlavePoolerPorts</option></term>
       <listitem>
        <para>
-        Array of the port number for each pooler.  Pooler takes
-          care of the connection between coordinator and datanode and
-          needs separate port.
+        Array of the port number for each pooler.  The pooler takes care of the
+        connection between a Coordinator and Datanode and needs a separate
+        port.
        </para>
       </listitem>
      </varlistentry>
@@ -1342,9 +1314,9 @@ PGXC$ prepare config minimal my_minimal_config.conf
       <term><option>coordSpecificExtraConfig</option></term>
       <listitem>
        <para>
-        Array of the filename which contains extra
-          configuration values for each coordinator.   Specify <literal>none</literal>
-          if you don't have such file.
+        Array of the filename which contains extra configuration values for
+        each coordinator.   Specify <literal>none</literal> if you don't have
+        such a file.
        </para>
       </listitem>
      </varlistentry>
@@ -1362,9 +1334,8 @@ PGXC$ prepare config minimal my_minimal_config.conf
       <term><option>datanodeArchLogDir</option></term>
       <listitem>
        <para>
-        Shortcut to assign the same WAL archive directory
-          to all the datanode slaves.  Not needed if you specify these
-          manually.
+        Shortcut to assign the same WAL archive directory to all the Datanode
+        slaves.  Not needed if you specify these manually.
        </para>
       </listitem>
      </varlistentry>
@@ -1373,8 +1344,7 @@ PGXC$ prepare config minimal my_minimal_config.conf
       <term><option>datanodeArchLogDirs</option></term>
       <listitem>
        <para>
-        Array of WAL archive log directory for each datanode
-          slave.
+        Array of WAL archive log directory for each Datanode slave.
        </para>
       </listitem>
      </varlistentry>
@@ -1383,9 +1353,9 @@ PGXC$ prepare config minimal my_minimal_config.conf
       <term><option>datanodeExtraConfig</option></term>
       <listitem>
        <para>
-        If you would like to add extra configuration value
-          for all the datanodes, specify the file name containing
-          such lines for postgresql.conf.  Specify <literal>none</literal> otherwise.
+        If you would like to add extra configuration values for all the
+        Datanodes, specify the file name containing such lines for
+        postgresql.conf.  Specify <literal>none</literal> otherwise.
        </para>
       </listitem>
      </varlistentry>
@@ -1394,9 +1364,8 @@ PGXC$ prepare config minimal my_minimal_config.conf
       <term><option>datanodeExtraPgHba</option></term>
       <listitem>
        <para>
-        File name which contains entries for all the
-          datanodes' pg_hba.conf file.  Specify <literal>none</literal> if you don't
-          have such file.
+        File name which contains entries for all the Datanodes' pg_hba.conf
+        file.  Specify <literal>none</literal> if you don't have such file.
        </para>
       </listitem>
      </varlistentry>
@@ -1405,9 +1374,8 @@ PGXC$ prepare config minimal my_minimal_config.conf
       <term><option>datanodeMasterDir</option></term>
       <listitem>
        <para>
-        Shortcut to assign the same work directory to all
-          the datanode masters.  Not needed if you specify these
-          manually.
+        Shortcut to assign the same work directory to all Datanode masters.
+        Not needed if you specify these manually.
        </para>
       </listitem>
      </varlistentry>
@@ -1416,7 +1384,7 @@ PGXC$ prepare config minimal my_minimal_config.conf
       <term><option>datanodeMasterDirs</option></term>
       <listitem>
        <para>
-        Array of datanode master work directory.
+        Array of Datanode masters' work directories.
        </para>
       </listitem>
      </varlistentry>
@@ -1425,8 +1393,8 @@ PGXC$ prepare config minimal my_minimal_config.conf
       <term><option>datanodeMaterServers</option></term>
       <listitem>
        <para>
-        Array of the host name where each datanode master runs.
-          Specify in the order of $coordNames above.
+        Array of the host name where each Datanode master runs.  Specify in the
+        order of $coordNames above.
        </para>
       </listitem>
      </varlistentry>
@@ -1435,9 +1403,8 @@ PGXC$ prepare config minimal my_minimal_config.conf
       <term><option>datanodeMaxWalSender</option></term>
       <listitem>
        <para>
-        shortcut to assign the same value to each member of
-          datanodeMaxWalSenders.  Not needed if you assign the value
-          manually.
+        Shortcut to assign the same value to each member of
+        datanodeMaxWalSenders.  Not needed if you assign the value manually.
        </para>
       </listitem>
      </varlistentry>
@@ -1446,7 +1413,7 @@ PGXC$ prepare config minimal my_minimal_config.conf
       <term><option>datanodeMaxWalSenders</option></term>
       <listitem>
        <para>
-        Array of datanode max_wal_senders value.
+        Array of Datanode max_wal_senders value.
        </para>
       </listitem>
      </varlistentry>
@@ -1455,7 +1422,7 @@ PGXC$ prepare config minimal my_minimal_config.conf
       <term><option>datanodeNames</option></term>
       <listitem>
        <para>
-        Array to specify coordinator names.
+        Array to specify Coordinator names.
        </para>
       </listitem>
      </varlistentry>
@@ -1475,7 +1442,7 @@ PGXC$ prepare config minimal my_minimal_config.conf
       <term><option>datanodePorts</option></term>
       <listitem>
        <para>
-        Array of the listening port number for each datanode.
+        Array of the listening port number for each Datanode.
        </para>
       </listitem>
      </varlistentry>
@@ -1484,9 +1451,9 @@ PGXC$ prepare config minimal my_minimal_config.conf
       <term><option>datanodePoolerPorts</option></term>
       <listitem>
        <para>
-        Array of the port number for each pooler.  Pooler takes
-          care of the connection between datanode and datanode and
-          needs separate port.
+        Array of the port number for each pooler.  Pooler takes care of the
+        connection between a Coordinator and Datanode and needs a separate
+        port.
        </para>
       </listitem>
      </varlistentry>
@@ -1495,9 +1462,9 @@ PGXC$ prepare config minimal my_minimal_config.conf
       <term><option>datanodeSlave</option></term>
       <listitem>
        <para>
-        Specify <literal>y</literal> if you configure datanode slaves.  <literal>n</literal>
-          otherwise.   If you specify <literal>n</literal>, all the other variables for
-          datanode slaves will be ignored.
+        Specify <literal>y</literal> if you configure Datanode slaves.
+        <literal>n</literal> otherwise.   If you specify <literal>n</literal>,
+        all the other variables for Datanode slaves will be ignored.
        </para>
       </listitem>
      </varlistentry>
@@ -1506,9 +1473,8 @@ PGXC$ prepare config minimal my_minimal_config.conf
       <term><option>datanodeSlaveDir</option></term>
       <listitem>
        <para>
-        Shortcut to assign the same work directory to all
-          the datanode slaves.  Not needed if you specify these
-          manually.
+        Shortcut to assign the same work directory to all Datanode slaves.  Not
+        needed if you specify these manually.
        </para>
       </listitem>
      </varlistentry>
@@ -1517,7 +1483,7 @@ PGXC$ prepare config minimal my_minimal_config.conf
       <term><option>datanodeSlaveDirs</option></term>
       <listitem>
        <para>
-        Array of work directory for each datanode slave.
+        Array of work directories for each Datanode slave.
        </para>
       </listitem>
      </varlistentry>
@@ -1526,9 +1492,9 @@ PGXC$ prepare config minimal my_minimal_config.conf
       <term><option>datanodeSlaveServers</option></term>
       <listitem>
        <para>
-        Array of the hostname where slave of each 
-          datanode runs.  Specify <literal>none</literal> if you don't configure the
-          slave for specific coordinator.
+        Array of the hostname where the slave of each Datanode runs.  Specify
+        <literal>none</literal> if you don't configure the slave for specific
+        coordinator.
        </para>
       </listitem>
      </varlistentry>
@@ -1546,9 +1512,9 @@ PGXC$ prepare config minimal my_minimal_config.conf
       <term><option>datanodeSlavePoolerPorts</option></term>
       <listitem>
        <para>
-        Array of the port number for each pooler.  Pooler takes
-          care of the connection between datanode and datanode and
-          needs separate port.
+        Array of the port number for each pooler.  The pooler takes care of the
+        connection between a Coordinator and Datanode and needs a separate
+        port.
        </para>
       </listitem>
      </varlistentry>
@@ -1557,9 +1523,9 @@ PGXC$ prepare config minimal my_minimal_config.conf
       <term><option>datanodeSpecificExtraConfig</option></term>
       <listitem>
        <para>
-        Array of the filename which contains extra
-          configuration values for each datanode.   Specify <literal>none</literal>
-          if you don't have such file.
+        Array of the filename that contains extra configuration values for each
+        Datanode.   Specify <literal>none</literal> if you don't have such
+        file.
        </para>
       </listitem>
      </varlistentry>
@@ -1568,9 +1534,9 @@ PGXC$ prepare config minimal my_minimal_config.conf
       <term><option>datanodeSpecificExtraPgHba</option></term>
       <listitem>
        <para>
-        Array of file names which contain specific
-          extra pg_hba.conf entry for each datanode.  Specify <literal>none</literal>
-          if you don't have such file.
+        Array of file names which contain specific extra pg_hba.conf entries
+        for each Datanode.  Specify <literal>none</literal> if you don't have
+        such file.
        </para>
       </listitem>
      </varlistentry>
@@ -1579,9 +1545,9 @@ PGXC$ prepare config minimal my_minimal_config.conf
       <term><option>primaryDataode</option></term>
       <listitem>
        <para>
-        Specify name of the primary node.  This must be one of
-          the name in $datanodeNames.  If you don't want the primary
-          node, specify <literal>N/A</literal> or <literal>none</literal>.
+        Specify name of the primary node.  This must be one of the names in
+        $datanodeNames.  If you don't want the primary node, specify
+        <literal>N/A</literal> or <literal>none</literal>.
        </para>
       </listitem>
      </varlistentry>
@@ -1618,18 +1584,18 @@ PGXC$ prepare config minimal my_minimal_config.conf
     <term><literal>add datanode slave <replaceable class="parameter">name</replaceable> <replaceable class="parameter">host</replaceable>  <replaceable class="parameter">port</replaceable> <replaceable class="parameter">pooler</replaceable> <replaceable class="parameter">dir</replaceable> <replaceable class="parameter">archDir</replaceable></literal></term>
     <listitem>
      <para>
-      Add the specified node to your Postgres-XL cluster.
-      Each node need host name and its work directory.  gtm slave,
-      gtm_proxy, coordinator master/slave and datanode master/slave need its own port
-      to listen to.  Coordinator and datanode also need pooler port to pool
-      connections to datanodes.  Coordinator and datanode slave need a
-      directory to receive WAL segments from their master. While adding coordinator
-      master and datanode master, extra server configuration and extra pg_hba
-      configuration can be specified in a file.
+      Add the specified node to your Postgres-XL cluster.  Each node needs a
+      host name and its work directory.  GTM slave, GTM proxy, Coordinator
+      master/slave and Datanode master/slave need its own port to listen to.
+      Coordinators and Datanodes also need a pooler port to pool connections to
+      Datanodes.  Coordinator and Datanode slaves need a directory to receive
+      WAL segments from their master. While adding a Coordinator master and a
+      Datanode master, extra server configuration and extra pg_hba
+      configuration parameters can be specified in a file.
      </para>
      <para>
-      When you add coordinator and datanode master, node information at
-      all the coordinators will be updated with the new one and gtm_proxy
+      When you add a Coordinator and Datanode master, node information at
+      all of the Coordinators will be updated with the new one and gtm_proxy
       will be selected automatically based upon where the new node runs.
      </para>
      <para>
@@ -1654,8 +1620,8 @@ PGXC$ prepare config minimal my_minimal_config.conf
     <listitem>
      <para>
       Invokes createuser utility to create a new user using specified
-      coordinator.   Of coordinator is not specified, <application>pgxc_ctl</application> chooses
-      one of the available ones.
+      coordinator.   If a Coordinator is not specified,
+      <application>pgxc_ctl</application> chooses one of the available ones.
      </para>
     </listitem>
    </varlistentry>
@@ -1664,12 +1630,12 @@ PGXC$ prepare config minimal my_minimal_config.conf
     <term><literal>deploy [ all | <replaceable class="parameter">host ...</replaceable> ]</literal></term>
     <listitem>
      <para>
-      Deploys Postgres-XL binaries and other installation material to
-      specified hosts.  If "all" is specified, they will be deployed to
-      all the hosts found in the configuration file.  If list of the host
-      is specifies, deployment will be done to all the specified hosts,
-      regardless if they are found in the configuration file or not.
-      Target directory is taken from the variable <option>pgxcInstallDir</option>.
+      Deploys Postgres-XL binaries and other installation material to specified
+      hosts.  If "all" is specified, they will be deployed to all hosts found
+      in the configuration file.  If a list of the hosts are specified,
+      deployment will be done to all the specified hosts, regardless if they
+      are found in the configuration file or not.  Target directory is taken
+      from the variable <option>pgxcInstallDir</option>.
      </para>
     </listitem>
    </varlistentry>
@@ -1697,12 +1663,11 @@ PGXC$ prepare config minimal my_minimal_config.conf
    Initializes specified nodes.
      </para>
      <para>
-   At initialization, all the working directories of each component
-   will be created if it does not exist.  If it does and
-<literal>force</literal> is specified, then all the
-   contents under the working directory will be removed. Without
-<literal>force</literal> option, existing non-empty directories will not be
-cleaned and the server will start with the existing data.
+   At initialization, all the working directories of each component will be
+   created if it does not exist.  If it does and <literal>force</literal> is
+   specified, then all contents under the working directory will be removed.
+   Without <literal>force</literal> option, existing non-empty directories will
+   not be cleaned and the server will start with the existing data.
      </para>
      <para>
    When "all" option is specified, then node information at each
@@ -1722,8 +1687,8 @@ cleaned and the server will start with the existing data.
     <term><literal>kill datanode [ master | slave ] [ all | <replaceable class="parameter">nodename ...</replaceable> ]</literal></term>
     <listitem>
      <para>
-   Kills specified node.   If nodename is specified and it has both
-   master and slave, then both master and slave will be chosen.
+      Kills specified node.   If nodename is specified and it has both a master
+      and slave, then both master and slave will be chosen.
      </para>
      <para>
    When killing components, their ports will be cleaned too.
@@ -1736,10 +1701,9 @@ cleaned and the server will start with the existing data.
     <term><literal>log [ message | msg ] <replaceable class="parameter">message_body</replaceable></literal></term>
     <listitem>
      <para>
-   Prints the specified contents to the log file.
-   variable or var option writes specified variable name and its
-   value.
-   message or msg option writes specified message.
+      Prints the specified contents to the log file.  Variable or var option
+      writes specified variable name and its value.  Message or msg option
+      writes specified message.
      </para>
     </listitem>
    </varlistentry>
@@ -1764,11 +1728,12 @@ cleaned and the server will start with the existing data.
     <term><literal>prepare [ <replaceable class="parameter">path</replaceable> ]</literal></term>
     <listitem>
      <para>
-   Write pgxc_ctl configuration file template to the specified file.
-   If path option is not specified, target file will be default
-   configuration file, or the file specified by configFile option in
-   <filename>/etc/pgxc_ctl</filename> or <filename>~/.pgxc_ctl</filename>.   If you specify relative path, it
-   will be against <filename>pgxc_ctl_home</filename>.
+      Write pgxc_ctl configuration file template to the specified file.  If
+      path option is not specified, target file will be the default
+      configuration file, or the file specified by configFile option in
+      <filename>/etc/pgxc_ctl</filename> or <filename>~/.pgxc_ctl</filename>.
+      If you specify relative path, it will be against
+      <filename>pgxc_ctl_home</filename>.
      </para>
     </listitem>
    </varlistentry>
@@ -1778,9 +1743,9 @@ cleaned and the server will start with the existing data.
     <term><literal></literal></term>
     <listitem>
      <para>
-   Invokes psql targetted to specified coordinator.   If no
-   coordinator is specifies, <application>pgxc_ctl</application> will choose one of the available
-   ones.
+      Invokes psql targetted to the specified Coordinator.   If no Coordinator
+      is specified, <application>pgxc_ctl</application> will choose one of the
+      available ones.
      </para>
     </listitem>
    </varlistentry>
@@ -1798,8 +1763,8 @@ cleaned and the server will start with the existing data.
     <term><literal>reconnect gtm_proxy [ all | <replaceable class="parameter">nodename ...</replaceable> ]</literal></term>
     <listitem>
      <para>
-   Reconnects specified gtm_proxy to new gtm.   This is needed after
-   you failover gtm to its slave.
+      Reconnects specified gtm_proxy to a new GTM.   This is needed after you
+      failover a GTM to its slave.
      </para>
     </listitem>
    </varlistentry>
@@ -1823,7 +1788,7 @@ cleaned and the server will start with the existing data.
      <para>
    Set variable value.  You can specify multiple values to a
    variable.   In this case simply specify these values as separated
-   value.
+   values.
      </para>
     </listitem>
    </varlistentry>
@@ -1863,16 +1828,16 @@ cleaned and the server will start with the existing data.
     <term><literal>stop [ -m smart | fast | immediate ] datanode [ master | slave ] [ all | <replaceable class="parameter">nodename ...</replaceable> ]  </literal></term>
     <listitem>
      <para>
-      Stops specified node.  For datanode and coordinator, you can
-      specify stop mode as in "pg_ctl stop" command.
+      Stops specified node.  For Datanode and Coordinator, you can
+      specify stop as in the "pg_ctl stop" command.
      </para>
      <para>
-      When you stop coordinator or datanode slave, the master will be
+      When you stop a Coordinator or Datanode slave, the master will be
       reconfigured to remove synchronous replication.
      </para>
      <para>
-   When you stop coordinator or datanode slave, the master will be
-   reconfigurated to remove synchronous replication.
+      When you stop Coordinator or Datanode slave, the master will be
+      reconfigurated to remove synchronous replication.
      </para>
     </listitem>
    </varlistentry>
@@ -1881,9 +1846,8 @@ cleaned and the server will start with the existing data.
     <term><literal>unregister <replaceable class="parameter">unregister_option ...</replaceable></literal></term>
     <listitem>
      <para>
-   Unregisteres specified node from the gtm.  This could be needed
-   when some node crashes and would like to start new one.
-   
+      Unregisteres specified node from the GTM.  This could be needed when
+      starting a new node after a node crashes.
      </para>
      <para>
    unregister_option is one of the following:

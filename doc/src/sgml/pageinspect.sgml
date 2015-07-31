@@ -14,9 +14,9 @@
  </para>
 
  <para>
-  Functions of this module returns information about connecting
-  Coordinators locally.  To get information of a Datanode, you can
-  use EXECUTE DIRECT from a Coordinator. 
+  Functions of this module returns information about connecting Coordinators
+  locally.  To get information from a specific a Datanode, you can use EXECUTE
+  DIRECT from a Coordinator. 
  </para>
 
  <sect2>
