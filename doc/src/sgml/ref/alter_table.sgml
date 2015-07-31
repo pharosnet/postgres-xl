@@ -705,9 +705,9 @@ ALTER TABLE ALL IN TABLESPACE <replaceable class="PARAMETER">name</replaceable> 
        <term><literal>ROUNDROBIN</literal></term>
        <listitem>
         <para>
-         Each row of the table will be placed in one of the Datanodes
-         by round-robin manner.  The value of the row will not be
-         needed to determine what Datanode to go.
+         Each row of the table will be placed in one of the Datanodes in a
+         round-robin manner.  The value of the row will not be needed to
+         determine what Datanode to go.
         </para>
        </listitem>
       </varlistentry>
@@ -776,9 +776,9 @@ ALTER TABLE ALL IN TABLESPACE <replaceable class="PARAMETER">name</replaceable> 
      <term><literal>DELETE NODE</literal></term>
        <listitem>
         <para>
-         This deletes a list of nodes where data of table is distributed
-         to the existing list. If the list of nodes deleted contains nodes
-         not used by table, an error is returned.
+         This deletes a list of nodes where the data of a table is distributed
+         to the existing list. If the list of nodes deleted contains nodes not
+         used by table, an error is returned.
         </para>
        </listitem>
    </varlistentry>
@@ -1164,14 +1164,16 @@ ALTER TABLE ALL IN TABLESPACE <replaceable class="PARAMETER">name</replaceable> 
       <term>Default redistribution:</term>
       <listitem>
        <para>
-        This is the slowest scenario possible. It is done in 3 or 4 steps. Data is firstly
-        saved on Coordinator by fetching all the data with <command>COPY TO</> command. At
-        this point all the tuples are saved using tuple store. The amount of cache allowed for
-        tuple store operation can be controlled with <varname>work_mem</>. Then the table is
-        truncated on all the nodes. Then catalogs are updated. Finally data inside tuple store
-        is redistributed using an internal <command>COPY FROM</> mechanism. <command>REINDEX</>
-        is issued if necessary. The overall performance of this scenario is close to the
-        time necessary to run consecutively <command>COPY TO</> and <command>COPY FROM</>.
+        This is the slowest scenario possible. It is done in 3 or 4 steps. Data
+        is firstly saved on Coordinator by fetching all the data with
+        <command>COPY TO</> command. At this point all the tuples are saved
+        using a tuple store. The amount of cache allowed for tuple store
+        operation can be controlled with <varname>work_mem</>. Then the table
+        is truncated on all the nodes. Then catalogs are updated. Finally data
+        inside the tuple store is redistributed using an internal <command>COPY
+        FROM</> mechanism. <command>REINDEX</> is issued if necessary. The
+        overall performance of this scenario is close to the time necessary to
+        run consecutively <command>COPY TO</> and <command>COPY FROM</>.
        </para>
       </listitem>
      </varlistentry>
@@ -1181,10 +1183,11 @@ ALTER TABLE ALL IN TABLESPACE <replaceable class="PARAMETER">name</replaceable> 
       <listitem>
        <para>
         The node list of a table can have new nodes as well as removed nodes.
-        If nodes are only removed, <command>TRUNCATE</> is launched to remote nodes that are
-        removed. If new nodes are added, then table data is fetch on Coordinator with <command>
-        COPY TO</> and stored inside a tuplestore controlled with <varname>work_mem</>, then
-        data stored is only sent to the new nodes using <command>COPY FROM</> with data stored
+        If nodes are only removed, <command>TRUNCATE</> is launched to remote
+        nodes that are removed. If new nodes are added, then table data is
+        fetched on the Coordinator with <command> COPY TO</> and stored inside
+        a tuple store controlled with <varname>work_mem</>, then data stored is
+        only sent to the new nodes using <command>COPY FROM</> with data stored
         inside the tuplestore. <command>REINDEX</> is issued if necessary.
        </para>
       </listitem>
@@ -1194,14 +1197,17 @@ ALTER TABLE ALL IN TABLESPACE <replaceable class="PARAMETER">name</replaceable> 
       <term>Redistribution from replicated to distributed table:</term>
       <listitem>
        <para>
-        If the relation node list contains new nodes, the default redistribution
-        mechanism is used. However, if the node list of relation after redistribution is
-        included in node list of relation after redistribution, as all the tuples are already
-        located on remote nodes, it is not necessary to fetch any data on Coordinator. Hence,
-        <command>DELETE</> is used to remove on remote nodes only the necessary tuples. This
-        query uses selects tuples to remove with conditions based on the number of nodes in node
-        list of relation after redistribution, the <literal>HASH</> or <literal>MODULO</> value
-        used for new distribution and the remote node itself where <command>DELETE</> is launched..
+        If the relation node list contains new nodes, the default
+        redistribution mechanism is used. However, if the node list of relation
+        after redistribution is included in node list of relation after
+        redistribution, as all the tuples are already located on remote nodes,
+        it is not necessary to fetch any data on Coordinator. Hence,
+        <command>DELETE</> is used to remove on remote nodes only the necessary
+        tuples. This query selects tuples to remove with conditions based on
+        the number of nodes in the node list of relations after redistribution,
+        the <literal>HASH</> or <literal>MODULO</> value used for new
+        distribution and the remote node itself where <command>DELETE</> is
+        launched..
         <command>REINDEX</> is issued if necessary.
        </para>
       </listitem>

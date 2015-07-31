@@ -18,12 +18,12 @@
   </para>
 
   <para>
-   <productname>Postgres-XL</> inherited concurrency control
-   from <productname>PostgreSQL</> and extended it globally to all of the
-   Coordinators and Datanodes involved.  Regardless of what
-   Coordinator is connected to, all of the transactions
-   in the <productname>Postgres-XL</> database cluster behaves in
-   a consistent way as if they are running in single database.
+   <productname>Postgres-XL</> inherited concurrency control from
+   <productname>PostgreSQL</> and extended it globally to all of the
+   Coordinators and Datanodes involved.  Regardless of which Coordinator is
+   connected to, all of the transactions in the <productname>Postgres-XL</>
+   database cluster behaves in a consistent way as if they are running in
+   single database.
   </para>
 
   <sect1 id="mvcc-intro">
@@ -1507,10 +1507,10 @@ UPDATE accounts SET balance = balance - 100.00 WHERE acctnum = 22222;
     </para>
 
     <para>
-     Please note that <productname>Postgres-XL</>'s advisory lock is
-     local to each Coordinator or Datanode.  If you wish to acquire
-     advisory locks on different Coordinator, you should do it manually
-     using <type>EXECUTE DIRECT</> statement.
+     Please note that <productname>Postgres-XL</>'s advisory locks are local to
+     each Coordinator or Datanode.  If you wish to acquire an advisory lock on
+     a different Coordinator, you should do it manually using <type>EXECUTE
+     DIRECT</> statement.
     </para>
 
     <para>
@@ -1783,14 +1783,13 @@ SELECT pg_advisory_lock(q.id) FROM
    </para>
 
    <para>
-    In conventional replication clusters, you can run read
-    transactions concurrently in multiple standby, or slave
-    servers. Replication servers provide read scalability. However,
-    you cannot issue write transactions to standby servers because
-    they don't have means to propagate changes safely. They cannot
-    maintain consistent view of database to applications for write
-    operations, unless you issue write transactions to single master
-    server.
+    In conventional replication clusters, you can run read transactions
+    concurrently in multiple standby, or slave servers. Replication servers
+    provide read scalability. However, you cannot issue write transactions to
+    standby servers because they don't have the means to propagate changes
+    safely. They cannot maintain a consistent view of the database to
+    applications for write operations, unless you issue write transactions to a
+    single master server.
    </para>
 
    <para>
@@ -1805,30 +1804,27 @@ SELECT pg_advisory_lock(q.id) FROM
    </para>
 
    <para>
-    In <productname>Postgres-XL</productname>, any Coordinator can
-    accept any transaction, regardless whether it is read only or
-    read/write.  Transaction integrity is enforced by GTM (Global
-    Transaction Manager).  Because we have multiple Coordinators, each
-    of them can handle incoming transactions and statements in
-    parallel.
+    In <productname>Postgres-XL</productname>, any Coordinator can accept any
+    transaction, regardless whether it is read only or read/write.  Transaction
+    integrity is enforced by the GTM (Global Transaction Manager).  Because we
+    have multiple Coordinators, each of them can handle incoming transactions
+    and statements in parallel.
    </para>
 
    <para>
-    Analyzed statements are converted into internal plans, which
-    include SQL statements targeted to Datanodes.  Plans are sent on to
-    each target Datanode, handled, and the result is sent back to
-    the originating Coordinator where all the results from target
-    Datanodes will be combined into the result to be sent back to the
-    application.
+    Analyzed statements are converted into internal plans, which include SQL
+    statements targeted to Datanodes.  Plans are sent on to each target
+    Datanode, executed, and the result is sent back to the originating
+    Coordinator where all the results from target Datanodes will be combined
+    into the results to be sent back to the application.
    </para>
 
    <para>
-    Each table can be distributed or replicated as described
-    in <xref linkend="intro-whatis">.  If you design each table's
-    distribution carefully, most of the statements may end up targeting
-    just one Datanode, which is most effecient.  In this way, Coordinators and Datanodes
-    runs transactions in parallel which scales out both read and write
-    operations.
+    Each table can be distributed or replicated as described in <xref
+    linkend="intro-whatis">.  If you design each table's distribution
+    carefully, most of the statements may end up targeting just one Datanode,
+    which is most effecient.  In this way, Coordinators and Datanodes runs
+    transactions in parallel which scales out both read and write operations.
    </para>
 
    <para>

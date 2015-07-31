@@ -17,14 +17,16 @@ pgxc_clean <optional> <replaceable>option</> </optional> <optional><replaceable>
     </para>
 
     <para>
-     <application>pgxc_clean</application> is a Postgres-XL utility to maintain transaction status after a crash.
-     When a Postgres-XL node crashes and recovers or fails over, the commit status of such node may be inconsistent
-     with other nodes.   <application>pgxc_clean</application> checks transaction commit status and corrects them.
+     <application>pgxc_clean</application> is a Postgres-XL utility to maintain
+     transaction status after a crash.  When a Postgres-XL node crashes and
+     recovers or fails over, the commit status of the node may be inconsistent
+     with other nodes.   <application>pgxc_clean</application> checks
+     transaction commit status and corrects them.
     </para>
 
     <para>
-     You should run this utility against one of the available Coordinators. The tool cleans up transaction status
-     of all the nodes automatically.
+     You should run this utility against one of the available Coordinators. The
+     tool cleans up transaction status of all nodes automatically.
     </para>
  </sect2>
 

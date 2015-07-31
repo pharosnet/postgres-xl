@@ -8,8 +8,8 @@
 
    <para>
     Large objects are not supported by <productname>Postgres-XL</>.
-    <productname>Postgres-XL</> does not provide consistent means
-    to handle the large object as OID is inconsistent among cluster nodes.
+    <productname>Postgres-XL</> does not provide a consistent way to handle the
+    large object as OIDs are inconsistent among cluster nodes.
    </para>
 
    <para>

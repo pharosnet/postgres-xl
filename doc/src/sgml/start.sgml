@@ -122,10 +122,10 @@
    </para>
 
    <para>
-    The GTM could be single point of failure (SPOF).  To prevent this, you
-    can run another GTM as GTM-Standby to backup GTM's status.  When
-    GTM fails, GTM-Proxy can switch to the standby on the fly.  This
-    will be described in detail in high-availability sections.
+    The GTM could be single point of failure (SPOF).  To prevent this, you can
+    run another GTM as a GTM-Standby to backup GTM's status.  When GTM fails,
+    GTM-Proxy can switch to the standby on the fly.  This will be described in
+    detail in high-availability sections.
    </para>
 
    <para>

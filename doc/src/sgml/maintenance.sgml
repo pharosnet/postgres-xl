@@ -72,8 +72,8 @@
   </indexterm>
 
   <para>
-   Please note that this section describes the task of individual
-   Coordinator and Datanode.  It should be done for each of them.
+   Please note that this section describes the tasks of individual Coordinators
+   and Datanodes.  It should be done for each of them.
   </para>
 
   <para>
@@ -96,8 +96,8 @@
    <title>Vacuuming Basics</title>
 
   <para>
-   Please note that this section describes the task of individual
-   Coordinator and Datanode.  It should be done for each of them.
+   Please note that this section describes the tasks of individual Coordinators
+   and Datanodes.  It should be done for each of them.
   </para>
 
    <para>
@@ -166,8 +166,8 @@
    </indexterm>
 
    <para>
-    Please note that this section describes the task of individual
-    Coordinator and Datanode.  It should be done for each of them.
+    Please note that this section describes the tasks of individual
+    Coordinators and Datanodes.  It should be done for each of them.
    </para>
 
    <para>
@@ -285,8 +285,8 @@
    </indexterm>
 
    <para>
-    Please note that this section describes the task of individual
-    Coordinator and Datanode.  It should be done for each of them.
+    Please note that this section describes the tasks of individual
+    Coordinators and Datanodes.  It should be done for each of them.
    </para>
 
    <para>
@@ -411,8 +411,8 @@
     </indexterm>
 
    <para>
-    Please note that this section describes the task of individual
-    Coordinator and Datanode.  It should be done for each of them.
+    Please note that this section describes the tasks of individual
+    Coordinators and Datanodes.  It should be done for each of them.
    </para>
 
    <para>
@@ -433,8 +433,8 @@
 
    <para>
     Please note that <productname>Postgres-XL</>'s transaction is
-    called global transaction ID (<acronym>GXID</>) and is supplied by
-    global transaction manager (<acronym>GTM</>).
+    called Global Transaction ID (<acronym>GXID</>) and is supplied by the
+    Global Transaction Manager (<acronym>GTM</>).
    </para>
 
    <para>
@@ -713,8 +713,8 @@ HINT:  Stop the postmaster and vacuum that database in single-user mode.
    </indexterm>
    
    <para>
-    Please note that this section describes the task of individual
-    Coordinator and Datanode.  It should be done for each of them.
+    Please note that this section describes the tasks of individual
+    Coordinators and Datanodes.  It should be done for each of them.
    </para>
    
    <para>

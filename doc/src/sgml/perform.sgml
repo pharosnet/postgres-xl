@@ -1097,14 +1097,13 @@ SELECT * FROM a, b, c WHERE a.id = b.id AND b.ref = c.id;
   </para>
 
   <para>
-   <productname>Postgres-XL</> stores table data in a distributed or
-   replicated fashion.  To leverage this, the planner tries to find
-   the best way to use as much of Datanode power as possible.  If the
-   equi-join is done by distribution columns and they share the
-   distribution method (hash/modulo), the Coordinator can tell
-   the Datanode to perform join.  
-   If not, it may tell Datanodes to ship rows to other Datanodes
-   and expect rows from other Datanodes to be shipped to it.
+   <productname>Postgres-XL</> stores table data in a distributed or replicated
+   fashion.  To leverage this, the planner tries to find the best way to use as
+   much of a Datanode's power as possible.  If the equi-join is done by
+   distribution columns and they share the distribution method (hash/modulo),
+   the Coordinator can tell the Datanode to perform a join.  If not, it may
+   tell the Datanodes to ship rows to other Datanodes and expect rows from
+   other Datanodes to be shipped to it.
   </para>
 
   <para>
@@ -1384,8 +1383,8 @@ SELECT * FROM x, y, a, b, c WHERE something AND somethingelse;
    </para>
 
    <para>
-    In <productname>Postgres-XL</>, only the distribution column can have foreign key
-    constraint.
+    In <productname>Postgres-XL</>, only the distribution column can have a
+    foreign key constraint.
    </para>
   </sect2>
 

@@ -1532,24 +1532,25 @@ PostgreSQL, contrib and HTML documentation successfully made. Ready to install.
    <title>Installing the Files</title>
 
    <para>
-    Before learning how to install <productname>Postgres-XL</>, you should determine
-    what you are going to install on each server.  The following lists
-    <productname>Postgres-XL</> components you've built and you're going to install.
+    Before learning how to install <productname>Postgres-XL</>, you should
+    determine what you are going to install on each server.  The following
+    lists the <productname>Postgres-XL</> components that you've built are
+    going to install.
 
     <variablelist>
      <varlistentry>
       <term><envar>GTM</envar></term>
       <listitem>
        <para>
-        GTM stands for Global Transaction Manager.  It provides global transaction ID
-        and snapshot to each transaction in <productname>Postgres-XL</> database cluster.
-        It also provide several global value such as sequence and global timestamp.
+        GTM stands for Global Transaction Manager.  It provides global
+        transaction IDs and snapshots to each transaction in the
+        <productname>Postgres-XL</> database cluster.  It also provides several
+        global values such as sequences and global timestamps.
        </para>
        <para>
-        GTM itself can be configured as a backup of other GTM as
-        GTM-Standby so that GTM can continue to run even if main GTM
-        fails.  You may want to install GTM-Standby to separate
-        server.
+        GTM itself can be configured as a backup of another GTM as a
+        GTM-Standby so that the GTM can continue to run even if the main GTM
+        fails.  You may want to install a GTM-Standby to a separate server.
        </para>
       </listitem>
      </varlistentry>
@@ -1558,12 +1559,12 @@ PostgreSQL, contrib and HTML documentation successfully made. Ready to install.
       <term><envar>GTM-Proxy</envar></term>
       <listitem>
       <para>
-       Because GTM has to take care of each transaction, it has to
-       read and write enormous amount of messages which may
-       restrict <productname>Postgres-XL</> scalability.  GTM-Proxy is
-       a proxy of GTM feature which groups requests and response to
+       Because the GTM has to take care of each transaction, it has to
+       read and write enormous amounts of messages, which may
+       restrict <productname>Postgres-XL</>'s scalability.  GTM-Proxy is
+       a proxy of the GTM feature that groups requests and responses to
        reduce network read/write by GTM.  Distributing one snapshot to
-       multiple transactions also contributes to reduce GTM network
+       multiple transactions also contributes to reduce the GTM network
        workload.
       </para>
       </listitem>
@@ -1573,16 +1574,17 @@ PostgreSQL, contrib and HTML documentation successfully made. Ready to install.
       <term><envar>Coordinator</envar></term>
       <listitem>
        <para>
-        The Coordinator is an entry point to <productname>Postgres-XL</> from applications.
-        You can run more than one Coordinator simultaneously in the cluster.   Each Coordinator behaves
-        just as a <productname>PostgreSQL</> database server, while all the Coordinators
-        handles transactions in harmonized way so that any transaction coming into one
-        Coordinator is protected against any other transactions coming into others.
-        Updates by a transaction is visible immediately to others running in other
-        Coordinators.
-        To simplify the load balance of Coordinators and Datanodes, as mentioned
-        below, it is highly advised to install same number of Coordinator and Datanode
-        in a server.
+        The Coordinator is an entry point to <productname>Postgres-XL</> from
+        applications.  You can run more than one Coordinator simultaneously in
+        the cluster.   Each Coordinator behaves just as a
+        <productname>PostgreSQL</> database server, while all the Coordinators
+        handles transactions in harmonized way so that any transaction coming
+        into one Coordinator is protected against any other transactions coming
+        into others.  Updates by a transaction is visible immediately to others
+        running in other Coordinators.  To simplify the load balancing of
+        Coordinators and Datanodes, as mentioned below, it is highly
+        recommended to install same number of Coordinator and Datanode in a
+        server.
        </para>
       </listitem>
      </varlistentry>
@@ -1593,14 +1595,15 @@ PostgreSQL, contrib and HTML documentation successfully made. Ready to install.
         Datanode 
        </para>
        <para>
-        The Coordinator and Datanode shares the same binary but their behavior is a little
-        different.  The Coordinator decomposes incoming statements into those handled by
-        Datanodes.  If necessary, the Coordinator materializes response from Datanodes
-        to calculate final response to applications.
+        A Coordinator and Datanode share the same binaries but their behavior
+        is a little different.  The Coordinator decomposes incoming statements
+        into those handled by Datanodes.  If necessary, the Coordinator
+        materializes responses from Datanodes to calculate final response to
+        applications.
        </para>
        <para>
-        The Datanode is very close to PostgreSQL itself because it just handles incoming
-        statements locally.
+        The Datanode is very close to PostgreSQL itself because it just handles
+        incoming statements locally.
        </para>
       </listitem>
      </varlistentry>
@@ -1868,12 +1871,11 @@ export MANPATH
    </para>
 
    <para>
-    When, as typical case, you're configuring both Coordinator and
-    Datanode in a same server, please be careful not to assign same
-    resource, such as listening point (IP address and port number) to
-    different component.  If you apply single set of environment
-    described here to different components, they will conflict
-    and <productname>Postgres-XL</> will not run correctly.
+    When, as typical case, you're configuring both a Coordinator and Datanode
+    in a same server, please be careful not to assign the same resource, such
+    as listening point (IP address and port number) to the different
+    components.  Otherwise they will conflict and <productname>Postgres-XL</>
+    will not run correctly.
    </para>
   </sect2>
  </sect1>
@@ -1906,59 +1908,50 @@ export MANPATH
 
    <step>
     <para>
-     If you follow the previous steps, you will have files ready to
-     distribute to servers where you want to run one or
-     more <productname>Postgres-XL</> components.   
+     If you follow the previous steps, you will have files ready to distribute
+     to servers where you want to run one or more <productname>Postgres-XL</>
+     components.   
     </para>
     <para> 
-     After you've installed your build locally, build target
-     will include the following directories.
+     After you've installed your build locally, the build target will include
+     the following directories.
 
 <screen>
 bin/  include/  lib/  share/
 </screen>
 
-     <filename>bin</> directory contains executable binaries and
-     scripts.  <filename>include</> contains header files needed to
-     build <productname>Postgres-XL</> applications.  <filename>lib</>
-     contains shared libraries needed to run binaries, as well as
-     static libraries which should be included into your application
-     binaries.  Finally, <productname>share</> contains miscellaneous
-     files <productname>Postgres-XL</> should read at runtime, as well
-     as sample files.
-
+     The <filename>bin</> directory contains executable binaries and scripts.
+     The <filename>include</> directory contains header files needed to build
+     <productname>Postgres-XL</> applications.  The <filename>lib</> directory
+     contains shared libraries needed to run binaries, as well as static
+     libraries that should be included into your application binaries.
+     Finally, the <productname>share</> directory contains miscellaneous files
+     that <productname>Postgres-XL</> should read at runtime, as well as sample
+     files.
     </para>
-
     <para>
-
-     If your servers has sufficient file space, you can copy all the
-     files to the target server.  Total size is less than 30mega
-     bytes.  If you want to install minimum files to each servers,
-     please follow the following paragraphs.
-
+     If your servers has sufficient file space, you can copy all the files to
+     the target server.  Total size is less than 30 megabytes.  If you want to
+     install minimal files to each servers, please follow the following
+     paragraphs.
     </para>
-
     <para>
-     For the server to run GTM or GTM-Standby, you need to copy the
-     following files to your path: <filename>bin/gtm</> and <filename>bin/gtm_ctl</>.
+     For the server to run a GTM or a GTM-Standby, you need to copy the
+     following files to your path: <filename>bin/gtm</> and
+     <filename>bin/gtm_ctl</>.
     </para>
-
     <para>
-     For the server to run GTM-Proxy (the server you run Coordinator and/or Datanode),
-     you need to copy the following files to your path: <filename>bin/gtm_proxy</filename>
-     and <filename>bin/gtm_ctl</>.
+     For a server to run a GTM-Proxy (the server you run a Coordinator and/or
+     a Datanode), you need to copy the following files to your path:
+     <filename>bin/gtm_proxy</filename> and <filename>bin/gtm_ctl</>.
     </para>
-
     <para>
-     For server to run Coordinator or Datanode, or both, you should
-     copy the following files to your
-     path: <filename>bin/initdb</>.
-     You should also copy everything in <filename>path</> directory to
-     your library search path.
+     For a server to run a Coordinator or a Datanode, or both, you should copy
+     the following files to your path: <filename>bin/initdb</>.  You should
+     also copy everything in the <filename>path</> directory to your library
+     search path.
     </para>
-
    </step>
-
    <step>
     <para>
      Create a database installation with the <command>initdb</>
@@ -1983,9 +1976,8 @@ postgres$ <userinput>/usr/local/pgsql/bin/initdb -D /usr/local/pgsql/data</>
     </para>
 
     <para>
-     If you're configuring both Datanodes and Coordinators on the same
-     server, you should specify different <option>-D</> values for
-     each of them.
+     If you're configuring both Datanodes and Coordinators on the same server,
+     you should specify different <option>-D</> values for each of them.
     </para>
    </step>
 
@@ -2000,35 +1992,33 @@ postgres$ <userinput>/usr/local/pgsql/bin/initdb -D /usr/local/pgsql/data</>
 
    <step>
     <para>
-    You should configure GTM and GTM-Proxy, as well as
-    GTM-Standby if you need high-availability capability for GTM
-    before you really run <productname>Postgres-XL</> database
-    cluster.  You can do the following before you
-    run <command>initdb</>.
+     You should configure a GTM and a GTM-Proxy, as well as a GTM-Standby if
+     you need high-availability capability for the GTM before you really run a
+     <productname>Postgres-XL</> database cluster.  You can do the following
+     before you run <command>initdb</>.
     </para>
     <para>
-     Each of GTM, GTM-Proxy and GTM need their own working directories.
-     Create them as <productname>Postgres-XL</> owner user.  Please
-     assign a port number to each of them, although you don't have to do
-     any configuration work now.
+     Each GTM, GTM-Proxy and GTM-Standby need their own working directories.
+     Create them as the <productname>Postgres-XL</> owner's user.  Please
+     assign a port number to each of them, although you don't have to do any
+     configuration work now.
     </para>
    </step>
 
    <step>
     <para>
-    Now you should configure each Coordinator and Datanode.  Because
-    they have to communicate each other and number of servers,
-    Datanodes and Coordinators depend upon configurations, we do not
-    provide default configuration files for them.
+     Now you should configure each Coordinator and Datanode.  Because they have
+     to communicate each other and a number of other servers, Datanodes and
+     Coordinators need to be configured correctly, we do not provide default
+     configuration files for them.
     </para>
     <para>
-     You can configure Datanodes and Coordinators by
-     editing the <filename>postgresql.conf</> file located under the
-     directory you specified with <option>-D</> option
-     of <command>initdb</>.   The following paragraphs describe what
-     parameter to edit at for Coordinators.   You can specify
-     any other <filename>postgresql.conf</> parameters as
-     standalone <productname>PostgreSQL</>.
+     You can configure Datanodes and Coordinators by editing the
+     <filename>postgresql.conf</> file located under the directory you
+     specified with <option>-D</> option of <command>initdb</>.   The following
+     paragraphs describe what parameter to edit for Coordinators.   You can
+     specify any other <filename>postgresql.conf</> parameters as standalone
+     <productname>PostgreSQL</>.
     </para>
 
     <variablelist>
@@ -2036,13 +2026,13 @@ postgres$ <userinput>/usr/local/pgsql/bin/initdb -D /usr/local/pgsql/data</>
      <term><envar>max_prepared_transactions</envar></term>
      <listitem>
       <para>
-       <option>max_prepared_transactions</> specifies maximum number
-       of two-phase commit transactions.   Even if you don't use
-       explicit two phase commit operation, the Coordinator may issue
-       two-phase commit operation implicitly if a transaction is
-       involved with multiple Datanodes and/or Coordinators. You should
-       specify <option>max_prepared_transactions</> value at 
-       least the number of <option>max_connection</>.
+       <option>max_prepared_transactions</> specifies maximum number of
+       two-phase commit transactions.   Even if you don't use explicit two
+       phase commit operations, the Coordinator may issue a two-phase commit
+       operation implicitly if a transaction is involved with multiple
+       Datanodes and/or Coordinators. You should specify
+       <option>max_prepared_transactions</> value at least the number of
+       <option>max_connection</>.
       </para>
      </listitem>
     </varlistentry>
@@ -2051,12 +2041,11 @@ postgres$ <userinput>/usr/local/pgsql/bin/initdb -D /usr/local/pgsql/data</>
      <term><envar>min_pool_size</envar><term>
      <listitem>
       <par>
-       Coordinator is associated with a connection pooler which takes
-       care of connection with other Coordinators and Datanodes.  This
-       parameter specifies minimum number of connection to pool.
-       If you're not configuring <productname>XL</> cluster in
-       unbalanced way, you should specify the same value to all the
-       Coordinators.
+       A Coordinator is associated with a connection pooler which takes care of
+       connections with other Coordinators and Datanodes.  This parameter
+       specifies minimum number of connection to pool.  If you're not
+       configuring the <productname>Postgres-XL</> cluster in an unbalanced
+       way, you should specify the same value to all the Coordinators.
       </par>
      </listitem>
     </varlistentry>
@@ -2065,14 +2054,13 @@ postgres$ <userinput>/usr/local/pgsql/bin/initdb -D /usr/local/pgsql/data</>
      <term><envar>max_pool_size</envar></term>
      <listitem>
       <para>
-       This parameter specifies maximum number of the pooled
-       connection.  This value should be at least more than the number
-       of all the Coordinators and Datanodes.   If you specify less
-       value, you will see very frequent close and ope connection
-       which leads to serious performance problem.
-       If you're not configuring <productname>XL</> cluster in
-       unbalanced way, you should specify the same value to all the
-       Coordinators.
+       This parameter specifies maximum number of the pooled connections.  This
+       value should be at least more than the number of all the Coordinators
+       and Datanodes.   If you specify a lesser value, you will see very
+       frequent close and open connections, which leads to serious performance
+       problems.  If you're not configuring a <productname>Postgres-XL</>
+       cluster in an unbalanced way, you should specify the same value to all
+       the Coordinators.
       </para>
      </listitem>
     </varlistentry>
@@ -2081,13 +2069,13 @@ postgres$ <userinput>/usr/local/pgsql/bin/initdb -D /usr/local/pgsql/data</>
      <term><envar>pool_conn_keepalive</envar></term>
      <listitem>
       <para>
-       This parameter specifies how long to keep the connection alive.
-       If older than this amount, the pooler discards the connection.
-       This parameter is useful in multi-tenant environments where
-       many connections to many different databases may be used,
-       so that idle connections may cleaned up. It is also useful
-       for automatically closing connections occasionally in case
-       there is some unknown memory leak so that this memory can be freed. 
+       This parameter specifies how long to keep the connection alive.  If
+       older than this amount, the pooler discards the connection.  This
+       parameter is useful in multi-tenant environments where many connections
+       to many different databases may be used, so that idle connections may be
+       cleaned up. It is also useful for automatically closing connections
+       occasionally in case there is some unknown memory leak so that this
+       memory can be freed. 
       </para> 
      </listitem>
     </varlistentry>
@@ -2096,12 +2084,11 @@ postgres$ <userinput>/usr/local/pgsql/bin/initdb -D /usr/local/pgsql/data</>
      <term><envar>pool_maintenance_timeout</envar></term>
      <listitem>
       <para>
-       This parameter specifies how long to wait until pooler
-       maintenance is performed. During such maintenance,
-       old idle connections are discarded.
-       This parameter is useful in multi-tenant environments where
-       many connections to many different databases may be used,
-       so that idle connections may cleaned up. 
+       This parameter specifies how long to wait until pooler maintenance is
+       performed. During such maintenance, old idle connections are discarded.
+       This parameter is useful in multi-tenant environments where many
+       connections to many different databases may be used, so that idle
+       connections may cleaned up. 
       </para> 
      </listitem>
     </varlistentry>
@@ -2110,9 +2097,8 @@ postgres$ <userinput>/usr/local/pgsql/bin/initdb -D /usr/local/pgsql/data</>
      <term><envar>remote_query_cost</envar></term>
      <listitem>
       <para>
-       This parameter specifies the cost overhead of setting up
-       a remote query to obtain remote data. It is used by
-       the planner in costing queries.
+       This parameter specifies the cost overhead of setting up a remote query
+       to obtain remote data. It is used by the planner in costing queries.
       </para> 
      </listitem>
     </varlistentry>
@@ -2121,11 +2107,10 @@ postgres$ <userinput>/usr/local/pgsql/bin/initdb -D /usr/local/pgsql/data</>
      <term><envar>network_byte_cost</envar></term>
      <listitem>
       <para>
-       This parameter is used in query cost planning to 
-       estimate the cost involved in row shipping and obtaining
-       remote data based on the expected data size.
-       Row shipping is expensive and adds latency, so this
-       setting helps to favor plans that minimizes row shipping.
+       This parameter is used in query cost planning to estimate the cost
+       involved in row shipping and obtaining remote data based on the expected
+       data size.  Row shipping is expensive and adds latency, so this setting
+       helps to favor plans that minimizes row shipping.
       </para> 
      </listitem>
     </varlistentry>
@@ -2134,16 +2119,15 @@ postgres$ <userinput>/usr/local/pgsql/bin/initdb -D /usr/local/pgsql/data</>
      <term><envar>sequence_range</envar></term>
      <listitem>
       <para>
-       This parameter is used to get several sequence values
-       at once from GTM.  This greatly speeds up COPY and INSERT SELECT
-       operations where the target table uses sequences.
-       <productname>Postgres-XL</productname> will not use this entire
-       amount at once, but will increase the request size over
-       time if many requests are done in a short time frame in
-       the same session.
-       After a short time without any sequence requests, decreases back down to 1.
-       Note that any settings here are overriden if the CACHE clause was
-       used in <xref linkend='sql-createsequence'> or <xref linkend='sql-altersequence'>.
+       This parameter is used to get several sequence values at once from the
+       GTM.  This greatly speeds up COPY, INSERT and SELECT operations where
+       the target table uses sequences.  <productname>Postgres-XL</productname>
+       will not use this entire amount at once, but will increase the request
+       size over time if many requests are done in a short time frame in the
+       same session.  After a short time without any sequence requests, the
+       number of sequences decreases back down to 1.  Note that any settings
+       here are overriden if the CACHE clause was used in <xref
+       linkend='sql-createsequence'> or <xref linkend='sql-altersequence'>.
       </para> 
      </listitem>
     </varlistentry>
@@ -2152,8 +2136,8 @@ postgres$ <userinput>/usr/local/pgsql/bin/initdb -D /usr/local/pgsql/data</>
      <term><envar>max_coordinators</envar></term>
      <listitem>
       <para>
-       This parameter specifies maximum number of the Coordinators that can
-       be added to the cluster. Cluster would have to be restarted to increase
+       This parameter specifies maximum number of the Coordinators that can be
+       added to the cluster. The cluster will have to be restarted to increase
        the value.
       </para>
      </listitem>
@@ -2163,8 +2147,8 @@ postgres$ <userinput>/usr/local/pgsql/bin/initdb -D /usr/local/pgsql/data</>
      <term><envar>max_datanodes</envar></term>
      <listitem>
       <para>
-       This parameter specifies maximum number of the Datanodes that can
-       be added to the cluster. Cluster would have to be restarted to increase
+       This parameter specifies maximum number of the Datanodes that can be
+       added to the cluster. The cluster will have to be restarted to increase
        the value.
       </para>
      </listitem>
@@ -2194,7 +2178,7 @@ postgres$ <userinput>/usr/local/pgsql/bin/initdb -D /usr/local/pgsql/data</>
      <term><envar>pooler_port</envar></term>
      <listitem>
       <para>
-       Connection pooler needs separate port.
+       Connection pooler needs a separate port.
       </para>
      </listitem>
     </varlistentry>
@@ -2203,9 +2187,9 @@ postgres$ <userinput>/usr/local/pgsql/bin/initdb -D /usr/local/pgsql/data</>
      <term><envar>gtm_port</envar></term>
      <listitem>
       <para>
-       Specify the port number of gtm you're connecting to.  This is
-       local to the server and you should specify the port assigned to
-       the GTM-Proxy local to the Coordinator.
+       Specify the port number of the GTM you're connecting to.  This is local
+       to the server and you should specify the port assigned to the GTM-Proxy
+       local to the Coordinator.
       </para>
      </listitem>
     </varlistentry>
@@ -2214,10 +2198,10 @@ postgres$ <userinput>/usr/local/pgsql/bin/initdb -D /usr/local/pgsql/data</>
 
    <step>
     <para>
-     Now you should configure <filename>postgresql.conf</> for each
-     Datanodes.  Please note, as in the case of Coordinator, you can
-     specify other <filename>postgresql.conf</> parameters as in
-     standalone <productname>PostgreSQL</>.
+     Now you should configure <filename>postgresql.conf</> for each Datanode.
+     Please note, as in the case of the Coordinator, you can specify other
+     <filename>postgresql.conf</> parameters as in standalone
+     <productname>PostgreSQL</>.
     </para>
 
     <variablelist>
@@ -2226,12 +2210,12 @@ postgres$ <userinput>/usr/local/pgsql/bin/initdb -D /usr/local/pgsql/data</>
      <term><envar>max_connections</envar></term>
      <listitem>
       <para>
-       <option>max_connections</> is, in short, a maximum number of
-       background processes of the Datanode.   You should be careful
-       to specify reasonable value to this parameter because each
-       Coordinator backend may have connections to all the Datanodes.
-       You should specify this value as <option>max_connections</> of
-       Coordinator multiplied by the number of Coordinators.
+       <option>max_connections</> is, in short, a maximum number of background
+       processes of the Datanode.   You should be careful to specify a
+       reasonable value to this parameter because each Coordinator backend may
+       have connections to all the Datanodes.  You should specify this value as
+       the <option>max_connections</> of Coordinator multiplied by the number
+       of Coordinators.
       </para>
      </listitem>
     </varlistentry>
@@ -2240,13 +2224,13 @@ postgres$ <userinput>/usr/local/pgsql/bin/initdb -D /usr/local/pgsql/data</>
      <term><envar>max_prepared_transactions</envar></term>
      <listitem>
       <para>
-       <option>max_prepared_transactions</> specifies maximum number
-       of two-phase commit transactions.   Even if you don't use
-       explicit two phase commit operation, Coordinator may issue
-       two-phase commit operation implicitly if a transaction is
-       involved with multiple Datanodes and/or Coordinators.   The value
-       of this parameter should be at least the value
-       of <option>max_connections</> of Coordinator multiplied by the number of Coordinators.
+       <option>max_prepared_transactions</> specifies maximum number of
+       two-phase commit transactions.   Even if you don't use explicit two
+       phase commit operation, a Coordinator may issue two-phase commit
+       operation implicitly if a transaction is involved with multiple
+       Datanodes and/or Coordinators.   The value of this parameter should be
+       at least the value of <option>max_connections</> of the Coordinator
+       multiplied by the number of Coordinators.
       </para>
      </listitem>
     </varlistentry>
@@ -2263,9 +2247,9 @@ postgres$ <userinput>/usr/local/pgsql/bin/initdb -D /usr/local/pgsql/data</>
      <term><envar>gtm_port</envar></term>
      <listitem>
       <para>
-       Specify the port number of gtm you're connecting to.  This is
-       local to the server and you should specify the port assigned to
-       the GTM-Proxy local to the Datanode.
+       Specify the port number of the GTM that you're connecting to.  This is
+       local to the server and you should specify the port assigned to the
+       GTM-Proxy local to the Datanode.
       </para>
      </listitem>
     </varlistentry>
@@ -2273,8 +2257,8 @@ postgres$ <userinput>/usr/local/pgsql/bin/initdb -D /usr/local/pgsql/data</>
     </variablelist>
 
     <para>
-     Postgres-XL introduces some additional parameters for the 
-     Datanodes as well
+     Postgres-XL introduces some additional parameters for the Datanodes as
+     well
     </para>
 
     <variablelist>
@@ -2283,17 +2267,17 @@ postgres$ <userinput>/usr/local/pgsql/bin/initdb -D /usr/local/pgsql/data</>
      <term><envar>shared_queues</envar></term>
      <listitem>
       <para>
-       For some joins that occur in queries, data from one Datanode may
-       need to be joined with data from another Datanode.
-       <productname>Postgres-XL</productname> uses shared queues for this purpose.
-       During execution each Datanode knows if it needs to produce or consume
-       tuples, or both. 
+       For some joins that occur in queries, data from one Datanode may need to
+       be joined with data from another Datanode.
+       <productname>Postgres-XL</productname> uses shared queues for this
+       purpose.  During execution each Datanode knows if it needs to produce or
+       consume tuples, or both. 
       </para>
       <para>
        Note that there may be mulitple shared_queues used even for a single
        query. So a value should be set taking into account the number of 
-       connections it can accept and expected number of such joins occurring
-       simultaneously.
+       connections it can accept and the expected number of such joins
+       occurring simultaneously.
       </para>
 
      </listitem>
@@ -2314,94 +2298,90 @@ postgres$ <userinput>/usr/local/pgsql/bin/initdb -D /usr/local/pgsql/data</>
    <step>
     <para>
      Then you are ready to start the <productname>Postgres-XL</> cluster.
-     First, you should start GTM bu something like:
+     First, you should start the GTM with something like:
 <programlisting>
 gtm -D /usr/local/pgsql/gtm -h localhost -p 20001 -n 1 -x 1000
 </programlisting>
-     This will start GTM.   <option>-h</> specifies IP address or host
-     name to listen to the connection
-     from <command>gtm_standby</>.   <option>-p</> specifies the port
-     number to listen to.   <option>-n</> specifies the node number
-     within GTM.   This identifies GTM especially when you run
-     GTM-Standby.  <option>-x</> option specifies the value of initial
-     Global Transaction ID.   We need to specify this
-     because <command>initdb</> consumes some of the transaction ID
-     locally and GTM must to begin to provide global transaction ID
-     greater than the consumed one.   A value of at least 2000 is believed
-     to be safe.
+     This will start GTM.   <option>-h</> specifies IP address or host name to
+     listen to the connection from <command>gtm_standby</>.   <option>-p</>
+     specifies the port number to listen to.   <option>-n</> specifies the node
+     number within GTM.   This identifies GTM especially when you run a
+     GTM-Standby.  <option>-x</> option specifies the value of the initial
+     Global Transaction ID.   We need to specify this because
+     <command>initdb</> consumes some of the transaction IDs locally and the
+     GTM must begin to provide a global transaction ID greater than the
+     consumed one.   A value of at least 2000 is believed to be safe.
     </para>
    </step>
 
    <step>
     <para>
-     Next, you should start GTM-Proxy on each server you're running
+     Next, you should start a GTM-Proxy on each server you're running a
      Coordinator and/or Datanode like:
 <programlisting>
 gtm_proxy -h localhost -p 20002 -s localhost -t 20001 -i 1 -n 2 -D /usr/local/pgsql/gtm_proxy
 </programlisting>
-     This will start GTM-Proxy.  <option>-h</> option is the host name
-     or IP address which GTM-Proxy listens to.   <option>-p</> option
-     is the port number to listen to.   <option>-s</>
-     and <option>-t</> are IP address or the host
-     name and the port number of GTM as specified
-     above.   <option>-i</> is the node number of GTM-Proxy beginning
-     with 1.   <option>-n</> is the number of worker thread of
-     GTM-Proxy.   Usually, 1 or 2 is advised.  Then <option>-D</>
-     option is the working directory of the GTM-Proxy.
+     This will start a GTM-Proxy.  <option>-h</> option is the host name or IP
+     address which GTM-Proxy listens to.   <option>-p</> option is the port
+     number to listen to.   <option>-s</> and <option>-t</> are IP address or
+     the host name and the port number of the GTM as specified above.
+     <option>-i</> is the node number of GTM-Proxy beginning with 1.
+     <option>-n</> is the number of worker thread of GTM-Proxy.   Usually, 1 or
+     2 is advised.  Then <option>-D</> option is the working directory of the
+     GTM-Proxy.
     </para>
     <para>
-     Please note that you should start GTM-Proxy on all the servers
-     you run Coordinator/Datanode.
+     Please note that you should start a GTM-Proxy on all the servers you run
+     Coordinator/Datanode.
     </para>
    </step>
 
    <step>
     <para>
-     Now you can start Datanode on each server like:
+     Now you can start a Datanode on each server like:
 <programlisting>
 postgres --datanode -D /usr/local/pgsql/Datanode
 </programlisting>
-     This will start the Datanode.   <option>--datanode</>
-     specifies <command>postgres</> to start as a
-     Datanode. <option>-D</> specifies the data directory of the
-     Datanode. You can specify other options of standalone <command>postgres</>.
+     This will start the Datanode.   <option>--datanode</> specifies
+     <command>postgres</> to start as a Datanode. <option>-D</> specifies the
+     data directory of the Datanode. You can specify other options of
+     standalone <command>postgres</>.
     </para>
     <para>
-     Please note that you should issue <command>postgres</> command at
+     Please note that you should issue <command>postgres</> commands at
      all the servers you're running Datanode.
     </para>
    </step>
 
    <para>
-    Finally, you can start Coordinator like:
+    Finally, you can start a Coordinator like:
 <programlisting>
 postgres --coordinator -D /usr/local/pgsql/Coordinator
 </programlisting>
-    This will start the Coordinator.  <option>--coordinator</>
-    specifies <command>postgres</> to start as a
-    Coordinator.  <option>-D</> specifies the data directory of the
-    Coordinator.  You can specify other options of standalone <command>postgres</>.
+    This will start the Coordinator.  <option>--coordinator</> specifies
+    <command>postgres</> to start as a Coordinator.  <option>-D</> specifies
+    the data directory of the Coordinator.  You can specify other options of
+    standalone <command>postgres</>.
    </para>
    <para>
-    Please note that you should issue <command>postgres</> command at
+    Please note that you should issue <command>postgres</> commands at
     all the servers you're running Coordinators.
    </para>
    <step>
     <para>
-     The previous step should have told you how to
-     start up the whole database cluster. Do so now. The command should look
-     something like:
+     The previous step should have told you how to start up the whole database
+     cluster. Do so now. The command should look something like:
 <programlisting>
 postgres --datanode -D /usr/local/pgsql/Datanode
 </programlisting>
-     This will start the Datanode in the foreground. To put the Datanode
-     in the background use something like:
+     This will start the Datanode in the foreground. To put the Datanode in the
+     background use something like:
 <programlisting>
 nohup postgres --datanode -D /usr/local/pgsql/data \
     &lt;/dev/null &gt;&gt;server.log 2&gt;&amp;1 &lt;/dev/null &amp;
 </programlisting>
-     You can apply this to all the other components, GTM, GTM-Proxies,
-     and Coordinators.
+     You can apply this to all the other components, GTM, GTM-Proxies, and
+     Coordinators.
     </para>
 
     <para>
@@ -2435,9 +2415,9 @@ kill `cat /usr/local/pgsql/gtm-proxy/gtm_proxy.pid
 <screen>
 <userinput>psql -p 20004 testdb</>
 </screen>
-     Please do not forget to give the port number of one of the
-     Coordinators.   Then you are connected to a Coordinator listening
-     to the port you specified.
+     Please do not forget to give the port number of one of the Coordinators.
+     Then you are connected to a Coordinator listening to the port you
+     specified.
     </para>
    </step>
   </procedure>
@@ -2500,18 +2480,18 @@ kill `cat /usr/local/pgsql/gtm-proxy/gtm_proxy.pid
   <title>Supported Platforms</title>
 
   <para>
-   <productname>Postgres-XL</> can be expected to work on these operating systems:
-   Linux (all recent distributions), FreeBSD and Mac OS X. Other Unix-like systems may
-   also work but are not currently being tested.
+   <productname>Postgres-XL</> can be expected to work on these operating
+   systems: Linux (all recent distributions), FreeBSD and Mac OS X. Other
+   Unix-like systems may also work but are not currently being tested.
   </para>
 
   <para>
    If you have installation problems on a platform that is known
-   to be supported according to recent build farm results, please report
-   it to <email>postgres-xl-bugs@lists.sourceforge.net</email>.  If you are interested
-   in porting <productname>Postgres-XL</> to a new platform,
-   <email>postgres-xl-developers@lists.sourceforge.net</email> is the appropriate place
-   to discuss that.
+   to be supported according to recent build farm results, please report it to
+   <email>postgres-xl-bugs@lists.sourceforge.net</email>.  If you are
+   interested in porting <productname>Postgres-XL</> to a new platform,
+   <email>postgres-xl-developers@lists.sourceforge.net</email> is the
+   appropriate place to discuss that.
   </para>
  </sect1>
 

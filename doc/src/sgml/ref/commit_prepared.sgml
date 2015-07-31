@@ -76,8 +76,8 @@ COMMIT PREPARED <replaceable class="PARAMETER">transaction_id</replaceable>
   </para>
   <para>
    If <literal>xc_maintenance_mode</literal> GUC parameter is set to
-   <literal>ON</literal>, <command>COMMIT PREPARED</command> will not propagate to
-   other nodes.   It just runs locally and report the result to
+   <literal>ON</literal>, <command>COMMIT PREPARED</command> will not propagate
+   to other nodes.   It just runs locally and report the result to the
    <literal>GTM</literal>.
   </para>
  </refsect1>

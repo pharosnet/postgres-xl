@@ -571,9 +571,8 @@ SELECT * from lotsa_md5(500);
     <listitem>
 
      <para>
-      <command>PREPARE</> is not supported in the current release
-      of <productname>Postgres-XL</>.  This may be supported in the
-      future releases.
+      <command>PREPARE</> is not supported in the current release of
+      <productname>Postgres-XL</>.  This may be supported in a future releas.
      </para>
 
     <para>

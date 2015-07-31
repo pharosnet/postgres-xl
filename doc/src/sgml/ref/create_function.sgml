@@ -45,15 +45,16 @@ CREATE [ OR REPLACE ] FUNCTION
 
   <note>
    <para>
-    <productname>Postgres-XL</> function usage currently requires a lot of care,
-    otherwise unexepected results may occur, and you may bring your data in an inconsistent state. 
-    This behavior may change in a future version to make it safer.
+    <productname>Postgres-XL</> function usage currently requires a lot of
+    care, otherwise unexepected results may occur, and you may bring your data
+    to an inconsistent state.  This behavior may change in a future version to
+    make it safer.
    </para>
 
    <para>
-    A call such as <literal>SELECT my_function(1,2);</>, without any FROM clause,
-     will execute on a local coordinator, and 
-    may involve other datanodes and behave as expected, being driven from a coordinator.
+    A call such as <literal>SELECT my_function(1,2);</>, without any FROM
+    clause, will execute on a local Coordinator, and may involve other
+    Datanodes and behave as expected, being driven from a Coordinator.
    </para>
 
    <para>
@@ -536,8 +537,8 @@ CREATE [ OR REPLACE ] FUNCTION
       </para>
 
       <para>
-       It is user's responsibility to deploy the file to all the
-       servers where Coordinator or Datanode may run.
+       It is user's responsibility to deploy the file to all the servers where
+       a Coordinator or Datanode may run.
       </para>
 
      </listitem>

@@ -30,16 +30,16 @@
    Description
   </title>
   <para>
-   gtm provides consistent transaction management fully compatible with
-   vanilla PostgreSQL. It is highly advised to start and stop gtm
+   The GTM provides consistent transaction management fully compatible with
+   vanilla PostgreSQL. It is highly advised to start and stop the GTM
    using gtm_ctl(8).
   </para>
 
   <para>
-   You must provide a gtm configuration
-   file <filename>gtm.conf</filename> placed in the gtm working directory
+   You must provide a GTM configuration
+   file <filename>gtm.conf</filename> placed in the GTM working directory
    as specified by <literal>-D</literal> command line option. The
-   configuration file specifies gtm running environment and resources.
+   configuration file specifies the GTM running environment and resources.
   </para>
 
   <para>
@@ -126,7 +126,7 @@
      <para>
       Specifies <literal>keepalives_count</literal> option for the
       connection to <application>gtm</application>.  This option is
-      effective only when it runs as GTM Standby.
+      effective only when it runs as a GTM Standby.
       The default value is zero and keepalives feature is disabled.
      </para>
     </listitem>
@@ -141,7 +141,7 @@
      <para>
       Specifies <literal>keepalives_idle</literal> option for the
       connection to <application>gtm</application>.  This option is
-      effective only when it runs as GTM Standby.
+      effective only when it runs as a GTM Standby.
       The default value is zero and keepalives feature is disabled.
      </para>
     </listitem>
@@ -156,7 +156,7 @@
      <para>
       Specifies <literal>keepalives_interval</literal> option for the
       connection to <application>gtm</application>.  This option is
-      effective only when it runs as GTM Standby.
+      effective only when it runs as a GTM Standby.
       The default value is zero and keepalives feature is disabled.
      </para>
     </listitem>
@@ -269,13 +269,13 @@
     </indexterm></term>
     <listitem>
      <para>
-      Specifies if the backup to GTM-Standby is taken synchronously.   If this is turned on,
-      GTM will send and receive synchronize message to make sure that all the backups
-      reached to the standby.
+      Specifies if the backup to the GTM-Standby is taken synchronously.   If
+      this is turned on, the GTM will send and receive synchronize message to
+      make sure that all the backups reached to the standby.
      </para>
      <para>
-      If it is turned off, all the backup information will be sent without checking they
-      reached to GTM-Standby.
+      If it is turned off, all the backup information will be sent without
+      checking they reached the GTM-Standby.
      </para>
      <para>
       Default value is off.
@@ -379,7 +379,7 @@
   </para>
 
   <para>
-    When starting GTM as a standby instance, the following options can also be provided.
+    When starting a GTM as a standby instance, the following options can also be provided.
   </para>
 
   <para>
@@ -388,7 +388,7 @@
      <term><option>s</option></term>
      <listitem>
       <para>
-       Specify if GTM starts as a standby
+       Specify if the GTM starts as a standby
       </para>
      </listitem>
     </varlistentry>
@@ -397,7 +397,7 @@
      <term><option>i</option></term>
      <listitem>
       <para>
-       Specify host name or IP address of active GTM instance to connect to
+       Specify host name or IP address of the active GTM instance to connect to
       </para>
      </listitem>
     </varlistentry>
@@ -406,7 +406,7 @@
      <term><option>q</option></term>
      <listitem>
       <para>
-       Specify port number of active GTM instance to connect to
+       Specify port number of the active GTM instance to connect to
       </para>
      </listitem>
     </varlistentry>
