@@ -1360,7 +1360,7 @@ BufferConnection(PGXCNodeHandle *conn)
 	if (combiner == NULL || conn->state != DN_CONNECTION_STATE_QUERY)
 		return;
 
-	elog(LOG, "Buffer connection %u to step %s", conn->nodeoid, combiner->cursor);
+	elog(DEBUG2, "Buffer connection %u to step %s", conn->nodeoid, combiner->cursor);
 
 	/*
 	 * When BufferConnection is invoked CurrentContext is related to other
