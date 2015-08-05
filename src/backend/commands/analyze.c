@@ -419,6 +419,11 @@ do_analyze_rel(Relation onerel, int options, VacuumParams *params,
 	if (IS_PGXC_COORDINATOR && onerel->rd_locator_info)
 	{
 		/*
+		 * Fetch relation statistics from remote nodes and update
+		 */
+		vacuum_rel_coordinator(onerel, in_outer_xact);
+
+		/*
 		 * Fetch attribute statistics from remote nodes.
 		 */
 		analyze_rel_coordinator(onerel, inh, attr_cnt, vacattrstats);
@@ -2873,6 +2878,12 @@ analyze_rel_coordinator(Relation onerel, bool inh, int attr_cnt,
 
 	oldcontext = MemoryContextSwitchTo(estate->es_query_cxt);
 
+	/*
+	 * Take a fresh snapshot so that we see the effects of the ANALYZE command
+	 * on the datanode. That command is run in auto-commit mode hence just
+	 * bumping up the command ID is not good enough
+	 */
+	PushActiveSnapshot(GetTransactionSnapshot());
 	estate->es_snapshot = GetActiveSnapshot();
 
 	node = ExecInitRemoteQuery(step, estate, 0);
@@ -2884,6 +2895,7 @@ analyze_rel_coordinator(Relation onerel, bool inh, int attr_cnt,
 		numnodes[i] = 0;
 
 	result = ExecRemoteQuery(node);
+	PopActiveSnapshot();
 	while (result != NULL && !TupIsNull(result))
 	{
 		Datum 			value;
