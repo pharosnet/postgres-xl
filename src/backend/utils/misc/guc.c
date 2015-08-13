@@ -2846,7 +2846,7 @@ static struct config_int ConfigureNamesInt[] =
 #ifdef PGXC
 #ifdef XCP
 	{
-		{"sequence_range", PGC_USERSET, COORDINATORS | DATA_NODES,
+		{"sequence_range", PGC_USERSET, COORDINATORS,
 			gettext_noop("The range of values to ask from GTM for sequences. "
 			             "If CACHE parameter is set then that overrides this."),
 			NULL,
