@@ -161,7 +161,7 @@ producerDestroyReceiver(DestReceiver *self)
 		}
 		else
 		{
-			pg_usleep(10000l);
+			pg_usleep(10*1000*1000l);
 			/*
 			 * Do not wait for consumers that was not even connected after 10
 			 * seconds after start waiting for their disconnection.
