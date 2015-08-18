@@ -1112,6 +1112,10 @@ typedef struct JoinPath
 
 	List	   *joinrestrictinfo;		/* RestrictInfos to apply to join */
 
+#ifdef XCP
+	List	   *movedrestrictinfo;		/* RestrictInfos moved down to inner path */
+#endif
+
 	/*
 	 * See the notes for RelOptInfo and ParamPathInfo to understand why
 	 * joinrestrictinfo is needed in JoinPath, and can't be merged into the
