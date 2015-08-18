@@ -1015,6 +1015,7 @@ set_joinpath_distribution(PlannerInfo *root, JoinPath *pathnode)
 	Distribution   *outerd = pathnode->outerjoinpath->distribution;
 	Distribution   *targetd;
 	List		   *alternate = NIL;
+	List		   *restrictClauses = NIL;
 
 	/* Catalog join */
 	if (innerd == NULL && outerd == NULL)
@@ -1102,6 +1103,10 @@ set_joinpath_distribution(PlannerInfo *root, JoinPath *pathnode)
 	}
 
 
+	restrictClauses = list_copy(pathnode->joinrestrictinfo);
+	restrictClauses = list_concat(restrictClauses,
+			pathnode->movedrestrictinfo);
+
 	/*
 	 * This join is still allowed if inner and outer paths have
 	 * equivalent distribution and joined along the distribution keys.
@@ -1129,7 +1134,7 @@ set_joinpath_distribution(PlannerInfo *root, JoinPath *pathnode)
 		 * Equivalence Class.
 		 * Try to figure out if such restriction exists.
 		 */
-		foreach(lc, pathnode->joinrestrictinfo)
+		foreach(lc, restrictClauses)
 		{
 			RestrictInfo *ri = (RestrictInfo *) lfirst(lc);
 			ListCell   *emc;
@@ -1345,7 +1350,7 @@ not_allowed_join:
 		 * 1. one argument is already a partitioning key of one subplan.
 		 * 2. restriction is cheaper to calculate
 		 */
-		foreach(lc, pathnode->joinrestrictinfo)
+		foreach(lc, restrictClauses)
 		{
 			RestrictInfo   *ri = (RestrictInfo *) lfirst(lc);
 
@@ -2746,6 +2751,7 @@ create_nestloop_path(PlannerInfo *root,
 #ifdef XCP
 	List	   *alternate;
 	ListCell   *lc;
+	List	   *mclauses = NIL;
 #endif
 	Relids		inner_req_outer = PATH_REQ_OUTER(inner_path);
 
@@ -2771,6 +2777,10 @@ create_nestloop_path(PlannerInfo *root,
 											 inner_path->parent->relids,
 											 inner_and_outer))
 				jclauses = lappend(jclauses, rinfo);
+#ifdef XCP
+			else
+				mclauses = lappend(mclauses, rinfo);
+#endif
 		}
 		restrict_clauses = jclauses;
 	}
@@ -2792,6 +2802,8 @@ create_nestloop_path(PlannerInfo *root,
 	pathnode->joinrestrictinfo = restrict_clauses;
 
 #ifdef XCP
+	pathnode->movedrestrictinfo = mclauses;
+
 	alternate = set_joinpath_distribution(root, pathnode);
 #endif
 	final_cost_nestloop(root, pathnode, workspace, sjinfo, semifactors);

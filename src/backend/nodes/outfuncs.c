@@ -2662,6 +2662,7 @@ _outJoinPathInfo(StringInfo str, const JoinPath *node)
 	WRITE_NODE_FIELD(outerjoinpath);
 	WRITE_NODE_FIELD(innerjoinpath);
 	WRITE_NODE_FIELD(joinrestrictinfo);
+	WRITE_NODE_FIELD(movedrestrictinfo);
 }
 
 static void
