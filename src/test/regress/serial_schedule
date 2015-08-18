@@ -176,3 +176,7 @@ test: xc_alter_table
 test: xc_sequence
 test: xc_prepared_xacts
 test: xc_notrans_block
+test: xl_primary_key
+test: xl_foreign_key
+test: xl_distribution_column_types
+test: xl_alter_table
