@@ -1758,7 +1758,7 @@ FetchTuple(ResponseCombiner *combiner)
 			ListCell *lc;
 			ListCell *prev;
 
-			elog(LOG, "Getting buffered tuple from node %x", nodeOid);
+			elog(DEBUG1, "Getting buffered tuple from node %x", nodeOid);
 
 			prev = combiner->tapemarks[combiner->current_conn];
 			if (prev)
@@ -1808,11 +1808,11 @@ FetchTuple(ResponseCombiner *combiner)
 					if (combiner->tapemarks[i] == lc)
 						combiner->tapemarks[i] = prev;
 				}
-				elog(LOG, "Found buffered tuple from node %x", nodeOid);
+				elog(DEBUG1, "Found buffered tuple from node %x", nodeOid);
 				combiner->rowBuffer = list_delete_cell(combiner->rowBuffer,
 													   lc, prev);
 			}
-			elog(LOG, "Update tapemark");
+			elog(DEBUG1, "Update tapemark");
 			combiner->tapemarks[combiner->current_conn] = prev;
 		}
 		else
