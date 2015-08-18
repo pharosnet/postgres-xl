@@ -9,7 +9,7 @@ EXTENSION = ltree
 DATA = ltree--1.0.sql ltree--unpackaged--1.0.sql
 PGFILEDESC = "ltree - hierarchical label data type"
 
-REGRESS = ltree
+REGRESS = ltree xl_ltree
 
 ifdef USE_PGXS
 PG_CONFIG = pg_config
