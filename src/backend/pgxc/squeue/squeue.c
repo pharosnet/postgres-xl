@@ -284,7 +284,7 @@ tryagain:
 		int		i;
 		char   *heapPtr;
 
-		elog(LOG, "Format squeue %s for %d consumers", sqname, ncons);
+		elog(DEBUG1, "Format squeue %s for %d consumers", sqname, ncons);
 
 		/* Initialize the shared queue */
 		sq->sq_pid = 0;
@@ -426,7 +426,7 @@ SharedQueueBind(const char *sqname, List *consNodes,
 
 		Assert(consMap);
 
-		elog(LOG, "Bind node %s to squeue of step %s as a producer",
+		elog(DEBUG1, "Bind node %s to squeue of step %s as a producer",
 			 PGXC_PARENT_NODE, sqname);
 
 		/* Initialize the shared queue */
@@ -464,7 +464,7 @@ SharedQueueBind(const char *sqname, List *consNodes,
 					if (cstate->cs_node == nodeid)
 					{
 						/* The process already reported that queue won't read */
-						elog(LOG, "Node %d of step %s is released already",
+						elog(DEBUG1, "Node %d of step %s is released already",
 							 nodeid, sqname);
 						consMap[i++] = SQ_CONS_NONE;
 						break;
@@ -500,7 +500,7 @@ SharedQueueBind(const char *sqname, List *consNodes,
 		/* Producer should be different process */
 		Assert(sq->sq_pid != MyProcPid);
 
-		elog(LOG, "Bind node %s to squeue of step %s as a consumer of process %d", PGXC_PARENT_NODE, sqname, sq->sq_pid);
+		elog(DEBUG1, "Bind node %s to squeue of step %s as a consumer of process %d", PGXC_PARENT_NODE, sqname, sq->sq_pid);
 
 		/* Sanity checks */
 		Assert(myindex);
@@ -548,6 +548,7 @@ SharedQueueBind(const char *sqname, List *consNodes,
 						if (cstate->cs_status == CONSUMER_ERROR ||
 								cstate->cs_status == CONSUMER_DONE)
 						{
+							int status = cstate->cs_status;
 							/*
 							 * Producer failed by the time the consumer connect.
 							 * Change status to "Done" to allow producer unbind
@@ -560,7 +561,7 @@ SharedQueueBind(const char *sqname, List *consNodes,
 							LWLockRelease(SQueuesLock);
 							ereport(ERROR,
 									(errcode(ERRCODE_PRODUCER_ERROR),
-									 errmsg("producer error")));
+									 errmsg("Producer failed while we were waiting - status was %d", status)));
 						}
 						/*
 						 * Any other status is acceptable. Normally it would be
@@ -790,7 +791,7 @@ SharedQueueWrite(SharedQueue squeue, int consumerIdx,
 			char 		storename[64];
 
 #ifdef SQUEUE_STAT
-			elog(LOG, "Start buffering %s node %d, %d tuples in queue, %ld writes and %ld reads so far",
+			elog(DEBUG1, "Start buffering %s node %d, %d tuples in queue, %ld writes and %ld reads so far",
 				 squeue->sq_key, cstate->cs_node, cstate->cs_ntuples, cstate->stat_writes, cstate->stat_reads);
 #endif
 			*tuplestore = tuplestore_begin_datarow(false, work_mem, tmpcxt);
@@ -874,7 +875,7 @@ SharedQueueRead(SharedQueue squeue, int consumerIdx,
 			 * are finishing
 			 */
 			SetLatch(&sqsync->sqs_producer_latch);
-			elog(LOG, "EOF reached while reading from squeue, exiting");
+			elog(DEBUG1, "EOF reached while reading from squeue, exiting");
 			return true;
 		}
 		else if (cstate->cs_status == CONSUMER_ERROR)
@@ -892,7 +893,8 @@ SharedQueueRead(SharedQueue squeue, int consumerIdx,
 			 */
 			ereport(ERROR,
 					(errcode(ERRCODE_PRODUCER_ERROR),
-					 errmsg("producer error")));
+					 errmsg("Failed to read from shared queue - producer failed and set status to %d",
+						 cstate->cs_status)));
 		}
 		if (canwait)
 		{
@@ -973,7 +975,7 @@ SharedQueueReset(SharedQueue squeue, int consumerIdx)
 			if (cstate->cs_status != CONSUMER_EOF &&
 					cstate->cs_status != CONSUMER_DONE)
 			{
-				elog(LOG, "Consumer %d of producer %s is cancelled", i, squeue->sq_key);
+				elog(DEBUG1, "Consumer %d of producer %s is cancelled", i, squeue->sq_key);
 				cstate->cs_status = CONSUMER_ERROR;
 				/* discard tuples which may already be in the queue */
 				cstate->cs_ntuples = 0;
@@ -985,7 +987,7 @@ SharedQueueReset(SharedQueue squeue, int consumerIdx)
 			}
 			LWLockRelease(sqsync->sqs_consumer_sync[i].cs_lwlock);
 		}
-		elog(LOG, "Reset producer %s", squeue->sq_key);
+		elog(DEBUG1, "Reset producer %s", squeue->sq_key);
 	}
 	else
 	{
@@ -1008,7 +1010,7 @@ SharedQueueReset(SharedQueue squeue, int consumerIdx)
 			 * are finishing
 			 */
 			SetLatch(&sqsync->sqs_producer_latch);
-			elog(LOG, "Reset consumer %d of %s", consumerIdx, squeue->sq_key);
+			elog(DEBUG1, "Reset consumer %d of %s", consumerIdx, squeue->sq_key);
 		}
 
 		LWLockRelease(sqsync->sqs_consumer_sync[consumerIdx].cs_lwlock);
@@ -1039,7 +1041,7 @@ SharedQueueResetNotConnected(SharedQueue squeue)
 				cstate->cs_status != CONSUMER_DONE)
 		{
 			result++;
-			elog(LOG, "Consumer %d of producer %s is cancelled", i, squeue->sq_key);
+			elog(DEBUG1, "Consumer %d of producer %s is cancelled", i, squeue->sq_key);
 			cstate->cs_status = CONSUMER_ERROR;
 			/* discard tuples which may already be in the queue */
 			cstate->cs_ntuples = 0;
@@ -1051,7 +1053,7 @@ SharedQueueResetNotConnected(SharedQueue squeue)
 		}
 		LWLockRelease(sqsync->sqs_consumer_sync[i].cs_lwlock);
 	}
-	elog(LOG, "Reset producer %s", squeue->sq_key);
+	elog(DEBUG1, "Reset producer %s", squeue->sq_key);
 }
 
 
@@ -1125,7 +1127,7 @@ SharedQueueFinish(SharedQueue squeue, TupleDesc tupDesc,
 		LWLockAcquire(sqsync->sqs_consumer_sync[i].cs_lwlock, LW_EXCLUSIVE);
 #ifdef SQUEUE_STAT
 		if (!squeue->stat_finish)
-			elog(LOG, "Finishing %s node %d, %ld writes and %ld reads so far, %ld buffer writes, %ld buffer reads, %ld tuples returned to buffer",
+			elog(DEBUG1, "Finishing %s node %d, %ld writes and %ld reads so far, %ld buffer writes, %ld buffer reads, %ld tuples returned to buffer",
 				 squeue->sq_key, cstate->cs_node, cstate->stat_writes, cstate->stat_reads, cstate->stat_buff_writes, cstate->stat_buff_reads, cstate->stat_buff_returns);
 #endif
 		/*
@@ -1235,7 +1237,7 @@ SharedQueueUnBind(SharedQueue squeue)
 		}
 		if (c_count == 0)
 			break;
-		elog(LOG, "Wait while %d squeue readers finishing", c_count);
+		elog(DEBUG1, "Wait while %d squeue readers finishing", c_count);
 		/* wait for a notification */
 		wait_result = WaitLatch(&sqsync->sqs_producer_latch,
 								WL_LATCH_SET | WL_POSTMASTER_DEATH | WL_TIMEOUT,
@@ -1245,7 +1247,7 @@ SharedQueueUnBind(SharedQueue squeue)
 		/* got notification, continue loop */
 	}
 #ifdef SQUEUE_STAT
-	elog(LOG, "Producer %s is done, there were %ld pauses", squeue->sq_key, squeue->stat_paused);
+	elog(DEBUG1, "Producer %s is done, there were %ld pauses", squeue->sq_key, squeue->stat_paused);
 #endif
 
 	LWLockAcquire(SQueuesLock, LW_EXCLUSIVE);
@@ -1259,7 +1261,7 @@ SharedQueueUnBind(SharedQueue squeue)
 		elog(PANIC, "Shared queue data corruption");
 
 	LWLockRelease(SQueuesLock);
-	elog(LOG, "Finalized squeue");
+	elog(DEBUG1, "Finalized squeue");
 	if (wait_result & WL_TIMEOUT)
 		elog(FATAL, "Timeout while waiting for Consumers finishing");
 }
@@ -1277,7 +1279,7 @@ SharedQueueRelease(const char *sqname)
 	bool					found;
 	volatile SharedQueue 	sq;
 
-	elog(LOG, "Shared Queue release: %s", sqname);
+	elog(DEBUG1, "Shared Queue release: %s", sqname);
 
 	LWLockAcquire(SQueuesLock, LW_EXCLUSIVE);
 
@@ -1301,7 +1303,7 @@ SharedQueueRelease(const char *sqname)
 			sqsync->queue = NULL;
 			if (hash_search(SharedQueues, sqname, HASH_REMOVE, NULL) != sq)
 				elog(PANIC, "Shared queue data corruption");
-			elog(LOG, "Finalized squeue %s", sqname);
+			elog(DEBUG1, "Finalized squeue %s", sqname);
 			LWLockRelease(SQueuesLock);
 			return;
 		}
@@ -1312,7 +1314,7 @@ SharedQueueRelease(const char *sqname)
 		 */
 		if (sq->sq_nodeid != PGXC_PARENT_NODE_ID)
 		{
-			elog(LOG, "Looking for consumer %d in %s", myid, sqname);
+			elog(DEBUG1, "Looking for consumer %d in %s", myid, sqname);
 			/* find specified node in the consumer lists */
 			for (i = 0; i < sq->sq_nconsumers; i++)
 			{
@@ -1336,7 +1338,7 @@ SharedQueueRelease(const char *sqname)
 						 * consumers are finishing
 						 */
 						SetLatch(&sqsync->sqs_producer_latch);
-						elog(LOG, "Release consumer %d of %s", i, sqname);
+						elog(DEBUG1, "Release consumer %d of %s", i, sqname);
 					}
 					LWLockRelease(sqsync->sqs_consumer_sync[i].cs_lwlock);
 					/* exit */
@@ -1359,7 +1361,7 @@ SharedQueueRelease(const char *sqname)
 					/* Inform producer the consumer have done the job */
 					cstate->cs_status = CONSUMER_DONE;
 					SetLatch(&sqsync->sqs_producer_latch);
-					elog(LOG, "Release not bound consumer %d of %s", i, sqname);
+					elog(DEBUG1, "Release not bound consumer %d of %s", i, sqname);
 					LWLockRelease(sqsync->sqs_consumer_sync[i].cs_lwlock);
 				}
 			}
