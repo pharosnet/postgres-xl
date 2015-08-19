@@ -1027,13 +1027,18 @@ set_joinpath_distribution(PlannerInfo *root, JoinPath *pathnode)
 	 * Catalog tables are the same on all nodes, so treat them as replicated
 	 * on all nodes.
 	 */
-	if ((innerd && IsLocatorReplicated(innerd->distributionType)) &&
-		(outerd && IsLocatorReplicated(outerd->distributionType)))
+	if ((!innerd || IsLocatorReplicated(innerd->distributionType)) &&
+		(!outerd || IsLocatorReplicated(outerd->distributionType)))
 	{
 		/* Determine common nodes */
 		Bitmapset *common;
 
-		common = bms_intersect(innerd->nodes, outerd->nodes);
+		if (innerd == NULL)
+			common = bms_copy(outerd->nodes);
+		else if (outerd == NULL)
+			common = bms_copy(innerd->nodes);
+		else
+			common = bms_intersect(innerd->nodes, outerd->nodes);
 		if (bms_is_empty(common))
 			goto not_allowed_join;
 
@@ -1057,14 +1062,14 @@ set_joinpath_distribution(PlannerInfo *root, JoinPath *pathnode)
 	 * nullable data nodes will produce joined rows with NULLs for cases when
 	 * matching row exists, but on other data node.
 	 */
-	if ((innerd && IsLocatorReplicated(innerd->distributionType)) &&
+	if ((!innerd || IsLocatorReplicated(innerd->distributionType)) &&
 			(pathnode->jointype == JOIN_INNER ||
 			 pathnode->jointype == JOIN_LEFT ||
 			 pathnode->jointype == JOIN_SEMI ||
 			 pathnode->jointype == JOIN_ANTI))
 	{
 		/* We need inner relation is defined on all nodes where outer is */
-		if (!outerd || !bms_is_subset(outerd->nodes, innerd->nodes))
+		if (innerd && !bms_is_subset(outerd->nodes, innerd->nodes))
 			goto not_allowed_join;
 
 		targetd = makeNode(Distribution);
@@ -1085,12 +1090,12 @@ set_joinpath_distribution(PlannerInfo *root, JoinPath *pathnode)
 	 * nullable data nodes will produce joined rows with NULLs for cases when
 	 * matching row exists, but on other data node.
 	 */
-	if ((outerd && IsLocatorReplicated(outerd->distributionType)) &&
+	if ((!outerd || IsLocatorReplicated(outerd->distributionType)) &&
 			(pathnode->jointype == JOIN_INNER ||
 			 pathnode->jointype == JOIN_RIGHT))
 	{
 		/* We need outer relation is defined on all nodes where inner is */
-		if (!innerd || !bms_is_subset(innerd->nodes, outerd->nodes))
+		if (outerd && !bms_is_subset(innerd->nodes, outerd->nodes))
 			goto not_allowed_join;
 
 		targetd = makeNode(Distribution);
@@ -1274,7 +1279,6 @@ not_allowed_join:
 	 * by has as main variant.
 	 */
 
-#ifdef NOT_USED	
 	/* These join types allow replicated inner */
 	if (outerd &&
 			(pathnode->jointype == JOIN_INNER ||
@@ -1328,7 +1332,6 @@ not_allowed_join:
 		altpath->path.distribution = targetd;
 		alternate = lappend(alternate, altpath);
 	}
-#endif
 
 	/*
 	 * Redistribute subplans to make them compatible.
@@ -2800,7 +2803,6 @@ create_nestloop_path(PlannerInfo *root,
 	pathnode->outerjoinpath = outer_path;
 	pathnode->innerjoinpath = inner_path;
 	pathnode->joinrestrictinfo = restrict_clauses;
-
 #ifdef XCP
 	pathnode->movedrestrictinfo = mclauses;
 
