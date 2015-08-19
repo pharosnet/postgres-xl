@@ -596,8 +596,10 @@ HandleCommandComplete(RemoteQueryState *combiner, char *msg_body, size_t len, PG
 			 */
 			if (combiner->errorMessage == NULL)
 			{
+				MemoryContext oldcontext = MemoryContextSwitchTo(ErrorContext);
 				combiner->errorMessage =
 								pstrdup("unexpected ROLLBACK from remote node");
+				MemoryContextSwitchTo(oldcontext);
 				/*
 				 * ERRMSG_PRODUCER_ERROR
 				 * Messages with this code are replaced by others, if they are
@@ -1049,6 +1051,7 @@ HandleError(RemoteQueryState *combiner, char *msg_body, size_t len)
 						  combiner->errorCode[2], combiner->errorCode[3],
 						  combiner->errorCode[4]) == ERRCODE_PRODUCER_ERROR)
 	{
+		MemoryContext oldcontext = MemoryContextSwitchTo(ErrorContext);
 		combiner->errorMessage = pstrdup(message);
 		/* Error Code is exactly 5 significant bytes */
 		if (code)
@@ -1057,6 +1060,7 @@ HandleError(RemoteQueryState *combiner, char *msg_body, size_t len)
 			combiner->errorDetail = pstrdup(detail);
 		if (hint)
 			combiner->errorHint = pstrdup(hint);
+		MemoryContextSwitchTo(oldcontext);
 	}
 
 	/*
@@ -5241,6 +5245,7 @@ do_query(RemoteQueryState *node)
 
 		if (!pgxc_start_command_on_connection(primaryconnection, node, snapshot))
 		{
+			pgxc_node_remote_abort();
 			pfree(connections);
 			pfree(primaryconnection);
 			ereport(ERROR,
@@ -5280,6 +5285,7 @@ do_query(RemoteQueryState *node)
 
 		if (!pgxc_start_command_on_connection(connections[i], node, snapshot))
 		{
+			pgxc_node_remote_abort();
 			pfree(connections);
 			if (primaryconnection)
 				pfree(primaryconnection);
@@ -7583,6 +7589,7 @@ ExecRemoteQuery(RemoteQueryState *node)
 			/* If explicit transaction is needed gxid is already sent */
 			if (!pgxc_start_command_on_connection(primaryconnection, node, snapshot))
 			{
+				pgxc_node_remote_abort();
 				pfree_pgxc_all_handles(pgxc_connections);
 				ereport(ERROR,
 						(errcode(ERRCODE_INTERNAL_ERROR),
@@ -7622,6 +7629,7 @@ ExecRemoteQuery(RemoteQueryState *node)
 			/* If explicit transaction is needed gxid is already sent */
 			if (!pgxc_start_command_on_connection(connections[i], node, snapshot))
 			{
+				pgxc_node_remote_abort();
 				pfree_pgxc_all_handles(pgxc_connections);
 				ereport(ERROR,
 						(errcode(ERRCODE_INTERNAL_ERROR),
