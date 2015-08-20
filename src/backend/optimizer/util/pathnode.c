@@ -738,6 +738,36 @@ restrict_distribution(PlannerInfo *root, RestrictInfo *ri,
 	if (ri->orclause)
 		return;
 
+	/*
+	 * Check if the operator is hash joinable. Currently we only support hash
+	 * joinable operator for arriving at restricted nodes. This allows us
+	 * correctly deduce clauses which include a mix of int2/int4/int8 or
+	 * float4/float8 or clauses which have same type arguments and have a hash
+	 * joinable operator.
+	 *
+	 * Note: This stuff is mostly copied from check_hashjoinable
+	 */
+	{
+		Expr	   *clause = ri->clause;
+		Oid			opno;
+		Node	   *leftarg;
+
+		if (ri->pseudoconstant)
+			return;
+		if (!is_opclause(clause))
+			return;
+		if (list_length(((OpExpr *) clause)->args) != 2)
+			return;
+
+		opno = ((OpExpr *) clause)->opno;
+		leftarg = linitial(((OpExpr *) clause)->args);
+
+		if (!op_hashjoinable(opno, exprType(leftarg)) ||
+				contain_volatile_functions((Node *) clause))
+			return;
+	}
+
+
 	keytype = exprType(distribution->distributionExpr);
 	if (ri->left_ec)
 	{
@@ -752,8 +782,7 @@ restrict_distribution(PlannerInfo *root, RestrictInfo *ri,
 			{
 				Expr *cexpr = (Expr *) eval_const_expressions(root,
 													   (Node *) em->em_expr);
-				if (IsA(cexpr, Const) &&
-						((Const *) cexpr)->consttype == keytype)
+				if (IsA(cexpr, Const))
 					constExpr = (Const *) cexpr;
 			}
 		}
@@ -771,8 +800,7 @@ restrict_distribution(PlannerInfo *root, RestrictInfo *ri,
 			{
 				Expr *cexpr = (Expr *) eval_const_expressions(root,
 													   (Node *) em->em_expr);
-				if (IsA(cexpr, Const) &&
-						((Const *) cexpr)->consttype == keytype)
+				if (IsA(cexpr, Const))
 					constExpr = (Const *) cexpr;
 			}
 		}
@@ -794,8 +822,7 @@ restrict_distribution(PlannerInfo *root, RestrictInfo *ri,
 			{
 				found_key = true;
 				other = (Expr *) eval_const_expressions(root, (Node *) other);
-				if (IsA(other, Const) &&
-						((Const *) other)->consttype == keytype)
+				if (IsA(other, Const))
 					constExpr = (Const *) other;
 			}
 		}
@@ -1128,8 +1155,6 @@ set_joinpath_distribution(PlannerInfo *root, JoinPath *pathnode)
 		 * Make sure distribution functions are the same, for now they depend
 		 * on data type
 		 */
-		if (exprType((Node *) innerd->distributionExpr) != exprType((Node *) outerd->distributionExpr))
-			goto not_allowed_join;
 
 		/*
 		 * Planner already did necessary work and if there is a join
@@ -1159,6 +1184,9 @@ set_joinpath_distribution(PlannerInfo *root, JoinPath *pathnode)
 			 * do not worth doing at all.
 			 */
 			if (ri->orclause)
+				continue;
+
+			if (!OidIsValid(ri->hashjoinoperator))
 				continue;
 
 			found_outer = false;
