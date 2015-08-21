@@ -1083,11 +1083,15 @@ currval_oid(PG_FUNCTION_ARGS)
 				 errmsg("permission denied for sequence %s",
 						RelationGetRelationName(seqrel))));
 
+	if (!elm->last_valid)
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("currval of sequence \"%s\" is not yet defined in this session",
+						RelationGetRelationName(seqrel))));
 #ifdef XCP
 	{
 		/*
- 		 * Always contact GTM for currval regardless of valid
- 		 * elm->last_valid value
+ 		 * Always contact GTM for currval
  		 */
 		{
 			char *seqname = GetGlobalSeqName(seqrel, NULL, NULL);
@@ -1095,12 +1099,6 @@ currval_oid(PG_FUNCTION_ARGS)
 			pfree(seqname);
 		}
 	}
-#else
-	if (!elm->last_valid)
-		ereport(ERROR,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("currval of sequence \"%s\" is not yet defined in this session",
-						RelationGetRelationName(seqrel))));
 #endif
 
 #ifndef XCP
