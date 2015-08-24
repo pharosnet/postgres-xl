@@ -179,7 +179,8 @@ do_gtm_ping(char *host, char* port, nodetype_t nodetype, char *nodename, bool ve
 		fprintf(stderr, "%s: -p is mandatory for -Z gtm or -Z gtm_proxy\n", progname);
 		exit(3);
 	}
-	sprintf(connect_str, "host=%s port=%s node_name=%s remote_type=%d postmaster=0",
+	/* Use 60s as connection timeout */
+	sprintf(connect_str, "host=%s port=%s node_name=%s remote_type=%d postmaster=0 connect_timeout=60",
 			host, port, nodename ? nodename : "pgxc_monitor", GTM_NODE_COORDINATOR);
 	if ((conn = PQconnectGTM(connect_str)) == NULL)
 	{

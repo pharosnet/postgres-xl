@@ -457,7 +457,8 @@ do_gtm_ping(char *host, int port)
 		elog(ERROR, "ERROR: Invalid port number, %d.\n", port);
 		return -1;
 	}
-	sprintf(connect_str, "host=%s port=%d node_name=%s remote_type=%d postmaster=0",
+	/* Use 60s as connection timeout */
+	sprintf(connect_str, "host=%s port=%d node_name=%s remote_type=%d postmaster=0 connect_timeout=60",
 			host, port, myName, GTM_NODE_COORDINATOR);
 	if ((conn = PQconnectGTM(connect_str)) == NULL)
 	{

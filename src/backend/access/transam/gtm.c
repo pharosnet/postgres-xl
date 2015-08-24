@@ -30,6 +30,7 @@
 /* Configuration variables */
 char *GtmHost = "localhost";
 int GtmPort = 6666;
+static int GtmConnectTimeout = 60;
 #ifdef XCP
 bool IsXidFromGTM = false;
 #endif
@@ -77,15 +78,19 @@ InitGTM(void)
 		else if (IS_PGXC_DATANODE)
 			remote_type = GTM_NODE_DATANODE;
 
-		sprintf(conn_str, "host=%s port=%d node_name=%s remote_type=%d postmaster=1",
-								GtmHost, GtmPort, PGXCNodeName, remote_type);
+		/* Use 60s as connection timeout */
+		sprintf(conn_str, "host=%s port=%d node_name=%s remote_type=%d postmaster=1 connect_timeout=%d",
+								GtmHost, GtmPort, PGXCNodeName, remote_type,
+								GtmConnectTimeout);
 
 		/* Log activity of GTM connections */
 		elog(DEBUG1, "Postmaster: connection established to GTM with string %s", conn_str);
 	}
 	else
 	{
-		sprintf(conn_str, "host=%s port=%d node_name=%s", GtmHost, GtmPort, PGXCNodeName);
+		/* Use 60s as connection timeout */
+		sprintf(conn_str, "host=%s port=%d node_name=%s connect_timeout=%d",
+				GtmHost, GtmPort, PGXCNodeName, GtmConnectTimeout);
 
 		/* Log activity of GTM connections */
 		if (IsAutoVacuumWorkerProcess())

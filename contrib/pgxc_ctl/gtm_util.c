@@ -136,7 +136,8 @@ static GTM_Conn *connectGTM()
 {
 	char connect_str[MAXLINE+1];
 
-	snprintf(connect_str, MAXLINE, "host=%s port=%d node_name=%s remote_type=%d postmaster=0",
+	/* Use 60s as connection timeout */
+	snprintf(connect_str, MAXLINE, "host=%s port=%d node_name=%s remote_type=%d postmaster=0 connect_timeout=60",
 			 sval(VAR_gtmMasterServer), atoi(sval(VAR_gtmMasterPort)), (myname == NULL) ? DefaultName : myname, GTM_NODE_COORDINATOR);
 	return(PQconnectGTM(connect_str));
 }
