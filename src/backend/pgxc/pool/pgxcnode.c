@@ -2722,6 +2722,18 @@ PGXCNodeSetParam(bool local, const char *name, const char *value)
 
 		param_list = lappend(param_list, entry);
 	}
+
+	/*
+	 * Special case for 
+	 * 	RESET SESSION AUTHORIZATION 
+	 * 	SET SESSION AUTHORIZATION TO DEFAULT
+	 *
+	 * We must also forget any SET ROLE commands since RESET SESSION
+	 * AUTHORIZATION also resets current role to session default
+	 */
+	if ((strcmp(name, "session_authorization") == 0) && (value == NULL))
+		param_list = paramlist_delete_param(param_list, "role");
+
 	if (local)
 		local_param_list = param_list;
 	else
