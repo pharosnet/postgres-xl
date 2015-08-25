@@ -124,9 +124,9 @@ ALTER TABLE xl_at2h RENAME COLUMN product_id TO product_identifier;
 
 ALTER TABLE xl_at2h RENAME TO xl_at3h;
 
-ALTER TABLE xl_at3h DELETE NODE (datanode2);
+ALTER TABLE xl_at3h DELETE NODE (datanode_2);
 
-ALTER TABLE xl_at3h ADD NODE (datanode2);
+ALTER TABLE xl_at3h ADD NODE (datanode_2);
 
 ALTER TABLE xl_at3h DISTRIBUTE BY REPLICATION; 
 
@@ -168,9 +168,9 @@ ALTER TABLE xl_at2m RENAME COLUMN product_id TO product_identifier;
 
 ALTER TABLE xl_at2m RENAME TO xl_at3m;
 
-ALTER TABLE xl_at3m DELETE NODE (datanode2);
+ALTER TABLE xl_at3m DELETE NODE (datanode_2);
 
-ALTER TABLE xl_at3m ADD NODE (datanode2);
+ALTER TABLE xl_at3m ADD NODE (datanode_2);
 
 ALTER TABLE xl_at3m DROP COLUMN product_identifier;--fail - distribution column cannot be dropped.
 

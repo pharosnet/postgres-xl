@@ -5,7 +5,7 @@ INSERT INTO xl_pp SELECT generate_series(1,100), 20;
 EXPLAIN VERBOSE SELECT * FROM xl_pp WHERE a = 100;
                                        QUERY PLAN                                       
 ----------------------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode2)  (cost=0.00..35.50 rows=10 width=12)
+ Remote Subquery Scan on all (datanode_2)  (cost=0.00..35.50 rows=10 width=12)
    Output: a, b
    ->  Seq Scan on public.xl_pp  (cost=0.00..35.50 rows=10 width=12)
          Output: a, b
@@ -16,7 +16,7 @@ EXPLAIN VERBOSE SELECT * FROM xl_pp WHERE a = 100;
 EXPLAIN VERBOSE SELECT * FROM xl_pp WHERE a = 100::bigint;
                                   QUERY PLAN                                  
 ------------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode2)  (cost=0.00..35.50 rows=10 width=12)
+ Remote Subquery Scan on all (datanode_2)  (cost=0.00..35.50 rows=10 width=12)
    Output: a, b
    ->  Seq Scan on public.xl_pp  (cost=0.00..35.50 rows=10 width=12)
          Output: a, b
@@ -31,7 +31,7 @@ EXPLAIN VERBOSE SELECT * FROM xl_pp WHERE a = 100::bigint;
 EXPLAIN VERBOSE INSERT INTO xl_pp (a, b) VALUES (200, 1) ;
                                     QUERY PLAN                                    
 ----------------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode1)  (cost=0.00..0.01 rows=1 width=0)
+ Remote Subquery Scan on all (datanode_1)  (cost=0.00..0.01 rows=1 width=0)
    ->  Insert on public.xl_pp  (cost=0.00..0.01 rows=1 width=0)
          ->  Remote Subquery Scan on local node  (cost=0.00..0.01 rows=1 width=0)
                Output: '200'::bigint, 1
@@ -43,7 +43,7 @@ EXPLAIN VERBOSE INSERT INTO xl_pp (a, b) VALUES (200, 1) ;
 EXPLAIN VERBOSE INSERT INTO xl_pp (a, b) VALUES (201::bigint, 1) ;
                                     QUERY PLAN                                    
 ----------------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode1)  (cost=0.00..0.01 rows=1 width=0)
+ Remote Subquery Scan on all (datanode_1)  (cost=0.00..0.01 rows=1 width=0)
    ->  Insert on public.xl_pp  (cost=0.00..0.01 rows=1 width=0)
          ->  Remote Subquery Scan on local node  (cost=0.00..0.01 rows=1 width=0)
                Output: '201'::bigint, 1
@@ -55,7 +55,7 @@ EXPLAIN VERBOSE INSERT INTO xl_pp (a, b) VALUES (201::bigint, 1) ;
 EXPLAIN VERBOSE UPDATE xl_pp SET b=2 where a=200;
                                        QUERY PLAN                                       
 ----------------------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode1)  (cost=0.00..35.50 rows=10 width=18)
+ Remote Subquery Scan on all (datanode_1)  (cost=0.00..35.50 rows=10 width=18)
    ->  Update on public.xl_pp  (cost=0.00..35.50 rows=10 width=18)
          ->  Seq Scan on public.xl_pp  (cost=0.00..35.50 rows=10 width=18)
                Output: a, 2, a, xc_node_id, ctid
@@ -65,7 +65,7 @@ EXPLAIN VERBOSE UPDATE xl_pp SET b=2 where a=200;
 EXPLAIN VERBOSE UPDATE xl_pp SET b=2 where a=200::bigint;
                                   QUERY PLAN                                  
 ------------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode1)  (cost=0.00..35.50 rows=10 width=18)
+ Remote Subquery Scan on all (datanode_1)  (cost=0.00..35.50 rows=10 width=18)
    ->  Update on public.xl_pp  (cost=0.00..35.50 rows=10 width=18)
          ->  Seq Scan on public.xl_pp  (cost=0.00..35.50 rows=10 width=18)
                Output: a, 2, a, xc_node_id, ctid
@@ -75,7 +75,7 @@ EXPLAIN VERBOSE UPDATE xl_pp SET b=2 where a=200::bigint;
 EXPLAIN VERBOSE DELETE FROM xl_pp where a=200;
                                        QUERY PLAN                                       
 ----------------------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode1)  (cost=0.00..35.50 rows=10 width=18)
+ Remote Subquery Scan on all (datanode_1)  (cost=0.00..35.50 rows=10 width=18)
    ->  Delete on public.xl_pp  (cost=0.00..35.50 rows=10 width=18)
          ->  Seq Scan on public.xl_pp  (cost=0.00..35.50 rows=10 width=18)
                Output: a, xc_node_id, ctid, a
@@ -95,7 +95,7 @@ SELECT * from xl_pp where a=200::bigint;
 EXPLAIN VERBOSE DELETE FROM xl_pp where a=200;
                                        QUERY PLAN                                       
 ----------------------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode1)  (cost=0.00..35.50 rows=10 width=18)
+ Remote Subquery Scan on all (datanode_1)  (cost=0.00..35.50 rows=10 width=18)
    ->  Delete on public.xl_pp  (cost=0.00..35.50 rows=10 width=18)
          ->  Seq Scan on public.xl_pp  (cost=0.00..35.50 rows=10 width=18)
                Output: a, xc_node_id, ctid, a
@@ -105,7 +105,7 @@ EXPLAIN VERBOSE DELETE FROM xl_pp where a=200;
 EXPLAIN VERBOSE DELETE FROM xl_pp where a=200::bigint;
                                   QUERY PLAN                                  
 ------------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode1)  (cost=0.00..35.50 rows=10 width=18)
+ Remote Subquery Scan on all (datanode_1)  (cost=0.00..35.50 rows=10 width=18)
    ->  Delete on public.xl_pp  (cost=0.00..35.50 rows=10 width=18)
          ->  Seq Scan on public.xl_pp  (cost=0.00..35.50 rows=10 width=18)
                Output: a, xc_node_id, ctid, a
@@ -118,7 +118,7 @@ INSERT INTO xl_ppm SELECT generate_series(1,100), 20;
 EXPLAIN VERBOSE SELECT * FROM xl_ppm WHERE a = 100;
                                       QUERY PLAN                                       
 ---------------------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode1)  (cost=0.00..40.00 rows=12 width=6)
+ Remote Subquery Scan on all (datanode_1)  (cost=0.00..40.00 rows=12 width=6)
    Output: a, b
    ->  Seq Scan on public.xl_ppm  (cost=0.00..40.00 rows=12 width=6)
          Output: a, b
@@ -129,7 +129,7 @@ EXPLAIN VERBOSE SELECT * FROM xl_ppm WHERE a = 100;
 EXPLAIN VERBOSE SELECT * FROM xl_ppm WHERE a = 100::INT2;
                                  QUERY PLAN                                  
 -----------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode1)  (cost=0.00..40.00 rows=12 width=6)
+ Remote Subquery Scan on all (datanode_1)  (cost=0.00..40.00 rows=12 width=6)
    Output: a, b
    ->  Seq Scan on public.xl_ppm  (cost=0.00..40.00 rows=12 width=6)
          Output: a, b
@@ -144,7 +144,7 @@ EXPLAIN VERBOSE SELECT * FROM xl_ppm WHERE a = 100::INT2;
 EXPLAIN VERBOSE INSERT INTO xl_ppm (a, b) VALUES (200, 1) ;
                                     QUERY PLAN                                    
 ----------------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode1)  (cost=0.00..0.01 rows=1 width=0)
+ Remote Subquery Scan on all (datanode_1)  (cost=0.00..0.01 rows=1 width=0)
    ->  Insert on public.xl_ppm  (cost=0.00..0.01 rows=1 width=0)
          ->  Remote Subquery Scan on local node  (cost=0.00..0.01 rows=1 width=0)
                Output: '200'::smallint, 1
@@ -156,7 +156,7 @@ EXPLAIN VERBOSE INSERT INTO xl_ppm (a, b) VALUES (200, 1) ;
 EXPLAIN VERBOSE INSERT INTO xl_ppm (a, b) VALUES (201::INT2, 1) ;
                                     QUERY PLAN                                    
 ----------------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode2)  (cost=0.00..0.01 rows=1 width=0)
+ Remote Subquery Scan on all (datanode_2)  (cost=0.00..0.01 rows=1 width=0)
    ->  Insert on public.xl_ppm  (cost=0.00..0.01 rows=1 width=0)
          ->  Remote Subquery Scan on local node  (cost=0.00..0.01 rows=1 width=0)
                Output: '201'::smallint, 1
@@ -168,7 +168,7 @@ EXPLAIN VERBOSE INSERT INTO xl_ppm (a, b) VALUES (201::INT2, 1) ;
 EXPLAIN VERBOSE UPDATE xl_ppm SET b=2 where a=200;
                                        QUERY PLAN                                       
 ----------------------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode1)  (cost=0.00..40.00 rows=12 width=12)
+ Remote Subquery Scan on all (datanode_1)  (cost=0.00..40.00 rows=12 width=12)
    ->  Update on public.xl_ppm  (cost=0.00..40.00 rows=12 width=12)
          ->  Seq Scan on public.xl_ppm  (cost=0.00..40.00 rows=12 width=12)
                Output: a, 2, a, xc_node_id, ctid
@@ -178,7 +178,7 @@ EXPLAIN VERBOSE UPDATE xl_ppm SET b=2 where a=200;
 EXPLAIN VERBOSE UPDATE xl_ppm SET b=2 where a=200::INT2;
                                   QUERY PLAN                                  
 ------------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode1)  (cost=0.00..40.00 rows=12 width=12)
+ Remote Subquery Scan on all (datanode_1)  (cost=0.00..40.00 rows=12 width=12)
    ->  Update on public.xl_ppm  (cost=0.00..40.00 rows=12 width=12)
          ->  Seq Scan on public.xl_ppm  (cost=0.00..40.00 rows=12 width=12)
                Output: a, 2, a, xc_node_id, ctid
@@ -188,7 +188,7 @@ EXPLAIN VERBOSE UPDATE xl_ppm SET b=2 where a=200::INT2;
 EXPLAIN VERBOSE DELETE FROM xl_ppm where a=200;
                                        QUERY PLAN                                       
 ----------------------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode1)  (cost=0.00..40.00 rows=12 width=12)
+ Remote Subquery Scan on all (datanode_1)  (cost=0.00..40.00 rows=12 width=12)
    ->  Delete on public.xl_ppm  (cost=0.00..40.00 rows=12 width=12)
          ->  Seq Scan on public.xl_ppm  (cost=0.00..40.00 rows=12 width=12)
                Output: a, xc_node_id, ctid, a
@@ -208,7 +208,7 @@ SELECT * from xl_ppm where a=200::INT2;
 EXPLAIN VERBOSE DELETE FROM xl_ppm where a=200;
                                        QUERY PLAN                                       
 ----------------------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode1)  (cost=0.00..40.00 rows=12 width=12)
+ Remote Subquery Scan on all (datanode_1)  (cost=0.00..40.00 rows=12 width=12)
    ->  Delete on public.xl_ppm  (cost=0.00..40.00 rows=12 width=12)
          ->  Seq Scan on public.xl_ppm  (cost=0.00..40.00 rows=12 width=12)
                Output: a, xc_node_id, ctid, a
@@ -218,7 +218,7 @@ EXPLAIN VERBOSE DELETE FROM xl_ppm where a=200;
 EXPLAIN VERBOSE DELETE FROM xl_ppm where a=200::INT2;
                                   QUERY PLAN                                  
 ------------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode1)  (cost=0.00..40.00 rows=12 width=12)
+ Remote Subquery Scan on all (datanode_1)  (cost=0.00..40.00 rows=12 width=12)
    ->  Delete on public.xl_ppm  (cost=0.00..40.00 rows=12 width=12)
          ->  Seq Scan on public.xl_ppm  (cost=0.00..40.00 rows=12 width=12)
                Output: a, xc_node_id, ctid, a
