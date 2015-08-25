@@ -2527,10 +2527,18 @@ ProcessUtilitySlow(Node *parsetree,
 
 			case T_CreatePolicyStmt:	/* CREATE POLICY */
 				address = CreatePolicy((CreatePolicyStmt *) parsetree);
+#ifdef PGXC
+				if (IS_PGXC_LOCAL_COORDINATOR)
+					ExecUtilityStmtOnNodes(queryString, NULL, sentToRemote, false, EXEC_ON_ALL_NODES, false);
+#endif
 				break;
 
 			case T_AlterPolicyStmt:		/* ALTER POLICY */
 				address = AlterPolicy((AlterPolicyStmt *) parsetree);
+#ifdef PGXC
+				if (IS_PGXC_LOCAL_COORDINATOR)
+					ExecUtilityStmtOnNodes(queryString, NULL, sentToRemote, false, EXEC_ON_ALL_NODES, false);
+#endif
 				break;
 
 			case T_SecLabelStmt:
