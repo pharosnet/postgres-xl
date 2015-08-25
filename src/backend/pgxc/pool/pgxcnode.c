@@ -94,8 +94,8 @@ volatile bool HandlesInvalidatePending = false;
  * Session and transaction parameters need to to be set on newly connected
  * remote nodes.
  */
-static HTAB		   *session_param_htab = NULL;
-static HTAB		   *local_param_htab = NULL;
+static List *session_param_list = NIL;
+static List	*local_param_list = NIL;
 static StringInfo 	session_params;
 static StringInfo	local_params;
 
@@ -2652,6 +2652,40 @@ PGXCNodeGetNodeIdFromName(char *node_name, char node_type)
 
 
 #ifdef XCP
+
+static List *
+paramlist_delete_param(List *param_list, const char *name)
+{
+	   ListCell   *cur_item;
+	   ListCell   *prev_item;
+
+	   prev_item = NULL;
+	   cur_item = list_head(param_list);
+
+	   while (cur_item != NULL)
+	   {
+			   ParamEntry *entry = (ParamEntry *) lfirst(cur_item);
+
+			   if (strcmp(NameStr(entry->name), name) == 0)
+			   {
+					   /* cur_item must be removed */
+					   param_list = list_delete_cell(param_list, cur_item, prev_item);
+					   pfree(entry);
+					   if (prev_item)
+							   cur_item = lnext(prev_item);
+					   else
+							   cur_item = list_head(param_list);
+			   }
+			   else
+			   {
+					   prev_item = cur_item;
+					   cur_item = lnext(prev_item);
+			   }
+	   }
+
+	   return param_list;
+}
+
 /*
  * Remember new value of a session or transaction parameter, and set same
  * values on newly connected remote nodes.
@@ -2659,81 +2693,41 @@ PGXCNodeGetNodeIdFromName(char *node_name, char node_type)
 void
 PGXCNodeSetParam(bool local, const char *name, const char *value)
 {
-	HTAB 		   *table;
+	List *param_list;
+	MemoryContext oldcontext;
 
 	/* Get the target hash table and invalidate command string */
 	if (local)
 	{
-		table = local_param_htab;
+		param_list = local_param_list;
 		if (local_params)
 			resetStringInfo(local_params);
+		oldcontext = MemoryContextSwitchTo(TopTransactionContext);
 	}
 	else
 	{
-		table = session_param_htab;
+		param_list = session_param_list;
 		if (session_params)
 			resetStringInfo(session_params);
+		oldcontext = MemoryContextSwitchTo(TopMemoryContext);
 	}
 
-	/* Initialize table if empty */
-	if (table == NULL)
-	{
-		HASHCTL hinfo;
-		int		hflags;
-
-		/* do not bother creating hash table if we about to reset non-existing
-		 * parameter */
-		if (value == NULL)
-			return;
-
-		/* Init parameter hashtable */
-		MemSet(&hinfo, 0, sizeof(hinfo));
-		hflags = 0;
-
-		hinfo.keysize = NAMEDATALEN;
-		hinfo.entrysize = sizeof(ParamEntry);
-		hflags |= HASH_ELEM;
-
-		if (local)
-		{
-			/* Local parameters are not valid beyond transaction boundaries */
-			hinfo.hcxt = TopTransactionContext;
-			hflags |= HASH_CONTEXT;
-			table = hash_create("Remote local params", 16, &hinfo, hflags);
-			local_param_htab = table;
-		}
-		else
-		{
-			/*
-			 * Session parameters needs to be in TopMemoryContext, hash table
-			 * is created in TopMemoryContext by default.
-			 */
-			table = hash_create("Remote session params", 16, &hinfo, hflags);
-			session_param_htab = table;
-		}
-	}
-
+	param_list = paramlist_delete_param(param_list, name);
 	if (value)
 	{
 		ParamEntry *entry;
-		/* create entry or replace value for the parameter */
-		entry = (ParamEntry *) hash_search(table, name, HASH_ENTER, NULL);
+		entry = (ParamEntry *) palloc(sizeof (ParamEntry));
+		strlcpy((char *) (&entry->name), name, NAMEDATALEN);
 		strlcpy((char *) (&entry->value), value, NAMEDATALEN);
+
+		param_list = lappend(param_list, entry);
 	}
+	if (local)
+		local_param_list = param_list;
 	else
-	{
-		/* remove entry */
-		hash_search(table, name, HASH_REMOVE, NULL);
-		/* remove table if it becomes empty */
-		if (hash_get_num_entries(table) == 0)
-		{
-			hash_destroy(table);
-			if (local)
-				local_param_htab = NULL;
-			else
-				session_param_htab = NULL;
-		}
-	}
+		session_param_list = param_list;
+
+	MemoryContextSwitchTo(oldcontext);
 }
 
 
@@ -2744,11 +2738,11 @@ PGXCNodeSetParam(bool local, const char *name, const char *value)
 void
 PGXCNodeResetParams(bool only_local)
 {
-	if (!only_local && session_param_htab)
+	if (!only_local && session_param_list)
 	{
 		/* need to explicitly pfree session stuff, it is in TopMemoryContext */
-		hash_destroy(session_param_htab);
-		session_param_htab = NULL;
+		list_free_deep(session_param_list);
+		session_param_list = NIL;
 		if (session_params)
 		{
 			pfree(session_params->data);
@@ -2757,10 +2751,10 @@ PGXCNodeResetParams(bool only_local)
 		}
 	}
 	/*
-	 * no need to explicitly destroy the local_param_htab and local_params,
+	 * no need to explicitly destroy the local_param_list and local_params,
 	 * it will gone with the transaction memory context.
 	 */
-	local_param_htab = NULL;
+	local_param_list = NIL;
 	local_params = NULL;
 }
 
@@ -2784,17 +2778,16 @@ quote_ident_cstr(char *rawstr)
 
 
 static void
-get_set_command(HTAB *table, StringInfo command, bool local)
+get_set_command(List *param_list, StringInfo command, bool local)
 {
-	HASH_SEQ_STATUS hseq_status;
-	ParamEntry	   *entry;
+	ListCell		   *lc;
 
-	if (table == NULL)
+	if (param_list == NIL)
 		return;
 
-	hash_seq_init(&hseq_status, table);
-	while ((entry = (ParamEntry *) hash_seq_search(&hseq_status)))
+	foreach (lc, param_list)
 	{
+		ParamEntry *entry = (ParamEntry *) lfirst(lc);
 		char *value = NameStr(entry->value);
 
 		if (strlen(value) == 0)
@@ -2837,7 +2830,7 @@ PGXCNodeGetSessionParamStr(void)
 		if (IS_PGXC_COORDINATOR)
 			appendStringInfo(session_params, "SET global_session TO %s_%d;",
 							 PGXCNodeName, MyProcPid);
-		get_set_command(session_param_htab, session_params, false);
+		get_set_command(session_param_list, session_params, false);
 	}
 	return session_params->len == 0 ? NULL : session_params->data;
 }
@@ -2852,7 +2845,7 @@ char *
 PGXCNodeGetTransactionParamStr(void)
 {
 	/* If no local parameters defined there is nothing to return */
-	if (local_param_htab == NULL)
+	if (local_param_list == NIL)
 		return NULL;
 
 	/*
@@ -2870,7 +2863,7 @@ PGXCNodeGetTransactionParamStr(void)
 	 */
 	if (local_params->len == 0)
 	{
-		get_set_command(local_param_htab, local_params, true);
+		get_set_command(local_param_list, local_params, true);
 	}
 	return local_params->len == 0 ? NULL : local_params->data;
 }
