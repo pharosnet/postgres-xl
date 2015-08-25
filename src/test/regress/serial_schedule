@@ -183,3 +183,4 @@ test: xl_alter_table
 test: xl_distribution_column_types_modulo
 test: xl_plan_pushdown
 test: xl_functions
+test: xl_plpgsql
