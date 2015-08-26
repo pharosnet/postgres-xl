@@ -92,9 +92,7 @@ typedef struct databasepool
 {
 	char	   *database;
 	char	   *user_name;
-#ifndef XCP
 	char	   *pgoptions;		/* Connection options */
-#endif
 	HTAB	   *nodePools; 		/* Hashtable of PGXCNodePool, one entry for each
 								 * Coordinator or DataNode */
 	MemoryContext mcxt;
@@ -182,10 +180,9 @@ extern void PoolManagerCloseHandle(PoolHandle *handle);
  * Gracefully close connection to the PoolManager
  */
 extern void PoolManagerDisconnect(void);
-
-#ifndef XCP
 extern char *session_options(void);
 
+#ifndef XCP
 /*
  * Called from Session process after fork(). Associate handle with session
  * for subsequent calls. Associate session with specified database and
