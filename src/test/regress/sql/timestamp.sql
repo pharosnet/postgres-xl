@@ -225,3 +225,13 @@ SELECT '' AS to_char_11, to_char(d1, 'FMIYYY FMIYY FMIY FMI FMIW FMIDDD FMID')
 
 -- timestamp numeric fields constructor
 SELECT make_timestamp(2014,12,28,6,30,45.887);
+
+-- test if now() gives a correct timestamp and does not marely reports the
+-- value saved from the previous transaction
+
+SELECT now();
+BEGIN;
+SELECT now();
+CREATE TABLE test_now(a timestamp);
+SELECT now();
+ROLLBACK;
