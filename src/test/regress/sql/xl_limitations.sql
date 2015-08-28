@@ -224,6 +224,7 @@ DELETE FROM xl_Pline WHERE CURRENT OF xl_scroll_cursor1;
 COMMIT;
 
 --insensitive cursor would be insensitive to updates happening to the table
+-- right now it is sensitive which is a bug (34) in Postgres-XL issue tracker sheet. 
 BEGIN;
 declare xl_ins_cursor INSENSITIVE CURSOR for select * from xl_Pline order by slotname desc;
 
@@ -260,71 +261,6 @@ begin;
     set constraints all immediate; -- fails
   rollback to x;
 commit;				-- still fails
-
---User defined functions have several limitations 
---Basic insert, update, delete test on multiple datanodes using plpgsql function is passing.
-create function xl_insert_Pline_test(int) returns boolean as $$
-BEGIN
-	IF $1 < 20 THEN
-		insert into  xl_PLine values ('PL.030', '-367', '', 'PS.first.tb6');
-		insert into  xl_PLine values ('PL.031', '-367', '', 'PS.first.tb6');
-		insert into  xl_PLine values ('PL.032', '-367', '', 'PS.first.tb6');
-		insert into  xl_PLine values ('PL.033', '-367', '', 'PS.first.tb6');
-		insert into  xl_PLine values ('PL.034', '-367', '', 'PS.first.tb6');
-		insert into  xl_PLine values ('PL.035', '-367', '', 'PS.first.tb6');
-		insert into  xl_PLine values ('PL.036', '-367', '', 'PS.first.tb6');
-		RETURN TRUE;
-	ELSE
-		RETURN FALSE;
-	END IF;
-END;$$ language plpgsql;
-
-select xl_insert_Pline_test(1);
-
-select xl_nodename_from_id(xc_node_id), * from xl_Pline order by slotname;
-
-
-create function xl_update_Pline_test(int) returns boolean as $$
-BEGIN
-	IF $1 < 20 THEN
-		update xl_Pline set phonenumber = '400' where slotname = 'PL.030';
-		update xl_Pline set phonenumber = '400' where slotname = 'PL.031';
-		update xl_Pline set phonenumber = '400' where slotname = 'PL.032';
-		update xl_Pline set phonenumber = '400' where slotname = 'PL.033';
-		update xl_Pline set phonenumber = '400' where slotname = 'PL.034';
-		update xl_Pline set phonenumber = '400' where slotname = 'PL.035';
-		update xl_Pline set phonenumber = '400' where slotname = 'PL.036';
-		RETURN TRUE;
-	ELSE
-		RETURN FALSE;
-	END IF;
-END;$$ language plpgsql;
-
-select xl_update_Pline_test(1);
-
-select xl_nodename_from_id(xc_node_id), * from xl_Pline order by slotname;
-
-create function xl_delete_Pline_test(int) returns boolean as $$
-BEGIN
-	IF $1 < 20 THEN
-		delete from xl_Pline where slotname = 'PL.030';
-		delete from xl_Pline where slotname = 'PL.031';
-		delete from xl_Pline where slotname = 'PL.032';
-		delete from xl_Pline where slotname = 'PL.033';
-		delete from xl_Pline where slotname = 'PL.034';
-		delete from xl_Pline where slotname = 'PL.035';
-		delete from xl_Pline where slotname = 'PL.036';
-
-		RETURN TRUE;
-	ELSE
-		RETURN FALSE;
-	END IF;
-END;$$ language plpgsql;
-
-select xl_delete_Pline_test(1);
-
-select xl_nodename_from_id(xc_node_id), * from xl_Pline order by slotname;
-
 
 --Correlated UPDATE/DELETE is not supported. 
 -- distributed by default ==> xl_t by HASH(no), xl_t1 by HASH(no1)
@@ -506,7 +442,6 @@ CREATE FOREIGN DATA WRAPPER xl_foo VALIDATOR postgresql_fdw_validator;
 
 --LISTEN/NOTIFY is not supported. Looks like they are supported now. 
 --We would obviously have issues with LISTEN/NOTIFY if clients are connected to different coordinators. Need to test that manually as it is difficult via regression.
---Should work. Send a valid message via a valid channel name
 --LISTEN notify_async1; 
 -- commenting LISTEN as PIDs shown here would never match in regression.
 SELECT pg_notify('notify_async1','sample message1');
@@ -535,11 +470,27 @@ SELECT pg_notify('fo' || 'o', 'pay' || 'load');
 
 drop function xl_room_au();
 drop function xl_trap_zero_divide(int);
+
+--GROUPING SETs are not supported
+--xl_items_sold gets distributed by default on HASH(brand)
+-- below test looks to be working fine for data spanning multiple nodes.
+-- However existing groupingsets.sql test is failing for Postgres-XL (Low priority)
+create table xl_items_sold (
+	brand char(20),
+	size_sold char(2),
+	sales integer 
+);
+
+insert into xl_items_sold values ('Foo', 'L','10');
+insert into xl_items_sold values ('Foo', 'M','20');
+insert into xl_items_sold values ('Bar', 'M','15');
+insert into xl_items_sold values ('Bar', 'L','5');
+
+select xl_nodename_from_id(xc_node_id), * from xl_items_sold;
+
+SELECT brand, size_sold, sum(sales) FROM xl_items_sold GROUP BY GROUPING SETS ((brand), (size_sold), ());
+
+drop table xl_items_sold;
 drop function xl_nodename_from_id(integer);
-drop function xl_insert_Pline_test(int);
-drop function xl_update_Pline_test(int);
-drop function xl_delete_Pline_test(int);
-
-
 
 
