@@ -63,6 +63,11 @@ BEGIN [ WORK | TRANSACTION ] [ <replaceable class="parameter">transaction_mode</
    <xref linkend="sql-set-transaction">
    was executed.
   </para>
+
+  <para>
+   In <productname>Postgres-XL</> isolation level SERIALIZABLE is converted to 
+   REPEATABLE READ internally silently.
+  </para>
  </refsect1>
 
  <refsect1>

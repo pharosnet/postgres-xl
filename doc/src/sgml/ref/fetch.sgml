@@ -79,7 +79,7 @@ FETCH [ <replaceable class="PARAMETER">direction</replaceable> [ FROM | IN ] ] <
 
   <para>
    The forms <literal>PRIOR</>, <literal>FIRST</>, <literal>LAST</>
-   and <literal>ABSOLUTE</> are not supported by the current release
+   and <literal>ABSOLUTE</> are supported by the current release
    of <productname>Postgres-XL</>
   </para>
 
@@ -93,7 +93,7 @@ FETCH [ <replaceable class="PARAMETER">direction</replaceable> [ FROM | IN ] ] <
   </para>
 
   <para>
-   The form using <literal>BACKWARD</> is not supported in the current
+   The form using <literal>BACKWARD</> is supported in the current
    release of <productname>Postgres-XL</>.
   </para>
 
@@ -106,7 +106,7 @@ FETCH [ <replaceable class="PARAMETER">direction</replaceable> [ FROM | IN ] ] <
   </para>
 
   <para>
-   The form using <literal>BACKWARD</> is not supported in the current
+   The form using <literal>BACKWARD</> is supported in the current
    release of <productname>Postgres-XL</>.
   </para>
 
@@ -149,7 +149,7 @@ FETCH [ <replaceable class="PARAMETER">direction</replaceable> [ FROM | IN ] ] <
           Fetch the prior row.
          </para>
          <para>
-          <literal>PRIOR</literal> is not supported by the current
+          <literal>PRIOR</literal> is supported by the current
           release of <productname>Postgres-XL</>.
          </para>
         </listitem>
@@ -162,7 +162,7 @@ FETCH [ <replaceable class="PARAMETER">direction</replaceable> [ FROM | IN ] ] <
           Fetch the first row of the query (same as <literal>ABSOLUTE 1</literal>).
          </para>
          <para>
-          <literal>FIRST</literal> is not supported by the current
+          <literal>FIRST</literal> is supported by the current
           release of <productname>Postgres-XL</>.
          </para>
         </listitem>
@@ -206,7 +206,7 @@ FETCH [ <replaceable class="PARAMETER">direction</replaceable> [ FROM | IN ] ] <
           the first row.
          </para>
          <para>
-          <literal>ABSOLUTE</literal> is not supported by the current
+          <literal>ABSOLUTE</literal> is supported by the current
           release of <productname>Postgres-XL</>.
          </para>
         </listitem>

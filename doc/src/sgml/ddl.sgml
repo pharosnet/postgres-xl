@@ -1339,16 +1339,19 @@ CREATE TABLE circles (
     <listitem>
      <para>Remove a node from existing distribution target</para>
     </listitem>
+    <listitem>
+     <para>Modifying distribution columns definition if existing values are within limits of new data type</para>
+    </listitem>
    </itemizedlist>
   </para>
   <para>
    In <productname>Postgres-XL</> the following are not allowed:
    <itemizedlist spacing="compact">
     <listitem>
-     <para>Modifying distribution columns definition</para>
+     <para>Modifying distribution column values</para>
     </listitem>
     <listitem>
-     <para>Modifying distribution column values</para>
+     <para>Dropping distribution column</para>
     </listitem>
    </itemizedlist>
   </para>

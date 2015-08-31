@@ -247,9 +247,9 @@ CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } | UNLOGGED ] TABLE [ IF NOT EXI
          Each row of the table will be placed based on the hash value
          of the specified column.  Following type is allowed as
          distribution column: INT8, INT2, OID, INT4, BOOL, INT2VECTOR,
-         OIDVECTOR, CHAR, NAME, TEXT, BPCHAR, BYTEA, VARCHAR, FLOAT4,
-         FLOAT8, NUMERIC, CASH, ABSTIME, RELTIME, DATE, TIME,
-         TIMESTAMP, TIMESTAMPTZ, INTERVAL, and TIMETZ.
+         OIDVECTOR, CHAR, NAME, TEXT, BPCHAR, BYTEA, VARCHAR, NUMERIC, 
+         MONEY, ABSTIME, RELTIME, DATE, TIME,TIMESTAMP, TIMESTAMPTZ, 
+         INTERVAL, and TIMETZ.
         </para>
         <para>
          Please note that floating point is not allowed as a basis of
@@ -264,10 +264,8 @@ CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } | UNLOGGED ] TABLE [ IF NOT EXI
         <para>
          Each row of the table will be placed based on the modulo
          of the specified column.  Following type is allowed as
-         distribution column: INT8, INT2, OID, INT4, BOOL, INT2VECTOR,
-         OIDVECTOR, CHAR, NAME, TEXT, BPCHAR, BYTEA, VARCHAR, FLOAT4,
-         FLOAT8, NUMERIC, CASH, ABSTIME, RELTIME, DATE, TIME,
-         TIMESTAMP, TIMESTAMPTZ, INTERVAL, and TIMETZ.
+         distribution column: INT8, INT2, INT4, BOOL, ABSTIME, RELTIME, 
+         DATE.
         </para>
         <para>
          Please note that floating point is not allowed as a basis of
