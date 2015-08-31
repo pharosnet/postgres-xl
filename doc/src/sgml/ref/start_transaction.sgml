@@ -40,6 +40,11 @@ START TRANSACTION [ <replaceable class="parameter">transaction_mode</replaceable
    characteristics, as if <xref linkend="sql-set-transaction"> was executed. This is the same
    as the <xref linkend="sql-begin"> command.
   </para>
+
+  <para>
+   In <productname>Postgres-XL</> isolation level SERIALIZABLE is converted to 
+   REPEATABLE READ internally silently.
+  </para>
  </refsect1>
 
  <refsect1>

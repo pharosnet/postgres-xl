@@ -78,7 +78,7 @@ DECLARE <replaceable class="parameter">name</replaceable> [ BINARY ] [ INSENSITI
     <term><literal>INSENSITIVE</literal></term>
     <listitem>
      <para>
-      In <productname>Postgres-XL</>, <literal>INSENSITIVE</literal> cursor is currently not supported.
+      In <productname>Postgres-XL</>, <literal>INSENSITIVE</literal> cursor is currently supported.
      </para>
      <para>
       Indicates that data retrieved from the cursor should be
@@ -95,7 +95,7 @@ DECLARE <replaceable class="parameter">name</replaceable> [ BINARY ] [ INSENSITI
     <term><literal>NO SCROLL</literal></term>
     <listitem>
      <para>
-      In <productname>Postgres-XL</>, <literal>SCROLL</literal> cursor is currently not supported.
+      In <productname>Postgres-XL</>, <literal>SCROLL</literal> cursor is currently supported.
      </para>
      <para><literal>SCROLL</literal> specifies that the cursor can be used
       to retrieve rows in a nonsequential fashion (e.g.,
@@ -116,7 +116,7 @@ DECLARE <replaceable class="parameter">name</replaceable> [ BINARY ] [ INSENSITI
     <term><literal>WITHOUT HOLD</literal></term>
     <listitem>
      <para>
-      In <productname>Postgres-XL</>, <literal>WITH HOLD</literal> cursor is currently not supported.
+      In <productname>Postgres-XL</>, <literal>WITH HOLD</literal> cursor is currently supported.
      </para>
      <para><literal>WITH HOLD</literal> specifies that the cursor can
       continue to be used after the transaction that created it
