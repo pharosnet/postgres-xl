@@ -185,3 +185,6 @@ test: xl_plan_pushdown
 test: xl_functions
 test: xl_limitations
 test: xl_user_defined_functions
+test: xl_complex_update
+test: xl_complex_delete
+
