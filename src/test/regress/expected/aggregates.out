@@ -1581,3 +1581,54 @@ select least_agg(variadic array[q1,q2]) from int8_tbl;
  -4567890123456789
 (1 row)
 
+-- int8 aggregates for distributed tables
+CREATE TABLE int8_tbl_aggtest AS SELECT * FROM int8_tbl;
+SELECT avg(q1) FROM int8_tbl_aggtest;
+          avg          
+-----------------------
+ 2740734074074122.6000
+(1 row)
+
+SELECT sum(q1) FROM int8_tbl_aggtest;
+        sum        
+-------------------
+ 13703670370370613
+(1 row)
+
+SELECT max(q1) FROM int8_tbl_aggtest;
+       max        
+------------------
+ 4567890123456789
+(1 row)
+
+SELECT min(q1) FROM int8_tbl_aggtest;
+ min 
+-----
+ 123
+(1 row)
+
+SELECT stddev_pop(q1) FROM int8_tbl_aggtest;
+    stddev_pop    
+------------------
+ 2237800000713538
+(1 row)
+
+SELECT stddev_samp(q1) FROM int8_tbl_aggtest;
+   stddev_samp    
+------------------
+ 2501936460822274
+(1 row)
+
+SELECT var_pop(q1) FROM int8_tbl_aggtest;
+             var_pop             
+---------------------------------
+ 5007748843193509284246811160533
+(1 row)
+
+SELECT var_samp(q1) FROM int8_tbl_aggtest;
+            var_samp             
+---------------------------------
+ 6259686053991886605308513950667
+(1 row)
+
+DROP TABLE int8_tbl_aggtest;

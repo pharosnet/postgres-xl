@@ -3212,6 +3212,8 @@ numeric_agg_state_in(PG_FUNCTION_ARGS)
 	token = strtok(NULL, ":");
 	state->NaNcount  = DatumGetInt64(DirectFunctionCall1(int8in,CStringGetDatum(token)));
 
+	pfree(str);
+
 	PG_RETURN_POINTER(state);
 }
 
@@ -3244,7 +3246,7 @@ numeric_agg_state_out(PG_FUNCTION_ARGS)
 				Int64GetDatum(state->NaNcount)));
 	maxScale_str = DatumGetCString(DirectFunctionCall1(int4out,
 				Int32GetDatum(state->maxScale)));
-	
+
 	len = 1 + strlen(N_str) + strlen(sumX_str) + strlen(sumX2_str) +
 		strlen(maxScale_str) + strlen(maxScaleCount_str) +
 		strlen(NaNcount_str) + 7;
@@ -5503,6 +5505,83 @@ numericvar_to_int64(NumericVar *var, int64 *result)
 	*result = neg ? -val : val;
 	return true;
 }
+
+#ifdef XCP
+#ifdef HAVE_INT128
+/*
+ * Convert numeric to int128, rounding if needed.
+ *
+ * If overflow, return FALSE (no error is raised).  Return TRUE if okay.
+ */
+static bool
+numericvar_to_int128(NumericVar *var, int128 *result)
+{
+	NumericDigit *digits;
+	int			ndigits;
+	int			weight;
+	int			i;
+	int128		val,
+				oldval;
+	bool		neg;
+	NumericVar	rounded;
+
+	/* Round to nearest integer */
+	init_var(&rounded);
+	set_var_from_var(var, &rounded);
+	round_var(&rounded, 0);
+
+	/* Check for zero input */
+	strip_var(&rounded);
+	ndigits = rounded.ndigits;
+	if (ndigits == 0)
+	{
+		*result = 0;
+		free_var(&rounded);
+		return true;
+	}
+
+	/*
+	 * For input like 10000000000, we must treat stripped digits as real. So
+	 * the loop assumes there are weight+1 digits before the decimal point.
+	 */
+	weight = rounded.weight;
+	Assert(weight >= 0 && ndigits <= weight + 1);
+
+	/* Construct the result */
+	digits = rounded.digits;
+	neg = (rounded.sign == NUMERIC_NEG);
+	val = digits[0];
+	for (i = 1; i <= weight; i++)
+	{
+		oldval = val;
+		val *= NBASE;
+		if (i < ndigits)
+			val += digits[i];
+
+		/*
+		 * The overflow check is a bit tricky because we want to accept
+		 * INT128_MIN, which will overflow the positive accumulator.  We can
+		 * detect this case easily though because INT128_MIN is the only
+		 * nonzero value for which -val == val (on a two's complement machine,
+		 * anyway).
+		 */
+		if ((val / NBASE) != oldval)	/* possible overflow? */
+		{
+			if (!neg || (-val) != val || val == 0 || oldval < 0)
+			{
+				free_var(&rounded);
+				return false;
+			}
+		}
+	}
+
+	free_var(&rounded);
+
+	*result = neg ? -val : val;
+	return true;
+}
+#endif
+#endif
 
 /*
  * Convert int8 value to numeric.
@@ -7885,8 +7964,51 @@ numeric_collect(PG_FUNCTION_ARGS)
 		collectstate->maxScaleCount += transstate->maxScaleCount;
 
 	MemoryContextSwitchTo(old_context);
-		
+
 	PG_RETURN_POINTER(collectstate);
+}
+
+Datum
+numeric_poly_collect(PG_FUNCTION_ARGS)
+{
+#ifdef HAVE_INT128
+	Int128AggState *collectstate;
+	Int128AggState *transstate;
+	MemoryContext agg_context;
+	MemoryContext old_context;
+
+	if (!AggCheckCallContext(fcinfo, &agg_context))
+		elog(ERROR, "aggregate function called in non-aggregate context");
+
+	old_context = MemoryContextSwitchTo(agg_context);
+
+	collectstate = PG_ARGISNULL(0) ? NULL : (Int128AggState *) PG_GETARG_POINTER(0);
+
+	if (collectstate == NULL)
+	{
+		collectstate = (Int128AggState *) palloc0(sizeof (Int128AggState));
+		init_var(&collectstate->sumX);
+		init_var(&collectstate->sumX2);
+	}
+
+	transstate = PG_ARGISNULL(1) ? NULL : (Int128AggState *) PG_GETARG_POINTER(1);
+
+	if (transstate == NULL)
+		PG_RETURN_POINTER(collectstate);
+
+	Assert(collectstate->calcSumX2 == transstate->calcSumX2);
+
+	collectstate->N += transstate->N;
+	collectstate->sumX += transstate->sumX;
+	if (collectstate->calcSumX2)
+		collectstate->sumX2 += transstate->sumX2;
+
+	MemoryContextSwitchTo(old_context);
+
+	PG_RETURN_POINTER(collectstate);
+#else
+	return numeric_collect(fcinfo);
+#endif
 }
 
 
@@ -7926,3 +8048,126 @@ int8_avg_collect(PG_FUNCTION_ARGS)
 	PG_RETURN_ARRAYTYPE_P(collectarray);
 }
 #endif
+
+/*
+ * numeric_poly_agg_state_in() -
+ *
+ *	Input function for numeric_poly_agg_state data type
+ */
+Datum
+numeric_poly_agg_state_in(PG_FUNCTION_ARGS)
+{
+#ifdef HAVE_INT128
+	char	   *str = pstrdup(PG_GETARG_CSTRING(0));
+	Int128AggState *state;
+	NumericVar sumX, sumX2;
+	char *token;
+
+	state = (Int128AggState *) palloc0(sizeof (Int128AggState));
+	init_var(&sumX);
+
+	token = strtok(str, ":");
+	state->calcSumX2 = (*token == 't');
+
+	token = strtok(NULL, ":");
+	state->N = DatumGetInt64(DirectFunctionCall1(int8in,CStringGetDatum(token)));
+
+	token = strtok(NULL, ":");
+	set_var_from_str(token, token, &sumX);
+	if (!numericvar_to_int128(&sumX, &state->sumX))
+		ereport(ERROR,
+				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
+				 errmsg("int128 out of range")));
+
+	token = strtok(NULL, ":");
+	if (state->calcSumX2)
+	{
+		init_var(&sumX2);
+		set_var_from_str(token, token, &sumX2);
+		if (!numericvar_to_int128(&sumX2, &state->sumX2))
+			ereport(ERROR,
+					(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
+					 errmsg("int128 out of range")));
+	}
+	pfree(str);
+
+	PG_RETURN_POINTER(state);
+#else
+	return numeric_agg_state_in(fcinfo);
+#endif
+}
+
+/*
+ * numeric_poly_agg_state_out() -
+ *
+ *	Output function for numeric_poly_agg_state data type
+ */
+Datum
+numeric_poly_agg_state_out(PG_FUNCTION_ARGS)
+{
+#ifdef HAVE_INT128
+	Int128AggState *state = (Int128AggState *) PG_GETARG_POINTER(0);
+	char *N_str, *sumX_str, *sumX2_str;
+	char *result;
+	int	 len;
+	NumericVar sumX, sumX2;
+
+	init_var(&sumX);
+	int128_to_numericvar(state->sumX, &sumX);
+	sumX_str = get_str_from_var(&sumX);
+
+	if (state->calcSumX2)
+	{
+		init_var(&sumX2);
+		int128_to_numericvar(state->sumX2, &sumX2);
+		sumX2_str = get_str_from_var(&sumX2);
+	}
+	else
+		sumX2_str = "0";
+
+	N_str = DatumGetCString(DirectFunctionCall1(int8out,
+				Int64GetDatum(state->N)));
+
+	len = 1 + strlen(N_str) + strlen(sumX_str) + strlen(sumX2_str) + 4;
+	result = (char *) palloc0(len);
+
+	snprintf(result, len, "%c:%s:%s:%s",
+			state->calcSumX2 ? 't' : 'f',
+			N_str, sumX_str, sumX2_str);
+
+	pfree(N_str);
+	pfree(sumX_str);
+	if (state->calcSumX2)
+		pfree(sumX2_str);
+
+	PG_RETURN_CSTRING(result);
+#else
+	return numeric_agg_state_out(fcinfo);
+#endif
+}
+
+/*
+ * numeric_poly_agg_state_recv - converts binary format to numeric_poly_agg_state
+ */
+Datum
+numeric_poly_agg_state_recv(PG_FUNCTION_ARGS)
+{
+#ifdef HAVE_INT128
+	elog(ERROR, "numeric_poly_agg_state_recv not implemented");
+#else
+	return numeric_agg_state_recv(fcinfo);
+#endif
+}
+
+/*
+ * numeric_poly_agg_state_send - converts numeric_poly_agg_state to binary format
+ */
+Datum
+numeric_poly_agg_state_send(PG_FUNCTION_ARGS)
+{
+#ifdef HAVE_INT128
+	elog(ERROR, "numeric_poly_agg_state_send not implemented");
+#else
+	return numeric_agg_state_send(fcinfo);
+#endif
+}

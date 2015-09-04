@@ -595,3 +595,18 @@ drop view aggordview1;
 -- variadic aggregates
 select least_agg(q1,q2) from int8_tbl;
 select least_agg(variadic array[q1,q2]) from int8_tbl;
+
+-- int8 aggregates for distributed tables
+
+CREATE TABLE int8_tbl_aggtest AS SELECT * FROM int8_tbl;
+
+SELECT avg(q1) FROM int8_tbl_aggtest;
+SELECT sum(q1) FROM int8_tbl_aggtest;
+SELECT max(q1) FROM int8_tbl_aggtest;
+SELECT min(q1) FROM int8_tbl_aggtest;
+SELECT stddev_pop(q1) FROM int8_tbl_aggtest;
+SELECT stddev_samp(q1) FROM int8_tbl_aggtest;
+SELECT var_pop(q1) FROM int8_tbl_aggtest;
+SELECT var_samp(q1) FROM int8_tbl_aggtest;
+
+DROP TABLE int8_tbl_aggtest;

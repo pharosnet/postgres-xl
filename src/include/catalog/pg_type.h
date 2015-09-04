@@ -705,6 +705,9 @@ DATA(insert OID = 3831 ( anyrange		PGNSP PGUID  -1 f p P f t \054 0 0 0 anyrange
 DATA(insert OID = 7018 ( numeric_agg_state	   PGNSP PGUID SIZEOF_POINTER t p C f t \054 0 0 0 numeric_agg_state_in numeric_agg_state_out numeric_agg_state_recv numeric_agg_state_send - - - ALIGNOF_POINTER p f 0 -1 0 0 _null_ _null_ _null_ ));
 DESCR("numeric_agg_state - internal type used for numeric/int8 aggregation");
 #define NUMERIC_AGG_STATE_OID		7018
+DATA(insert OID = 7019 ( numeric_poly_agg_state	   PGNSP PGUID SIZEOF_POINTER t p C f t \054 0 0 0 numeric_poly_agg_state_in numeric_poly_agg_state_out numeric_poly_agg_state_recv numeric_poly_agg_state_send - - - ALIGNOF_POINTER p f 0 -1 0 0 _null_ _null_ _null_ ));
+DESCR("numeric_poly_agg_state - internal type used for numeric/int8 aggregation");
+#define NUMERIC_POLY_AGG_STATE_OID		7019
 
 /*
  * macros

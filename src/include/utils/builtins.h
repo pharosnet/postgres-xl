@@ -1070,6 +1070,7 @@ extern Datum int4_accum(PG_FUNCTION_ARGS);
 extern Datum int8_accum(PG_FUNCTION_ARGS);
 #ifdef PGXC
 extern Datum numeric_collect(PG_FUNCTION_ARGS);
+extern Datum numeric_poly_collect(PG_FUNCTION_ARGS);
 #endif
 extern Datum int2_accum_inv(PG_FUNCTION_ARGS);
 extern Datum int4_accum_inv(PG_FUNCTION_ARGS);
@@ -1116,6 +1117,10 @@ extern Datum numeric_agg_state_in(PG_FUNCTION_ARGS);
 extern Datum numeric_agg_state_out(PG_FUNCTION_ARGS);
 extern Datum numeric_agg_state_recv(PG_FUNCTION_ARGS);
 extern Datum numeric_agg_state_send(PG_FUNCTION_ARGS);
+extern Datum numeric_poly_agg_state_in(PG_FUNCTION_ARGS);
+extern Datum numeric_poly_agg_state_out(PG_FUNCTION_ARGS);
+extern Datum numeric_poly_agg_state_recv(PG_FUNCTION_ARGS);
+extern Datum numeric_poly_agg_state_send(PG_FUNCTION_ARGS);
 #endif
 
 /* ri_triggers.c */
