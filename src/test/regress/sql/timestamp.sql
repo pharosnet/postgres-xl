@@ -229,9 +229,13 @@ SELECT make_timestamp(2014,12,28,6,30,45.887);
 -- test if now() gives a correct timestamp and does not marely reports the
 -- value saved from the previous transaction
 
-SELECT now();
+CREATE TABLE testnow(t timestamp);
+INSERT INTO testnow SELECT now();
 BEGIN;
-SELECT now();
+INSERT INTO testnow SELECT now();
+SELECT COUNT(DISTINCT t) FROM testnow;
 CREATE TABLE test_now(a timestamp);
-SELECT now();
+INSERT INTO testnow SELECT now();
+SELECT COUNT(DISTINCT t) FROM testnow;
 ROLLBACK;
+DROP TABLE testnow;
