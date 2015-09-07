@@ -27,6 +27,7 @@ void GTM_WriteRestorePoint(void)
 	if (!gtm_need_bkup)
 	{
 		GTM_RWLockRelease(&gtm_bkup_lock);
+		fclose(f);
 		return;
 	}
 	gtm_need_bkup = FALSE;
