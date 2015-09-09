@@ -118,7 +118,7 @@ select xl_nodename_from_id1(xc_node_id), * from xl_Pline1 order by slotname;
 -- Test the FOUND magic variable
 --
 -- table distributed by hash on a by default
-CREATE TABLE xl_found_test_tbl (a int, b int) ;
+CREATE TABLE xl_found_test_tbl (a int unique, b int) ;
 
 create function xl_test_found()
   returns boolean as '
@@ -157,7 +157,15 @@ create function xl_test_found()
   end;' language plpgsql;
 
 select xl_test_found();
+
+--DML is not supported when function is executed on the datanode,  if function is executed on coordinator, DML works fine. e.g. Currently planner sends ‘select funcn() from <distributed_table>’ calls directly to datanode.
+select xl_test_found() from xl_found_test_tbl;
+
 select * from xl_found_test_tbl order by 1;
+
+truncate table xl_found_test_tbl;
+insert into xl_found_test_tbl values (1, 1);--goes on datanode_1
+insert into xl_found_test_tbl values (4, 4);-- goes on datanode_2
 
 --
 -- Test set-returning functions for PL/pgSQL
@@ -175,6 +183,8 @@ END;' language plpgsql;
 
 select * from xl_test_table_func_rec() order by 1;
 
+--Selection functions also do not work fine when they go directly on datanodes. There is no restriction/ error returned from XL here, however overall its behavior in such cases is different from Postgresql.
+select xl_test_table_func_rec() from xl_found_test_tbl;
 
 -- reads from just 1 node, reads from multiple nodes, writes to just node, writes to multiple nodes, writes to one node and then read again, do a join which requires data from one node, multiple nodes, use ddl etc
 
@@ -190,6 +200,8 @@ BEGIN
 END;' language plpgsql;
 
 select * from xl_test_table_func_row() order by 1;
+
+select xl_test_table_func_row() from xl_found_test_tbl order by 1;
 
 select xl_nodename_from_id1(xc_node_id), * from xl_found_test_tbl;
 
@@ -208,20 +220,42 @@ END;' language plpgsql;
 select xl_read_from_one_node('datanode_1');
 select xl_read_from_one_node('datanode_2');
 
+select xl_read_from_one_node('datanode_1') from xl_found_test_tbl;
+select xl_read_from_one_node('datanode_2') from xl_found_test_tbl;
+
 update xl_found_test_tbl set b = a;--re-set
  
 --writes to just node
-create function xl_write_to_one_node(name) returns void as '
+
+--Correlated update is not supported on non-distribution columns with function in where clause when distribution column is unique . It is allowed when distribution column is non-unique.
+
+create function xl_write_to_one_node_unique_distribution_column(name) returns void as '
 BEGIN
 	update xl_found_test_tbl set b = b * 100 where a in (select a from xl_found_test_tbl where xl_nodename_from_id1(xc_node_id) = $1);
 	RETURN;
 END;' language plpgsql;
 
+select xl_write_to_one_node_unique_distribution_column('datanode_1');
+
+create table a_tbl(a int, b int);
+
+insert into a_tbl values (1,1);-- goes on datanode_1
+insert into a_tbl values (4,4);-- goes on datanode_2
+
+create function xl_write_to_one_node(name) returns void as '
+BEGIN
+	update a_tbl set b = b * 100 where a in (select a from a_tbl where xl_nodename_from_id1(xc_node_id) = $1);
+	RETURN;
+END;' language plpgsql;
+
 select xl_write_to_one_node('datanode_1');
 
-select xl_nodename_from_id1(xc_node_id), * from xl_found_test_tbl;
+select xl_nodename_from_id1(xc_node_id), * from a_tbl;
 
 update xl_found_test_tbl set b = a;--re-set
+update a_tbl set b = a;--re-set
+
+select xl_write_to_one_node('datanode_1') from xl_found_test_tbl;
 
 --writes to multiple nodes
 create function xl_write_to_multiple_nodes() returns void as '
@@ -236,14 +270,16 @@ select xl_nodename_from_id1(xc_node_id), * from xl_found_test_tbl;
 
 update xl_found_test_tbl set b = a;--re-set
 
+select xl_write_to_multiple_nodes() from xl_found_test_tbl;
+
 --writes to one node and then read again,
 
-create function xl_write_read_from_one_node(name) returns setof xl_found_test_tbl as '
+create function xl_write_read_from_one_node(name) returns setof a_tbl as '
 DECLARE
-	row xl_found_test_tbl%ROWTYPE;
+	row a_tbl%ROWTYPE;
 BEGIN
-	update xl_found_test_tbl set b = b * 100 where a in (select a from xl_found_test_tbl where xl_nodename_from_id1(xc_node_id) = $1);
-	FOR row IN select * from xl_found_test_tbl where a in (select a from xl_found_test_tbl where xl_nodename_from_id1(xc_node_id) = $1) LOOP
+	update a_tbl set b = b * 100 where a in (select a from a_tbl where xl_nodename_from_id1(xc_node_id) = $1);
+	FOR row IN select * from a_tbl where a in (select a from a_tbl where xl_nodename_from_id1(xc_node_id) = $1) LOOP
 		RETURN NEXT row;
 	END LOOP;
 	RETURN;
@@ -251,62 +287,71 @@ END;' language plpgsql;
 
 select xl_write_read_from_one_node('datanode_1');
 
-select xl_nodename_from_id1(xc_node_id), * from xl_found_test_tbl;
+select xl_nodename_from_id1(xc_node_id), * from a_tbl;
 
-update xl_found_test_tbl set b = a;--re-set
+update a_tbl set b = a;--re-set
+
+select xl_write_read_from_one_node('datanode_1') from a_tbl;
+
+select xl_nodename_from_id1(xc_node_id), * from a_tbl;
+
+update a_tbl set b = a;--re-set
 
 -- do a join which requires data from one node,
 -- table is replicated on both nodes.
 CREATE TABLE xl_join1_tbl (c int, d int) distribute by replication;
 
 insert into xl_join1_tbl values (1, 100);
-insert into xl_join1_tbl values (2, 200);
-insert into xl_join1_tbl values (3, 300);
 insert into xl_join1_tbl values (4, 400);
-insert into xl_join1_tbl values (5, 500);
-insert into xl_join1_tbl values (6, 600);
 
 create function xl_join_using_1node(name) returns void as '
 BEGIN
-	update xl_found_test_tbl set b = xl_join1_tbl.d from xl_join1_tbl
-	where xl_join1_tbl.c in (select a from xl_found_test_tbl where xl_nodename_from_id1(xc_node_id) = $1) 
-	and xl_found_test_tbl.a = xl_join1_tbl.c
+	update a_tbl set b = xl_join1_tbl.d from xl_join1_tbl
+	where xl_join1_tbl.c in (select a from a_tbl where xl_nodename_from_id1(xc_node_id) = $1) 
+	and a_tbl.a = xl_join1_tbl.c
 	and xl_join1_tbl.c <= 3;
 	RETURN;
 END;' language plpgsql;
 
 select xl_join_using_1node('datanode_1');
 
-select xl_nodename_from_id1(xc_node_id), * from xl_found_test_tbl;
+select xl_nodename_from_id1(xc_node_id), * from a_tbl;
 
-update xl_found_test_tbl set b = a;--re-set
+update a_tbl set b = a;--re-set
+
+select xl_join_using_1node('datanode_1') from xl_join1_tbl;
+
+select xl_nodename_from_id1(xc_node_id), * from a_tbl;
+
+update a_tbl set b = a;--re-set
 
 -- do a join which requires data from multiple nodes
 -- table distributed by hash(c) by default
 CREATE TABLE xl_join2_tbl (c int, d int);
 
 insert into xl_join2_tbl values (1, 100);
-insert into xl_join2_tbl values (2, 200);
-insert into xl_join2_tbl values (3, 300);
 insert into xl_join2_tbl values (4, 400);
-insert into xl_join2_tbl values (5, 500);
-insert into xl_join2_tbl values (6, 600);
-
 
 create function xl_join_using_more_nodes(name) returns void as '
 BEGIN
-	update xl_found_test_tbl set b = xl_join2_tbl.d from xl_join2_tbl
-	where xl_join2_tbl.c in (select a from xl_found_test_tbl where xl_nodename_from_id1(xc_node_id) = $1) 
-	and xl_found_test_tbl.a = xl_join2_tbl.c
+	update a_tbl set b = xl_join2_tbl.d from xl_join2_tbl
+	where xl_join2_tbl.c in (select a from a_tbl where xl_nodename_from_id1(xc_node_id) = $1) 
+	and a_tbl.a = xl_join2_tbl.c
 	and xl_join2_tbl.c >= 3;
 	RETURN;
 END;' language plpgsql;
 
-select xl_join_using_more_nodes('datanode_1');
+select xl_join_using_more_nodes('datanode_2');
 
-select xl_nodename_from_id1(xc_node_id), * from xl_found_test_tbl;
+select xl_nodename_from_id1(xc_node_id), * from a_tbl;
 
-update xl_found_test_tbl set b = a;--re-set
+update a_tbl set b = a;--re-set
+
+select xl_join_using_more_nodes('datanode_1') from xl_join2_tbl;
+
+select xl_nodename_from_id1(xc_node_id), * from a_tbl;
+
+update a_tbl set b = a;--re-set
 
 -- use ddl etc
 --DDL Commands - Create - Drop - Alter - Rename - Truncate
@@ -317,11 +362,7 @@ BEGIN
 	/* table distributed by hash on a by default*/
 	CREATE TABLE xl_ddl_tbl1 (a int, b int) ;
 	insert into xl_ddl_tbl1 values (1,1);
-	insert into xl_ddl_tbl1 values (2,2);
-	insert into xl_ddl_tbl1 values (3,3);
 	insert into xl_ddl_tbl1 values (4,4);
-	insert into xl_ddl_tbl1 values (5,5);
-	insert into xl_ddl_tbl1 values (6,6);
 	
 	drop table xl_join2_tbl;
 
@@ -329,11 +370,7 @@ BEGIN
 	CREATE TABLE xl_join3_tbl (c int);
 
 	insert into xl_join3_tbl values (1);	
-	insert into xl_join3_tbl values (2);
-	insert into xl_join3_tbl values (3);
 	insert into xl_join3_tbl values (4);
-	insert into xl_join3_tbl values (5);
-	insert into xl_join3_tbl values (6);
 	
 	alter table xl_join3_tbl add column d int;
 
@@ -353,7 +390,7 @@ BEGIN
 	RETURN;
 END;' language plpgsql;
 
-select xl_ddl_commands('datanode_1');
+select xl_ddl_commands('datanode_2');
 
 select xl_nodename_from_id1(xc_node_id), * from xl_join1_tbl; --truncated
 
@@ -367,6 +404,59 @@ select xl_nodename_from_id1(xc_node_id), * from xl_ddl_tbl2;
 
 update xl_found_test_tbl set b = a;--re-set
 
+drop TABLE xl_ddl_tbl1;
+
+drop TABLE xl_ddl_tbl2;
+
+drop TABLE xl_join3_tbl;
+
+drop TABLE xl_join4_tbl;
+
+insert into xl_join1_tbl values (1, 100);
+insert into xl_join1_tbl values (4, 400);
+
+--re-set all conditions
+select xl_ddl_commands('datanode_2') from xl_join1_tbl; -- fails as DML query run on data-node
+
+-- function call from replicated table. func returns matching count between replicated and distributed table - where some go on datanode 1 and others on datanode 2.
+
+-- replicated table
+create table xl_replctd_tbl(r int, s int) distribute by replication;
+insert into xl_replctd_tbl values (1,1);
+insert into xl_replctd_tbl values (4,4);
+
+-- distributed table - default distributed by hash on d
+create table xl_dstrbtd_tbl(d int, e int);
+
+insert into xl_dstrbtd_tbl values(1,1);
+insert into xl_dstrbtd_tbl values(4,4);
+
+select count(r) from xl_replctd_tbl where r in (select d from xl_dstrbtd_tbl);
+
+create function xl_get_common_count() returns int as '
+declare 
+	i int;
+BEGIN
+	select count(r) from xl_replctd_tbl into i where r in (select d from xl_dstrbtd_tbl);
+	RETURN i;
+END;' language plpgsql;
+
+explain select xl_get_common_count() from xl_replctd_tbl;
+
+select xl_get_common_count() from xl_replctd_tbl;
+
+explain select xl_get_common_count();
+
+select xl_get_common_count();
+
+explain select xl_get_common_count() from xl_dstrbtd_tbl;
+
+select xl_get_common_count() from xl_dstrbtd_tbl;
+
+select xl_nodename_from_id1(xc_node_id), * from xl_replctd_tbl;
+
+select xl_nodename_from_id1(xc_node_id), * from xl_dstrbtd_tbl;
+
 drop table xl_Pline1;
 drop function xl_nodename_from_id1(integer);
 drop function xl_insert_Pline_test(int);
@@ -376,15 +466,19 @@ drop function xl_test_table_func_row();
 drop function xl_test_table_func_rec();
 drop function xl_test_found();
 drop function xl_read_from_one_node(name);
+drop function xl_write_to_one_node_unique_distribution_column(name);
 drop function xl_write_to_one_node(name);
 drop function xl_write_to_multiple_nodes();
 drop function xl_write_read_from_one_node(name);
 drop function xl_join_using_1node(name);
 drop function xl_join_using_more_nodes(name);
 drop function xl_ddl_commands(name);
+drop function xl_get_common_count();
 drop TABLE xl_found_test_tbl;
 drop TABLE xl_ddl_tbl2;
 drop TABLE xl_join1_tbl;
 drop TABLE xl_join2_tbl;
 drop TABLE xl_join4_tbl;
-
+drop table xl_replctd_tbl;
+drop table xl_dstrbtd_tbl;
+drop table a_tbl;
