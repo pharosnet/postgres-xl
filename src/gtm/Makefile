@@ -14,6 +14,10 @@ include $(top_builddir)/src/Makefile.global
 
 WANTED_DIRS=common path libpq client recovery main proxy gtm_ctl
 
+# There are interdependencies between main and proxy, so
+# don't attempt parallel make here.
+.NOTPARALLEL:
+
 all:
 	@for dir in $(WANTED_DIRS); do \
         $(MAKE) -C $$dir $@ || exit; \
