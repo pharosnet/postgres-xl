@@ -86,7 +86,7 @@ test: union
 test: case
 test: join
 test: aggregates
-#test: groupingsets
+test: groupingsets
 test: transactions
 # SELECT INTO and INSERT SELECT seem do not work properly
 # this test may leave uncommitted prepared transaction 

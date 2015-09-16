@@ -2187,6 +2187,9 @@ transformGroupClause(ParseState *pstate, List *grouplist, List **groupingSets,
 				case GROUPING_SET_SETS:
 				case GROUPING_SET_CUBE:
 				case GROUPING_SET_ROLLUP:
+					ereport(ERROR,
+							(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+							 errmsg("GROUPING SETS, ROLLUP or CUBE is not yet supported")));
 					gsets = lappend(gsets,
 									transformGroupingSet(&result,
 														 pstate, gset,
