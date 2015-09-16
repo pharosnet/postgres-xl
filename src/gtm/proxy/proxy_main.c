@@ -2809,7 +2809,7 @@ GTMProxy_ProcessPendingCommands(GTMProxy_ThreadInfo *thrinfo)
 	/* Process backend disconnect messages now */
 	gtm_foreach (elem, thrinfo->thr_pending_commands[MSG_BACKEND_DISCONNECT])
 	{
-		ereport(COMMERROR,
+		ereport(DEBUG1,
 				(EPROTO,
 				 errmsg("cleaning up client disconnection")));
 		cmdinfo = (GTMProxy_CommandInfo *)gtm_lfirst(elem);

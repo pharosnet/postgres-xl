@@ -1522,8 +1522,6 @@ ProcessBeginTransactionGetGXIDAutovacuumCommand(Port *myport, StringInfo message
 	GlobalTransactionId gxid;
 	MemoryContext oldContext;
 
-	elog(LOG, "Inside ProcessBeginTransactionGetGXIDAutovacuumCommand");
-
 	txn_isolation_level = pq_getmsgint(message, sizeof (GTM_IsolationLevel));
 	txn_read_only = pq_getmsgbyte(message);
 
@@ -1548,8 +1546,6 @@ ProcessBeginTransactionGetGXIDAutovacuumCommand(Port *myport, StringInfo message
 	GTM_SetDoVacuum(txn);
 
 	MemoryContextSwitchTo(oldContext);
-
-	elog(LOG, "Sending transaction id %d", gxid);
 
 	/* Backup first */
 	if (GetMyThreadInfo->thr_conn->standby)
@@ -2757,7 +2753,7 @@ GTM_SaveTxnInfo(FILE *ctlf)
 
 	next_gxid = ReadNewGlobalTransactionId();
 
-	elog(LOG, "Saving transaction info - next_gxid: %u", next_gxid);
+	elog(DEBUG1, "Saving transaction info - next_gxid: %u", next_gxid);
 
 	fprintf(ctlf, "%u\n", next_gxid);
 }
@@ -2774,7 +2770,7 @@ void GTM_WriteRestorePointXid(FILE *f)
 	else
 		GTMTransactions.gt_backedUpXid = FirstNormalGlobalTransactionId + (RestoreDuration - (MaxGlobalTransactionId - GTMTransactions.gt_nextXid));
 	
-	elog(LOG, "Saving transaction restoration info, backed-up gxid: %u", GTMTransactions.gt_backedUpXid);
+	elog(DEBUG1, "Saving transaction restoration info, backed-up gxid: %u", GTMTransactions.gt_backedUpXid);
 	fprintf(f, "%u\n", GTMTransactions.gt_backedUpXid);
 }
 
