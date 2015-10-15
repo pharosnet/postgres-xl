@@ -4479,9 +4479,7 @@ pgxc_connections_cleanup(ResponseCombiner *combiner)
 			timeout.tv_usec = (END_QUERY_TIMEOUT % 1000) * 1000;
 
 			if (pgxc_node_receive(1, &conn, &timeout))
-				ereport(ERROR,
-						(errcode(ERRCODE_INTERNAL_ERROR),
-						 errmsg("Failed to read response from data nodes when ending query")));
+				elog(LOG, "Failed to read response from data nodes when ending query");
 		}
 	}
 
