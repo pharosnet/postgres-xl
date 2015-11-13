@@ -137,16 +137,6 @@ AggregateCreate(const char *aggName,
 							   FUNC_MAX_ARGS - 1,
 							   FUNC_MAX_ARGS - 1)));
 
-#ifdef PGXC
-#ifndef XCP
-
-	if (aggTransType == INTERNALOID)
-		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_FUNCTION_DEFINITION),
-				 errmsg("unsafe use of pseudo-type \"internal\""),
-				 errdetail("Transition type can not be \"internal\".")));
-#endif
-#endif
 	/* check for polymorphic and INTERNAL arguments */
 	hasPolyArg = false;
 	hasInternalArg = false;
@@ -288,7 +278,6 @@ AggregateCreate(const char *aggName,
 	ReleaseSysCache(tup);
 
 #ifdef PGXC
-#ifdef XCP
 	if (aggcollectfnName)
 	{
 		/*
@@ -308,25 +297,6 @@ AggregateCreate(const char *aggName,
 							format_type_be(aggCollectType)
 						   )));
 	}
-#else
-	if (aggcollectfnName)
-	{
-		/*
-		 * Collection function must be of two arguments, both of type aggTransType
-		 * and return type is also aggTransType
-		 */
-		fnArgs[0] = aggTransType;
-		fnArgs[1] = aggTransType;
-		collectfn = lookup_agg_function(aggcollectfnName, 2, fnArgs, variadicArgType,
-										  &rettype);
-		if (rettype != aggTransType)
-			ereport(ERROR,
-					(errcode(ERRCODE_DATATYPE_MISMATCH),
-					 errmsg("return type of collection function %s is not %s",
-							NameListToString(aggcollectfnName),
-							format_type_be(aggTransType))));
-	}
-#endif
 #endif
 
 	/* handle moving-aggregate transfn, if supplied */

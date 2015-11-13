@@ -551,13 +551,11 @@ DefineIndex(Oid relationId,
 		{
 			IndexElem  *key = (IndexElem *) lfirst(elem);
 
-#ifdef XCP
 			if (rel->rd_locator_info == NULL)
 			{
 				isSafe = true;
 				break;
 			}
-#endif
 
 			if (CheckLocalIndexColumn(rel->rd_locator_info->locatorType, 
 				rel->rd_locator_info->partAttrName, key->name))
@@ -567,7 +565,6 @@ DefineIndex(Oid relationId,
 			}
 		}
 		if (!isSafe)
-#ifdef XCP
 		{
 			if (loose_constraints)
 			{
@@ -583,11 +580,6 @@ DefineIndex(Oid relationId,
 					(errcode(ERRCODE_INVALID_COLUMN_REFERENCE),
 					errmsg("Unique index of partitioned table must contain the hash/modulo distribution column.")));
 		}
-#else
-			ereport(ERROR,
-					(errcode(ERRCODE_INVALID_COLUMN_REFERENCE),
-					errmsg("Unique index of partitioned table must contain the hash/modulo distribution column.")));
-#endif
 	}
 #endif
 	/*

@@ -32,9 +32,7 @@
 /* PGXC_COORD */
 #include "gtm/gtm_c.h"
 #include "pgxc/execRemote.h"
-#ifdef XCP
 #include "pgxc/pause.h"
-#endif
 /* PGXC_DATANODE */
 #include "postmaster/autovacuum.h"
 #include "libpq/pqformat.h"
@@ -200,10 +198,6 @@ typedef struct TransactionStateData
 	GlobalTransactionId transactionId;
 	GlobalTransactionId	topGlobalTransansactionId;
 	GlobalTransactionId	auxilliaryTransactionId;
-#ifndef XCP
-	bool				isLocalParameterUsed;		/* Check if a local parameter is active
-													 * in transaction block (SET LOCAL, DEFERRED) */
-#endif
 #else
 	TransactionId transactionId;	/* my XID, or Invalid if none */
 #endif
@@ -244,9 +238,6 @@ static TransactionStateData TopTransactionStateData = {
 	0,							/* global transaction id */
 	0,							/* prepared global transaction id */
 	0,							/* commit prepared global transaction id */
-#ifndef XCP
-	false,						/* isLocalParameterUsed */
-#endif
 #else
 	0,							/* transaction id */
 #endif
@@ -599,33 +590,6 @@ GetStableLatestTransactionId(void)
 	return stablexid;
 }
 
-#ifdef PGXC
-#ifndef XCP
-/*
- *	GetCurrentLocalParamStatus
- *
- * This will return if current sub xact is using local parameters
- * that may involve pooler session related parameters (SET LOCAL).
- */
-bool
-GetCurrentLocalParamStatus(void)
-{
-	return CurrentTransactionState->isLocalParameterUsed;
-}
-
-/*
- *	SetCurrentLocalParamStatus
- *
- * This sets local parameter usage for current sub xact.
- */
-void
-SetCurrentLocalParamStatus(bool status)
-{
-	CurrentTransactionState->isLocalParameterUsed = status;
-}
-#endif
-#endif
-
 /*
  * AssignTransactionId
  *
@@ -882,11 +846,7 @@ GetCurrentCommandId(bool used)
 {
 #ifdef PGXC
 	/* If coordinator has sent a command id, remote node should use it */
-#ifdef XCP
 	if (isCommandIdReceived)
-#else
-	if (IsConnFromCoord() && isCommandIdReceived)
-#endif
 	{
 		/*
 		 * Indicate to successive calls of this function that the sent command id has
@@ -1504,11 +1464,7 @@ RecordTransactionCommit(void)
 
 		SetCurrentTransactionStopTimestamp();
 
-#ifdef XCP
 		XactLogCommitRecord(xactStopTimestamp + GTMdeltaTimestamp,
-#else
-		XactLogCommitRecord(xactStopTimestamp,
-#endif
 							nchildren, children, nrels, rels,
 							nmsgs, invalMessages,
 							RelcacheInitFileInval, forceSyncCommit,
@@ -1872,11 +1828,7 @@ RecordTransactionAbort(bool isSubXact)
 	else
 	{
 		SetCurrentTransactionStopTimestamp();
-#ifdef XCP		
 		xact_time = xactStopTimestamp + GTMdeltaTimestamp;
-#else
-		xact_time = xactStopTimestamp;
-#endif
 	}
 
 	XactLogAbortRecord(xact_time,
@@ -2121,11 +2073,6 @@ StartTransaction(void)
 	 * start processing
 	 */
 	s->state = TRANS_START;
-#ifdef PGXC
-#ifndef XCP
-	s->isLocalParameterUsed = false;
-#endif
-#endif
 	s->transactionId = InvalidTransactionId;	/* until assigned */
 	/*
 	 * Make sure we've reset xact state variables
@@ -2339,45 +2286,18 @@ CommitTransaction(void)
 			saveNodeString = NULL;
 		}
 #endif
-
-#ifndef XCP
-		/*
-		 * Check if there are any ON COMMIT actions or if temporary objects are in use.
-		 * If session is set-up to enforce 2PC for such transactions, return an error.
-		 * If not, simply enforce autocommit on each remote node.
-		 */
-		if (IsOnCommitActions() || ExecIsTempObjectIncluded())
-		{
-			if (!EnforceTwoPhaseCommit)
-				ExecSetTempObjectIncluded();
-			else
-				ereport(ERROR,
-						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-						 errmsg("cannot PREPARE a transaction that has operated on temporary tables"),
-						 errdetail("Disabling enforce_two_phase_commit is recommended to enforce COMMIT")));
-		}
-#endif
-
 		/*
 		 * If the local node has done some write activity, prepare the local node
 		 * first. If that fails, the transaction is aborted on all the remote
 		 * nodes
 		 */
-#ifdef XCP
 		/*
 		 * Fired OnCommit actions would fail 2PC process
 		 */
 		if (!IsOnCommitActions() && IsTwoPhaseCommitRequired(XactWriteLocalNode))
-#else
-		if (IsTwoPhaseCommitRequired(XactWriteLocalNode))
-#endif
 		{
 			prepareGID = MemoryContextAlloc(TopTransactionContext, 256);
-#ifdef XCP
 			sprintf(prepareGID, implicit2PC_head"%u", GetTopTransactionId());
-#else
-			sprintf(prepareGID, "T%u", GetTopTransactionId());
-#endif
 
 			savePrepareGID = MemoryContextStrdup(TopMemoryContext, prepareGID);
 
@@ -2405,14 +2325,10 @@ CommitTransaction(void)
 				s->auxilliaryTransactionId = GetTopTransactionId();
 			}
 			else
-#ifdef XCP
 			{
 				s->auxilliaryTransactionId = InvalidGlobalTransactionId;
 				PrePrepare_Remote(prepareGID, false, true);
 			}
-#else
-				s->auxilliaryTransactionId = InvalidGlobalTransactionId;
-#endif
 		}
 	}
 #endif
@@ -2462,21 +2378,13 @@ CommitTransaction(void)
 	PreCommit_Notify();
 
 #ifdef PGXC
-#ifdef XCP
 	if (IS_PGXC_DATANODE || !IsConnFromCoord())
-#else
-	if (IS_PGXC_LOCAL_COORDINATOR)
-#endif
 	{
 		/*
 		 * Now run 2PC on the remote nodes. Any errors will be reported via
 		 * ereport and we will run error recovery as part of AbortTransaction
 		 */
-#ifdef XCP
 		PreCommit_Remote(savePrepareGID, saveNodeString, XactLocalNodePrepared);
-#else
-		PreCommit_Remote(savePrepareGID, XactLocalNodePrepared);
-#endif
 		/*
 		 * Now that all the remote nodes have successfully prepared and
 		 * commited, commit the local transaction as well. Remember, any errors
@@ -2675,9 +2583,6 @@ CommitTransaction(void)
 	s->maxChildXids = 0;
 
 #ifdef PGXC
-#ifndef XCP
-	s->isLocalParameterUsed = false;
-#endif
 	ForgetTransactionLocalNode();
 
 	/*
@@ -2753,7 +2658,6 @@ AtEOXact_GlobalTxn(bool commit)
 				RollbackTranGTM(s->topGlobalTransansactionId);
 		}
 	}
-#ifdef XCP
 	/*
 	 * If GTM is connected the current gxid is acquired from GTM directly.
 	 * So directly report transaction end. However this applies only if
@@ -2773,27 +2677,6 @@ AtEOXact_GlobalTxn(bool commit)
 			CloseGTM();
 		}
 	}
-#else
-	else if (IS_PGXC_DATANODE || IsConnFromCoord())
-	{
-		/* If we are autovacuum, commit on GTM */
-		if ((IsAutoVacuumWorkerProcess() || GetForceXidFromGTM())
-				&& IsGTMConnected())
-		{
-			if (commit)
-				CommitTranGTM(s->topGlobalTransansactionId);
-			else
-				RollbackTranGTM(s->topGlobalTransansactionId);
-		}
-		else if (GlobalTransactionIdIsValid(currentGxid))
-		{
-			if (commit)
-				CommitTranGTM(currentGxid);
-			else
-				RollbackTranGTM(currentGxid);
-		}
-	}
-#endif
 	s->topGlobalTransansactionId = InvalidGlobalTransactionId;
 	s->auxilliaryTransactionId = InvalidGlobalTransactionId;
 
@@ -2828,9 +2711,6 @@ PrepareTransaction(void)
 	TimestampTz prepared_at;
 #ifdef PGXC
 	bool		isImplicit = !(s->blockState == TBLOCK_PREPARE);
-#ifndef XCP
-	char		*nodestring = NULL;
-#endif
 #endif
 
 	Assert(!IsInParallelMode());
@@ -2844,25 +2724,6 @@ PrepareTransaction(void)
 		elog(WARNING, "PrepareTransaction while in %s state",
 			 TransStateAsString(s->state));
 	Assert(s->parent == NULL);
-
-#ifdef PGXC
-#ifndef XCP
-	if (IS_PGXC_LOCAL_COORDINATOR)
-	{
-		if (savePrepareGID)
-			pfree(savePrepareGID);
-		savePrepareGID = MemoryContextStrdup(TopMemoryContext, prepareGID);
-		nodestring = PrePrepare_Remote(savePrepareGID, XactWriteLocalNode, isImplicit);
-		s->topGlobalTransansactionId = s->transactionId;
-
-		/*
-		 * Callback on GTM if necessary, this needs to be done before HOLD_INTERRUPTS
-		 * as this is not a part of the end of transaction processing involving clean up.
-		 */
-		CallGTMCallbacks(GTM_EVENT_PREPARE);
-	}
-#endif
-#endif
 
 	/*
 	 * Do pre-commit processing that involves calling user-defined code, such
@@ -3164,11 +3025,7 @@ PrepareTransaction(void)
 	 */
 	if (IS_PGXC_LOCAL_COORDINATOR)
 	{
-#ifdef XCP
 		PostPrepare_Remote(savePrepareGID, isImplicit);
-#else
-		PostPrepare_Remote(savePrepareGID, nodestring, isImplicit);
-#endif
 		if (!isImplicit)
 			s->topGlobalTransansactionId = InvalidGlobalTransactionId;
 		ForgetTransactionLocalNode();
@@ -6587,9 +6444,7 @@ IsTransactionLocalNode(bool write)
 bool
 IsXidImplicit(const char *xid)
 {
-#ifndef XCP
 #define implicit2PC_head "_$XC$"
-#endif
 	const size_t implicit2PC_head_len = strlen(implicit2PC_head);
 
 	if (strncmp(xid, implicit2PC_head, implicit2PC_head_len))
@@ -6611,9 +6466,6 @@ SaveReceivedCommandId(CommandId cid)
 	 * Change command ID information status to report any changes in remote ID
 	 * for a remote node. A new command ID has also been received.
 	 */
-#ifndef XCP
-	if (IsConnFromCoord())
-#endif
 	{
 		SetSendCommandId(true);
 		isCommandIdReceived = true;

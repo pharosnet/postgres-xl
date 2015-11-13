@@ -539,11 +539,6 @@ _outModifyTable(StringInfo str, const ModifyTable *node)
 	WRITE_NODE_FIELD(fdwPrivLists);
 	WRITE_NODE_FIELD(rowMarks);
 	WRITE_INT_FIELD(epqParam);
-#ifdef PGXC
-#ifndef XCP
-	WRITE_NODE_FIELD(remote_plans);
-#endif
-#endif
 	WRITE_ENUM_FIELD(onConflictAction, OnConflictAction);
 #ifdef XCP	
 	if (portable_output)
@@ -774,9 +769,6 @@ _outRemoteQuery(StringInfo str, const RemoteQuery *node)
 		appendStringInfo(str, " %d", node->remote_param_types[i]);
 
 	WRITE_ENUM_FIELD(exec_type, RemoteQueryExecType);
-#ifndef XCP
-	WRITE_BOOL_FIELD(is_temp);
-#endif
 	WRITE_BOOL_FIELD(has_row_marks);
 	WRITE_BOOL_FIELD(has_ins_child_sel_parent);
 }
@@ -1739,12 +1731,6 @@ _outAggref(StringInfo str, const Aggref *node)
 	else
 #endif
 	WRITE_OID_FIELD(aggtype);
-#ifdef PGXC
-#ifndef XCP
-	WRITE_OID_FIELD(aggtrantype);
-	WRITE_BOOL_FIELD(agghas_collectfn);
-#endif /* XCP */
-#endif /* PGXC */
 #ifdef XCP
 	if (portable_output)
 		WRITE_COLLID_FIELD(aggcollid);
@@ -2907,12 +2893,6 @@ _outPlannerInfo(StringInfo str, const PlannerInfo *node)
 	WRITE_BOOL_FIELD(hasHavingQual);
 	WRITE_BOOL_FIELD(hasPseudoConstantQuals);
 	WRITE_BOOL_FIELD(hasRecursion);
-#ifdef PGXC
-#ifndef XCP
-	WRITE_INT_FIELD(rs_alias_index);
-	WRITE_NODE_FIELD(xc_rowMarks);
-#endif /* XCP */
-#endif /* PGXC */
 	WRITE_INT_FIELD(wt_param_id);
 	WRITE_BITMAPSET_FIELD(curOuterRels);
 	WRITE_NODE_FIELD(curOuterParams);
@@ -3669,11 +3649,6 @@ _outRangeTblEntry(StringInfo str, const RangeTblEntry *node)
 	WRITE_NODE_FIELD(alias);
 	WRITE_NODE_FIELD(eref);
 	WRITE_ENUM_FIELD(rtekind, RTEKind);
-#ifdef PGXC
-#ifndef XCP
-	WRITE_STRING_FIELD(relname);
-#endif
-#endif
 
 	switch (node->rtekind)
 	{

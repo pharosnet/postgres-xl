@@ -958,21 +958,6 @@ fmgr_sql_validator(PG_FUNCTION_ARGS)
 									   (ParserSetupHook) sql_fn_parser_setup,
 																  pinfo);
 
-#ifdef PGXC
-#ifndef XCP
-				/* Check if the list of queries contains temporary objects */
-				if (IS_PGXC_LOCAL_COORDINATOR)
-				{
-					if (pgxc_query_contains_utility(querytree_sublist))
-						ereport(ERROR,
-								(errcode(ERRCODE_SYNTAX_ERROR),
-								errmsg("In XC, SQL functions cannot contain utility statements")));
-
-					if (pgxc_query_contains_temp_tables(querytree_sublist))
-						ExecSetTempObjectIncluded();
-				}
-#endif
-#endif
 
 				querytree_list = list_concat(querytree_list,
 											 querytree_sublist);

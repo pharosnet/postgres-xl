@@ -1305,17 +1305,6 @@ doDeletion(const ObjectAddress *object, int flags)
 						break;
 					case RELKIND_RELATION:
 					case RELKIND_VIEW:
-#ifndef XCP
-						/*
-						 * Flag temporary objects in use in case a temporary table or view
-						 * is dropped by dependency. This check is particularly useful with
-						 * CASCADE when temporary objects are removed by dependency in order
-						 * to avoid implicit 2PC would result in an error as temporary
-						 * objects cannot be prepared.
-						 */
-						if (IsTempTable(object->objectId))
-							ExecSetTempObjectIncluded();
-#endif
 						break;
 					default:
 						break;

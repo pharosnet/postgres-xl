@@ -893,14 +893,6 @@ DoCopy(const CopyStmt *stmt, const char *queryString, uint64 *processed)
 		rte->requiredPerms = required_access;
 		range_table = list_make1(rte);
 
-#ifdef PGXC
-#ifndef XCP
-		/* In case COPY is used on a temporary table, never use 2PC for implicit commits */
-		if (rel->rd_rel->relpersistence == RELPERSISTENCE_TEMP)
-			ExecSetTempObjectIncluded();
-#endif
-#endif
-
 		tupDesc = RelationGetDescr(rel);
 		attnums = CopyGetAttnums(tupDesc, rel, stmt->attlist);
 		foreach(cur, attnums)
@@ -1722,15 +1714,8 @@ BeginCopy(bool is_from,
 		 */
 		if (remoteCopyState && remoteCopyState->rel_loc)
 		{
-#ifdef XCP
 			DataNodeCopyBegin(remoteCopyState);
 			if (!remoteCopyState->locator)
-#else
-			remoteCopyState->connections = DataNodeCopyBegin(remoteCopyState->query_buf.data,
-														 remoteCopyState->exec_nodes->nodeList,
-														 GetActiveSnapshot());
-			if (!remoteCopyState->connections)
-#endif
 				ereport(ERROR,
 						(errcode(ERRCODE_CONNECTION_EXCEPTION),
 						 errmsg("Failed to initialize Datanodes for COPY")));
@@ -2073,33 +2058,10 @@ CopyTo(CopyState cstate)
 		cstate->remoteCopyState->rel_loc)
 	{
 		RemoteCopyData *rcstate = cstate->remoteCopyState;
-#ifdef XCP
 		processed = DataNodeCopyOut(
 					(PGXCNodeHandle **) getLocatorNodeMap(rcstate->locator),
 					getLocatorNodeCount(rcstate->locator),
 					cstate->copy_dest == COPY_FILE ? cstate->copy_file : NULL);
-#else
-		RemoteCopyType remoteCopyType;
-
-		/* Set up remote COPY to correct operation */
-		if (cstate->copy_dest == COPY_FILE)
-			remoteCopyType = REMOTE_COPY_FILE;
-		else
-			remoteCopyType = REMOTE_COPY_STDOUT;
-
-		/*
-		 * We don't know the value of the distribution column value, so need to
-		 * read from all nodes. Hence indicate that the value is NULL.
-		 */
-		processed = DataNodeCopyOut(GetRelationNodes(remoteCopyState->rel_loc, 0,
-													 true, UNKNOWNOID,
-													 RELATION_ACCESS_READ),
-									remoteCopyState->connections,
-									NULL,
-									cstate->copy_file,
-									NULL,
-									remoteCopyType);
-#endif
 	}
 	else
 	{
@@ -2596,7 +2558,6 @@ CopyFrom(CopyState cstate)
 		 */
 		if (IS_PGXC_COORDINATOR && cstate->remoteCopyState->rel_loc)
 		{
-#ifdef XCP
 			Datum 				value = (Datum) 0;
 			bool				isnull = true;
 			RemoteCopyData 	   *rcstate = cstate->remoteCopyState;
@@ -2616,40 +2577,6 @@ CopyFrom(CopyState cstate)
 							(errcode(ERRCODE_CONNECTION_EXCEPTION),
 							 errmsg("Copy failed on a data node")));
 			processed++;
-#else
-			Form_pg_attribute  *attr = tupDesc->attrs;
-			Datum	dist_col_value;
-			bool	dist_col_is_null;
-			Oid		dist_col_type;
-			RemoteCopyData *remoteCopyState = cstate->remoteCopyState;
-
-			if (remoteCopyState->idx_dist_by_col >= 0)
-			{
-				dist_col_value = values[remoteCopyState->idx_dist_by_col];
-				dist_col_is_null =  nulls[remoteCopyState->idx_dist_by_col];
-				dist_col_type = attr[remoteCopyState->idx_dist_by_col]->atttypid;
-			}
-			else
-			{
-				/* We really don't care, since the table is not distributed */
-				dist_col_value = (Datum) 0;
-				dist_col_is_null = true;
-				dist_col_type = UNKNOWNOID;
-			}
-
-			if (DataNodeCopyIn(cstate->line_buf.data,
-					       cstate->line_buf.len,
-						   GetRelationNodes(remoteCopyState->rel_loc,
-											dist_col_value,
-											dist_col_is_null,
-											dist_col_type,
-											RELATION_ACCESS_INSERT),
-						   remoteCopyState->connections))
-				ereport(ERROR,
-						(errcode(ERRCODE_CONNECTION_EXCEPTION),
-						 errmsg("Copy failed on a Datanode")));
-			processed++;
-#endif
 		}
 		else
 		{
@@ -3169,13 +3096,9 @@ BeginCopyFrom(Relation rel,
 			tmp = htonl(tmp);
 			appendBinaryStringInfo(&cstate->line_buf, (char *) &tmp, 4);
 
-#ifdef XCP
 			if (DataNodeCopyInBinaryForAll(cstate->line_buf.data, 19,
 					getLocatorNodeCount(remoteCopyState->locator),
 					(PGXCNodeHandle **) getLocatorNodeMap(remoteCopyState->locator)))
-#else
-			if (DataNodeCopyInBinaryForAll(cstate->line_buf.data, 19, remoteCopyState->connections))
-#endif
 				ereport(ERROR,
 							(errcode(ERRCODE_BAD_COPY_FILE_FORMAT),
 							 errmsg("invalid COPY file header (COPY SEND)")));
@@ -3646,16 +3569,8 @@ EndCopyFrom(CopyState cstate)
 	/* For PGXC related COPY, free also relation location data */
 	if (IS_PGXC_COORDINATOR && remoteCopyState->rel_loc)
 	{
-#ifdef XCP
 		DataNodeCopyFinish(getLocatorNodeCount(remoteCopyState->locator),
 				(PGXCNodeHandle **) getLocatorNodeMap(remoteCopyState->locator));
-#else
-		bool replicated = remoteCopyState->rel_loc->locatorType == LOCATOR_TYPE_REPLICATED;
-		DataNodeCopyFinish(
-				remoteCopyState->connections,
-				replicated ? PGXCNodeGetNodeId(primary_data_node, PGXC_NODE_DATANODE) : -1,
-				replicated ? COMBINE_TYPE_SAME : COMBINE_TYPE_SUM);
-#endif
 		FreeRemoteCopyData(remoteCopyState);
 	}
 #endif

@@ -91,42 +91,5 @@ is_immutable_func(Oid funcid)
 bool
 pgxc_is_expr_shippable(Expr *node, bool *has_aggs)
 {
-#ifdef XCP
 	return false;
-#else
-	Shippability_context sc_context;
-
-	/* Create the FQS context */
-	memset(&sc_context, 0, sizeof(sc_context));
-	sc_context.sc_query = NULL;
-	sc_context.sc_query_level = 0;
-	sc_context.sc_for_expr = true;
-
-	/* Walk the expression to check its shippability */
-	pgxc_shippability_walker((Node *)node, &sc_context);
-
-	/*
-	 * If caller is interested in knowing, whether the expression has aggregets
-	 * let the caller know about it. The caller is capable of handling such
-	 * expressions. Otherwise assume such an expression as unshippable.
-	 */
-	if (has_aggs)
-		*has_aggs = pgxc_test_shippability_reason(&sc_context, SS_HAS_AGG_EXPR);
-	else if (pgxc_test_shippability_reason(&sc_context, SS_HAS_AGG_EXPR))
-		return false;
-
-	/*
-	 * If the expression unshippable or unsupported by expression shipping
-	 * algorithm, return false. We don't have information about the number of
-	 * nodes involved in expression evaluation, hence even if the expression can
-	 * be evaluated only on single node, return false.
-	 */
-	if (pgxc_test_shippability_reason(&sc_context, SS_UNSUPPORTED_EXPR) ||
-		pgxc_test_shippability_reason(&sc_context, SS_UNSHIPPABLE_EXPR) ||
-		pgxc_test_shippability_reason(&sc_context, SS_NEED_SINGLENODE))
-		return false;
-
-	/* If nothing wrong found, the expression is shippable */
-	return true;
-#endif
 }

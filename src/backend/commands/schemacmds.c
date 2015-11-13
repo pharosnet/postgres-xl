@@ -182,13 +182,8 @@ CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString)
 	 * if not done already.
 	 */
 	if (!sentToRemote)
-#ifdef XCP
 		parsetree_list = AddRemoteQueryNode(parsetree_list, queryString,
 											EXEC_ON_ALL_NODES);
-#else
-		parsetree_list = AddRemoteQueryNode(parsetree_list, queryString,
-											EXEC_ON_ALL_NODES, false);
-#endif
 #endif
 
 	/*

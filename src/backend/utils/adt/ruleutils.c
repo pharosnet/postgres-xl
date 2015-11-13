@@ -125,11 +125,6 @@ typedef struct
 	int			wrapColumn;		/* max line length, or -1 for no limit */
 	int			indentLevel;	/* current indent level for prettyprint */
 	bool		varprefix;		/* TRUE to print prefixes on Vars */
-#ifdef PGXC
-#ifndef XCP
-	bool		finalise_aggs;	/* should Datanode finalise the aggregates? */
-#endif /* XCP */
-#endif /* PGXC */
 	ParseExprKind special_exprkind;		/* set only for exprkinds needing
 										 * special handling */
 } deparse_context;
@@ -912,11 +907,6 @@ pg_get_triggerdef_worker(Oid trigid, bool pretty)
 		context.windowClause = NIL;
 		context.windowTList = NIL;
 		context.varprefix = true;
-#ifdef PGXC
-#ifndef XCP
-		context.finalise_aggs = false;
-#endif /* XCP */
-#endif /* PGXC */
 		context.prettyFlags = pretty ? PRETTYFLAG_PAREN | PRETTYFLAG_INDENT : PRETTYFLAG_INDENT;
 		context.wrapColumn = WRAP_COLUMN_DEFAULT;
 		context.indentLevel = PRETTYINDENT_STD;
@@ -2545,11 +2535,6 @@ deparse_expression_pretty(Node *expr, List *dpcontext,
 	context.windowTList = NIL;
 	context.varprefix = forceprefix;
 	context.prettyFlags = prettyFlags;
-#ifdef PGXC
-#ifndef XCP
-	context.finalise_aggs = false;
-#endif /* XCP */
-#endif /* PGXC */
 	context.wrapColumn = WRAP_COLUMN_DEFAULT;
 	context.indentLevel = startIndent;
 	context.special_exprkind = EXPR_KIND_NONE;
@@ -4297,11 +4282,6 @@ make_ruledef(StringInfo buf, HeapTuple ruletup, TupleDesc rulettc,
 		context.prettyFlags = prettyFlags;
 		context.wrapColumn = WRAP_COLUMN_DEFAULT;
 		context.indentLevel = PRETTYINDENT_STD;
-#ifdef PGXC
-#ifndef XCP
-		context.finalise_aggs = false;
-#endif /* XCP */
-#endif /* PGXC */
 		context.special_exprkind = EXPR_KIND_NONE;
 
 		set_deparse_for_query(&dpns, query, NIL);
@@ -4504,9 +4484,6 @@ get_query_def_from_valuesList(Query *query, StringInfo buf)
 	context.prettyFlags = 0;
 	context.indentLevel = 0;
 	context.wrapColumn = 0;
-#ifndef XCP	
-	context.finalise_aggs = query->qry_finalise_aggs;
-#endif	
 
 	dpns.rtable = query->rtable;
 	dpns.ctes = query->cteList;
@@ -4671,11 +4648,6 @@ get_query_def(Query *query, StringInfo buf, List *parentnamespace,
 	context.prettyFlags = prettyFlags;
 	context.wrapColumn = wrapColumn;
 	context.indentLevel = startIndent;
-#ifdef PGXC
-#ifndef XCP
-	context.finalise_aggs = query->qry_finalise_aggs;
-#endif /* XCP */
-#endif /* PGXC */
 	context.special_exprkind = EXPR_KIND_NONE;
 
 	set_deparse_for_query(&dpns, query, parentnamespace);
@@ -5734,19 +5706,6 @@ get_insert_query_def(Query *query, deparse_context *context)
 	/* Insert the WITH clause if given */
 	get_with_clause(query, context);
 
-#ifdef PGXC
-#ifndef XCP
-	/*
-	 * In the case of "INSERT ... DEFAULT VALUES" analyzed in pgxc planner,
-	 * return the sql statement directly if the table has no default values.
-	 */
-	if (IS_PGXC_LOCAL_COORDINATOR && !query->targetList)
-	{
-		appendStringInfo(buf, "%s", query->sql_statement);
-		return;
-	}
-#endif
-#endif
 
 	/*
 	 * If it's an INSERT ... SELECT or multi-row VALUES, there will be a
@@ -5773,20 +5732,6 @@ get_insert_query_def(Query *query, deparse_context *context)
 	if (select_rte && values_rte)
 		elog(ERROR, "both subquery and values RTEs in INSERT");
 
-#ifdef PGXC
-#ifndef XCP
-	/*
-	 * If it's an INSERT ... SELECT or VALUES (...), (...), ...
-	 * sql_statement is rewritten and assigned in RewriteQuery.
-	 * Just return it here.
-	 */
-	if (IS_PGXC_LOCAL_COORDINATOR && values_rte != NULL)
-	{
-		appendStringInfo(buf, "%s", query->sql_statement);
-		return;
-	}
-#endif
-#endif
 	/*
 	 * Start the query with INSERT INTO relname
 	 */
@@ -8772,37 +8717,6 @@ get_agg_expr(Aggref *aggref, deparse_context *context)
 
 	/* Extract the argument types as seen by the parser */
 	nargs = get_aggregate_argtypes(aggref, argtypes);
-
-#ifdef PGXC
-#ifndef XCP
-	/*
-	 * Datanode should send finalised aggregate results. Datanodes evaluate only
-	 * transition results. In order to get the finalised aggregate, we enclose
-	 * the aggregate call inside final function call, so as to get finalised
-	 * results at the Coordinator
-	 */
-	if (context->finalise_aggs)
-	{
-		HeapTuple			aggTuple;
-		Form_pg_aggregate	aggform;
-		aggTuple = SearchSysCache(AGGFNOID,
-						  ObjectIdGetDatum(aggref->aggfnoid),
-						  0, 0, 0);
-		if (!HeapTupleIsValid(aggTuple))
-			elog(ERROR, "cache lookup failed for aggregate %u",
-				 aggref->aggfnoid);
-		aggform = (Form_pg_aggregate) GETSTRUCT(aggTuple);
-
-		if (OidIsValid(aggform->aggfinalfn))
-		{
-			appendStringInfo(buf, "%s(", generate_function_name(aggform->aggfinalfn, 0,
-													NULL, NULL, NULL));
-			added_finalfn = true;
-		}
-		ReleaseSysCache(aggTuple);
-	}
-#endif /* XCP */
-#endif /* PGXC */
 
 	/* Print the aggregate name, schema-qualified if needed */
 	appendStringInfo(buf, "%s(%s",

@@ -35,9 +35,7 @@
 #include "catalog/pgxc_node.h"
 #include "commands/dbcommands.h"
 #include "commands/prepare.h"
-#ifdef XCP
 #include "storage/ipc.h"
-#endif
 #include "storage/procarray.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
@@ -98,21 +96,11 @@ pgxc_pool_check(PG_FUNCTION_ARGS)
 Datum
 pgxc_pool_reload(PG_FUNCTION_ARGS)
 {
-#ifndef XCP
-	MemoryContext old_context;
-
-	if (!superuser())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 (errmsg("must be superuser to manage pooler"))));
-#endif
-
 	if (IsTransactionBlock())
 		ereport(ERROR,
 				(errcode(ERRCODE_ACTIVE_SQL_TRANSACTION),
 				 errmsg("pgxc_pool_reload cannot run inside a transaction block")));
 
-#ifdef XCP
 	/* Session is being reloaded, drop prepared and temporary objects */
 	DropAllPreparedStatements();
 
@@ -129,53 +117,6 @@ pgxc_pool_reload(PG_FUNCTION_ARGS)
 	/* Signal other sessions to reconnect to pooler if have privileges */
 	if (superuser())
 		ReloadConnInfoOnBackends();
-#else
-	/* A Datanode has no pooler active, so do not bother about that */
-	if (IS_PGXC_DATANODE)
-		PG_RETURN_BOOL(true);
-
-	/* Take a lock on pooler to forbid any action during reload */
-	PoolManagerLock(true);
-
-	/* No need to reload, node information is consistent */
-	if (PoolManagerCheckConnectionInfo())
-	{
-		/* Release the lock on pooler */
-		PoolManagerLock(false);
-		PG_RETURN_BOOL(true);
-	}
-
-	/* Reload connection information in pooler */
-	PoolManagerReloadConnectionInfo();
-
-	/* Be sure it is done consistently */
-	if (!PoolManagerCheckConnectionInfo())
-	{
-		/* Release the lock on pooler */
-		PoolManagerLock(false);
-		PG_RETURN_BOOL(false);
-	}
-
-	/* Now release the lock on pooler */
-	PoolManagerLock(false);
-
-	/* Signal other sessions to reconnect to pooler */
-	ReloadConnInfoOnBackends();
-
-	/* Session is being reloaded, drop prepared and temporary objects */
-	DropAllPreparedStatements();
-
-	/* Now session information is reset in correct memory context */
-	old_context = MemoryContextSwitchTo(TopMemoryContext);
-
-	/* Reinitialize session, while old pooler connection is active */
-	InitMultinodeExecutor(true);
-
-	/* And reconnect to pool manager */
-	PoolManagerReconnect();
-
-	MemoryContextSwitchTo(old_context);
-#endif
 
 	PG_RETURN_BOOL(true);
 }
@@ -320,7 +261,6 @@ CleanConnection(CleanConnStmt *stmt)
 	foreach(nodelist_item, stmt->nodes)
 	{
 		char *node_name = strVal(lfirst(nodelist_item));
-#ifdef XCP
 		char node_type = PGXC_NODE_NONE;
 		stmt_nodes = lappend_int(stmt_nodes,
 								 PGXCNodeGetNodeIdFromName(node_name,
@@ -330,18 +270,6 @@ CleanConnection(CleanConnStmt *stmt)
 					(errcode(ERRCODE_SYNTAX_ERROR),
 							 errmsg("PGXC Node %s: object not defined",
 									node_name)));
-#else
-		Oid nodeoid = get_pgxc_nodeoid(node_name);
-
-		if (!OidIsValid(nodeoid))
-			ereport(ERROR,
-					(errcode(ERRCODE_SYNTAX_ERROR),
-							 errmsg("PGXC Node %s: object not defined",
-									node_name)));
-
-		stmt_nodes = lappend_int(stmt_nodes,
-								 PGXCNodeGetNodeId(nodeoid, get_pgxc_nodetype(nodeoid)));
-#endif
 	}
 
 	/* Build lists to be sent to Pooler Manager */
@@ -412,7 +340,6 @@ DropDBCleanConnection(char *dbname)
 void
 HandlePoolerReload(void)
 {
-#ifdef XCP
 	if (proc_exit_inprogress)
 		return;
 
@@ -425,44 +352,4 @@ HandlePoolerReload(void)
 
 	/* Prevent using of cached connections to remote nodes */
 	RequestInvalidateRemoteHandles();
-#else
-	MemoryContext old_context;
-
-	/* A Datanode has no pooler active, so do not bother about that */
-	if (IS_PGXC_DATANODE)
-		return;
-
-	/* Abort existing xact if any */
-	AbortCurrentTransaction();
-
-	/* Session is being reloaded, drop prepared and temporary objects */
-	DropAllPreparedStatements();
-
-	/* Now session information is reset in correct memory context */
-	old_context = MemoryContextSwitchTo(TopMemoryContext);
-
-	/* Need to be able to look into catalogs */
-	CurrentResourceOwner = ResourceOwnerCreate(NULL, "ForPoolerReload");
-
-	/* Reinitialize session, while old pooler connection is active */
-	InitMultinodeExecutor(true);
-
-	/* And reconnect to pool manager */
-	PoolManagerReconnect();
-
-	/* Send a message back to client regarding session being reloaded */
-    ereport(WARNING,
-            (errcode(ERRCODE_OPERATOR_INTERVENTION),
-             errmsg("session has been reloaded due to a cluster configuration modification"),
-			 errdetail("Temporary and prepared objects hold by session have been"
-					   " dropped and current transaction has been aborted.")));
-
-	/* Release everything */
-	ResourceOwnerRelease(CurrentResourceOwner, RESOURCE_RELEASE_BEFORE_LOCKS, true, true);
-	ResourceOwnerRelease(CurrentResourceOwner, RESOURCE_RELEASE_LOCKS, true, true);
-	ResourceOwnerRelease(CurrentResourceOwner, RESOURCE_RELEASE_AFTER_LOCKS, true, true);
-	CurrentResourceOwner = NULL;
-
-	MemoryContextSwitchTo(old_context);
-#endif
 }

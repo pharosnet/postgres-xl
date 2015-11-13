@@ -747,25 +747,17 @@ nextval_internal(Oid relid)
 	page = BufferGetPage(buf);
 
 #ifdef PGXC  /* PGXC_COORD */
-#ifdef XCP
 	/* Allow nextval executed on datanodes */
 	if (!is_temp)
-#else
-	if (IS_PGXC_COORDINATOR && !is_temp)
-#endif
 	{
-#ifdef XCP
 		int64 range = seq->cache_value; /* how many values to ask from GTM? */
 		int64 rangemax; /* the max value returned from the GTM for our request */
-#endif
 		char *seqname = GetGlobalSeqName(seqrel, NULL, NULL);
 
 		/*
 		 * Above, we still use the page as a locking mechanism to handle
 		 * concurrency
-		 */
-#ifdef XCP
-		/*
+		 *
 		 * If the user has set a CACHE parameter, we use that. Else we pass in
 		 * the SequenceRangeVal value
 		 */
@@ -823,9 +815,6 @@ nextval_internal(Oid relid)
 		}
 
 		result = (int64) GetNextValGTM(seqname, range, &rangemax);
-#else
-		result = (int64) GetNextValGTM(seqname);
-#endif
 		pfree(seqname);
 
 		/* Update the on-disk data */
@@ -834,11 +823,7 @@ nextval_internal(Oid relid)
 
 		/* save info in local cache */
 		elm->last = result;			/* last returned number */
-#ifdef XCP
 		elm->cached = rangemax;		/* last fetched range max limit */
-#else
-		elm->cached = result;		/* last fetched number */
-#endif
 		elm->last_valid = true;
 
 		last_used_seq = elm;
@@ -1101,27 +1086,6 @@ currval_oid(PG_FUNCTION_ARGS)
 	}
 #endif
 
-#ifndef XCP
-#ifdef PGXC
-	if (IS_PGXC_COORDINATOR &&
-		seqrel->rd_backend != MyBackendId)
-	{
-		char *seqname = GetGlobalSeqName(seqrel, NULL, NULL);
-
-		result = (int64) GetCurrentValGTM(seqname);
-		if (result < 0)
-			ereport(ERROR,
-					(errcode(ERRCODE_CONNECTION_FAILURE),
-					 errmsg("GTM error, could not obtain sequence value")));
-		pfree(seqname);
-	}
-	else {
-#endif
-	result = elm->last;
-#ifdef PGXC
-	}
-#endif
-#endif
 	relation_close(seqrel, NoLock);
 
 	PG_RETURN_INT64(result);
@@ -1230,12 +1194,8 @@ do_setval(Oid relid, int64 next, bool iscalled)
 	}
 
 #ifdef PGXC
-#ifdef XCP
 	/* Allow to execute on datanodes */
 	if (!is_temp)
-#else
-	if (IS_PGXC_COORDINATOR && !is_temp)
-#endif
 	{
 		char *seqname = GetGlobalSeqName(seqrel, NULL, NULL);
 

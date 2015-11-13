@@ -3476,23 +3476,19 @@ exec_stmt_execsql(PLpgSQL_execstate *estate,
 						q->commandType == CMD_DELETE)
 						stmt->mod_stmt = true;
 					/* PGXCTODO: Support a better parameter interface for XC with DMLs */
+					if
 #ifdef XCP
-					if (IS_PGXC_DATANODE && (q->commandType == CMD_INSERT ||
-#else
-					if (q->commandType == CMD_INSERT ||
+					   (IS_PGXC_DATANODE &&
 #endif
-						q->commandType == CMD_UPDATE ||
-						q->commandType == CMD_DELETE)
+						(q->commandType == CMD_INSERT ||
+						 q->commandType == CMD_UPDATE ||
+						 q->commandType == CMD_DELETE)
 #ifdef XCP
-				   )
+					   )
 #endif
-						ereport(ERROR,
+						 ereport(ERROR,
 								(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-#ifdef XCP
 								 errmsg("Postgres-XL does not support DML queries in PL/pgSQL on Datanodes")));
-#else
-								 errmsg("Postgres-XC does not support DML queries in PL/pgSQL")));
-#endif
 				}
 			}
 		}

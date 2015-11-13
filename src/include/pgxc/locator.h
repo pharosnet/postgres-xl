@@ -13,9 +13,7 @@
 #ifndef LOCATOR_H
 #define LOCATOR_H
 
-#ifdef XCP
 #include "fmgr.h"
-#endif
 #define LOCATOR_TYPE_REPLICATED 'R'
 #define LOCATOR_TYPE_HASH 'H'
 #define LOCATOR_TYPE_RANGE 'G'
@@ -89,7 +87,6 @@ typedef struct
 } ExecNodes;
 
 
-#ifdef XCP
 typedef enum
 {
 	LOCATOR_LIST_NONE,	/* locator returns integers in range 0..NodeCount-1,
@@ -141,7 +138,6 @@ extern int GET_NODES(Locator *self, Datum value, bool isnull, bool *hasprimary);
 extern void *getLocatorResults(Locator *self);
 extern void *getLocatorNodeMap(Locator *self);
 extern int getLocatorNodeCount(Locator *self);
-#endif
 
 /* Extern variables related to locations */
 extern Oid primary_data_node;
@@ -158,13 +154,6 @@ extern RelationLocInfo *CopyRelationLocInfo(RelationLocInfo *src_info);
 extern char GetRelationLocType(Oid relid);
 extern bool IsTableDistOnPrimary(RelationLocInfo *rel_loc_info);
 extern bool IsLocatorInfoEqual(RelationLocInfo *rel_loc_info1, RelationLocInfo *rel_loc_info2);
-#ifndef XCP
-extern ExecNodes *GetRelationNodes(RelationLocInfo *rel_loc_info, Datum valueForDistCol,
-									bool isValueNull, Oid typeOfValueForDistCol,
-									RelationAccessType accessType);
-extern ExecNodes *GetRelationNodesByQuals(Oid reloid, Index varno, Node *quals,
-											RelationAccessType relaccess);
-#endif
 extern bool IsHashColumn(RelationLocInfo *rel_loc_info, char *part_col_name);
 extern bool IsHashColumnForRelId(Oid relid, char *part_col_name);
 extern int	GetRoundRobinNode(Oid relid);
@@ -172,11 +161,7 @@ extern int	GetRoundRobinNode(Oid relid);
 extern bool IsTypeHashDistributable(Oid col_type);
 extern List *GetAllDataNodes(void);
 extern List *GetAllCoordNodes(void);
-#ifdef XCP
 extern int GetAnyDataNode(Bitmapset *nodes);
-#else
-extern List *GetPreferredReplicationNode(List *relNodes);
-#endif
 extern void RelationBuildLocator(Relation rel);
 extern void FreeRelationLocInfo(RelationLocInfo *relationLocInfo);
 

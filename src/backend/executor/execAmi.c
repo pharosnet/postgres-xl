@@ -213,15 +213,9 @@ ExecReScan(PlanState *node)
 			break;
 
 #ifdef PGXC
-#ifdef XCP
 		case T_RemoteSubplanState:
 			ExecReScanRemoteSubplan((RemoteSubplanState *) node);
 			break;
-#else
-		case T_RemoteQueryState:
-			ExecRemoteQueryReScan((RemoteQueryState *) node, node->ps_ExprContext);
-			break;
-#endif
 #endif
 		case T_CustomScanState:
 			ExecReScanCustomScan((CustomScanState *) node);

@@ -51,27 +51,6 @@ typedef enum
 	HANDLE_DEFAULT
 }	PGXCNode_HandleRequested;
 
-#ifndef XCP
-/*
- * Enumeration for two purposes
- * 1. To indicate to the HandleCommandComplete function whether response checking is required or not
- * 2. To enable HandleCommandComplete function to indicate whether the response was a ROLLBACK or not
- * Response checking is required in case of PREPARE TRANSACTION and should not be done for the rest
- * of the cases for performance reasons, hence we have an option to ignore response checking.
- * The problem with PREPARE TRANSACTION is that it can result in a ROLLBACK response
- * yet Coordinator would think it got done on all nodes.
- * If we ignore ROLLBACK response then we would try to COMMIT a transaction that
- * never got prepared, which in an incorrect behavior.
- */
-typedef enum
-{
-	RESP_ROLLBACK_IGNORE,			/* Ignore response checking */
-	RESP_ROLLBACK_CHECK,			/* Check whether response was ROLLBACK */
-	RESP_ROLLBACK_RECEIVED,			/* Response is ROLLBACK */
-	RESP_ROLLBACK_NOT_RECEIVED		/* Response is NOT ROLLBACK */
-}RESP_ROLLBACK;
-#endif
-
 #define DN_CONNECTION_STATE_ERROR(dnconn) \
 		((dnconn)->state == DN_CONNECTION_STATE_ERROR_FATAL \
 			|| (dnconn)->transaction_status == 'E')
@@ -89,12 +68,8 @@ struct pgxc_node_handle
 	/* Connection state */
 	char		transaction_status;
 	DNConnectionState state;
-#ifdef XCP
 	bool		read_only;
 	struct ResponseCombiner *combiner;
-#else
-	struct RemoteQueryState *combiner;
-#endif
 #ifdef DN_CONNECTION_DEBUG
 	bool		have_row_desc;
 #endif
@@ -115,11 +90,7 @@ struct pgxc_node_handle
 	 *
 	 * For details see comments of RESP_ROLLBACK
 	 */
-#ifdef XCP
 	bool		ck_resp_rollback;
-#else
-	RESP_ROLLBACK	ck_resp_rollback;
-#endif
 };
 typedef struct pgxc_node_handle PGXCNodeHandle;
 
@@ -136,52 +107,27 @@ typedef struct
 extern void InitMultinodeExecutor(bool is_force);
 
 /* Open/close connection routines (invoked from Pool Manager) */
-#ifdef XCP
 extern char *PGXCNodeConnStr(char *host, int port, char *dbname, char *user,
 							 char *pgoptions,
 							 char *remote_type, char *parent_node);
-#else
-extern char *PGXCNodeConnStr(char *host, int port, char *dbname, char *user,
-	                         char *pgoptions, char *remote_type);
-#endif
 extern NODE_CONNECTION *PGXCNodeConnect(char *connstr);
-#ifndef XCP
-extern int PGXCNodeSendSetQuery(NODE_CONNECTION *conn, const char *sql_command);
-#endif
 extern void PGXCNodeClose(NODE_CONNECTION * conn);
 extern int PGXCNodeConnected(NODE_CONNECTION * conn);
 extern int PGXCNodeConnClean(NODE_CONNECTION * conn);
 extern void PGXCNodeCleanAndRelease(int code, Datum arg);
 
-#ifdef XCP
 extern PGXCNodeHandle *get_any_handle(List *datanodelist);
-#endif
 /* Look at information cached in node handles */
-#ifdef XCP
 extern int PGXCNodeGetNodeId(Oid nodeoid, char *node_type);
 extern int PGXCNodeGetNodeIdFromName(char *node_name, char *node_type);
-#else
-extern int PGXCNodeGetNodeId(Oid nodeoid, char node_type);
-extern int PGXCNodeGetNodeIdFromName(char *node_name, char node_type);
-#endif
 extern Oid PGXCNodeGetNodeOid(int nodeid, char node_type);
 
-#ifdef XCP
 extern PGXCNodeAllHandles *get_handles(List *datanodelist, List *coordlist, bool is_query_coord_only, bool is_global_session);
-#else
-extern PGXCNodeAllHandles *get_handles(List *datanodelist, List *coordlist, bool is_query_coord_only);
-#endif
 
-#ifdef XCP
 extern PGXCNodeAllHandles *get_current_handles(void);
-#endif
 extern void pfree_pgxc_all_handles(PGXCNodeAllHandles *handles);
 
 extern void release_handles(void);
-#ifndef XCP
-extern void cancel_query(void);
-extern void clear_all_data(void);
-#endif
 
 extern int get_transaction_nodes(PGXCNodeHandle ** connections,
 								  char client_conn_type,
@@ -210,11 +156,9 @@ extern int	pgxc_node_send_query_extended(PGXCNodeHandle *handle, const char *que
 							  int num_params, Oid *param_types,
 							  int paramlen, char *params,
 							  bool send_describe, int fetch_size);
-#ifdef XCP
 extern int  pgxc_node_send_plan(PGXCNodeHandle * handle, const char *statement,
 					const char *query, const char *planstr,
 					short num_params, Oid *param_types);
-#endif
 extern int	pgxc_node_send_gxid(PGXCNodeHandle * handle, GlobalTransactionId gxid);
 extern int	pgxc_node_send_cmd_id(PGXCNodeHandle *handle, CommandId cid);
 extern int	pgxc_node_send_snapshot(PGXCNodeHandle * handle, Snapshot snapshot);
@@ -229,24 +173,17 @@ extern int	send_some(PGXCNodeHandle * handle, int len);
 extern int	pgxc_node_flush(PGXCNodeHandle *handle);
 extern void	pgxc_node_flush_read(PGXCNodeHandle *handle);
 
-#ifndef XCP
-extern int	pgxc_all_handles_send_gxid(PGXCNodeAllHandles *pgxc_handles, GlobalTransactionId gxid, bool stop_at_error);
-extern int	pgxc_all_handles_send_query(PGXCNodeAllHandles *pgxc_handles, const char *buffer, bool stop_at_error);
-#endif
-
 extern char get_message(PGXCNodeHandle *conn, int *len, char **msg);
 
 extern void add_error_message(PGXCNodeHandle * handle, const char *message);
 
 extern Datum pgxc_execute_on_nodes(int numnodes, Oid *nodelist, char *query);
 
-#ifdef XCP
 extern void PGXCNodeSetParam(bool local, const char *name, const char *value);
 extern void PGXCNodeResetParams(bool only_local);
 extern char *PGXCNodeGetSessionParamStr(void);
 extern char *PGXCNodeGetTransactionParamStr(void);
 extern void pgxc_node_set_query(PGXCNodeHandle *handle, const char *set_query);
 extern void RequestInvalidateRemoteHandles(void);
-#endif
 
 #endif /* PGXCNODE_H */

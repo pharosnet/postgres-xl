@@ -1441,7 +1441,6 @@ GetSnapshotData(Snapshot snapshot)
 	 */
 	if (GetPGXCSnapshotData(snapshot))
 		return snapshot;
-#ifdef XCP
 	/*
 	 * We only make one exception for using local snapshot and that's the
 	 * initdb time. When IsPostmasterEnvironment is true, snapshots must either
@@ -1453,8 +1452,6 @@ GetSnapshotData(Snapshot snapshot)
 	 */
 	if (IsPostmasterEnvironment && !useLocalXid)
 		elog(ERROR, "Was unable to obtain a snapshot from GTM.");
-#else
-#endif
 #endif
 
 	/*

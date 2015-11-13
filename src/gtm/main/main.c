@@ -78,11 +78,9 @@ int			tcp_keepalives_count;
 char		*error_reporter;
 char		*status_reader;
 bool		isStartUp;
-#ifdef XCP
 GTM_MutexLock   control_lock;
 char		GTMControlFileTmp[GTM_MAX_PATH];
 #define GTM_CONTROL_FILE_TMP		"gtm.control.tmp"
-#endif
 
 /* If this is GTM or not */
 /*
@@ -209,9 +207,7 @@ InitGTMProcess()
 		fflush(stdout);
 		fflush(stderr);
 	}
-#ifdef XCP
 	GTM_MutexLockInit(&control_lock);
-#endif
 }
 
 static void
@@ -223,9 +219,7 @@ BaseInit()
 	CreateDataDirLockFile();
 
 	sprintf(GTMControlFile, "%s/%s", GTMDataDir, GTM_CONTROL_FILE);
-#ifdef XCP
 	sprintf(GTMControlFileTmp, "%s/%s", GTMDataDir, GTM_CONTROL_FILE_TMP);
-#endif
 	if (GTMLogFile == NULL)
 	{
 		GTMLogFile = (char *) malloc(GTM_MAX_PATH);
@@ -314,7 +308,6 @@ gtm_status()
 	exit(0);
 }
 
-#ifdef XCP
 /*
  * Save control file info
  */
@@ -344,7 +337,6 @@ SaveControlInfo(void)
 
 	GTM_MutexLockRelease(&control_lock);
 }
-#endif
 
 int
 main(int argc, char *argv[])
@@ -658,9 +650,7 @@ main(int argc, char *argv[])
 	}
 	else
 	{
-#ifdef XCP
 		GTM_MutexLockAcquire(&control_lock);
-#endif
 
 		ctlf = fopen(GTMControlFile, "r");
 		GTM_RestoreTxnInfo(ctlf, next_gxid);
@@ -668,9 +658,7 @@ main(int argc, char *argv[])
 		if (ctlf)
 			fclose(ctlf);
 
-#ifdef XCP
 		GTM_MutexLockRelease(&control_lock);
-#endif
 	}
 
 	if (Recovery_IsStandby())
@@ -694,11 +682,7 @@ main(int argc, char *argv[])
 		elog(LOG, "Restoring node information from the active-GTM succeeded.");
 	}
 	else
-	{
-		/* Recover Data of Registered nodes. */
-		Recovery_RestoreRegisterInfo();
 		elog(LOG, "Started to run as GTM-Active.");
-	}
 
 	/*
 	 * Establish input sockets.
@@ -871,10 +855,6 @@ ServerLoop(void)
 
 		if (GTMAbortPending)
 		{
-#ifndef XCP
-			FILE *ctlf;
-#endif
-
 			/*
 			 * XXX We should do a clean shutdown here. For the time being, just
 			 * write the next GXID to be issued in the control file and exit
@@ -888,19 +868,7 @@ ServerLoop(void)
 			 */
 			GTM_SetShuttingDown();
 
-#ifdef XCP
 			SaveControlInfo();
-#else
-			ctlf = fopen(GTMControlFile, "w");
-			if (ctlf == NULL)
-			{
-				fprintf(stderr, "Failed to create/open the control file\n");
-				exit(2);
-			}
-
-			GTM_SaveTxnInfo(ctlf);
-			GTM_SaveSeqInfo(ctlf);
-#endif
 
 #if 0
 			/*
@@ -915,11 +883,6 @@ ServerLoop(void)
 				gtm_standby_finishActiveConn();
 			}
 #endif
-
-#ifndef XCP
-			fclose(ctlf);
-#endif
-
 			exit(1);
 		}
 
@@ -1336,9 +1299,7 @@ ProcessCommand(Port *myport, StringInfo input_message)
 		case MSG_NODE_UNREGISTER:
 		case MSG_BKUP_NODE_UNREGISTER:
 		case MSG_NODE_LIST:
-#ifdef XCP
 		case MSG_REGISTER_SESSION:
-#endif
 			ProcessPGXCNodeCommand(myport, mtype, input_message);
 			break;
 		case MSG_BEGIN_BACKUP:
@@ -1572,11 +1533,9 @@ ProcessPGXCNodeCommand(Port *myport, GTM_MessageType mtype, StringInfo message)
 			ProcessPGXCNodeList(myport, message);
 			break;
 
-#ifdef XCP
 		case MSG_REGISTER_SESSION:
 			ProcessPGXCRegisterSession(myport, message);
 			break;
-#endif
 
 		default:
 			Assert(0);			/* Shouldn't come here.. keep compiler quite */

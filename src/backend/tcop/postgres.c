@@ -832,23 +832,6 @@ pg_analyze_and_rewrite(Node *parsetree, const char *query_string,
 	 */
 	querytree_list = pg_rewrite_query(query);
 
-#ifdef PGXC
-#ifndef XCP
-	if (IS_PGXC_LOCAL_COORDINATOR)
-	{
-		ListCell   *lc;
-
-		foreach(lc, querytree_list)
-		{
-			Query *query = (Query *) lfirst(lc);
-
-			if (query->sql_statement == NULL)
-				query->sql_statement = pstrdup(query_string);
-		}
-	}
-#endif
-#endif
-
 	TRACE_POSTGRESQL_QUERY_REWRITE_DONE(query_string);
 
 	return querytree_list;
@@ -1627,22 +1610,6 @@ exec_parse_message(const char *query_string,	/* string to execute */
 			ShowUsage("PARSE ANALYSIS STATISTICS");
 
 		querytree_list = pg_rewrite_query(query);
-#ifdef PGXC
-#ifndef XCP
-		if (IS_PGXC_LOCAL_COORDINATOR)
-		{
-			ListCell   *lc;
-
-			foreach(lc, querytree_list)
-			{
-				Query *query = (Query *) lfirst(lc);
-
-				if (query->sql_statement == NULL)
-					query->sql_statement = pstrdup(query_string);
-			}
-		}
-#endif
-#endif
 
 		/* Done with the snapshot used for parsing */
 		if (snapshot_set)
@@ -3973,11 +3940,7 @@ process_postgres_switches(int argc, char *argv[], GucContext ctx,
 	{
 		ereport(FATAL,
 				(errcode(ERRCODE_SYNTAX_ERROR),
-#ifdef XCP
 			 errmsg("Postgres-XL: must start as either a Coordinator (--coordinator) or Datanode (-datanode)\n")));
-#else
-			 errmsg("Postgres-XC: must start as either a Coordinator (--coordinator) or Datanode (-datanode)\n")));
-#endif
 
 	}
 	if (!IsPostmasterEnvironment)
@@ -4052,12 +4015,10 @@ PostgresMain(int argc, char *argv[],
 	TransactionId 			*xip;
 	/* Timestamp info */
 	TimestampTz		timestamp;
-#ifndef XCP
-	PoolHandle		*pool_handle;
-#endif
 
 	remoteConnType = REMOTE_CONN_APP;
 #endif
+
 #ifdef XCP
 	parentPGXCNode = NULL;
 	parentPGXCNodeId = -1;

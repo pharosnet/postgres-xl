@@ -150,7 +150,6 @@ extern void extract_query_dependencies(Node *query,
 						   bool *hasRowSecurity);
 
 #ifdef PGXC
-#ifdef XCP
 extern RemoteSubplan *find_push_down_plan(Plan *plan, bool force);
 extern RemoteSubplan *find_delete_push_down_plan(PlannerInfo *root, Plan *plan,
 		bool force, Plan **parent);
@@ -159,15 +158,6 @@ extern RemoteSubplan *make_remotesubplan(PlannerInfo *root,
 				   Distribution *resultDistribution,
 				   Distribution *execDistribution,
 				   List *pathkeys);
-#else
-extern Var *search_tlist_for_var(Var *var, List *jtlist);
-extern Plan *create_remoteinsert_plan(PlannerInfo *root, Plan *topplan);
-extern Plan *create_remoteupdate_plan(PlannerInfo *root, Plan *topplan);
-extern Plan *create_remotedelete_plan(PlannerInfo *root, Plan *topplan);
-extern Plan *create_remotegrouping_plan(PlannerInfo *root, Plan *local_plan);
-/* Expose fix_scan_expr to create_remotequery_plan() */
-extern Node *pgxc_fix_scan_expr(PlannerInfo *root, Node *node, int rtoffset);
-#endif /* XCP */
 #endif /* PGXC */
 
 #endif   /* PLANMAIN_H */

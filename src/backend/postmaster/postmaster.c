@@ -382,21 +382,13 @@ static DNSServiceRef bonjour_sdref = NULL;
 
 #ifdef PGXC
 char			*PGXCNodeName = NULL;
-#ifdef XCP
 int			PGXCNodeId = 0;
-#else
-int			PGXCNodeId = -1;
-#endif
 /*
  * When a particular node starts up, store the node identifier in this variable
  * so that we dont have to calculate it OR do a search in cache any where else
  * This will have minimal impact on performance
  */
 uint32			PGXCNodeIdentifier = 0;
-
-#ifndef XCP
-static bool isNodeRegistered = false;
-#endif
 #endif
 
 /*
@@ -897,11 +889,7 @@ PostmasterMain(int argc, char *argv[])
 #ifdef PGXC
 	if (!IS_PGXC_COORDINATOR && !IS_PGXC_DATANODE)
 	{
-#ifdef XCP
 		write_stderr("%s: Postgres-XL: must start as either a Coordinator (--coordinator) or Data Node (--datanode)\n",
-#else
-		write_stderr("%s: Postgres-XC: must start as either a Coordinator (--coordinator) or Data Node (--datanode)\n",
-#endif
 					 progname);
 		ExitPostmaster(1);
 	}
@@ -1362,7 +1350,6 @@ PostmasterMain(int argc, char *argv[])
 	pmState = PM_STARTUP;
 
 #ifdef PGXC /* PGXC_COORD */
-#ifdef XCP
 	oldcontext = MemoryContextSwitchTo(TopMemoryContext);
 
 	/*
@@ -1371,19 +1358,6 @@ PostmasterMain(int argc, char *argv[])
 	PgPoolerPID = StartPoolManager();
 
 	MemoryContextSwitchTo(oldcontext);
-#else
-	if (IS_PGXC_COORDINATOR)
-	{
-		oldcontext = MemoryContextSwitchTo(TopMemoryContext);
-
-		/*
-		 * Initialize the Data Node connection pool
-		 */
-		PgPoolerPID = StartPoolManager();
-
-		MemoryContextSwitchTo(oldcontext);
-	}
-#endif /* XCP */
 #endif /* PGXC */
 	/* Some workers may be scheduled to start now */
 	maybe_start_bgworker();
@@ -1803,11 +1777,7 @@ ServerLoop(void)
 
 #ifdef PGXC
 		/* If we have lost the pooler, try to start a new one */
-#ifdef XCP
 		if (PgPoolerPID == 0 && pmState == PM_RUN)
-#else
-		if (IS_PGXC_COORDINATOR && PgPoolerPID == 0 && pmState == PM_RUN)
-#endif /* XCP */
 			PgPoolerPID = StartPoolManager();
 #endif /* PGXC */
 
@@ -2509,11 +2479,7 @@ SIGHUP_handler(SIGNAL_ARGS)
 		if (StartupPID != 0)
 			signal_child(StartupPID, SIGHUP);
 #ifdef PGXC /* PGXC_COORD */
-#ifdef XCP
 		if (PgPoolerPID != 0)
-#else
-		if (IS_PGXC_COORDINATOR && PgPoolerPID != 0)
-#endif /* XCP */
 			signal_child(PgPoolerPID, SIGHUP);
 #endif /* PGXC */
 		if (BgWriterPID != 0)
@@ -2603,23 +2569,9 @@ pmdie(SIGNAL_ARGS)
 
 #ifdef PGXC /* PGXC_COORD */
 				/* and the pool manager too */
-#ifdef XCP
 				if (PgPoolerPID != 0)
-#else
-				if (IS_PGXC_COORDINATOR && PgPoolerPID != 0)
-#endif
 					signal_child(PgPoolerPID, SIGTERM);
 
-#ifndef XCP
-				/* Unregister Node on GTM */
-				if (isNodeRegistered)
-				{
-					if (IS_PGXC_COORDINATOR)
-						UnregisterGTM(GTM_NODE_COORDINATOR);
-					else if (IS_PGXC_DATANODE)
-						UnregisterGTM(GTM_NODE_DATANODE);
-				}
-#endif
 #endif
 
 				/*
@@ -2697,22 +2649,6 @@ pmdie(SIGNAL_ARGS)
 				/* and the walwriter too */
 				if (WalWriterPID != 0)
 					signal_child(WalWriterPID, SIGTERM);
-#ifdef PGXC
-#ifndef XCP
-				/* and the pool manager too */
-				if (IS_PGXC_COORDINATOR && PgPoolerPID != 0)
-					signal_child(PgPoolerPID, SIGTERM);
-
-				/* Unregister Node on GTM */
-				if (isNodeRegistered)
-				{
-					if (IS_PGXC_COORDINATOR)
-						UnregisterGTM(GTM_NODE_COORDINATOR);
-					else if (IS_PGXC_DATANODE)
-						UnregisterGTM(GTM_NODE_DATANODE);
-				}
-#endif /* XCP */
-#endif /* PGXC */
 				pmState = PM_WAIT_BACKENDS;
 			}
 
@@ -2867,11 +2803,7 @@ reaper(SIGNAL_ARGS)
 			if (PgStatPID == 0)
 				PgStatPID = pgstat_start();
 #ifdef PGXC
-#ifdef XCP
 			if (PgPoolerPID == 0)
-#else
-			if (IS_PGXC_COORDINATOR && PgPoolerPID == 0)
-#endif /* XCP */
 				PgPoolerPID = StartPoolManager();
 #endif /* PGXC */
 
@@ -3049,11 +2981,7 @@ reaper(SIGNAL_ARGS)
 		 * Was it the pool manager?  TODO decide how to handle
 		 * Probably we should restart the system
 		 */
-#ifdef XCP
 		if (pid == PgPoolerPID)
-#else
-		if (IS_PGXC_COORDINATOR && pid == PgPoolerPID)
-#endif /* XCP */
 		{
 			PgPoolerPID = 0;
 			if (!EXIT_STATUS_0(exitstatus))
@@ -3486,7 +3414,6 @@ HandleChildCrash(int pid, int exitstatus, const char *procname)
 
 #ifdef PGXC
 	/* Take care of the pool manager too */
-#ifdef XCP
 	if (pid == PgPoolerPID)
 		PgPoolerPID = 0;
 	else if (PgPoolerPID != 0 && !FatalError)
@@ -3497,21 +3424,6 @@ HandleChildCrash(int pid, int exitstatus, const char *procname)
 							 (int) PgPoolerPID)));
 		signal_child(PgPoolerPID, (SendStop ? SIGSTOP : SIGQUIT));
 	}
-#else
-	if (IS_PGXC_COORDINATOR)
-	{
-		if (pid == PgPoolerPID)
-			PgPoolerPID = 0;
-		else if (PgPoolerPID != 0 && !FatalError)
-		{
-			ereport(DEBUG2,
-				(errmsg_internal("sending %s to process %d",
-								 (SendStop ? "SIGSTOP" : "SIGQUIT"),
-								 (int) PgPoolerPID)));
-			signal_child(PgPoolerPID, (SendStop ? SIGSTOP : SIGQUIT));
-		}
-	}
-#endif /* XCP */
 #endif /* PGXC */
 
 	/*
@@ -4008,13 +3920,8 @@ TerminateChildren(int signal)
 	if (StartupPID != 0)
 		signal_child(StartupPID, signal);
 #ifdef PGXC /* PGXC_COORD */
-#ifdef XCP
-			if (PgPoolerPID != 0)
-#else
-			if (IS_PGXC_COORDINATOR && PgPoolerPID != 0)
-#endif /* XCP */
-				signal_child(PgPoolerPID, SIGQUIT);
-
+	if (PgPoolerPID != 0)
+		signal_child(PgPoolerPID, SIGQUIT);
 #endif
 	if (BgWriterPID != 0)
 		signal_child(BgWriterPID, signal);
@@ -5120,55 +5027,6 @@ sigusr1_handler(SIGNAL_ARGS)
 		/* Some workers may be scheduled to start now */
 		StartWorkerNeeded = true;
 	}
-
-#ifdef PGXC
-#ifndef XCP
-	/*
-	 * Register node to GTM.
-	 * A node can only be registered if it has reached a stable recovery state
-	 * and if is a master node.
-	 * A standby node is created from a hot backup of master so master and slave
-	 * nodes will normally share the same node name. Having master and slave share
-	 * the same node name is convenient for slave promotion, and this makes master
-	 * and slave nodes being seen as equal by GTM in cluster. As two nodes cannot
-	 * register on GTM with the same name, it looks normal to let only master
-	 * register and have slave nodes bypass this process.
-	 */
-	if (pmState == PM_RUN &&
-		!isNodeRegistered)
-	{
-		isNodeRegistered = true;
-
-		/* Register node on GTM during Postmaster Startup. */
-		if (IS_PGXC_COORDINATOR)
-		{
-			if (RegisterGTM(GTM_NODE_COORDINATOR, PostPortNumber, data_directory) < 0)
-			{
-				UnregisterGTM(GTM_NODE_COORDINATOR);
-				if (RegisterGTM(GTM_NODE_COORDINATOR, PostPortNumber, data_directory) < 0)
-				{
-					ereport(FATAL,
-							(errcode(ERRCODE_IO_ERROR),
-							 errmsg("Can not register Coordinator on GTM")));
-				}
-			}
-		}
-		if (IS_PGXC_DATANODE)
-		{
-			if (RegisterGTM(GTM_NODE_DATANODE, PostPortNumber, data_directory) < 0)
-			{
-				UnregisterGTM(GTM_NODE_DATANODE);
-				if (RegisterGTM(GTM_NODE_DATANODE, PostPortNumber, data_directory) < 0)
-				{
-					ereport(FATAL,
-							(errcode(ERRCODE_IO_ERROR),
-							 errmsg("Can not register Datanode on GTM")));
-				}
-			}
-		}
-	}
-#endif
-#endif
 
 	if (StartWorkerNeeded || HaveCrashedWorker)
 		maybe_start_bgworker();

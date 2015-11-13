@@ -95,11 +95,6 @@ extern ForeignPath *create_foreignscan_path(PlannerInfo *root, RelOptInfo *rel,
 						List *pathkeys,
 						Relids required_outer,
 						List *fdw_private);
-#ifdef PGXC
-#ifndef XCP
-extern Path *create_remotequery_path(PlannerInfo *root, RelOptInfo *rel);
-#endif
-#endif
 
 extern Relids calc_nestloop_required_outer(Path *outer_path, Path *inner_path);
 extern Relids calc_non_nestloop_required_outer(Path *outer_path, Path *inner_path);

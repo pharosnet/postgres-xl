@@ -491,8 +491,6 @@ finishStandbyConn(GTM_ThreadInfo *thrinfo)
 	}
 }
 
-
-#ifdef XCP
 /*
  * Process MSG_REGISTER_SESSION message
  */
@@ -592,4 +590,3 @@ ProcessPGXCRegisterSession(Port *myport, StringInfo message)
 		pq_flush(myport);
 	}
 }
-#endif

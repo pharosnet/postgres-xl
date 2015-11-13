@@ -937,35 +937,6 @@ static struct config_bool ConfigureNamesBool[] =
 		NULL, NULL, NULL
 	},
 #ifdef PGXC
-#ifndef XCP
-	{
-		{"enable_remotejoin", PGC_USERSET, QUERY_TUNING_METHOD,
-			gettext_noop("Enables the planner's use of remote join plans."),
-			NULL
-		},
-		&enable_remotejoin,
-		true,
-		NULL, NULL, NULL
-	},
-	{
-		{"enable_fast_query_shipping", PGC_USERSET, QUERY_TUNING_METHOD,
-			gettext_noop("Enables the planner's use of fast query shipping to ship query directly to datanode."),
-			NULL
-		},
-		&enable_fast_query_shipping,
-		true,
-		NULL, NULL, NULL
-	},
-	{
-		{"enable_remotegroup", PGC_USERSET, QUERY_TUNING_METHOD,
-			gettext_noop("Enables the planner's use of remote group plans."),
-			NULL
-		},
-		&enable_remotegroup,
-		true,
-		NULL, NULL, NULL
-	},
-#else
 	{
 		{"loose_constraints", PGC_USERSET, COORDINATORS,
 			gettext_noop("Relax enforcing of constraints"),
@@ -987,7 +958,6 @@ static struct config_bool ConfigureNamesBool[] =
 		false,
 		NULL, NULL, NULL
 	},
-#endif
 #endif
 	{
 		{"geqo", PGC_USERSET, QUERY_TUNING_GEQO,
@@ -2844,7 +2814,6 @@ static struct config_int ConfigureNamesInt[] =
 		NULL, NULL, NULL
 	},
 #ifdef PGXC
-#ifdef XCP
 	{
 		{"sequence_range", PGC_USERSET, COORDINATORS,
 			gettext_noop("The range of values to ask from GTM for sequences. "
@@ -2888,29 +2857,6 @@ static struct config_int ConfigureNamesInt[] =
 		100, 1, 65535,
 		NULL, NULL, NULL
 	},
-#else
-	{
-		{"min_pool_size", PGC_POSTMASTER, DATA_NODES,
-			gettext_noop("Initial pool size."),
-			gettext_noop("If number of active connections decreased below this value, "
-						 "new connections are established")
-		},
-		&MinPoolSize,
-		1, 1, 65535,
-		NULL, NULL, NULL
-	},
-
-	{
-		{"max_pool_size", PGC_POSTMASTER, DATA_NODES,
-			gettext_noop("Max pool size."),
-			gettext_noop("If number of active connections reaches this value, "
-						 "other connection requests will be refused")
-		},
-		&MaxPoolSize,
-		100, 1, 65535,
-		NULL, NULL, NULL
-	},
-#endif
 
 	{
 		{"pooler_port", PGC_POSTMASTER, DATA_NODES,
@@ -4039,11 +3985,7 @@ static struct config_enum ConfigureNamesEnum[] =
 #ifdef PGXC
 	{
 		{"remotetype", PGC_BACKEND, CONN_AUTH,
-#ifdef XCP
 			gettext_noop("Sets the type of Postgres-XL remote connection"),
-#else			
-			gettext_noop("Sets the type of Postgres-XC remote connection"),
-#endif
 			NULL
 		},
 		&remoteConnType,
@@ -7728,33 +7670,6 @@ set_config_by_name(PG_FUNCTION_ARGS)
 
 	/* get the new current value */
 	new_value = GetConfigOptionByName(name, NULL);
-
-
-#ifdef PGXC
-#ifndef XCP
-	/*
-	 * Convert this to SET statement and pass it to pooler.
-	 * If command is local and we are not in a transaction block do NOT
-	 * send this query to backend nodes, it is just bypassed by the backend.
-	 */
-	if (IS_PGXC_LOCAL_COORDINATOR
-		&& (!is_local || IsTransactionBlock()))
-	{
-		PoolCommandType poolcmdType = (is_local ? POOL_CMD_LOCAL_SET : POOL_CMD_GLOBAL_SET);
-		StringInfoData poolcmd;
-
-		initStringInfo(&poolcmd);
-		appendStringInfo(&poolcmd, "SET %s %s TO %s",
-		                            (is_local ? "LOCAL" : ""),
-		                            name,
-		                            (value ? value : "DEFAULT"));
-
-		if (PoolManagerSetCommand(poolcmdType, poolcmd.data) < 0)
-			elog(ERROR, "Postgres-XC: ERROR SET query");
-
-	}
-#endif
-#endif
 
 	/* Convert return string to text */
 	PG_RETURN_TEXT_P(cstring_to_text(new_value));

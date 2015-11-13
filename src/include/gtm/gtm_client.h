@@ -63,9 +63,7 @@ typedef union GTM_ResultData
 	{
 		GTM_SequenceKeyData		seqkey;
 		GTM_Sequence			seqval;
-#ifdef XCP
 		GTM_Sequence			rangemax;
-#endif
 	} grd_seq;									/* SEQUENCE_GET_CURRENT
 												 * SEQUENCE_GET_NEXT */
 	struct
@@ -271,10 +269,8 @@ int node_unregister(GTM_Conn *conn, GTM_PGXCNodeType type, const char *node_name
 int bkup_node_unregister(GTM_Conn *conn, GTM_PGXCNodeType type, const char * node_name);
 int backend_disconnect(GTM_Conn *conn, bool is_postmaster, GTM_PGXCNodeType type, char *node_name);
 char *node_get_local_addr(GTM_Conn *conn, char *buf, size_t buflen, int *rc);
-#ifdef XCP
 int register_session(GTM_Conn *conn, const char *coord_name, int coord_procid,
 				 int coord_backendid);
-#endif
 
 /*
  * Sequence Management API
@@ -295,7 +291,6 @@ int close_sequence(GTM_Conn *conn, GTM_SequenceKey key);
 int bkup_close_sequence(GTM_Conn *conn, GTM_SequenceKey key);
 int rename_sequence(GTM_Conn *conn, GTM_SequenceKey key, GTM_SequenceKey newkey);
 int bkup_rename_sequence(GTM_Conn *conn, GTM_SequenceKey key, GTM_SequenceKey newkey);
-#ifdef XCP
 int get_current(GTM_Conn *conn, GTM_SequenceKey key,
 			char *coord_name, int coord_procid, GTM_Sequence *result);
 int get_next(GTM_Conn *conn, GTM_SequenceKey key,
@@ -308,13 +303,6 @@ int set_val(GTM_Conn *conn, GTM_SequenceKey key, char *coord_name,
 		int coord_procid, GTM_Sequence nextval, bool iscalled);
 int bkup_set_val(GTM_Conn *conn, GTM_SequenceKey key, char *coord_name,
 			 int coord_procid, GTM_Sequence nextval, bool iscalled);
-#else
-GTM_Sequence get_current(GTM_Conn *conn, GTM_SequenceKey key);
-GTM_Sequence get_next(GTM_Conn *conn, GTM_SequenceKey key);
-GTM_Sequence bkup_get_next(GTM_Conn *conn, GTM_SequenceKey key);
-int set_val(GTM_Conn *conn, GTM_SequenceKey key, GTM_Sequence nextval, bool is_called);
-int bkup_set_val(GTM_Conn *conn, GTM_SequenceKey key, GTM_Sequence nextval, bool is_called);
-#endif
 int reset_sequence(GTM_Conn *conn, GTM_SequenceKey key);
 int bkup_reset_sequence(GTM_Conn *conn, GTM_SequenceKey key);
 

@@ -332,10 +332,6 @@ extern TransactionId GetTopTransactionIdIfAny(void);
 extern TransactionId GetCurrentTransactionId(void);
 extern TransactionId GetCurrentTransactionIdIfAny(void);
 #ifdef PGXC  /* PGXC_COORD */
-#ifndef XCP
-extern bool GetCurrentLocalParamStatus(void);
-extern void SetCurrentLocalParamStatus(bool status);
-#endif
 extern GlobalTransactionId GetAuxilliaryTransactionId(void);
 extern GlobalTransactionId GetTopGlobalTransactionId(void);
 extern void SetAuxilliaryTransactionId(GlobalTransactionId gxid);

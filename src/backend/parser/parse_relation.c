@@ -1267,12 +1267,6 @@ addRangeTableEntry(ParseState *pstate,
 
 	rte->relkind = rel->rd_rel->relkind;
 
-#ifdef PGXC
-#ifndef XCP
-	rte->relname = RelationGetRelationName(rel);
-#endif
-#endif
-
 	/*
 	 * Build the list of effective column names using user-supplied aliases
 	 * and/or actual column names.
@@ -1353,12 +1347,6 @@ addRangeTableEntryForRelation(ParseState *pstate,
 	rte->alias = alias;
 	rte->relid = RelationGetRelid(rel);
 	rte->relkind = rel->rd_rel->relkind;
-
-#ifdef PGXC
-#ifndef XCP
-	rte->relname = RelationGetRelationName(rel);
-#endif
-#endif
 
 	/*
 	 * Build the list of effective column names using user-supplied aliases
@@ -1921,15 +1909,6 @@ addRangeTableEntryForCTE(ParseState *pstate,
 				 errmsg("WITH query \"%s\" does not have a RETURNING clause",
 						cte->ctename),
 					 parser_errposition(pstate, rv->location)));
-
-#ifdef PGXC
-#ifndef XCP
-		if (ctequery->returningList != NIL)
-			ereport(ERROR,
-			       (errcode(ERRCODE_STATEMENT_TOO_COMPLEX),
-			       (errmsg("RETURNING clause not yet supported"))));
-#endif
-#endif
 	}
 
 	rte->ctecoltypes = cte->ctecoltypes;

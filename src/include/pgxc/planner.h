@@ -59,9 +59,7 @@ typedef struct
  */
 typedef enum
 {
-#ifdef XCP
 	EXEC_ON_CURRENT,
-#endif
 	EXEC_ON_DATANODES,
 	EXEC_ON_COORDS,
 	EXEC_ON_ALL_NODES,
@@ -103,10 +101,6 @@ typedef struct
 							 * plan. So, don't change this once set.
 							 */
 	RemoteQueryExecType	exec_type;
-#ifndef XCP
-	bool			is_temp;		/* determine if this remote node is based
-							 * on a temporary objects (no 2PC) */
-#endif
 	int			reduce_level;		/* in case of reduced JOIN, it's level    */
 	List			*base_tlist;		/* in case of isReduced, the base tlist   */
 	char			*outer_alias;
@@ -123,8 +117,6 @@ typedef struct
 								 * inserts into child by selecting from its parent */
 } RemoteQuery;
 
-
-#ifdef XCP
 /*
  * Going to be a RemoteQuery replacement.
  * Submit left subplan to the nodes defined by the Distribution and combine
@@ -143,8 +135,6 @@ typedef struct
 	char	   *cursor;
 	int			unique;
 } RemoteSubplan;
-#endif
-
 
 /*
  * FQS_context
@@ -202,36 +192,12 @@ typedef enum
 /* forbid SQL if unsafe, useful to turn off for development */
 extern bool StrictStatementChecking;
 
-#ifndef XCP
-/* global variable corresponding to the GUC with same name */
-extern bool enable_fast_query_shipping;
-
-/* forbid SELECT even multi-node ORDER BY */
-extern bool StrictSelectChecking;
-
-extern PlannedStmt *pgxc_planner(Query *query, int cursorOptions,
-								 ParamListInfo boundParams);
-extern bool IsHashDistributable(Oid col_type);
-
-extern ExecNodes *IsJoinReducible(RemoteQuery *innernode, RemoteQuery *outernode,
-									Relids in_relids, Relids out_relids,
-									Join *join, JoinPath *join_path, List *rtable);
-
-extern List *AddRemoteQueryNode(List *stmts, const char *queryString,
-								RemoteQueryExecType remoteExecType, bool is_temp);
-extern bool pgxc_query_contains_temp_tables(List *queries);
-extern Expr *pgxc_find_distcol_expr(Index varno, PartAttrNumber partAttrNum,
-extern bool pgxc_query_contains_utility(List *queries);
-#endif
 extern bool pgxc_shippability_walker(Node *node, Shippability_context *sc_context);
 extern bool pgxc_test_shippability_reason(Shippability_context *context,
 											ShippabilityStat reason);
-
-#ifdef XCP
 extern PlannedStmt *pgxc_direct_planner(Query *query, int cursorOptions,
 										ParamListInfo boundParams);
 extern List *AddRemoteQueryNode(List *stmts, const char *queryString,
 								RemoteQueryExecType remoteExecType);
-#endif
 
 #endif   /* PGXCPLANNER_H */

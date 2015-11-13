@@ -274,23 +274,6 @@ typedef struct PlannerInfo
 										 * pseudoconstant = true */
 	bool		hasRecursion;	/* true if planning a recursive WITH item */
 
-#ifdef PGXC
-#ifndef XCP
-	/* This field is used only when RemoteScan nodes are involved */
-	int         rs_alias_index; /* used to build the alias reference */
-
-	/*
-	 * In Postgres-XC Coordinators are supposed to skip the handling of 
-	 * row marks of type ROW_MARK_EXCLUSIVE & ROW_MARK_SHARE.
-	 * In order to do that we simply remove such type 
-	 * of row marks from the list rowMarks. Instead they are saved 
-	 * in xc_rowMarks list that is then handeled to add
-	 * FOR UPDATE/SHARE in the remote query
-	 */
-	List	   *xc_rowMarks;		/* list of PlanRowMarks of type ROW_MARK_EXCLUSIVE & ROW_MARK_SHARE */
-#endif
-#endif
-
 	/* These fields are used only when hasRecursion is true: */
 	int			wt_param_id;	/* PARAM_EXEC ID for the work table */
 	struct Plan *non_recursive_plan;	/* plan for non-recursive term */

@@ -31,9 +31,7 @@
 char *GtmHost = "localhost";
 int GtmPort = 6666;
 static int GtmConnectTimeout = 60;
-#ifdef XCP
 bool IsXidFromGTM = false;
-#endif
 bool gtm_backup_barrier = false;
 extern bool FirstSnapshotSet;
 
@@ -115,10 +113,8 @@ InitGTM(void)
 		CloseGTM();
 	}
 
-#ifdef XCP
 	else if (IS_PGXC_COORDINATOR)
 		register_session(conn, PGXCNodeName, MyProcPid, MyBackendId);
-#endif
 }
 
 void
@@ -158,10 +154,8 @@ BeginTranGTM(GTM_Timestamp *timestamp)
 		if (conn)
 			xid = begin_transaction(conn, GTM_ISOLATION_RC, timestamp);
 	}
-#ifdef XCP
 	if (xid)
 		IsXidFromGTM = true;
-#endif
 	currentGxid = xid;
 	return xid;
 }
@@ -200,10 +194,8 @@ CommitTranGTM(GlobalTransactionId gxid, int waited_xid_count,
 	if (!GlobalTransactionIdIsValid(gxid))
 		return 0;
 	CheckConnection();
-#ifdef XCP
 	ret = -1;
 	if (conn)
-#endif
 	ret = commit_transaction(conn, gxid, waited_xid_count, waited_xids);
 
 	/*
@@ -215,10 +207,8 @@ CommitTranGTM(GlobalTransactionId gxid, int waited_xid_count,
 	{
 		CloseGTM();
 		InitGTM();
-#ifdef XCP
 		if (conn)
 			ret = commit_transaction(conn, gxid, waited_xid_count, waited_xids);
-#endif
 	}
 
 	/* Close connection in case commit is done by autovacuum worker or launcher */
@@ -243,11 +233,9 @@ CommitPreparedTranGTM(GlobalTransactionId gxid,
 	if (!GlobalTransactionIdIsValid(gxid) || !GlobalTransactionIdIsValid(prepared_gxid))
 		return ret;
 	CheckConnection();
-#ifdef XCP
 	ret = -1;
 	if (conn)
-#endif
-	ret = commit_prepared_transaction(conn, gxid, prepared_gxid,
+		ret = commit_prepared_transaction(conn, gxid, prepared_gxid,
 			waited_xid_count, waited_xids);
 
 	/*
@@ -260,11 +248,9 @@ CommitPreparedTranGTM(GlobalTransactionId gxid,
 	{
 		CloseGTM();
 		InitGTM();
-#ifdef XCP
 		if (conn)
 			ret = commit_prepared_transaction(conn, gxid, prepared_gxid,
 					waited_xid_count, waited_xids);
-#endif
 	}
 	currentGxid = InvalidGlobalTransactionId;
 	return ret;
@@ -291,10 +277,8 @@ RollbackTranGTM(GlobalTransactionId gxid)
 	{
 		CloseGTM();
 		InitGTM();
-#ifdef XCP
 		if (conn)
 			ret = abort_transaction(conn, gxid);
-#endif
 	}
 
 	currentGxid = InvalidGlobalTransactionId;
@@ -312,11 +296,9 @@ StartPreparedTranGTM(GlobalTransactionId gxid,
 		return 0;
 	CheckConnection();
 
-#ifdef XCP
 	ret = -1;
 	if (conn)
-#endif
-	ret = start_prepared_transaction(conn, gxid, gid, nodestring);
+		ret = start_prepared_transaction(conn, gxid, gid, nodestring);
 
 	/*
 	 * If something went wrong (timeout), try and reset GTM connection.
@@ -327,10 +309,8 @@ StartPreparedTranGTM(GlobalTransactionId gxid,
 	{
 		CloseGTM();
 		InitGTM();
-#ifdef XCP
 		if (conn)
 			ret = start_prepared_transaction(conn, gxid, gid, nodestring);
-#endif
 	}
 
 	return ret;
@@ -344,11 +324,9 @@ PrepareTranGTM(GlobalTransactionId gxid)
 	if (!GlobalTransactionIdIsValid(gxid))
 		return 0;
 	CheckConnection();
-#ifdef XCP
 	ret = -1;
 	if (conn)
-#endif
-	ret = prepare_transaction(conn, gxid);
+		ret = prepare_transaction(conn, gxid);
 
 	/*
 	 * If something went wrong (timeout), try and reset GTM connection.
@@ -359,10 +337,8 @@ PrepareTranGTM(GlobalTransactionId gxid)
 	{
 		CloseGTM();
 		InitGTM();
-#ifdef XCP
 		if (conn)
 			ret = prepare_transaction(conn, gxid);
-#endif
 	}
 	currentGxid = InvalidGlobalTransactionId;
 	return ret;
@@ -378,11 +354,9 @@ GetGIDDataGTM(char *gid,
 	int ret = 0;
 
 	CheckConnection();
-#ifdef XCP
 	ret = -1;
 	if (conn)
-#endif
-	ret = get_gid_data(conn, GTM_ISOLATION_RC, gid, gxid,
+		ret = get_gid_data(conn, GTM_ISOLATION_RC, gid, gxid,
 					   prepared_gxid, nodestring);
 
 	/*
@@ -394,11 +368,9 @@ GetGIDDataGTM(char *gid,
 	{
 		CloseGTM();
 		InitGTM();
-#ifdef XCP
 		if (conn)
 			ret = get_gid_data(conn, GTM_ISOLATION_RC, gid, gxid,
 							   prepared_gxid, nodestring);
-#endif
 	}
 
 	return ret;
@@ -415,10 +387,8 @@ GetSnapshotGTM(GlobalTransactionId gxid, bool canbe_grouped)
 	{
 		CloseGTM();
 		InitGTM();
-#ifdef XCP
 		if (conn)
 			ret_snapshot = get_snapshot(conn, gxid, canbe_grouped);
-#endif
 	}
 	return ret_snapshot;
 }
@@ -463,16 +433,14 @@ GetCurrentValGTM(char *seqname)
 {
 	GTM_Sequence ret = -1;
 	GTM_SequenceKeyData seqkey;
-#ifdef XCP
 	char   *coordName = IS_PGXC_COORDINATOR ? PGXCNodeName : MyCoordName;
 	int		coordPid = IS_PGXC_COORDINATOR ? MyProcPid : MyCoordPid;
 	int		status;
-#endif
+
 	CheckConnection();
 	seqkey.gsk_keylen = strlen(seqname) + 1;
 	seqkey.gsk_key = seqname;
 
-#ifdef XCP
 	if (conn)
 		status = get_current(conn, &seqkey, coordName, coordPid, &ret);
 	else
@@ -490,16 +458,6 @@ GetCurrentValGTM(char *seqname)
 		ereport(ERROR,
 				(errcode(ERRCODE_INTERNAL_ERROR),
 				 errmsg("%s", GTMPQerrorMessage(conn))));
-#else
-	if (conn)
-		ret =  get_current(conn, &seqkey);
-
-	if (ret < 0)
-	{
-		CloseGTM();
-		InitGTM();
-	}
-#endif
 	return ret;
 }
 
@@ -507,24 +465,18 @@ GetCurrentValGTM(char *seqname)
  * Get the next sequence value
  */
 GTM_Sequence
-#ifdef XCP
 GetNextValGTM(char *seqname, GTM_Sequence range, GTM_Sequence *rangemax)
-#else
-GetNextValGTM(char *seqname)
-#endif
 {
 	GTM_Sequence ret = -1;
 	GTM_SequenceKeyData seqkey;
-#ifdef XCP
 	char   *coordName = IS_PGXC_COORDINATOR ? PGXCNodeName : MyCoordName;
 	int		coordPid = IS_PGXC_COORDINATOR ? MyProcPid : MyCoordPid;
 	int		status;
-#endif
+
 	CheckConnection();
 	seqkey.gsk_keylen = strlen(seqname) + 1;
 	seqkey.gsk_key = seqname;
 
-#ifdef XCP
 	if (conn)
 		status = get_next(conn, &seqkey, coordName,
 						  coordPid, range, &ret, rangemax);
@@ -544,15 +496,6 @@ GetNextValGTM(char *seqname)
 		ereport(ERROR,
 				(errcode(ERRCODE_INTERNAL_ERROR),
 				 errmsg("%s", GTMPQerrorMessage(conn))));
-#else
-	if (conn)
-		ret = get_next(conn, &seqkey);
-	if (ret < 0)
-	{
-		CloseGTM();
-		InitGTM();
-	}
-#endif
 	return ret;
 }
 
@@ -563,19 +506,14 @@ int
 SetValGTM(char *seqname, GTM_Sequence nextval, bool iscalled)
 {
 	GTM_SequenceKeyData seqkey;
-#ifdef XCP
 	char   *coordName = IS_PGXC_COORDINATOR ? PGXCNodeName : MyCoordName;
 	int		coordPid = IS_PGXC_COORDINATOR ? MyProcPid : MyCoordPid;
-#endif
+
 	CheckConnection();
 	seqkey.gsk_keylen = strlen(seqname) + 1;
 	seqkey.gsk_key = seqname;
 
-#ifdef XCP
 	return conn ? set_val(conn, &seqkey, coordName, coordPid, nextval, iscalled) : -1;
-#else
-	return conn ? set_val(conn, &seqkey, nextval, iscalled) : -1;
-#endif
 }
 
 /*

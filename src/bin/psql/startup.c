@@ -693,11 +693,7 @@ static void
 showVersion(void)
 {
 #ifdef PGXC
-#ifdef XCP
 	puts("psql (Postgres-XL) " PGXC_VERSION);
-#else
-	puts("psql (Postgres-XC) " PGXC_VERSION);
-#endif
 	puts("(based on PostgreSQL) " PG_VERSION);
 #else
 	puts("psql (PostgreSQL) " PG_VERSION);

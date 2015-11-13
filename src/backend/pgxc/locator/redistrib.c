@@ -410,7 +410,6 @@ distrib_copy_to(RedistribState *distribState)
 					get_namespace_name(RelationGetNamespace(rel)),
 					RelationGetRelationName(rel))));
 
-#ifdef XCP
 	/* Begin the COPY process */
 	DataNodeCopyBegin(copyState);
 
@@ -421,23 +420,6 @@ distrib_copy_to(RedistribState *distribState)
 	DataNodeCopyStore(
 			(PGXCNodeHandle **) getLocatorNodeMap(copyState->locator),
 			getLocatorNodeCount(copyState->locator), store);
-#else
-	/* Begin the COPY process */
-	copyState->connections = DataNodeCopyBegin(copyState->query_buf.data,
-											   copyState->exec_nodes->nodeList,
-											   GetActiveSnapshot());
-
-	/* Create tuplestore storage */
-	store = tuplestore_begin_heap(true, false, work_mem);
-
-	/* Then get rows and copy them to the tuplestore used for redistribution */
-	DataNodeCopyOut(copyState->exec_nodes,
-					copyState->connections,
-					RelationGetDescr(rel),	/* Need also to set up the tuple descriptor */
-					NULL,
-					store,					/* Tuplestore used for redistribution */
-					REMOTE_COPY_TUPLESTORE);
-#endif
 
 	/* Do necessary clean-up */
 	FreeRemoteCopyOptions(options);
@@ -463,17 +445,12 @@ distrib_copy_from(RedistribState *distribState, ExecNodes *exec_nodes)
 	Relation	rel;
 	RemoteCopyOptions *options;
 	RemoteCopyData *copyState;
-#ifndef XCP
-	bool replicated, contains_tuple = true;
-#endif
 	TupleDesc tupdesc;
-#ifdef XCP
 	/* May be needed to decode partitioning value */
 	int 		partIdx = -1;
 	FmgrInfo 	in_function;
 	Oid 		typioparam;
 	int 		typmod = 0;
-#endif
 
 	/* Nothing to do if on remote node */
 	if (IS_PGXC_DATANODE || IsConnFromCoord())
@@ -494,28 +471,14 @@ distrib_copy_from(RedistribState *distribState, ExecNodes *exec_nodes)
 	RemoteCopy_GetRelationLoc(copyState, rel, NIL);
 	RemoteCopy_BuildStatement(copyState, rel, options, NIL, NIL);
 
-#ifdef XCP
 	/* Modify relation location as requested */
 	if (exec_nodes)
 	{
 		if (exec_nodes->nodeList)
 			copyState->rel_loc->nodeList = exec_nodes->nodeList;
 	}
-#else
-	/*
-	 * When building COPY FROM command in redistribution list,
-	 * use the list of nodes that has been calculated there.
-	 * It might be possible that this COPY is done only on a portion of nodes.
-	 */
-	if (exec_nodes && exec_nodes->nodeList != NIL)
-	{
-		copyState->exec_nodes->nodeList = exec_nodes->nodeList;
-		copyState->rel_loc->nodeList = exec_nodes->nodeList;
-	}
-#endif
 
 	tupdesc = RelationGetDescr(rel);
-#ifdef XCP
 	if (AttributeNumberIsValid(copyState->rel_loc->partAttrNum))
 	{
 		Oid in_func_oid;
@@ -542,7 +505,6 @@ distrib_copy_from(RedistribState *distribState, ExecNodes *exec_nodes)
 		}
 		partIdx -= dropped;
 	}
-#endif
 
 	/* Inform client of operation being done */
 	ereport(DEBUG1,
@@ -550,7 +512,6 @@ distrib_copy_from(RedistribState *distribState, ExecNodes *exec_nodes)
 					get_namespace_name(RelationGetNamespace(rel)),
 					RelationGetRelationName(rel))));
 
-#ifdef XCP
 	DataNodeCopyBegin(copyState);
 
 	/* Send each COPY message stored to remote nodes */
@@ -602,78 +563,6 @@ distrib_copy_from(RedistribState *distribState, ExecNodes *exec_nodes)
 	}
 	DataNodeCopyFinish(getLocatorNodeCount(copyState->locator),
 			(PGXCNodeHandle **) getLocatorNodeMap(copyState->locator));
-#else
-	/* Begin redistribution on remote nodes */
-	copyState->connections = DataNodeCopyBegin(copyState->query_buf.data,
-											   copyState->exec_nodes->nodeList,
-											   GetActiveSnapshot());
-
-	/* Transform each tuple stored into a COPY message and send it to remote nodes */
-	while (contains_tuple)
-	{
-		char *data;
-		int len;
-		Form_pg_attribute *attr = tupdesc->attrs;
-		Datum	dist_col_value = (Datum) 0;
-		bool	dist_col_is_null = true;
-		Oid		dist_col_type = UNKNOWNOID;
-		TupleTableSlot *slot;
-		ExecNodes   *local_execnodes;
-
-		/* Build table slot for this relation */
-		slot = MakeSingleTupleTableSlot(tupdesc);
-
-		/* Get tuple slot from the tuplestore */
-		contains_tuple = tuplestore_gettupleslot(store, true, false, slot);
-		if (!contains_tuple)
-		{
-			ExecDropSingleTupleTableSlot(slot);
-			break;
-		}
-
-		/* Make sure the tuple is fully deconstructed */
-		slot_getallattrs(slot);
-
-		/* Find value of distribution column if necessary */
-		if (copyState->idx_dist_by_col >= 0)
-		{
-			dist_col_value = slot->tts_values[copyState->idx_dist_by_col];
-			dist_col_is_null =  slot->tts_isnull[copyState->idx_dist_by_col];
-			dist_col_type = attr[copyState->idx_dist_by_col]->atttypid;
-		}
-
-		/* Build message to be sent to Datanodes */
-		data = CopyOps_BuildOneRowTo(tupdesc, slot->tts_values, slot->tts_isnull, &len);
-
-		/* Build relation node list */
-		local_execnodes = GetRelationNodes(copyState->rel_loc,
-										   dist_col_value,
-										   dist_col_is_null,
-										   dist_col_type,
-										   RELATION_ACCESS_INSERT);
-		/* Take a copy of the node lists so as not to interfere with locator info */
-		local_execnodes->primarynodelist = list_copy(local_execnodes->primarynodelist);
-		local_execnodes->nodeList = list_copy(local_execnodes->nodeList);
-
-		/* Process data to Datanodes */
-		DataNodeCopyIn(data,
-					   len,
-					   local_execnodes,
-					   copyState->connections);
-
-		/* Clean up */
-		pfree(data);
-		FreeExecNodes(&local_execnodes);
-		ExecClearTuple(slot);
-		ExecDropSingleTupleTableSlot(slot);
-	}
-
-	/* Finish the redistribution process */
-	replicated = copyState->rel_loc->locatorType == LOCATOR_TYPE_REPLICATED;
-	DataNodeCopyFinish(copyState->connections,
-					   replicated ? PGXCNodeGetNodeId(primary_data_node, PGXC_NODE_DATANODE) : -1,
-					   replicated ? COMBINE_TYPE_SAME : COMBINE_TYPE_SUM);
-#endif
 
 	/* Lock is maintained until transaction commits */
 	relation_close(rel, NoLock);
@@ -974,9 +863,6 @@ distrib_execute_query(char *sql, bool is_temp, ExecNodes *exec_nodes)
 
 	/* Redistribution operations only concern Datanodes */
 	step->exec_type = EXEC_ON_DATANODES;
-#ifndef XCP
-	step->is_temp = is_temp;
-#endif
 	ExecRemoteUtility(step);
 	pfree(step->sql_statement);
 	pfree(step);

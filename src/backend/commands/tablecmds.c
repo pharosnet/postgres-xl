@@ -728,12 +728,8 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 	 *    DISTRIBUTE BY clause is missing in the statemnet the system
 	 *    should not try to find out the node list itself.
 	 */
-#ifdef XCP
 	if ((IS_PGXC_COORDINATOR && stmt->distributeby) ||
 			(isRestoreMode && stmt->distributeby != NULL))
-#else
-	if (IS_PGXC_COORDINATOR && relkind == RELKIND_RELATION)
-#endif
 	{
 		AddRelationDistribution(relationId, stmt->distributeby,
 								stmt->subcluster, inheritOids, descriptor);
@@ -11601,15 +11597,9 @@ BuildRedistribCommands(Oid relid, List *subCmds)
 
 	/* Build relation node list for new locator info */
 	for (i = 0; i < new_num; i++)
-#ifdef XCP
 		newLocInfo->nodeList = lappend_int(newLocInfo->nodeList,
 										   PGXCNodeGetNodeId(new_oid_array[i],
 															 &node_type));
-#else
-		newLocInfo->nodeList = lappend_int(newLocInfo->nodeList,
-										   PGXCNodeGetNodeId(new_oid_array[i],
-															 PGXC_NODE_DATANODE));
-#endif
 	/* Build the command tree for table redistribution */
 	PGXCRedistribCreateCommandList(redistribState, newLocInfo);
 

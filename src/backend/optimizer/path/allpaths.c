@@ -45,14 +45,8 @@
 #include "parser/parse_clause.h"
 #include "parser/parsetree.h"
 #ifdef PGXC
-#ifdef XCP
 #include "nodes/makefuncs.h"
 #include "miscadmin.h"
-#else
-#include "catalog/pg_namespace.h"
-#include "catalog/pg_class.h"
-#include "pgxc/pgxc.h"
-#endif /* XCP */
 #endif /* PGXC */
 #include "rewrite/rewriteManip.h"
 #include "utils/lsyscache.h"
@@ -478,23 +472,6 @@ set_plain_rel_pathlist(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte)
 {
 	Relids		required_outer;
 
-#ifdef PGXC
-#ifndef XCP
-	/*
-	 * If we are on the Coordinator, we always want to use
-	 * the remote query path unless it is a pg_catalog table
-	 * or a sequence relation.
-	 */
-	if (IS_PGXC_LOCAL_COORDINATOR &&
-		get_rel_namespace(rte->relid) != PG_CATALOG_NAMESPACE &&
-		get_rel_relkind(rte->relid) != RELKIND_SEQUENCE &&
-		!root->parse->is_local)
-		add_path(rel, create_remotequery_path(root, rel));
-	else
-	{
-#endif /* XCP */
-#endif /* PGXC */
-
 	/*
 	 * We don't support pushing join clauses into the quals of a seqscan, but
 	 * it could still have required parameterization due to LATERAL refs in
@@ -510,12 +487,6 @@ set_plain_rel_pathlist(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte)
 
 	/* Consider TID scans */
 	create_tidscan_paths(root, rel);
-#ifdef PGXC
-#ifndef XCP
-	}
-#endif /* XCP */
-#endif /* PGXC */
-
 }
 
 /*

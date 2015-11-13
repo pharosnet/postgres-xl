@@ -139,11 +139,6 @@ static Plan *grouping_distribution(PlannerInfo *root, Plan *plan,
 static bool equal_distributions(PlannerInfo *root, Distribution *dst1,
 					Distribution *dst2);
 #endif
-#ifdef PGXC
-#ifndef XCP
-static void separate_rowmarks(PlannerInfo *root);
-#endif
-#endif
 static Plan *build_grouping_chain(PlannerInfo *root,
 					 Query *parse,
 					 List *tlist,
@@ -176,18 +171,7 @@ planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 	if (planner_hook)
 		result = (*planner_hook) (parse, cursorOptions, boundParams);
 	else
-#ifdef PGXC
-#ifndef XCP
-		/*
-		 * A Coordinator receiving a query from another Coordinator
-		 * is not allowed to go into PGXC planner.
-		 */
-		if (IS_PGXC_LOCAL_COORDINATOR)
-			result = pgxc_planner(parse, cursorOptions, boundParams);
-		else
-#endif /* XCP */
-#endif /* PGXC */
-			result = standard_planner(parse, cursorOptions, boundParams);
+		result = standard_planner(parse, cursorOptions, boundParams);
 	return result;
 }
 
@@ -301,35 +285,6 @@ standard_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 		lfirst(lp) = set_plan_references(subroot, subplan);
 	}
 
-#ifdef PGXC
-#ifndef XCP
-	/*
-	 * PGXC should apply INSERT/UPDATE/DELETE to a Datanode. We are overriding
-	 * normal Postgres behavior by modifying final plan or by adding a node on
-	 * top of it.
-	 * If the optimizer finds out that there is nothing to UPDATE/INSERT/DELETE
-	 * in the table/s (say using constraint exclusion), it does not add modify
-	 * table plan on the top. We should send queries to the remote nodes only
-	 * when there is something to modify.
-	 */
-	if (IS_PGXC_COORDINATOR && IsA(top_plan, ModifyTable))
-		switch (parse->commandType)
-		{
-			case CMD_INSERT:
-				top_plan = create_remoteinsert_plan(root, top_plan);
-				break;
-			case CMD_UPDATE:
-				top_plan = create_remoteupdate_plan(root, top_plan);
-				break;
-			case CMD_DELETE:
-				top_plan = create_remotedelete_plan(root, top_plan);
-				break;
-			default:
-				break;
-		}
-#endif /* XCP */
-#endif
-
 	/* build the PlannedStmt result */
 	result = makeNode(PlannedStmt);
 
@@ -419,11 +374,6 @@ subquery_planner(PlannerGlobal *glob, Query *parse,
 	root->hasInheritedTarget = false;
 	root->grouping_map = NULL;
 
-#ifdef PGXC
-#ifndef XCP
-	root->rs_alias_index = 1;
-#endif /* XCP */
-#endif /* PGXC */
 	root->hasRecursion = hasRecursion;
 	if (hasRecursion)
 		root->wt_param_id = SS_assign_special_param(root);
@@ -501,27 +451,6 @@ subquery_planner(PlannerGlobal *glob, Query *parse,
 	 */
 	preprocess_rowmarks(root);
 
-#ifdef PGXC
-#ifndef XCP
-	/*
-	 * In Coordinators we separate row marks in two groups
-	 * one comprises of row marks of types ROW_MARK_EXCLUSIVE & ROW_MARK_SHARE
-	 * and the other contains the rest of the types of row marks
-	 * The former is handeled on Coordinator in such a way that
-	 * FOR UPDATE/SHARE gets added in the remote query, whereas
-	 * the later needs to be handeled the way pg does
-	 *
-	 * PGXCTODO : This is not a very efficient way of handling row marks
-	 * Consider this join query
-	 * select * from t1, t2 where t1.val = t2.val for update
-	 * It results in this query to be fired at the Datanodes
-	 * SELECT val, val2, ctid FROM ONLY t2 WHERE true FOR UPDATE OF t2
-	 * We are locking the complete table where as we should have locked
-	 * only the rows where t1.val = t2.val is met
-	 */
-	separate_rowmarks(root);
-#endif
-#endif
 	/*
 	 * Expand any rangetable entries that are inheritance sets into "append
 	 * relations".  This can add entries to the rangetable, but they must be
@@ -2146,18 +2075,6 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 												NIL,
 												numGroups,
 												result_plan);
-#ifdef PGXC
-#ifndef XCP
-				/*
-				 * Grouping will certainly not increase the number of rows
-				 * coordinator fetches from datanode, in fact it's expected to
-				 * reduce the number drastically. Hence, try pushing GROUP BY
-				 * clauses and aggregates to the datanode, thus saving bandwidth.
-				 */
-				if (IS_PGXC_LOCAL_COORDINATOR)
-					result_plan = create_remoteagg_plan(root, result_plan);
-#endif /* XCP */
-#endif /* PGXC */
 				/* Hashed aggregation produces randomly-ordered results */
 				current_pathkeys = NIL;
 			}
@@ -2277,19 +2194,6 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 					result_plan = (Plan *) make_append(plans, tlist);
 				}
 			}
-#ifdef PGXC
-#ifndef XCP
-			/*
-			 * Grouping will certainly not increase the number of rows
-			 * Coordinator fetches from Datanode, in fact it's expected to
-			 * reduce the number drastically. Hence, try pushing GROUP BY
-			 * clauses and aggregates to the Datanode, thus saving bandwidth.
-			 */
-			if (IS_PGXC_LOCAL_COORDINATOR)
-				result_plan = create_remotegrouping_plan(root, result_plan);
-#endif /* XCP */
-#endif /* PGXC */
-
 		}						/* end of non-minmax-aggregate case */
 
 		/*
@@ -3254,45 +3158,6 @@ preprocess_rowmarks(PlannerInfo *root)
 
 	root->rowMarks = prowmarks;
 }
-
-#ifdef PGXC
-#ifndef XCP
-/*
- * separate_rowmarks - In XC Coordinators are supposed to skip handling
- *                of type ROW_MARK_EXCLUSIVE & ROW_MARK_SHARE.
- *                In order to do that we simply remove such type
- *                of row marks from the list. Instead they are saved
- *                in another list that is then handeled to add
- *                FOR UPDATE/SHARE in the remote query
- *                in the function create_remotequery_plan
- */
-static void
-separate_rowmarks(PlannerInfo *root)
-{
-	List		*rml_1, *rml_2;
-	ListCell	*rm;
-
-	if (IS_PGXC_DATANODE || IsConnFromCoord() || root->rowMarks == NULL)
-		return;
-
-	rml_1 = NULL;
-	rml_2 = NULL;
-
-	foreach(rm, root->rowMarks)
-	{
-		PlanRowMark *prm = (PlanRowMark *) lfirst(rm);
-
-		if (prm->markType == ROW_MARK_EXCLUSIVE || prm->markType == ROW_MARK_SHARE)
-			rml_1 = lappend(rml_1, prm);
-		else
-			rml_2 = lappend(rml_2, prm);
-	}
-	list_free(root->rowMarks);
-	root->rowMarks = rml_2;
-	root->xc_rowMarks = rml_1;
-}
-#endif /*XCP*/
-#endif /*PGXC*/
 
 /*
  * Select RowMarkType to use for a given table

@@ -104,11 +104,6 @@ static Query *transformCreateTableAsStmt(ParseState *pstate,
 						   CreateTableAsStmt *stmt);
 #ifdef PGXC
 static Query *transformExecDirectStmt(ParseState *pstate, ExecDirectStmt *stmt);
-#ifndef XCP
-static bool IsExecDirectUtilityStmt(Node *node);
-static bool is_relation_child(RangeTblEntry *child_rte, List *rtable);
-static bool is_rel_child_of_rel(RangeTblEntry *child_rte, RangeTblEntry *parent_rte);
-#endif
 #endif
 
 static void transformLockingClause(ParseState *pstate, Query *qry,
@@ -581,11 +576,6 @@ transformInsertStmt(ParseState *pstate, InsertStmt *stmt)
 		 */
 		ParseState *sub_pstate = make_parsestate(pstate);
 		Query	   *selectQuery;
-#ifdef PGXC
-#ifndef XCP
-		RangeTblEntry	*target_rte;
-#endif
-#endif
 
 		/*
 		 * Process the source SELECT.
@@ -618,24 +608,6 @@ transformInsertStmt(ParseState *pstate, InsertStmt *stmt)
 											makeAlias("*SELECT*", NIL),
 											false,
 											false);
-#ifdef PGXC
-#ifndef XCP
-		/*
-		 * For an INSERT SELECT involving INSERT on a child after scanning
-		 * the parent, set flag to send command ID communication to remote
-		 * nodes in order to maintain global data visibility.
-		 */
-		if (IS_PGXC_LOCAL_COORDINATOR)
-		{
-			target_rte = rt_fetch(qry->resultRelation, pstate->p_rtable);
-			if (is_relation_child(target_rte, selectQuery->rtable))
-			{
-				qry->is_ins_child_sel_parent = true;
-				SetSendCommandId(true);
-			}
-		}
-#endif
-#endif
 		rtr = makeNode(RangeTblRef);
 		/* assume new rte is at end */
 		rtr->rtindex = list_length(pstate->p_rtable);
@@ -2469,9 +2441,6 @@ transformExecDirectStmt(ParseState *pstate, ExecDirectStmt *stmt)
 	List		*raw_parsetree_list;
 	ListCell	*raw_parsetree_item;
 	char		*nodename;
-#ifndef XCP
-	Oid			nodeoid;
-#endif
 	int			nodeIndex;
 	char		nodetype;
 
@@ -2535,11 +2504,6 @@ transformExecDirectStmt(ParseState *pstate, ExecDirectStmt *stmt)
 		Node   *parsetree = (Node *) lfirst(raw_parsetree_item);
 		result = parse_analyze(parsetree, query, NULL, 0);
 	}
-
-#ifndef XCP
-	/* Needed by planner */
-	result->sql_statement = pstrdup(query);
-#endif
 
 	/* Default list of parameters to set */
 	step->sql_statement = NULL;
@@ -2607,41 +2571,9 @@ transformExecDirectStmt(ParseState *pstate, ExecDirectStmt *stmt)
 		}
 	}
 
-#ifndef XCP
-	/*
-	 * Features not yet supported
-	 * DML can be launched without errors but this could compromise data
-	 * consistency, so block it.
-	 */
-	if (step->exec_direct_type == EXEC_DIRECT_DELETE
-		|| step->exec_direct_type == EXEC_DIRECT_UPDATE
-		|| step->exec_direct_type == EXEC_DIRECT_INSERT)
-		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("EXECUTE DIRECT cannot execute DML queries")));
-	else if (step->exec_direct_type == EXEC_DIRECT_UTILITY &&
-			 !IsExecDirectUtilityStmt(result->utilityStmt) && !xc_maintenance_mode)
-	{
-		/* In case this statement is an utility, check if it is authorized */
-		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("EXECUTE DIRECT cannot execute this utility query")));
-	}
-	else if (step->exec_direct_type == EXEC_DIRECT_LOCAL_UTILITY && !xc_maintenance_mode)
-	{
-		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("EXECUTE DIRECT cannot execute locally this utility query")));
-	}
-#endif
-
 	/* Build Execute Node list, there is a unique node for the time being */
 	step->exec_nodes->nodeList = lappend_int(step->exec_nodes->nodeList, nodeIndex);
 
-	/* Associate newly-created RemoteQuery node to the returned Query result */
-#ifndef XCP
-	result->is_local = is_local;
-#endif
 	if (!is_local)
 		result->utilityStmt = (Node *) step;
 
@@ -2653,122 +2585,6 @@ transformExecDirectStmt(ParseState *pstate, ExecDirectStmt *stmt)
 	return result;
 }
 
-#ifndef XCP
-/*
- * Check if given node is authorized to go through EXECUTE DURECT
- */
-static bool
-IsExecDirectUtilityStmt(Node *node)
-{
-	bool res = true;
-
-	if (!node)
-		return res;
-
-	switch(nodeTag(node))
-	{
-		/*
-		 * CREATE/DROP TABLESPACE are authorized to control
-		 * tablespace at single node level.
-		 */
-		case T_CreateTableSpaceStmt:
-		case T_DropTableSpaceStmt:
-			res = true;
-			break;
-		default:
-			res = false;
-			break;
-	}
-
-	return res;
-}
-
-/*
- * Returns whether or not the rtable (and its subqueries)
- * contain any relation who is the parent of
- * the passed relation
- */
-static bool
-is_relation_child(RangeTblEntry *child_rte, List *rtable)
-{
-	ListCell *item;
-
-	if (child_rte == NULL || rtable == NULL)
-		return false;
-
-	if (child_rte->rtekind != RTE_RELATION)
-		return false;
-
-	foreach(item, rtable)
-	{
-		RangeTblEntry *rte = (RangeTblEntry *) lfirst(item);
-
-		if (rte->rtekind == RTE_RELATION)
-		{
-			if (is_rel_child_of_rel(child_rte, rte))
-				return true;
-		}
-		else if (rte->rtekind == RTE_SUBQUERY)
-		{
-			return is_relation_child(child_rte, rte->subquery->rtable);
-		}
-	}
-	return false;
-}
-
-/*
- * Returns whether the passed RTEs have a parent child relationship
- */
-static bool
-is_rel_child_of_rel(RangeTblEntry *child_rte, RangeTblEntry *parent_rte)
-{
-	Oid		parentOID;
-	bool		res;
-	Relation	relation;
-	SysScanDesc	scan;
-	ScanKeyData	key[1];
-	HeapTuple	inheritsTuple;
-	Oid		inhrelid;
-
-	/* Does parent RT entry allow inheritance? */
-	if (!parent_rte->inh)
-		return false;
-
-	/* Ignore any already-expanded UNION ALL nodes */
-	if (parent_rte->rtekind != RTE_RELATION)
-		return false;
-
-	/* Fast path for common case of childless table */
-	parentOID = parent_rte->relid;
-	if (!has_subclass(parentOID))
-		return false;
-
-	/* Assume we did not find any match */
-	res = false;
-
-	/* Scan pg_inherits and get all the subclass OIDs one by one. */
-	relation = heap_open(InheritsRelationId, AccessShareLock);
-	ScanKeyInit(&key[0], Anum_pg_inherits_inhparent, BTEqualStrategyNumber, F_OIDEQ, ObjectIdGetDatum(parentOID));
-	scan = systable_beginscan(relation, InheritsParentIndexId, true, SnapshotNow, 1, key);
-
-	while ((inheritsTuple = systable_getnext(scan)) != NULL)
-	{
-		inhrelid = ((Form_pg_inherits) GETSTRUCT(inheritsTuple))->inhrelid;
-
-		/* Did we find the Oid of the passed RTE in one of the children? */
-		if (child_rte->relid == inhrelid)
-		{
-			res = true;
-			break;
-		}
-	}
-
-	systable_endscan(scan);
-	heap_close(relation, AccessShareLock);
-	return res;
-}
-
-#endif
 #endif
 
 /*

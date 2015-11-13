@@ -609,9 +609,6 @@ PgxcNodeAlter(AlterNodeStmt *stmt)
 	const char *node_name = stmt->node_name;
 	char	   *node_host;
 	char		node_type;
-#ifndef XCP
-	char		node_type_old;
-#endif
 	int			node_port;
 	bool		is_preferred;
 	bool		is_primary;
@@ -653,9 +650,6 @@ PgxcNodeAlter(AlterNodeStmt *stmt)
 	is_preferred = is_pgxc_nodepreferred(nodeOid);
 	is_primary = is_pgxc_nodeprimary(nodeOid);
 	node_type = get_pgxc_nodetype(nodeOid);
-#ifndef XCP
-	node_type_old = node_type;
-#endif
 	node_id = get_pgxc_node_id(nodeOid);
 
 	/* Filter options */
@@ -675,28 +669,6 @@ PgxcNodeAlter(AlterNodeStmt *stmt)
 				(errcode(ERRCODE_SYNTAX_ERROR),
 				 errmsg("PGXC node %s: two nodes cannot be primary",
 						node_name)));
-
-	/* Check type dependency */
-#ifndef XCP
-	/*
-	 * XCP:
-	 * Initially node identify itself as a Coordinator and this should be
-	 * changed for datanodes. In general, it should be safe to turn
-	 * Coordinator to Datanode and back
-	 */
-	if (node_type_old == PGXC_NODE_COORDINATOR &&
-		node_type == PGXC_NODE_DATANODE)
-		ereport(ERROR,
-				(errcode(ERRCODE_SYNTAX_ERROR),
-				 errmsg("PGXC node %s: cannot alter Coordinator to Datanode",
-						node_name)));
-	else if (node_type_old == PGXC_NODE_DATANODE &&
-			 node_type == PGXC_NODE_COORDINATOR)
-		ereport(ERROR,
-				(errcode(ERRCODE_SYNTAX_ERROR),
-				 errmsg("PGXC node %s: cannot alter Datanode to Coordinator",
-						node_name)));
-#endif
 
 	/* Update values for catalog entry */
 	MemSet(new_record, 0, sizeof(new_record));

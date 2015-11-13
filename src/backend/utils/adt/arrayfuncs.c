@@ -269,20 +269,6 @@ array_in(PG_FUNCTION_ARGS)
 	typdelim = my_extra->typdelim;
 	typioparam = my_extra->typioparam;
 
-#ifndef XCP
-	/* Make a modifiable copy of the input */
-	string_save = pstrdup(string);
-
-	/*
-	 * If the input string starts with dimension info, read and use that.
-	 * Otherwise, we require the input to be in curly-brace style, and we
-	 * prescan the input to determine dimensions.
-	 *
-	 * Dimension info takes the form of one or more [n] or [m:n] items. The
-	 * outer loop iterates once per dimension item.
-	 */
-	p = string_save;
-#endif
 	ndim = 0;
 	for (;;)
 	{

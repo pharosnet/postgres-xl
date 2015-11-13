@@ -124,16 +124,8 @@ typedef struct TupleTableSlot
 	bool		tts_slow;		/* saved state for slot_deform_tuple */
 	HeapTuple	tts_tuple;		/* physical tuple, or NULL if virtual */
 #ifdef PGXC
-#ifdef XCP
 	RemoteDataRow tts_datarow; 	/* Tuple data in DataRow format */
 	MemoryContext tts_drowcxt; 	/* Context to store deformed */
-#else
-	/*
-	 * PGXC extension to support tuples sent from remote Datanode.
-	 */
-	char		*tts_dataRow;		/* Tuple data in DataRow format */
-	int		tts_dataLen;		/* Actual length of the data row */
-#endif
 	bool		tts_shouldFreeRow;	/* should pfree tts_dataRow? */
 	struct AttInMetadata *tts_attinmeta;	/* store here info to extract values from the DataRow */
 #endif
@@ -172,16 +164,9 @@ extern TupleTableSlot *ExecStoreMinimalTuple(MinimalTuple mtup,
 					  TupleTableSlot *slot,
 					  bool shouldFree);
 #ifdef PGXC
-#ifdef XCP
 extern TupleTableSlot *ExecStoreDataRowTuple(RemoteDataRow datarow,
 					  TupleTableSlot *slot,
 					  bool shouldFree);
-#else
-extern TupleTableSlot *ExecStoreDataRowTuple(char *msg,
-					  size_t len,
-					  TupleTableSlot *slot,
-					  bool shouldFree);
-#endif
 #endif
 extern TupleTableSlot *ExecClearTuple(TupleTableSlot *slot);
 extern TupleTableSlot *ExecStoreVirtualTuple(TupleTableSlot *slot);
@@ -189,12 +174,8 @@ extern TupleTableSlot *ExecStoreAllNullTuple(TupleTableSlot *slot);
 extern HeapTuple ExecCopySlotTuple(TupleTableSlot *slot);
 extern MinimalTuple ExecCopySlotMinimalTuple(TupleTableSlot *slot);
 #ifdef PGXC
-#ifdef XCP
 extern RemoteDataRow ExecCopySlotDatarow(TupleTableSlot *slot,
 					MemoryContext tmpcxt);
-#else
-extern int ExecCopySlotDatarow(TupleTableSlot *slot, char **datarow);
-#endif
 #endif
 extern HeapTuple ExecFetchSlotTuple(TupleTableSlot *slot);
 extern MinimalTuple ExecFetchSlotMinimalTuple(TupleTableSlot *slot);

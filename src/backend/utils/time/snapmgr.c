@@ -269,11 +269,7 @@ GetTransactionSnapshot(void)
 		 * The command id should therefore be updated in the
 		 * current snapshot.
 		 */
-#ifdef XCP
 		if (IsConnFromCoord() || IsConnFromDatanode())
-#else
-		if (IsConnFromCoord())
-#endif
 			SnapshotSetCommandId(GetCurrentCommandId(false));
 #endif
 		return CurrentSnapshot;

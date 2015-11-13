@@ -140,8 +140,6 @@ extern PGDLLIMPORT LWLockPadded *MainLWLockArray;
 #ifdef PGXC
 #define BarrierLock					(&MainLWLockArray[38].lock)
 #define NodeTableLock				(&MainLWLockArray[39].lock)
-#endif
-#ifdef XCP
 #define SQueuesLock					(&MainLWLockArray[40].lock)
 #endif
 #define CommitTsControlLock			(&MainLWLockArray[41].lock)

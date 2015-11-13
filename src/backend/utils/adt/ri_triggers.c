@@ -2282,9 +2282,6 @@ RI_Initial_Check(Trigger *trigger, Relation fk_rel, Relation pk_rel)
 	const char *sep;
 	int			i;
 	int			save_nestlevel;
-#ifndef XCP
-	char		workmembuf[32];
-#endif
 	int			spi_result;
 	SPIPlanPtr	qplan;
 
@@ -2439,18 +2436,6 @@ RI_Initial_Check(Trigger *trigger, Relation fk_rel, Relation pk_rel)
 	 * care of undoing the setting on error.
 	 */
 	save_nestlevel = NewGUCNestLevel();
-
-#ifndef XCP
-	/*
-	 * In multitenant extension we restrict permission on work_mem.
-	 * This code may be executed by ordinary user, so skip this optimization.
-	 * XXX look for workaround
-	 */
-	snprintf(workmembuf, sizeof(workmembuf), "%d", maintenance_work_mem);
-	(void) set_config_option("work_mem", workmembuf,
-							 PGC_USERSET, PGC_S_SESSION,
-							 GUC_ACTION_SAVE, true, 0, false);
-#endif
 
 	if (SPI_connect() != SPI_OK_CONNECT)
 		elog(ERROR, "SPI_connect failed");

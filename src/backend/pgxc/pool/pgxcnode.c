@@ -221,7 +221,6 @@ InitMultinodeExecutor(bool is_force)
 	coord_count = 0;
 	PGXCNodeId = 0;
 
-#ifdef XCP
 	MemoryContextSwitchTo(oldcontext);
 
 	if (IS_PGXC_COORDINATOR)
@@ -242,38 +241,14 @@ InitMultinodeExecutor(bool is_force)
 				PGXCNodeId = count + 1;
 		}
 	}
-#else
-	/* Finally determine which is the node-self */
-	for (count = 0; count < NumCoords; count++)
-	{
-		if (pg_strcasecmp(PGXCNodeName,
-				   get_pgxc_nodename(co_handles[count].nodeoid)) == 0)
-			PGXCNodeId = count + 1;
-	}
-
-	/*
-	 * No node-self?
-	 * PGXCTODO: Change error code
-	 */
-	if (PGXCNodeId == 0)
-		ereport(ERROR,
-				(errcode(ERRCODE_DATA_EXCEPTION),
-				 errmsg("Coordinator cannot identify itself")));
-#endif
 }
-
 
 /*
  * Builds up a connection string
  */
 char *
-#ifdef XCP
 PGXCNodeConnStr(char *host, int port, char *dbname,
 				char *user, char *pgoptions, char *remote_type, char *parent_node)
-#else
-PGXCNodeConnStr(char *host, int port, char *dbname,
-				char *user, char *pgoptions, char *remote_type)
-#endif
 {
 	char	   *out,
 				connstr[1024];
@@ -283,16 +258,10 @@ PGXCNodeConnStr(char *host, int port, char *dbname,
 	 * Build up connection string
 	 * remote type can be Coordinator, Datanode or application.
 	 */
-#ifdef XCP
 	num = snprintf(connstr, sizeof(connstr),
 				   "host=%s port=%d dbname=%s user=%s application_name=pgxc sslmode=disable options='-c remotetype=%s -c parentnode=%s %s'",
 				   host, port, dbname, user, remote_type, parent_node,
 				   pgoptions);
-#else
-	num = snprintf(connstr, sizeof(connstr),
-				   "host=%s port=%d dbname=%s user=%s application_name=pgxc options='-c remotetype=%s %s'",
-				   host, port, dbname, user, remote_type, pgoptions);
-#endif
 
 	/* Check for overflow */
 	if (num > 0 && num < sizeof(connstr))
@@ -331,32 +300,6 @@ PGXCNodeClose(NODE_CONNECTION *conn)
 	/* Delegate call to the pglib */
 	PQfinish((PGconn *) conn);
 }
-
-
-#ifndef XCP
-/*
- * Send SET query to given connection.
- * Query is sent asynchronously and results are consumed
- */
-int
-PGXCNodeSendSetQuery(NODE_CONNECTION *conn, const char *sql_command)
-{
-	PGresult	*result;
-
-	if (!PQsendQuery((PGconn *) conn, sql_command))
-		return -1;
-
-	/* Consume results from SET commands */
-	while ((result = PQgetResult((PGconn *) conn)) != NULL)
-	{
-		/* TODO: Check that results are of type 'S' */
-		PQclear(result);
-	}
-
-	return 0;
-}
-#endif
-
 
 /*
  * Checks if connection active
@@ -427,9 +370,7 @@ pgxc_node_all_free(void)
 
 	co_handles = NULL;
 	dn_handles = NULL;
-#ifdef XCP
 	HandlesInvalidatePending = false;
-#endif
 }
 
 /*
@@ -438,23 +379,15 @@ pgxc_node_all_free(void)
  * Structure stores state info and I/O buffers
  */
 static void
-#ifdef XCP
 pgxc_node_init(PGXCNodeHandle *handle, int sock, bool global_session)
-#else
-pgxc_node_init(PGXCNodeHandle *handle, int sock)
-#endif
 {
-#ifdef XCP
 	char *init_str;
-#endif
 
 	handle->sock = sock;
 	handle->transaction_status = 'I';
 	handle->state = DN_CONNECTION_STATE_IDLE;
-#ifdef XCP
 	handle->read_only = true;
 	handle->ck_resp_rollback = false;
-#endif
 	handle->combiner = NULL;
 #ifdef DN_CONNECTION_DEBUG
 	handle->have_row_desc = false;
@@ -464,7 +397,6 @@ pgxc_node_init(PGXCNodeHandle *handle, int sock)
 	handle->inStart = 0;
 	handle->inEnd = 0;
 	handle->inCursor = 0;
-#ifdef XCP
 	/*
 	 * We got a new connection, set on the remote node the session parameters
 	 * if defined. The transaction parameter should be sent after BEGIN
@@ -477,7 +409,6 @@ pgxc_node_init(PGXCNodeHandle *handle, int sock)
 			pgxc_node_set_query(handle, init_str);
 		}
 	}
-#endif
 }
 
 
@@ -540,9 +471,7 @@ pgxc_node_receive(const int conn_count,
 	}
 
 retry:
-#ifdef XCP
 	CHECK_FOR_INTERRUPTS();
-#endif
 	res_select = select(nfds + 1, &readfds, NULL, NULL, timeout);
 	if (res_select < 0)
 	{
@@ -564,10 +493,8 @@ retry:
 	{
 		/* Handle timeout */
 		elog(DEBUG1, "timeout while waiting for response");
-#ifdef XCP
 		for (i = 0; i < conn_count; i++)
 			connections[i]->state = DN_CONNECTION_STATE_ERROR_FATAL;
-#endif
 		return NO_ERROR_OCCURED;
 	}
 
@@ -678,11 +605,6 @@ retry:
 
 	if (nread < 0)
 	{
-#ifndef XCP
-		/* too noisy */
-		if (close_if_error)
-			elog(DEBUG1, "dnrd errno = %d", errno);
-#endif
 		if (errno == EINTR)
 			goto retry;
 		/* Some systems return EAGAIN/EWOULDBLOCK for no data */
@@ -867,12 +789,9 @@ get_message(PGXCNodeHandle *conn, int *len, char **msg)
 void
 release_handles(void)
 {
-#ifdef XCP
 	bool		destroy = false;
-#endif
 	int			i;
 
-#ifdef XCP
 	if (HandlesInvalidatePending)
 	{
 		DoInvalidateRemoteHandles();
@@ -881,10 +800,7 @@ release_handles(void)
 
 	/* don't free connection if holding a cluster lock */
 	if (cluster_ex_lock_held)
-	{
 		return;
-	}
-#endif
 
 	if (datanode_count == 0 && coord_count == 0)
 		return;
@@ -900,7 +816,6 @@ release_handles(void)
 
 		if (handle->sock != NO_SOCKET)
 		{
-#ifdef XCP
 			/*
 			 * Connections at this point should be completely inactive,
 			 * otherwise abaandon them. We can not allow not cleaned up
@@ -913,193 +828,42 @@ release_handles(void)
 				elog(DEBUG1, "Connection to Datanode %d has unexpected state %d and will be dropped",
 					 handle->nodeoid, handle->state);
 			}
-#else
-			if (handle->state != DN_CONNECTION_STATE_IDLE)
-				elog(DEBUG1, "Connection to Datanode %d has unexpected state %d and will be dropped",
-					 handle->nodeoid, handle->state);
-#endif
 			pgxc_node_free(handle);
 		}
 	}
 
-#ifdef XCP
 	if (IS_PGXC_COORDINATOR)
 	{
-#endif
-	/* Collect Coordinator handles */
-	for (i = 0; i < NumCoords; i++)
-	{
-		PGXCNodeHandle *handle = &co_handles[i];
-
-		if (handle->sock != NO_SOCKET)
+		/* Collect Coordinator handles */
+		for (i = 0; i < NumCoords; i++)
 		{
-#ifdef XCP
-			/*
-			 * Connections at this point should be completely inactive,
-			 * otherwise abaandon them. We can not allow not cleaned up
-			 * connection is returned to pool.
-			 */
-			if (handle->state != DN_CONNECTION_STATE_IDLE ||
-					handle->transaction_status != 'I')
+			PGXCNodeHandle *handle = &co_handles[i];
+
+			if (handle->sock != NO_SOCKET)
 			{
-				destroy = true;
-				elog(DEBUG1, "Connection to Coordinator %d has unexpected state %d and will be dropped",
-					 handle->nodeoid, handle->state);
+				/*
+				 * Connections at this point should be completely inactive,
+				 * otherwise abaandon them. We can not allow not cleaned up
+				 * connection is returned to pool.
+				 */
+				if (handle->state != DN_CONNECTION_STATE_IDLE ||
+						handle->transaction_status != 'I')
+				{
+					destroy = true;
+					elog(DEBUG1, "Connection to Coordinator %d has unexpected state %d and will be dropped",
+							handle->nodeoid, handle->state);
+				}
+				pgxc_node_free(handle);
 			}
-#else
-			if (handle->state != DN_CONNECTION_STATE_IDLE)
-				elog(DEBUG1, "Connection to Coordinator %d has unexpected state %d and will be dropped",
-					 handle->nodeoid, handle->state);
-#endif
-			pgxc_node_free(handle);
 		}
 	}
-#ifdef XCP
-	}
-#endif
 
 	/* And finally release all the connections on pooler */
-#ifdef XCP
 	PoolManagerReleaseConnections(destroy);
-#else
-	PoolManagerReleaseConnections();
-#endif
 
 	datanode_count = 0;
 	coord_count = 0;
 }
-
-#ifndef XCP
-/*
- * cancel a running query due to error while processing rows
- */
-void
-cancel_query(void)
-{
-	int			i;
-	int 		dn_cancel[NumDataNodes];
-	int			co_cancel[NumCoords];
-	int			dn_count = 0;
-	int			co_count = 0;
-
-	if (datanode_count == 0 && coord_count == 0)
-		return;
-
-	/* Collect Datanodes handles */
-	for (i = 0; i < NumDataNodes; i++)
-	{
-		PGXCNodeHandle *handle = &dn_handles[i];
-
-		if (handle->sock != NO_SOCKET)
-		{
-			if (handle->state == DN_CONNECTION_STATE_COPY_IN ||
-				handle->state == DN_CONNECTION_STATE_COPY_OUT)
-			{
-				DataNodeCopyEnd(handle, true);
-			}
-			else
-			{
-				if (handle->state != DN_CONNECTION_STATE_IDLE)
-				{
-					dn_cancel[dn_count++] = PGXCNodeGetNodeId(handle->nodeoid,
-															  PGXC_NODE_DATANODE);
-				}
-			}
-		}
-	}
-
-	/* Collect Coordinator handles */
-	for (i = 0; i < NumCoords; i++)
-	{
-		PGXCNodeHandle *handle = &co_handles[i];
-
-		if (handle->sock != NO_SOCKET)
-		{
-			if (handle->state == DN_CONNECTION_STATE_COPY_IN ||
-				handle->state == DN_CONNECTION_STATE_COPY_OUT)
-			{
-				DataNodeCopyEnd(handle, true);
-			}
-			else
-			{
-				if (handle->state != DN_CONNECTION_STATE_IDLE)
-				{
-					co_cancel[dn_count++] = PGXCNodeGetNodeId(handle->nodeoid,
-															  PGXC_NODE_COORDINATOR);
-				}
-			}
-		}
-	}
-
-	PoolManagerCancelQuery(dn_count, dn_cancel, co_count, co_cancel);
-
-	/*
-	 * Read responses from the nodes to whom we sent the cancel command. This
-	 * ensures that there are no pending messages left on the connection
-	 */
-	for (i = 0; i < NumDataNodes; i++)
-	{
-		PGXCNodeHandle *handle = &dn_handles[i];
-
-		if ((handle->sock != NO_SOCKET) && (handle->state != DN_CONNECTION_STATE_IDLE))
-		{
-			pgxc_node_flush_read(handle);
-			handle->state = DN_CONNECTION_STATE_IDLE;
-		}
-	}
-
-	for (i = 0; i < NumCoords; i++)
-	{
-		PGXCNodeHandle *handle = &co_handles[i];
-
-		if (handle->sock != NO_SOCKET && handle->state != DN_CONNECTION_STATE_IDLE)
-		{
-			pgxc_node_flush_read(handle);
-			handle->state = DN_CONNECTION_STATE_IDLE;
-		}
-	}
-}
-/*
- * This method won't return until all network buffers are empty
- * To ensure all data in all network buffers is read and wasted
- */
-void
-clear_all_data(void)
-{
-	int			i;
-
-	if (datanode_count == 0 && coord_count == 0)
-		return;
-
-	/* Collect Datanodes handles */
-	for (i = 0; i < NumDataNodes; i++)
-	{
-		PGXCNodeHandle *handle = &dn_handles[i];
-
-		if (handle->sock != NO_SOCKET && handle->state != DN_CONNECTION_STATE_IDLE)
-		{
-			pgxc_node_flush_read(handle);
-			handle->state = DN_CONNECTION_STATE_IDLE;
-		}
-		/* Clear any previous error messages */
-		handle->error = NULL;
-	}
-
-	/* Collect Coordinator handles */
-	for (i = 0; i < NumCoords; i++)
-	{
-		PGXCNodeHandle *handle = &co_handles[i];
-
-		if (handle->sock != NO_SOCKET && handle->state != DN_CONNECTION_STATE_IDLE)
-		{
-			pgxc_node_flush_read(handle);
-			handle->state = DN_CONNECTION_STATE_IDLE;
-		}
-		/* Clear any previous error messages */
-		handle->error = NULL;
-	}
-}
-#endif
 
 /*
  * Ensure specified amount of data can fit to the incoming buffer and
@@ -1389,8 +1153,6 @@ pgxc_node_send_parse(PGXCNodeHandle * handle, const char* statement,
  	return 0;
 }
 
-
-#ifdef XCP
 /*
  * Send PLAN message down to the Data node
  */
@@ -1470,8 +1232,6 @@ pgxc_node_send_plan(PGXCNodeHandle * handle, const char *statement,
 
  	return 0;
 }
-#endif
-
 
 /*
  * Send BIND message down to the Datanode
@@ -1758,13 +1518,8 @@ pgxc_node_send_query_extended(PGXCNodeHandle *handle, const char *query,
 	if (fetch_size >= 0)
 		if (pgxc_node_send_execute(handle, portal, fetch_size))
 			return EOF;
-#ifdef XCP
 	if (pgxc_node_send_flush(handle))
 		return EOF;
-#else
-	if (pgxc_node_send_sync(handle))
-		return EOF;
-#endif
 
 	return 0;
 }
@@ -1801,13 +1556,11 @@ pgxc_node_flush_read(PGXCNodeHandle *handle)
 	if (handle == NULL)
 		return;
 
-#ifdef XCP
 	/*
 	 * Before reading input send Sync to make sure
 	 * we will eventually receive ReadyForQuery
 	 */
 	pgxc_node_send_sync(handle);
-#endif
 	while(true)
 	{
 		read_result = pgxc_node_read_data(handle, false);
@@ -2030,9 +1783,7 @@ pgxc_node_send_timestamp(PGXCNodeHandle *handle, TimestampTz timestamp)
 void
 add_error_message(PGXCNodeHandle *handle, const char *message)
 {
-#ifdef XCP
 	elog(LOG, "Connection error %s", message);
-#endif
 	handle->transaction_status = 'E';
 	if (handle->error)
 	{
@@ -2042,8 +1793,6 @@ add_error_message(PGXCNodeHandle *handle, const char *message)
 		handle->error = pstrdup(message);
 }
 
-
-#ifdef XCP
 static int load_balancer = 0;
 /*
  * Get one of the specified nodes to query replicated data source.
@@ -2116,11 +1865,7 @@ get_any_handle(List *datanodelist)
 								(errcode(ERRCODE_INSUFFICIENT_RESOURCES),
 								 errmsg("Failed to get pooled connections")));
 					}
-#ifdef XCP
 					pgxc_node_init(&dn_handles[node], fds[0], true);
-#else
-					pgxc_node_init(&dn_handles[node], fds[0]);
-#endif
 					datanode_count++;
 
 					/*
@@ -2138,8 +1883,6 @@ get_any_handle(List *datanodelist)
 	/* Keep compiler quiet */
 	return NULL;
 }
-#endif
-
 
 /*
  * for specified list return array of PGXCNodeHandles
@@ -2151,11 +1894,7 @@ get_any_handle(List *datanodelist)
  * Coordinator fds is returned only if transaction uses a DDL
  */
 PGXCNodeAllHandles *
-#ifdef XCP
 get_handles(List *datanodelist, List *coordlist, bool is_coord_only_query, bool is_global_session)
-#else
-get_handles(List *datanodelist, List *coordlist, bool is_coord_only_query)
-#endif
 {
 	PGXCNodeAllHandles	*result;
 	ListCell		*node_list_item;
@@ -2166,13 +1905,11 @@ get_handles(List *datanodelist, List *coordlist, bool is_coord_only_query)
 	/* index of the result array */
 	int			i = 0;
 
-#ifdef XCP
 	if (HandlesInvalidatePending)
 		if (DoInvalidateRemoteHandles())
 			ereport(ERROR,
 					(errcode(ERRCODE_QUERY_CANCELED),
 					 errmsg("canceling transaction due to cluster configuration reset by administrator command")));
-#endif
 
 	result = (PGXCNodeAllHandles *) palloc(sizeof(PGXCNodeAllHandles));
 	if (!result)
@@ -2364,11 +2101,7 @@ get_handles(List *datanodelist, List *coordlist, bool is_coord_only_query)
 				}
 
 				node_handle = &dn_handles[node];
-#ifdef XCP
 				pgxc_node_init(node_handle, fdsock, is_global_session);
-#else
-				pgxc_node_init(node_handle, fdsock);
-#endif
 				dn_handles[node] = *node_handle;
 				datanode_count++;
 			}
@@ -2389,11 +2122,7 @@ get_handles(List *datanodelist, List *coordlist, bool is_coord_only_query)
 				}
 
 				node_handle = &co_handles[node];
-#ifdef XCP
 				pgxc_node_init(node_handle, fdsock, is_global_session);
-#else
-				pgxc_node_init(node_handle, fdsock);
-#endif
 				co_handles[node] = *node_handle;
 				coord_count++;
 			}
@@ -2410,8 +2139,6 @@ get_handles(List *datanodelist, List *coordlist, bool is_coord_only_query)
 	return result;
 }
 
-
-#ifdef XCP
 PGXCNodeAllHandles *
 get_current_handles(void)
 {
@@ -2465,8 +2192,6 @@ get_current_handles(void)
 
 	return result;
 }
-#endif
-
 
 /* Free PGXCNodeAllHandles structure */
 void
@@ -2485,7 +2210,6 @@ pfree_pgxc_all_handles(PGXCNodeAllHandles *pgxc_handles)
 	pfree(pgxc_handles);
 }
 
-#ifdef XCP
 /*
  * PGXCNode_getNodeId
  *		Look at the data cached for handles and return node position
@@ -2530,46 +2254,6 @@ PGXCNodeGetNodeId(Oid nodeoid, char *node_type)
 		*node_type = PGXC_NODE_NONE;
 	return -1;
 }
-#else
-/*
- * PGXCNode_getNodeId
- *		Look at the data cached for handles and return node position
- */
-int
-PGXCNodeGetNodeId(Oid nodeoid, char node_type)
-{
-	PGXCNodeHandle *handles;
-	int				num_nodes, i;
-	int				res = 0;
-
-	switch (node_type)
-	{
-		case PGXC_NODE_COORDINATOR:
-			num_nodes = NumCoords;
-			handles = co_handles;
-			break;
-		case PGXC_NODE_DATANODE:
-			num_nodes = NumDataNodes;
-			handles = dn_handles;
-			break;
-		default:
-			/* Should not happen */
-			Assert(0);
-			return res;
-	}
-
-	/* Look into the handles and return correct position in array */
-	for (i = 0; i < num_nodes; i++)
-	{
-		if (handles[i].nodeoid == nodeoid)
-		{
-			res = i;
-			break;
-		}
-	}
-	return res;
-}
-#endif
 
 /*
  * PGXCNode_getNodeOid
@@ -2613,46 +2297,31 @@ pgxc_node_str(PG_FUNCTION_ARGS)
  *		Return node position in handles array
  */
 int
-#ifdef XCP
 PGXCNodeGetNodeIdFromName(char *node_name, char *node_type)
-#else
-PGXCNodeGetNodeIdFromName(char *node_name, char node_type)
-#endif
 {
 	char *nm;
 	Oid nodeoid;
 
 	if (node_name == NULL)
-#ifdef XCP
 	{
 		if (node_type)
 			*node_type = PGXC_NODE_NONE;
 		return -1;
 	}
-#else
-		return -1;
-#endif
 
 	nm = str_tolower(node_name, strlen(node_name), DEFAULT_COLLATION_OID);
 
 	nodeoid = get_pgxc_nodeoid(nm);
 	pfree(nm);
 	if (!OidIsValid(nodeoid))
-#ifdef XCP
 	{
 		if (node_type)
 			*node_type = PGXC_NODE_NONE;
 		return -1;
 	}
-#else
-		return -1;
-#endif
 
 	return PGXCNodeGetNodeId(nodeoid, node_type);
 }
-
-
-#ifdef XCP
 
 static List *
 paramlist_delete_param(List *param_list, const char *name)
@@ -2983,4 +2652,3 @@ DoInvalidateRemoteHandles(void)
 
 	return result;
 }
-#endif

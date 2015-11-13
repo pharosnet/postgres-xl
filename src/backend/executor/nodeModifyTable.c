@@ -50,12 +50,6 @@
 #include "foreign/fdwapi.h"
 #include "miscadmin.h"
 #include "nodes/nodeFuncs.h"
-#ifdef PGXC
-#ifndef XCP
-#include "pgxc/execRemote.h"
-#include "pgxc/pgxc.h"
-#endif
-#endif
 #include "storage/bufmgr.h"
 #include "storage/lmgr.h"
 #include "utils/builtins.h"
@@ -240,11 +234,6 @@ ExecInsert(ModifyTableState *mtstate,
 	Relation	resultRelationDesc;
 	Oid			newId;
 	List	   *recheckIndexes = NIL;
-#ifdef PGXC
-#ifndef XCP
-	PlanState  *resultRemoteRel = NULL;
-#endif
-#endif
 
 	/*
 	 * get the heap tuple out of the tuple table slot, making sure we have a
@@ -257,11 +246,6 @@ ExecInsert(ModifyTableState *mtstate,
 	 */
 	resultRelInfo = estate->es_result_relation_info;
 	resultRelationDesc = resultRelInfo->ri_RelationDesc;
-#ifdef PGXC
-#ifndef XCP
-	resultRemoteRel = estate->es_result_remoterel;
-#endif
-#endif
 	/*
 	 * If the result relation has OIDs, force the tuple's OID to zero so that
 	 * heap_insert will assign a fresh OID.  Usually the OID already will be
@@ -548,22 +532,12 @@ ExecDelete(ItemPointer tupleid,
 	HTSU_Result result;
 	HeapUpdateFailureData hufd;
 	TupleTableSlot *slot = NULL;
-#ifdef PGXC
-#ifndef XCP
-	PlanState  *resultRemoteRel = NULL;
-#endif
-#endif
 
 	/*
 	 * get information on the (current) result relation
 	 */
 	resultRelInfo = estate->es_result_relation_info;
 	resultRelationDesc = resultRelInfo->ri_RelationDesc;
-#ifdef PGXC
-#ifndef XCP
-	resultRemoteRel = estate->es_result_remoterel;
-#endif
-#endif
 
 	/* BEFORE ROW DELETE Triggers */
 	if (resultRelInfo->ri_TrigDesc &&
@@ -623,16 +597,6 @@ ExecDelete(ItemPointer tupleid,
 		 * mode transactions.
 		 */
 ldelete:;
-#ifdef PGXC
-#ifndef XCP
-		if (IS_PGXC_COORDINATOR && resultRemoteRel)
-		{
-			ExecRemoteQueryStandard(resultRelationDesc, (RemoteQueryState *)resultRemoteRel, planSlot);
-		}
-		else
-		{
-#endif
-#endif
 		result = heap_delete(resultRelationDesc, tupleid,
 							 estate->es_output_cid,
 							 estate->es_crosscheck_snapshot,
@@ -717,24 +681,11 @@ ldelete:;
 		 * anyway, since the tuple is still visible to other transactions.
 		 */
 
-#ifdef PGXC
-#ifndef XCP
-		}
-#endif
-#endif
 	}
 
 	if (canSetTag)
 		(estate->es_processed)++;
 
-#ifdef PGXC
-#ifndef XCP
-	/*
-	 * Do not fire triggers on remote relation, it would not find old tuple
-	 */
-	if (resultRemoteRel == NULL)
-#endif
-#endif
 	/* AFTER ROW DELETE Triggers */
 	ExecARDeleteTriggers(estate, resultRelInfo, tupleid, oldtuple);
 
@@ -832,11 +783,6 @@ ExecUpdate(ItemPointer tupleid,
 	HTSU_Result result;
 	HeapUpdateFailureData hufd;
 	List	   *recheckIndexes = NIL;
-#ifdef PGXC
-#ifndef XCP
-	PlanState  *resultRemoteRel = NULL;
-#endif
-#endif
 
 	/*
 	 * abort the operation if not running transactions
@@ -855,11 +801,6 @@ ExecUpdate(ItemPointer tupleid,
 	 */
 	resultRelInfo = estate->es_result_relation_info;
 	resultRelationDesc = resultRelInfo->ri_RelationDesc;
-#ifdef PGXC
-#ifndef XCP
-	resultRemoteRel = estate->es_result_remoterel;
-#endif
-#endif
 
 	/* BEFORE ROW UPDATE Triggers */
 	if (resultRelInfo->ri_TrigDesc &&
@@ -937,16 +878,6 @@ lreplace:;
 		if (resultRelationDesc->rd_att->constr)
 			ExecConstraints(resultRelInfo, slot, estate);
 
-#ifdef PGXC
-#ifndef XCP
-		if (IS_PGXC_COORDINATOR && resultRemoteRel)
-		{
-			ExecRemoteQueryStandard(resultRelationDesc, (RemoteQueryState *)resultRemoteRel, planSlot);
-		}
-		else
-		{
-#endif
-#endif
 		/*
 		 * replace the heap tuple
 		 *
@@ -1056,14 +987,6 @@ lreplace:;
 	if (canSetTag)
 		(estate->es_processed)++;
 
-#ifdef PGXC
-#ifndef XCP
-	/*
-	 * Do not fire triggers on remote relation, it would not find old tuple
-	 */
-	if (resultRemoteRel == NULL)
-#endif
-#endif
 	/* AFTER ROW UPDATE Triggers */
 	ExecARUpdateTriggers(estate, resultRelInfo, tupleid, oldtuple, tuple,
 						 recheckIndexes);
@@ -1343,12 +1266,6 @@ ExecModifyTable(ModifyTableState *node)
 	ResultRelInfo *saved_resultRelInfo;
 	ResultRelInfo *resultRelInfo;
 	PlanState  *subplanstate;
-#ifdef PGXC
-#ifndef XCP
-	PlanState  *remoterelstate;
-	PlanState  *saved_resultRemoteRel;
-#endif
-#endif
 	JunkFilter *junkfilter;
 	TupleTableSlot *slot;
 	TupleTableSlot *planSlot;
@@ -1390,11 +1307,6 @@ ExecModifyTable(ModifyTableState *node)
 	/* Preload local variables */
 	resultRelInfo = node->resultRelInfo + node->mt_whichplan;
 	subplanstate = node->mt_plans[node->mt_whichplan];
-#ifdef PGXC
-#ifndef XCP
-	remoterelstate = node->mt_remoterels[node->mt_whichplan];
-#endif
-#endif
 	junkfilter = resultRelInfo->ri_junkFilter;
 
 	/*
@@ -1405,18 +1317,8 @@ ExecModifyTable(ModifyTableState *node)
 	 * CTE).  So we have to save and restore the caller's value.
 	 */
 	saved_resultRelInfo = estate->es_result_relation_info;
-#ifdef PGXC
-#ifndef XCP
-	saved_resultRemoteRel = estate->es_result_remoterel;
-#endif
-#endif
 
 	estate->es_result_relation_info = resultRelInfo;
-#ifdef PGXC
-#ifndef XCP
-	estate->es_result_remoterel = remoterelstate;
-#endif
-#endif
 
 	/*
 	 * Fetch rows from subplan(s), and execute the required table modification
@@ -1442,13 +1344,6 @@ ExecModifyTable(ModifyTableState *node)
 			{
 				resultRelInfo++;
 				subplanstate = node->mt_plans[node->mt_whichplan];
-#ifdef PGXC
-#ifndef XCP
-				/* Move to next remote plan */
-				estate->es_result_remoterel = node->mt_remoterels[node->mt_whichplan];
-				remoterelstate = node->mt_plans[node->mt_whichplan];
-#endif
-#endif
 				junkfilter = resultRelInfo->ri_junkFilter;
 				estate->es_result_relation_info = resultRelInfo;
 				EvalPlanQualSetPlan(&node->mt_epqstate, subplanstate->plan,
@@ -1568,11 +1463,6 @@ ExecModifyTable(ModifyTableState *node)
 
 	/* Restore es_result_relation_info before exiting */
 	estate->es_result_relation_info = saved_resultRelInfo;
-#ifdef PGXC
-#ifndef XCP
-	estate->es_result_remoterel = saved_resultRemoteRel;
-#endif
-#endif
 
 	/*
 	 * We're done, but fire AFTER STATEMENT triggers before exiting.
@@ -1617,11 +1507,6 @@ ExecInitModifyTable(ModifyTable *node, EState *estate, int eflags)
 	mtstate->mt_done = false;
 
 	mtstate->mt_plans = (PlanState **) palloc0(sizeof(PlanState *) * nplans);
-#ifdef PGXC
-#ifndef XCP
-	mtstate->mt_remoterels = (PlanState **) palloc0(sizeof(PlanState *) * nplans);
-#endif
-#endif
 	mtstate->resultRelInfo = estate->es_result_relations + node->resultRelIndex;
 	mtstate->mt_arowmarks = (List **) palloc0(sizeof(List *) * nplans);
 	mtstate->mt_nplans = nplans;
@@ -1646,20 +1531,8 @@ ExecInitModifyTable(ModifyTable *node, EState *estate, int eflags)
 	i = 0;
 	foreach(l, node->plans)
 	{
-#ifdef PGXC
-#ifndef XCP
-		Plan *remoteplan = NULL;
-#endif
-#endif
 
 		subplan = (Plan *) lfirst(l);
-
-#ifdef PGXC
-#ifndef XCP
-		if (node->remote_plans)
-			remoteplan = list_nth(node->remote_plans, i);
-#endif
-#endif
 
 		/*
 		 * Verify result relation is a valid target for the current operation
@@ -1684,18 +1557,6 @@ ExecInitModifyTable(ModifyTable *node, EState *estate, int eflags)
 		estate->es_result_relation_info = resultRelInfo;
 		mtstate->mt_plans[i] = ExecInitNode(subplan, estate, eflags);
 
-#ifdef PGXC
-#ifndef XCP
-		if (remoteplan)
-		{
-			/*
-			 * Init the plan for the remote execution for this result rel. This is
-			 * used to execute data modification queries on the remote nodes
-			 */
-			mtstate->mt_remoterels[i] = ExecInitNode(remoteplan, estate, eflags);
-		}
-#endif
-#endif
 		/* Also let FDWs init themselves for foreign-table result rels */
 		if (resultRelInfo->ri_FdwRoutine != NULL &&
 			resultRelInfo->ri_FdwRoutine->BeginForeignModify != NULL)

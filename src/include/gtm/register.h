@@ -43,13 +43,11 @@ typedef enum GTM_PGXCNodeStatus
 	NODE_DISCONNECTED
 } GTM_PGXCNodeStatus;
 
-#ifdef XCP
 typedef struct GTM_PGXCSession
 {
 	int		gps_coord_proc_id;
 	int		gps_coord_backend_id;
 } GTM_PGXCSession;
-#endif
 
 typedef struct GTM_PGXCNodeInfo
 {
@@ -60,11 +58,9 @@ typedef struct GTM_PGXCNodeInfo
 	char			*ipaddress;	/* IP address of the nodes */
 	char			*datafolder;	/* Data folder of the node */
 	GTM_PGXCNodeStatus	status;		/* Node status */
-#ifdef XCP
 	int 			max_sessions;
 	int 			num_sessions;
 	GTM_PGXCSession	*sessions;
-#endif
 	GTM_RWLock		node_lock;	/* Lock on this structure */
 	int			socket;		/* socket number used for registration */
 } GTM_PGXCNodeInfo;
@@ -92,15 +88,12 @@ int Recovery_PGXCNodeUnregister(GTM_PGXCNodeType type,
 int Recovery_PGXCNodeBackendDisconnect(GTM_PGXCNodeType type, char *nodename, int socket);
 
 void Recovery_RecordRegisterInfo(GTM_PGXCNodeInfo *nodeinfo, bool is_register);
-void Recovery_RestoreRegisterInfo(void);
 void Recovery_SaveRegisterInfo(void);
 void Recovery_PGXCNodeDisconnect(Port *myport);
 void Recovery_SaveRegisterFileName(char *dir);
-#ifdef XCP
 int Recovery_PGXCNodeRegisterCoordProcess(char *coord_node, int coord_procid,
 								      int coord_backendid);
 void ProcessPGXCRegisterSession(Port *myport, StringInfo message);
-#endif
 
 void ProcessPGXCNodeRegister(Port *myport, StringInfo message, bool is_backup);
 void ProcessPGXCNodeUnregister(Port *myport, StringInfo message, bool is_backup);

@@ -2630,33 +2630,6 @@ create_worktablescan_path(PlannerInfo *root, RelOptInfo *rel,
 	return pathnode;
 }
 
-
-#ifdef PGXC
-#ifndef XCP
-/*
- * create_remotequery_path
- *	  Creates a path corresponding to a scan of a remote query,
- *	  returning the pathnode.
- */
-Path *
-create_remotequery_path(PlannerInfo *root, RelOptInfo *rel)
-{
-	Path	   *pathnode = makeNode(Path);
-
-	pathnode->pathtype = T_RemoteQuery;
-	pathnode->parent = rel;
-	pathnode->param_info = NULL;	/* never parameterized at present */
-	pathnode->pathkeys = NIL;	/* result is always unordered */
-
-	/* PGXCTODO - set cost properly */
-	cost_seqscan(pathnode, root, rel, pathnode->param_info);
-
-	return pathnode;
-}
-#endif /* XCP */
-#endif /* PGXC */
-
-
 /*
  * create_foreignscan_path
  *	  Creates a path corresponding to a scan of a foreign table,

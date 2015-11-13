@@ -802,31 +802,6 @@ estimate_rel_size(Relation rel, int32 *attr_widths,
 	switch (rel->rd_rel->relkind)
 	{
 		case RELKIND_RELATION:
-#ifdef PGXC
-#ifndef XCP
-			/*
-			 * This is a remote table... we have no idea how many pages/rows
-			 * we may get from a scan of this table. However, we should set the
-			 * costs in such a manner that cheapest paths should pick up the
-			 * ones involving these remote rels
-			 *
-			 * These allow for maximum query shipping to the remote
-			 * side later during the planning phase
-			 *
-			 * This has to be set on a remote Coordinator only
-			 * as it hugely penalizes performance on backend Nodes.
-			 *
-			 * Override the estimates only for remote tables (currently
-			 * identified by non-NULL rd_locator_info)
-			 */
-			if (IS_PGXC_LOCAL_COORDINATOR && rel->rd_locator_info)
-			{
-				*pages   = 10;
-				*tuples  = 10;
-				break;
-			}
-#endif
-#endif
 		case RELKIND_INDEX:
 		case RELKIND_MATVIEW:
 		case RELKIND_TOASTVALUE:

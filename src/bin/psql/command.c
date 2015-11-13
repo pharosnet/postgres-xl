@@ -1824,11 +1824,7 @@ connection_warnings(bool in_startup)
 		/* For version match, only print psql banner on startup. */
 		else if (in_startup)
 #ifdef PGXC
-#ifdef XCP
 			printf("%s (PGXL %s, based on PG %s)\n", pset.progname, PGXC_VERSION, PG_VERSION);
-#else
-			printf("%s (PGXC %s, based on PG %s)\n", pset.progname, PGXC_VERSION, PG_VERSION);
-#endif
 #else
 			printf("%s (%s)\n", pset.progname, PG_VERSION);
 #endif

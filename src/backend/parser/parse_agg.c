@@ -117,12 +117,6 @@ transformAggregateCall(ParseState *pstate, Aggref *agg,
 	AttrNumber	attno = 1;
 	int			save_next_resno;
 	ListCell   *lc;
-#ifdef PGXC
-#ifndef XCP
-	HeapTuple	aggTuple;
-	Form_pg_aggregate aggform;
-#endif /* XCP */
-#endif /* PGXC */
 	const char *err;
 	bool		errkind;
 
@@ -335,30 +329,6 @@ check_agglevels_and_constraints(ParseState *pstate, Node *expr)
 	while (min_varlevel-- > 0)
 		pstate = pstate->parentParseState;
 	pstate->p_hasAggs = true;
-#ifdef PGXC
-#ifndef XCP
-	/*
-	 * Return data type of PGXC Datanode's aggregate should always return the
-	 * result of transition function, that is expected by collection function
-	 * on the Coordinator.
-	 * Look up the aggregate definition and replace agg->aggtype
-	 */
-
-	aggTuple = SearchSysCache(AGGFNOID,
-					  ObjectIdGetDatum(agg->aggfnoid),
-					  0, 0, 0);
-	if (!HeapTupleIsValid(aggTuple))
-		elog(ERROR, "cache lookup failed for aggregate %u",
-			 agg->aggfnoid);
-	aggform = (Form_pg_aggregate) GETSTRUCT(aggTuple);
-	agg->aggtrantype = aggform->aggtranstype;
-	agg->agghas_collectfn = OidIsValid(aggform->aggcollectfn);
-	if (IS_PGXC_DATANODE)
-		agg->aggtype = agg->aggtrantype;
-
-	ReleaseSysCache(aggTuple);
-#endif
-#endif
 
 	/*
 	 * Check to see if the aggregate function is in an invalid place within

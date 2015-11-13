@@ -812,9 +812,6 @@ main(int argc, char *argv[])
 
 	elog(LOG, "Starting GTM proxy at (%s:%d)", ListenAddresses, GTMProxyPortNumber);
 
-	/* Recover Data of Registered nodes. */
-	Recovery_RestoreRegisterInfo();
-
 	/*
 	 * Establish input sockets.
 	 */
@@ -1597,9 +1594,7 @@ ProcessCommand(GTMProxy_ConnectionInfo *conninfo, GTM_Conn *gtm_conn,
 		case MSG_SEQUENCE_ALTER:
 		case MSG_BARRIER:
 		case MSG_TXN_COMMIT:
-#ifdef XCP
 		case MSG_REGISTER_SESSION:
-#endif
 			GTMProxy_ProxyCommand(conninfo, gtm_conn, mtype, input_message);
 			break;
 
@@ -1744,9 +1739,7 @@ IsProxiedMessage(GTM_MessageType mtype)
 		case MSG_TXN_GET_GID_DATA:
 		case MSG_NODE_REGISTER:
 		case MSG_NODE_UNREGISTER:
-#ifdef XCP
 		case MSG_REGISTER_SESSION:
-#endif
 		case MSG_SNAPSHOT_GXID_GET:
 		case MSG_SEQUENCE_INIT:
 		case MSG_SEQUENCE_GET_CURRENT:
@@ -1949,9 +1942,7 @@ ProcessResponse(GTMProxy_ThreadInfo *thrinfo, GTMProxy_CommandInfo *cmdinfo,
 		case MSG_TXN_GET_GID_DATA:
 		case MSG_NODE_REGISTER:
 		case MSG_NODE_UNREGISTER:
-#ifdef XCP
 		case MSG_REGISTER_SESSION:
-#endif
 		case MSG_SNAPSHOT_GXID_GET:
 		case MSG_SEQUENCE_INIT:
 		case MSG_SEQUENCE_GET_CURRENT:
@@ -2256,7 +2247,6 @@ ProcessPGXCNodeCommand(GTMProxy_ConnectionInfo *conninfo, GTM_Conn *gtm_conn,
 			/* Unregistering has to be saved in a place where it can be seen by all the threads */
 			oldContext = MemoryContextSwitchTo(TopMostMemoryContext);
 
-#ifdef XCP
 			/*
 			 * Unregister node. Ignore any error here, otherwise we enter
 			 * endless loop trying to execute command again and again
@@ -2265,18 +2255,6 @@ ProcessPGXCNodeCommand(GTMProxy_ConnectionInfo *conninfo, GTM_Conn *gtm_conn,
 										cmd_data.cd_reg.nodename,
 										false,
 										conninfo->con_port->sock);
-#else
-			/* Unregister Node also on Proxy */
-			if (Recovery_PGXCNodeUnregister(cmd_data.cd_reg.type,
-								cmd_data.cd_reg.nodename,
-								false,
-								conninfo->con_port->sock))
-			{
-				ereport(ERROR,
-						(EINVAL,
-						 errmsg("Failed to Unregister node")));
-			}
-#endif
 			MemoryContextSwitchTo(oldContext);
 
 			GTMProxy_ProxyPGXCNodeCommand(conninfo, gtm_conn, mtype, cmd_data);
@@ -2506,9 +2484,7 @@ GTMProxy_CommandPending(GTMProxy_ConnectionInfo *conninfo, GTM_MessageType mtype
 	GTMProxy_CommandInfo *cmdinfo;
 	GTMProxy_ThreadInfo *thrinfo = GetMyThreadInfo;
 
-#ifdef XCP
 	MemoryContext oldContext = MemoryContextSwitchTo(TopMemoryContext);
-#endif
 
 	/*
 	 * Add the message to the pending command list
@@ -2520,9 +2496,7 @@ GTMProxy_CommandPending(GTMProxy_ConnectionInfo *conninfo, GTM_MessageType mtype
 	cmdinfo->ci_data = cmd_data;
 	thrinfo->thr_pending_commands[mtype] = gtm_lappend(thrinfo->thr_pending_commands[mtype], cmdinfo);
 
-#ifdef XCP
 	MemoryContextSwitchTo(oldContext);
-#endif
 
 	return;
 }

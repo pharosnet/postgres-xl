@@ -168,19 +168,6 @@ static bool fix_opfuncids_walker(Node *node, void *context);
 static bool extract_query_dependencies_walker(Node *node,
 								  PlannerInfo *context);
 
-#ifdef PGXC
-#ifndef XCP
-/* References for remote plans */
-static List * fix_remote_expr(PlannerInfo *root,
-			  List *clauses,
-			  indexed_tlist *base_itlist,
-			  Index	newrelid,
-			  int rtoffset);
-static Node *fix_remote_expr_mutator(Node *node,
-			  fix_remote_expr_context *context);
-static void set_remote_references(PlannerInfo *root, RemoteQuery *rscan, int rtoffset);
-#endif
-#endif
 #ifdef XCP
 static void set_remotesubplan_references(PlannerInfo *root, Plan *plan, int rtoffset);
 #endif
@@ -625,29 +612,6 @@ set_plan_refs(PlannerInfo *root, Plan *plan, int rtoffset)
 					fix_scan_list(root, splan->scan.plan.qual, rtoffset);
 			}
 			break;
-#ifdef PGXC
-#ifndef XCP
-		case T_RemoteQuery:
-			{
-				RemoteQuery	   *splan = (RemoteQuery *) plan;
-
-				/*
-				 * If base_tlist is set, it means that we have a reduced remote
-				 * query plan. So need to set the var references accordingly.
-				 */
-				if (splan->base_tlist)
-					set_remote_references(root, splan, rtoffset);
-				splan->scan.plan.targetlist =
-					fix_scan_list(root, splan->scan.plan.targetlist, rtoffset);
-				splan->scan.plan.qual =
-					fix_scan_list(root, splan->scan.plan.qual, rtoffset);
-				splan->base_tlist =
-					fix_scan_list(root, splan->base_tlist, rtoffset);
-				splan->scan.scanrelid += rtoffset;
-			}
-			break;
-#endif
-#endif
 		case T_ForeignScan:
 			set_foreignscan_references(root, (ForeignScan *) plan, rtoffset);
 			break;
@@ -2056,34 +2020,6 @@ search_indexed_tlist_for_non_var(Node *node,
 	return NULL;				/* no match */
 }
 
-#ifdef PGXC
-#ifndef XCP
-/*
- * search_tlist_for_var --- find a Var in the provided tlist. This does a
- * basic scan through the list. So not very efficient...
- *
- * If no match, return NULL.
- *
- */
-Var *
-search_tlist_for_var(Var *var, List *jtlist)
-{
-	Index       varno = var->varno;
-	AttrNumber  varattno = var->varattno;
-	ListCell   *l;
-
-	foreach(l, jtlist)
-	{
-		Var *listvar = (Var *) lfirst(l);
-
-		if (listvar->varno == varno && listvar->varattno == varattno)
-			return var;
-	}
-	return NULL;                /* no match */
-}
-#endif
-#endif
-
 /*
  * search_indexed_tlist_for_sortgroupref --- find a sort/group expression
  *		(which is assumed not to be just a Var)
@@ -2634,120 +2570,6 @@ extract_query_dependencies_walker(Node *node, PlannerInfo *context)
 	return expression_tree_walker(node, extract_query_dependencies_walker,
 								  (void *) context);
 }
-
-
-#ifdef PGXC
-#ifndef XCP
-/*
- * fix_remote_expr
- *	   Create a new set of targetlist entries or qual clauses by
- *	   changing the varno/varattno values of variables in the clauses
- *	   to reference target list values from the base
- *	   relation target lists.  Also perform opcode lookup and add
- *	   regclass OIDs to glob->relationOids.
- *
- * 'clauses' is the targetlist or list of clauses
- * 'base_itlist' is the indexed target list of the base referenced relations
- *
- * Returns the new expression tree.  The original clause structure is
- * not modified.
- */
-static List *
-fix_remote_expr(PlannerInfo *root,
-			  List *clauses,
-			  indexed_tlist *base_itlist,
-			  Index	newrelid,
-			  int rtoffset)
-{
-	fix_remote_expr_context context;
-
-	context.glob		= root->glob;
-	context.base_itlist = base_itlist;
-	context.relid		= newrelid;
-	context.rtoffset	= rtoffset;
-
-	return (List *) fix_remote_expr_mutator((Node *) clauses, &context);
-}
-
-static Node *
-fix_remote_expr_mutator(Node *node, fix_remote_expr_context *context)
-{
-	Var		   *newvar;
-
-	if (node == NULL)
-		return NULL;
-
-	if (IsA(node, Var))
-	{
-		Var	*var = (Var *) node;
-
-		/* First look for the var in the input base tlists */
-		newvar = search_indexed_tlist_for_var(var,
-											  context->base_itlist,
-											  context->relid,
-											  context->rtoffset);
-		if (newvar)
-			return (Node *) newvar;
-
-		/* No reference found for Var */
-		elog(ERROR, "variable not found in base remote scan target lists");
-	}
-	/* Try matching more complex expressions too, if tlists have any */
-	if (context->base_itlist->has_non_vars)
-	{
-		newvar = search_indexed_tlist_for_non_var(node,
-												  context->base_itlist,
-												  context->relid);
-		if (newvar)
-			return (Node *) newvar;
-	}
-
-	return expression_tree_mutator(node, fix_remote_expr_mutator, context);
-}
-
-/*
- * set_remote_references
- *
- *	  Modify the target list and quals of a remote scan node to reference its
- *	  base rels, by setting the varnos to DUMMY (even OUTER is fine) setting attno
- *	  values to the result domain number of the base rels.
- *	  Also perform opcode lookup for these expressions. and add regclass
- *	  OIDs to glob->relationOids.
- */
-static void
-set_remote_references(PlannerInfo *root, RemoteQuery *rscan, int rtoffset)
-{
-	indexed_tlist *base_itlist;
-
-	if (!rscan->base_tlist)
-		return;
-
-	base_itlist = build_tlist_index(rscan->base_tlist);
-
-	/* All remotescan plans have tlist, and quals */
-	rscan->scan.plan.targetlist = fix_remote_expr(root      ,
-										  rscan->scan.plan.targetlist,
-										  base_itlist,
-										  rscan->scan.scanrelid,
-										  rtoffset);
-
-	rscan->scan.plan.qual = fix_remote_expr(root      ,
-										  rscan->scan.plan.qual,
-										  base_itlist,
-										  rscan->scan.scanrelid,
-										  rtoffset);
-
-	pfree(base_itlist);
-}
-
-Node *
-pgxc_fix_scan_expr(PlannerInfo *root, Node *node, int rtoffset)
-{
-	return fix_scan_expr(root, node, rtoffset);
-}
-#endif /* XCP */
-#endif /* PGXC */
-
 
 #ifdef XCP
 /*

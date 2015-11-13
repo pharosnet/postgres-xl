@@ -67,11 +67,7 @@ char pgxc_ctl_config_path[MAXPATH+1];
 char progname[MAXPATH+1];
 char *myName;
 char *defaultDatabase;
-#ifdef XCP
 #define versionString "V9.2 for Postgres-XL 9.2"
-#else
-#define versionString "V1.0 for Postgres-XC 1.1"
-#endif
 
 FILE *inF;
 FILE *outF;
@@ -453,7 +449,6 @@ int main(int argc, char *argv[])
 		{0, 0, 0, 0}
 	};
 
-#ifdef XCP	
 	int is_bash_exist = system("command -v bash");
 
 	if ( is_bash_exist != 0 )
@@ -462,7 +457,6 @@ int main(int argc, char *argv[])
 				"installed and available in the PATH\n");
 		exit(2);
 	}
-#endif
 
 	strcpy(progname, argv[0]);
 	init_var_hash();

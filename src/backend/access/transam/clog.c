@@ -361,7 +361,6 @@ TransactionIdSetStatusBit(TransactionId xid, XidStatus status, XLogRecPtr lsn, i
 	 * Current state change should be from 0 or subcommitted to target state
 	 * or we should already be there when replaying changes during recovery.
 	 */
-#ifdef XCP
 	if (!(curval == 0 ||
 		   (curval == TRANSACTION_STATUS_SUB_COMMITTED &&
 			status != TRANSACTION_STATUS_IN_PROGRESS) ||
@@ -370,12 +369,6 @@ TransactionIdSetStatusBit(TransactionId xid, XidStatus status, XLogRecPtr lsn, i
 		elog(WARNING, "Unexpected clog condition. curval = %d, status = %d",
 					curval, status);
 	}
-#else
-	Assert(curval == 0 ||
-		   (curval == TRANSACTION_STATUS_SUB_COMMITTED &&
-			status != TRANSACTION_STATUS_IN_PROGRESS) ||
-		   curval == status);
-#endif
 
 	/* note this assumes exclusive access to the clog page */
 	byteval = *byteptr;

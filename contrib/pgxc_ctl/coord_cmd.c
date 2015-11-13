@@ -2019,12 +2019,9 @@ static int failover_oneCoordinator(int coordIdx)
 	char *gtmPort;
 	FILE *f;
 	char timestamp[MAXTOKEN+1];
-
-#ifdef XCP	
 	char cmd[MAXLINE];
 	int	 cmdlen;
 	bool dnReconfigured;
-#endif	
 	
 #define checkRc() do{if(WEXITSTATUS(rc_local) > rc) rc = WEXITSTATUS(rc_local);}while(0)
 
@@ -2040,11 +2037,6 @@ static int failover_oneCoordinator(int coordIdx)
 	else
 		elog(NOTICE, "Failover coordinator %s using GTM itself\n",
 			 aval(VAR_coordNames)[coordIdx]);
-
-#ifndef XCP	
-	/* Unregister the coordinator from GTM */
-	unregister_coordinator(aval(VAR_coordNames)[coordIdx]);
-#endif	
 
 	/* Promote the slave */
 	rc_local = doImmediate(aval(VAR_coordSlaveServers)[coordIdx], NULL,
@@ -2122,7 +2114,6 @@ static int failover_oneCoordinator(int coordIdx)
 		checkRc();
 	}
 
-#ifdef XCP	
 	cmdlen = 0;
 	cmd[0] = '\0';
 	/*
@@ -2158,7 +2149,6 @@ static int failover_oneCoordinator(int coordIdx)
 		cmdlen += len;
 	}
 	dnReconfigured = false;
-#endif
 
 	/*
 	 * Reconfigure coordinators with new coordinator
@@ -2187,15 +2177,12 @@ static int failover_oneCoordinator(int coordIdx)
 		fprintf(f,
 				"ALTER NODE %s WITH (HOST='%s', PORT=%s);\n"
 				"select pgxc_pool_reload();\n"
-#ifdef XCP				
 				"%s"
-#endif				
 				"\\q\n",
-				aval(VAR_coordNames)[coordIdx], aval(VAR_coordMasterServers)[coordIdx], aval(VAR_coordPorts)[coordIdx]
-#ifdef XCP				
-				,dnReconfigured ? "" : cmd
-#endif				
-				);
+				aval(VAR_coordNames)[coordIdx],
+				aval(VAR_coordMasterServers)[coordIdx],
+				aval(VAR_coordPorts)[coordIdx],
+				dnReconfigured ? "" : cmd);
 		pclose(f);
 	}
 	return(rc);

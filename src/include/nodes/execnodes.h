@@ -28,9 +28,7 @@
 #include "utils/reltrigger.h"
 #include "utils/sortsupport.h"
 #include "utils/tuplestore.h"
-#ifdef XCP
 #include "pgxc/squeue.h"
-#endif
 #include "utils/tuplesort.h"
 
 
@@ -1870,11 +1868,6 @@ typedef struct AggState
 	List	   *hash_needed;	/* list of columns needed in hash table */
 	bool		table_filled;	/* hash table filled yet? */
 	TupleHashIterator hashiter; /* for iterating through hash table */
-#ifdef PGXC
-#ifndef XCP
-	bool		skip_trans;		/* skip the transition step for aggregates */
-#endif /* XCP */
-#endif /* PGXC */
 } AggState;
 
 /* ----------------

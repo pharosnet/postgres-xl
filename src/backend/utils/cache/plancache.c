@@ -81,11 +81,6 @@
 #include "pgxc/squeue.h"
 #endif
 #include "pgxc/pgxc.h"
-
-
-#ifndef XCP
-static void drop_datanode_statements(Plan *plannode);
-#endif
 #endif
 
 
@@ -439,11 +434,6 @@ CompleteCachedPlan(CachedPlanSource *plansource,
 	plansource->parserSetupArg = parserSetupArg;
 	plansource->cursor_options = cursor_options;
 	plansource->fixed_result = fixed_result;
-#ifdef PGXC
-#ifndef XCP
-	plansource->stmt_name = NULL;
-#endif
-#endif
 	plansource->resultDesc = PlanCacheComputeResultDesc(querytree_list);
 
 	MemoryContextSwitchTo(oldcxt);
@@ -562,28 +552,6 @@ ReleaseGenericPlan(CachedPlanSource *plansource)
 	if (plansource->gplan)
 	{
 		CachedPlan *plan = plansource->gplan;
-
-#ifdef PGXC
-#ifndef XCP
-		/* Drop this plan on remote nodes */
-		if (plan)
-		{
-			ListCell *lc;
-
-			/* Close any active planned Datanode statements */
-			foreach (lc, plan->stmt_list)
-			{
-				Node *node = lfirst(lc);
-
-				if (IsA(node, PlannedStmt))
-				{
-					PlannedStmt *ps = (PlannedStmt *)node;
-					drop_datanode_statements(ps->planTree);
-				}
-			}
-		}
-#endif
-#endif
 
 #ifdef XCP
 		/* Release SharedQueue if still held */
@@ -1352,31 +1320,6 @@ GetCachedPlan(CachedPlanSource *plansource, ParamListInfo boundParams,
 
 	return plan;
 }
-
-/*
- * Find and release all Datanode statements referenced by the plan node and subnodes
- */
-#ifdef PGXC
-#ifndef XCP
-static void
-drop_datanode_statements(Plan *plannode)
-{
-	if (IsA(plannode, RemoteQuery))
-	{
-		RemoteQuery *step = (RemoteQuery *) plannode;
-
-		if (step->statement)
-			DropDatanodeStatement(step->statement);
-	}
-
-	if (innerPlan(plannode))
-		drop_datanode_statements(innerPlan(plannode));
-
-	if (outerPlan(plannode))
-		drop_datanode_statements(outerPlan(plannode));
-}
-#endif
-#endif
 
 /*
  * ReleaseCachedPlan: release active use of a cached plan.

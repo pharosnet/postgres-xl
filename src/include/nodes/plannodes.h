@@ -200,11 +200,6 @@ typedef struct ModifyTable
 	List	   *fdwPrivLists;	/* per-target-table FDW private data lists */
 	List	   *rowMarks;		/* PlanRowMarks (non-locking only) */
 	int			epqParam;		/* ID of Param for EvalPlanQual re-eval */
-#ifdef PGXC
-#ifndef XCP
-	List	   *remote_plans;	/* per-target-table remote node */
-#endif
-#endif
 	OnConflictAction onConflictAction;	/* ON CONFLICT action */
 	List	   *arbiterIndexes; /* List of ON CONFLICT arbiter index OIDs  */
 	List	   *onConflictSet;	/* SET for INSERT ON CONFLICT DO UPDATE */
@@ -746,13 +741,6 @@ typedef struct Agg
 	AttrNumber *grpColIdx;		/* their indexes in the target list */
 	Oid		   *grpOperators;	/* equality operators to compare with */
 	long		numGroups;		/* estimated number of groups in input */
-#ifdef PGXC
-#ifndef XCP
-	bool		skip_trans;		/* apply collection directly on the data received
-								 * from remote Datanodes
-								 */
-#endif /* XCP */
-#endif /* PGXC */
 	List	   *groupingSets;	/* grouping sets to use */
 	List	   *chain;			/* chained Agg/Sort nodes */
 } Agg;

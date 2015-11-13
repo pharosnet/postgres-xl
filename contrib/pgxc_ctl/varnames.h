@@ -91,9 +91,7 @@
 #define VAR_coordAdditionalSlaveSet	"coordAdditionalSlaveSet"
 #define VAR_datanodeNames			"datanodeNames"
 #define VAR_datanodePorts			"datanodePorts"
-#ifdef XCP
 #define VAR_datanodePoolerPorts		"datanodePoolerPorts"
-#endif
 #define VAR_datanodePgHbaEntries	"datanodePgHbaEntries"
 #define VAR_primaryDatanode			"primaryDatanode"
 
@@ -106,9 +104,7 @@
 #define VAR_datanodeSlave			"datanodeSlave"
 #define VAR_datanodeSlaveServers	"datanodeSlaveServers"
 #define VAR_datanodeSlavePorts		"datanodeSlavePorts"
-#ifdef XCP
 #define VAR_datanodeSlavePoolerPorts		"datanodeSlavePoolerPorts"
-#endif
 #define VAR_datanodeSlaveSync		"datanodeSlaveSync"
 #define VAR_datanodeSlaveDirs		"datanodeSlaveDirs"
 #define VAR_datanodeArchLogDirs		"datanodeArchLogDirs"

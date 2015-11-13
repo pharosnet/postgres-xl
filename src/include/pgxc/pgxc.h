@@ -25,11 +25,9 @@
 extern bool isPGXCCoordinator;
 extern bool isPGXCDataNode;
 extern bool isRestoreMode;
-#ifdef XCP
 extern char *parentPGXCNode;
 extern int	parentPGXCNodeId;
 extern char	parentPGXCNodeType;
-#endif
 
 typedef enum
 {
@@ -59,11 +57,9 @@ extern Datum xc_lockForBackupKey2;
 #define IS_PGXC_REMOTE_COORDINATOR	\
 	(IS_PGXC_COORDINATOR && IsConnFromCoord())
 
-#ifdef XCP
 #define PGXC_PARENT_NODE parentPGXCNode
 #define PGXC_PARENT_NODE_ID	parentPGXCNodeId
 #define PGXC_PARENT_NODE_TYPE	parentPGXCNodeType
-#endif
 #define REMOTE_CONN_TYPE remoteConnType
 
 #define IsConnFromApp() (remoteConnType == REMOTE_CONN_APP)

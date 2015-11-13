@@ -168,19 +168,6 @@ typedef struct Query
 
 	List	   *constraintDeps; /* a list of pg_constraint OIDs that the query
 								 * depends on to be semantically valid */
-#ifdef PGXC
-#ifndef XCP
-	/* need this info for PGXC Planner, may be temporary */
-	char		*sql_statement;		/* original query */
-	bool		qry_finalise_aggs;	/* used for queries intended for Datanodes,
-						 * should Datanode finalise the aggregates? */
-	bool		is_local;		/* enforce query execution on local node
-						 * this is used by EXECUTE DIRECT especially. */
-	bool		is_ins_child_sel_parent;/* true if the query is such an INSERT SELECT that
-						 * inserts into a child by selecting from its parent */
-	bool		recursiveOK;	/* does query support WITH RECURSIVE */
-#endif
-#endif
 } Query;
 
 
@@ -830,12 +817,6 @@ typedef struct RangeTblEntry
 	 * a union.  I didn't do this yet because the diffs would impact a lot of
 	 * code that is being actively worked on.  FIXME someday.
 	 */
-
-#ifdef PGXC
-#ifndef XCP
-	char		*relname;
-#endif
-#endif
 
 	/*
 	 * Fields valid for a plain relation RTE (else zero):

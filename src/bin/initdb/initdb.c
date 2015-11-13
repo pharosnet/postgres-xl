@@ -2897,11 +2897,7 @@ usage(const char *progname)
 	printf(_("      --auth-local=METHOD   default authentication method for local-socket connections\n"));
 	printf(_(" [-D, --pgdata=]DATADIR     location for this database cluster\n"));
 #ifdef PGXC
-#ifdef XCP
 	printf(_("      --nodename=NODENAME   name of Postgres-XL node initialized\n"));
-#else
-	printf(_("      --nodename=NODENAME   name of Postgres-XC node initialized\n"));
-#endif
 #endif
 	printf(_("  -E, --encoding=ENCODING   set default encoding for new databases\n"));
 	printf(_("      --locale=LOCALE       set default locale for new databases\n"));
@@ -3766,11 +3762,7 @@ main(int argc, char *argv[])
 #ifdef PGXC
 	if (!nodename)
 	{
-#ifdef XCP
 		fprintf(stderr, _("%s: Postgres-XL node name is mandatory\n"), progname);
-#else
-		fprintf(stderr, _("%s: Postgres-XC node name is mandatory\n"), progname);
-#endif
 		fprintf(stderr, _("Try \"%s --help\" for more information.\n"),
 				progname);
 		exit(1);
@@ -3839,19 +3831,11 @@ main(int argc, char *argv[])
 
 
 #ifdef PGXC
-#ifdef XCP
 	printf(_("\nSuccess.\n You can now start the database server of the Postgres-XL coordinator using:\n\n"
-#else
-	printf(_("\nSuccess.\n You can now start the database server of the Postgres-XC coordinator using:\n\n"
-#endif
 			 "    %s%s%spostgres%s --coordinator -D %s%s%s\n"
 			 "or\n"
 			 "    %s%s%spg_ctl%s start -D %s%s%s -Z coordinator -l logfile\n\n"
-#ifdef XCP
 			 " You can now start the database server of the Postgres-XL datanode using:\n\n"
-#else
-			 " You can now start the database server of the Postgres-XC datanode using:\n\n"
-#endif
 			 "    %s%s%spostgres%s --datanode -D %s%s%s\n"
 			 "or \n"
 			 "    %s%s%spg_ctl%s start -D %s%s%s -Z datanode -l logfile\n\n"),

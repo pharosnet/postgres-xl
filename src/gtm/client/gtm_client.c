@@ -60,17 +60,12 @@ static int abort_transaction_multi_internal(GTM_Conn *conn, int txn_count, Globa
 static int open_sequence_internal(GTM_Conn *conn, GTM_SequenceKey key, GTM_Sequence increment,
 								  GTM_Sequence minval, GTM_Sequence maxval,
 								  GTM_Sequence startval, bool cycle, bool is_backup);
-#ifdef XCP
 static int get_next_internal(GTM_Conn *conn, GTM_SequenceKey key,
 				  char *coord_name, int coord_procid, GTM_Sequence range,
 				  GTM_Sequence *result, GTM_Sequence *rangemax, bool is_backup);
 static int set_val_internal(GTM_Conn *conn, GTM_SequenceKey key,
 				 char *coord_name, int coord_procid, GTM_Sequence nextval,
 				 bool iscalled, bool is_backup);
-#else
-static GTM_Sequence get_next_internal(GTM_Conn *conn, GTM_SequenceKey key, bool is_backup);
-static int set_val_internal(GTM_Conn *conn, GTM_SequenceKey key, GTM_Sequence nextval, bool iscalled, bool is_backup);
-#endif
 static int reset_sequence_internal(GTM_Conn *conn, GTM_SequenceKey key, bool is_backup);
 static int commit_transaction_internal(GTM_Conn *conn, GlobalTransactionId gxid,
 		int waited_xid_count,
@@ -1348,7 +1343,6 @@ send_failed:
 	return -1;
 }
 
-#ifdef XCP
 /*
  * Request from GTM current value of the specified sequence in the specified
  * distributed session.
@@ -1360,14 +1354,9 @@ send_failed:
 int
 get_current(GTM_Conn *conn, GTM_SequenceKey key,
 			char *coord_name, int coord_procid, GTM_Sequence *result)
-#else
-GTM_Sequence
-get_current(GTM_Conn *conn, GTM_SequenceKey key)
-#endif
 {
 	GTM_Result *res = NULL;
 	time_t finish_time;
-#ifdef XCP
 	int	coord_namelen = coord_name ? strlen(coord_name) : 0;
 
 	/* Start the message. */
@@ -1379,14 +1368,6 @@ get_current(GTM_Conn *conn, GTM_SequenceKey key)
 		(coord_namelen > 0 && gtmpqPutnchar(coord_name, coord_namelen, conn)) ||
 		gtmpqPutInt(coord_procid, 4, conn))
 		goto send_failed;
-#else
-	 /* Start the message. */
-	if (gtmpqPutMsgStart('C', true, conn) ||
-		gtmpqPutInt(MSG_SEQUENCE_GET_CURRENT, sizeof (GTM_MessageType), conn) ||
-		gtmpqPutInt(key->gsk_keylen, 4, conn) ||
-		gtmpqPutnchar(key->gsk_key, key->gsk_keylen, conn))
-		goto send_failed;
-#endif
 
 	/* Finish the message. */
 	if (gtmpqPutMsgEnd(conn))
@@ -1404,30 +1385,18 @@ get_current(GTM_Conn *conn, GTM_SequenceKey key)
 	if ((res = GTMPQgetResult(conn)) == NULL)
 		goto receive_failed;
 
-#ifdef XCP
 	if (res->gr_status == GTM_RESULT_OK)
 		*result = res->gr_resdata.grd_seq.seqval;
 
 	return res->gr_status;
-#else
-	if (res->gr_status == GTM_RESULT_OK)
-		return res->gr_resdata.grd_seq.seqval;
-	else
-		return InvalidSequenceValue;
-#endif
 
 receive_failed:
 send_failed:
 	conn->result = makeEmptyResultIfIsNull(conn->result);
 	conn->result->gr_status = GTM_RESULT_COMM_ERROR;
-#ifdef XCP
 	return GTM_RESULT_COMM_ERROR;
-#else
-	return -1;
-#endif
 }
 
-#ifdef XCP
 /*
  * Submit to GTM new next value of the specified sequence in the specified
  * distributed session. The nextval parameter is the new value, if is called
@@ -1452,46 +1421,24 @@ bkup_set_val(GTM_Conn *conn, GTM_SequenceKey key, char *coord_name,
 	return set_val_internal(conn, key, coord_name, coord_procid, nextval,
 							iscalled, true);
 }
-#else
-int
-set_val(GTM_Conn *conn, GTM_SequenceKey key, GTM_Sequence nextval, bool iscalled)
-{
-	return set_val_internal(conn, key, nextval, iscalled, false);
-}
 
-int
-bkup_set_val(GTM_Conn *conn, GTM_SequenceKey key, GTM_Sequence nextval, bool iscalled)
-{
-	return set_val_internal(conn, key, nextval, iscalled, true);
-}
-#endif
-
-#ifdef XCP
 static int
 set_val_internal(GTM_Conn *conn, GTM_SequenceKey key,
 				 char *coord_name, int coord_procid, GTM_Sequence nextval,
 				 bool iscalled, bool is_backup)
-#else
-static int
-set_val_internal(GTM_Conn *conn, GTM_SequenceKey key, GTM_Sequence nextval, bool iscalled, bool is_backup)
-#endif
 {
 	GTM_Result *res = NULL;
     time_t finish_time;
-#ifdef XCP
 	int	coord_namelen = coord_name ? strlen(coord_name) : 0;
-#endif
 
 	/* Start the message. */
 	if (gtmpqPutMsgStart('C', true, conn) ||
 		gtmpqPutInt(is_backup ? MSG_BKUP_SEQUENCE_SET_VAL : MSG_SEQUENCE_SET_VAL, sizeof (GTM_MessageType), conn) ||
 		gtmpqPutInt(key->gsk_keylen, 4, conn) ||
 		gtmpqPutnchar(key->gsk_key, key->gsk_keylen, conn) ||
-#ifdef XCP
 		gtmpqPutInt(coord_namelen, 4, conn) ||
 		(coord_namelen > 0 && gtmpqPutnchar(coord_name, coord_namelen, conn)) ||
 		gtmpqPutInt(coord_procid, 4, conn) ||
-#endif
 		gtmpqPutnchar((char *)&nextval, sizeof (GTM_Sequence), conn) ||
 		gtmpqPutc(iscalled, conn))
 		goto send_failed;
@@ -1522,14 +1469,9 @@ receive_failed:
 send_failed:
 	conn->result = makeEmptyResultIfIsNull(conn->result);
 	conn->result->gr_status = GTM_RESULT_COMM_ERROR;
-#ifdef XCP
 	return GTM_RESULT_COMM_ERROR;
-#else
-	return -1;
-#endif
 }
 
-#ifdef XCP
 /*
  * Rexuest from GTM next value of the specified sequence.
  * Function returns GTM_RESULT_OK if it succeedes, it sets the *result parameter
@@ -1554,33 +1496,14 @@ bkup_get_next(GTM_Conn *conn, GTM_SequenceKey key,
 	return get_next_internal(conn, key, coord_name, coord_procid,
 							 range, result, rangemax, true);
 }
-#else
-GTM_Sequence
-get_next(GTM_Conn *conn, GTM_SequenceKey key)
-{
-	return get_next_internal(conn, key, false);
-}
 
-GTM_Sequence
-bkup_get_next(GTM_Conn *conn, GTM_SequenceKey key)
-{
-	return get_next_internal(conn, key, true);
-}
-#endif
-
-#ifdef XCP
 static int
 get_next_internal(GTM_Conn *conn, GTM_SequenceKey key,
 				  char *coord_name, int coord_procid, GTM_Sequence range,
 				  GTM_Sequence *result, GTM_Sequence *rangemax, bool is_backup)
-#else
-static GTM_Sequence
-get_next_internal(GTM_Conn *conn, GTM_SequenceKey key, bool is_backup)
-#endif
 {
 	GTM_Result *res = NULL;
 	time_t finish_time;
-#ifdef XCP
 	int	coord_namelen = coord_name ? strlen(coord_name) : 0;
 
 	/* Start the message. */
@@ -1593,14 +1516,6 @@ get_next_internal(GTM_Conn *conn, GTM_SequenceKey key, bool is_backup)
 		gtmpqPutInt(coord_procid, 4, conn) ||
 		gtmpqPutnchar((char *)&range, sizeof (GTM_Sequence), conn))
 		goto send_failed;
-#else
-	/* Start the message. */
-	if (gtmpqPutMsgStart('C', true, conn) ||
-		gtmpqPutInt(is_backup ? MSG_BKUP_SEQUENCE_GET_NEXT : MSG_SEQUENCE_GET_NEXT, sizeof (GTM_MessageType), conn) ||
-		gtmpqPutInt(key->gsk_keylen, 4, conn) ||
-		gtmpqPutnchar(key->gsk_key, key->gsk_keylen, conn))
-		goto send_failed;
-#endif
 
 	/* Finish the message. */
 	if (gtmpqPutMsgEnd(conn))
@@ -1620,19 +1535,12 @@ get_next_internal(GTM_Conn *conn, GTM_SequenceKey key, bool is_backup)
 		if ((res = GTMPQgetResult(conn)) == NULL)
 			goto receive_failed;
 
-#ifdef XCP
 		if (res->gr_status == GTM_RESULT_OK)
 		{
 			*result = res->gr_resdata.grd_seq.seqval;
 			*rangemax = res->gr_resdata.grd_seq.rangemax;
 		}
 		return res->gr_status;
-#else
-		if (res->gr_status == GTM_RESULT_OK)
-			return res->gr_resdata.grd_seq.seqval;
-		else
-			return InvalidSequenceValue;
-#endif
 	}
 	return GTM_RESULT_OK;
 
@@ -1640,11 +1548,7 @@ receive_failed:
 send_failed:
 	conn->result = makeEmptyResultIfIsNull(conn->result);
 	conn->result->gr_status = GTM_RESULT_COMM_ERROR;
-#ifdef XCP
 	return GTM_RESULT_COMM_ERROR;
-#else
-	return -1;
-#endif
 }
 
 int
@@ -2466,8 +2370,6 @@ send_failed:
 	return -1;
 }
 
-
-#ifdef XCP
 /*
  * Submit to GTM information about started distributed session.
  * The information is the session identifier consisting of coordinator name and
@@ -2528,4 +2430,3 @@ send_failed:
 	conn->result->gr_status = GTM_RESULT_COMM_ERROR;
 	return -1;
 }
-#endif

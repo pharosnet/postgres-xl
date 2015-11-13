@@ -1021,18 +1021,9 @@ pgxc_database_size(Oid dbOid)
 Datum
 pgxc_execute_on_nodes(int numnodes, Oid *nodelist, char *query)
 {
-#ifndef XCP
-	StringInfoData  buf;
-	int             ret;
-	TupleDesc       spi_tupdesc;
-#endif
 	int             i;
 	int64           total_size = 0;
 	int64           size = 0;
-#ifndef XCP
-	bool            isnull;
-	char           *nodename;
-#endif
 	Datum			datum = (Datum) 0;
 
 #ifdef XCP

@@ -349,9 +349,7 @@ static void emptyDatanodeSlaves()
 	reset_var_val(VAR_datanodeSlave, "n");
 	reset_var(VAR_datanodeSlaveServers);
 	reset_var(VAR_datanodeSlavePorts);
-#ifdef XCP	
 	reset_var(VAR_datanodeSlavePoolerPorts);
-#endif	
 	reset_var(VAR_datanodeSlaveDirs);
 	reset_var(VAR_datanodeArchLogDirs);
 	for (ii = 0; ii < arraySizeName(VAR_datanodeSlaveServers); ii++)
@@ -837,9 +835,7 @@ static void verifyResource(void)
 #endif
 	char *datanodeMasterVars[] = {VAR_datanodeNames, 
 								  VAR_datanodePorts, 
-#ifdef XCP
 								  VAR_datanodePoolerPorts, 
-#endif
 								  VAR_datanodeMasterServers,
 								  VAR_datanodeMasterDirs, 
 								  VAR_datanodeMaxWALSenders, 
@@ -847,9 +843,7 @@ static void verifyResource(void)
 	char *datanodeSlaveVars[] = {VAR_datanodeNames,
 								 VAR_datanodeSlaveServers,
 								 VAR_datanodeSlavePorts,
-#ifdef XCP
-								  VAR_datanodeSlavePoolerPorts, 
-#endif
+								 VAR_datanodeSlavePoolerPorts, 
 								 VAR_datanodeSlaveDirs,
 								 VAR_datanodeArchLogDirs,
 								 NULL};
@@ -1059,18 +1053,9 @@ void check_configuration(void)
 	    !find_var(VAR_coordMasterServers) || !find_var(VAR_coordMasterDirs))
 		elog(ERROR, "ERROR: Coordinator master configuration is missing. coordNames, coodPorts, poolerPorts, coordMasterPorts or coordMasterDirs\n");
 	/* Datanode Master */
-#ifdef XCP
 	if (!find_var(VAR_datanodeNames) || !find_var(VAR_datanodePorts) || !find_var(VAR_datanodeMasterServers) ||
-#else
-	if (!find_var(VAR_datanodeNames) || !find_var(VAR_datanodePorts) || !find_var(VAR_datanodePoolerPorts) || !find_var(VAR_datanodeMasterServers) ||
-#endif
-
 		!find_var(VAR_datanodeMasterDirs))
-#ifdef XCP
 		elog(ERROR, "ERROR: Datanode master configuration is missing. datanodeNames, datanodePorts, datanodePoolerPorts, datanodeMasterPorts or datanodeMasterDirs\n");
-#else
-		elog(ERROR, "ERROR: Datanode master configuration is missing. datanodeNames, datanodePorts, datanodeMasterPorts or datanodeMasterDirs\n");
-#endif
 	handle_no_slaves();
 	verifyResource();
 	makeServerList();

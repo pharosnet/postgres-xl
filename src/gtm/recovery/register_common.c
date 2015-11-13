@@ -357,18 +357,15 @@ Recovery_PGXCNodeUnregister(GTM_PGXCNodeType type, char *node_name, bool in_reco
 			Recovery_RecordRegisterInfo(nodeinfo, false);
 
 		pfree(nodeinfo->nodename);
-#ifdef XCP
 		if (nodeinfo->ipaddress)
-#endif
-		pfree(nodeinfo->ipaddress);
-#ifdef XCP
+			pfree(nodeinfo->ipaddress);
+
 		if (nodeinfo->datafolder)
-#endif
-		pfree(nodeinfo->datafolder);
-#ifdef XCP
+			pfree(nodeinfo->datafolder);
+
 		if (nodeinfo->sessions)
 			pfree(nodeinfo->sessions);
-#endif
+
 		pfree(nodeinfo);
 	}
 	else
@@ -391,11 +388,7 @@ Recovery_PGXCNodeRegister(GTM_PGXCNodeType	type,
 	GTM_PGXCNodeInfo *nodeinfo = NULL;
 	int errcode = 0;
 
-#ifdef XCP
 	nodeinfo = (GTM_PGXCNodeInfo *) palloc0(sizeof(GTM_PGXCNodeInfo));
-#else
-	nodeinfo = (GTM_PGXCNodeInfo *) palloc(sizeof (GTM_PGXCNodeInfo));
-#endif
 
 	if (nodeinfo == NULL)
 		ereport(ERROR, (ENOMEM, errmsg("Out of memory")));
@@ -653,81 +646,6 @@ Recovery_RecordRegisterInfo(GTM_PGXCNodeInfo *nodeinfo, bool is_register)
 }
 
 void
-Recovery_RestoreRegisterInfo(void)
-{
-#ifndef XCP
-	int magic;
-	int ctlfd;
-
-	/* This is made when GTM/Proxy restarts, so it is not necessary to take a lock */
-	ctlfd = open(GTMPGXCNodeFile, O_RDONLY);
-
-	if (ctlfd == -1)
-		return;
-
-	while (read(ctlfd, &magic, sizeof (NodeRegisterMagic)) == sizeof (NodeRegisterMagic))
-	{
-		GTM_PGXCNodeType	type;
-		GTM_PGXCNodePort	port;
-		GTM_PGXCNodeStatus	status;
-		char			*ipaddress, *datafolder, *nodename, *proxyname;
-		int			len;
-
-		if (magic != NodeRegisterMagic && magic != NodeUnregisterMagic)
-		{
-			elog(WARNING, "Start magic mismatch %x", magic);
-			break;
-		}
-
-		read(ctlfd, &type, sizeof (GTM_PGXCNodeType));
-		/* Read size of nodename string */
-		read(ctlfd, &len, sizeof (uint32));
-		nodename = (char *) palloc(len);
-		read(ctlfd, nodename, len);
-
-		if (magic == NodeRegisterMagic)
-		{
-			read(ctlfd, &port, sizeof (GTM_PGXCNodePort));
-
-			/* Read size of proxyname string */
-			read(ctlfd, &len, sizeof (uint32));
-			proxyname = (char *) palloc(len);
-			read(ctlfd, proxyname, len);
-
-			read(ctlfd, &status, sizeof (GTM_PGXCNodeStatus));
-
-			/* Read size of ipaddress string */
-			read(ctlfd, &len, sizeof (uint32));
-			ipaddress = (char *) palloc(len);
-			read(ctlfd, ipaddress, len);
-
-			/* Read size of datafolder string */
-			read(ctlfd, &len, sizeof (uint32));
-			datafolder = (char *) palloc(len);
-			read(ctlfd, datafolder, len);
-		}
-
-		/* Rebuild based on the records */
-		if (magic == NodeRegisterMagic)
-			Recovery_PGXCNodeRegister(type, nodename, port, proxyname, status,
-									  ipaddress, datafolder, true, 0);
-		else
-			Recovery_PGXCNodeUnregister(type, nodename, true, 0);
-
-		read(ctlfd, &magic, sizeof(NodeEndMagic));
-
-		if (magic != NodeEndMagic)
-		{
-			elog(WARNING, "Corrupted control file");
-				return;
-		}
-	}
-
-	close(ctlfd);
-#endif
-}
-
-void
 Recovery_SaveRegisterFileName(char *dir)
 {
 	if (!dir)
@@ -809,8 +727,6 @@ Recovery_PGXCNodeBackendDisconnect(GTM_PGXCNodeType type, char *nodename, int so
 	return errcode;
 }
 
-
-#ifdef XCP
 /*
  * Register active distributed session. If another session with specified
  * BackendId already exists return the PID of the session, so caller could clean
@@ -893,8 +809,6 @@ Recovery_PGXCNodeRegisterCoordProcess(char *coord_node, int coord_procid,
 
 	return 0;
 }
-#endif
-
 
 /*
  * Process MSG_BACKEND_DISCONNECT

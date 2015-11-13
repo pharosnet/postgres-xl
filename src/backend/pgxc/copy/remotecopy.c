@@ -46,10 +46,6 @@ RemoteCopy_GetRelationLoc(RemoteCopyData *state,
 						  Relation rel,
                           List *attnums)
 {
-#ifndef XCP
-	ExecNodes  *exec_nodes = makeNode(ExecNodes);
-#endif
-
 	/*
 	 * If target table does not exists on nodes (e.g. system table)
 	 * the location info returned is NULL. This is the criteria, when
@@ -57,7 +53,6 @@ RemoteCopy_GetRelationLoc(RemoteCopyData *state,
 	 */
 	state->rel_loc = GetRelationLocInfo(RelationGetRelid(rel));
 
-#ifdef XCP
 	if (state->rel_loc &&
 			AttributeNumberIsValid(state->rel_loc->partAttrNum))
 	{
@@ -73,58 +68,6 @@ RemoteCopy_GetRelationLoc(RemoteCopyData *state,
 		state->dist_type = InvalidOid;
 
 	state->locator = NULL;
-#else
-	if (state->rel_loc)
-	{
-		/*
-		 * Pick up one node only
-		 * This case corresponds to a replicated table with COPY TO
-		 *
-		 */
-		exec_nodes = makeNode(ExecNodes);
-		if (!state->is_from &&
-			IsLocatorReplicated(state->rel_loc->locatorType))
-			exec_nodes->nodeList = GetPreferredReplicationNode(state->rel_loc->nodeList);
-		else
-		{
-			/* All nodes necessary */
-			exec_nodes->nodeList = list_concat(exec_nodes->nodeList, state->rel_loc->nodeList);
-		}
-	}
-
-	state->idx_dist_by_col = -1;
-	if (state->rel_loc && state->rel_loc->partAttrNum != 0)
-	{
-		/*
-		 * Find the column used as key for data distribution.
-		 * First scan attributes of tuple descriptor with the list
-		 * of attributes used in COPY if any list is specified.
-		 * If no list is specified, set this value to the one of
-		 * locator information.
-		 */
-		if (attnums != NIL)
-		{
-			ListCell   *cur;
-			foreach(cur, attnums)
-			{
-				int attnum = lfirst_int(cur);
-
-				if (state->rel_loc->partAttrNum == attnum)
-				{
-					state->idx_dist_by_col = attnum - 1;
-					break;
-				}
-			}
-		}
-		else
-		{
-			state->idx_dist_by_col = state->rel_loc->partAttrNum - 1;
-		}
-	}
-
-	/* Then save obtained result */
-	state->exec_nodes = exec_nodes;
-#endif
 }
 
 /*
@@ -347,13 +290,8 @@ FreeRemoteCopyData(RemoteCopyData *state)
 	/* Leave if nothing */
 	if (state == NULL)
 		return;
-#ifdef XCP
 	if (state->locator)
 		freeLocator(state->locator);
-#else
-	if (state->connections)
-		pfree(state->connections);
-#endif
 	if (state->query_buf.data)
 		pfree(state->query_buf.data);
 	FreeRelationLocInfo(state->rel_loc);

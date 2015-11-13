@@ -196,17 +196,6 @@ static bool
 _equalAggref(const Aggref *a, const Aggref *b)
 {
 	COMPARE_SCALAR_FIELD(aggfnoid);
-#ifndef XCP
-	/*
-	 * In XCP ignore aggtype difference because Phase 1 of aggregate have
-	 * aggtype set to aggtrantype
-	 */
-	COMPARE_SCALAR_FIELD(aggtype);
-#ifdef PGXC
-	COMPARE_SCALAR_FIELD(aggtrantype);
-	COMPARE_SCALAR_FIELD(agghas_collectfn);
-#endif /* PGXC */
-#endif /* XCP */
 	COMPARE_SCALAR_FIELD(aggcollid);
 	COMPARE_SCALAR_FIELD(inputcollid);
 	COMPARE_NODE_FIELD(aggdirectargs);
@@ -936,12 +925,6 @@ _equalQuery(const Query *a, const Query *b)
 	COMPARE_NODE_FIELD(rowMarks);
 	COMPARE_NODE_FIELD(setOperations);
 	COMPARE_NODE_FIELD(constraintDeps);
-
-#ifdef PGXC
-#ifndef XCP
-	COMPARE_SCALAR_FIELD(is_ins_child_sel_parent);
-#endif
-#endif
 
 	return true;
 }
@@ -3292,11 +3275,9 @@ equal(const void *a, const void *b)
 		case T_BarrierStmt:
 			retval = _equalBarrierStmt(a, b);
 			break;
-#ifdef XCP
 		case T_PauseClusterStmt:
 			retval = _equalPauseClusterStmt(a, b);
 			break;
-#endif
 		case T_AlterNodeStmt:
 			retval = _equalAlterNodeStmt(a, b);
 			break;

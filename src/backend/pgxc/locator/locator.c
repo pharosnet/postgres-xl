@@ -85,11 +85,6 @@ struct _Locator
 };
 #endif
 
-#ifndef XCP
-static Expr *pgxc_find_distcol_expr(Index varno, PartAttrNumber partAttrNum,
-												Node *quals);
-#endif
-
 Oid		primary_data_node = InvalidOid;
 int		num_preferred_data_nodes = 0;
 Oid		preferred_data_node[MAX_PREFERRED_NODES];
@@ -174,8 +169,6 @@ static const unsigned int xc_mod_r[][6] =
   {0x7fffffff, 0x7fffffff, 0x7fffffff, 0x7fffffff, 0x7fffffff, 0x7fffffff}
 };
 
-
-#ifdef XCP
 /*
  * GetAnyDataNode
  * Pick any data node from given set, but try a preferred node
@@ -226,47 +219,6 @@ GetAnyDataNode(Bitmapset *nodes)
 	 */
 	return members[((unsigned int) random()) % nmembers];
 }
-#else
-/*
- * GetPreferredReplicationNode
- * Pick any Datanode from given list, however fetch a preferred node first.
- */
-List *
-GetPreferredReplicationNode(List *relNodes)
-{
-	/*
-	 * Try to find the first node in given list relNodes
-	 * that is in the list of preferred nodes
-	 */
-	if (num_preferred_data_nodes != 0)
-	{
-		ListCell	*item;
-		foreach(item, relNodes)
-		{
-			int		relation_nodeid = lfirst_int(item);
-			int		i;
-			for (i = 0; i < num_preferred_data_nodes; i++)
-			{
-#ifdef XCP
-				char nodetype = PGXC_NODE_DATANODE;
-				int nodeid = PGXCNodeGetNodeId(preferred_data_node[i],
-											   &nodetype);
-#else
-				int nodeid = PGXCNodeGetNodeId(preferred_data_node[i], PGXC_NODE_DATANODE);
-#endif
-
-				/* OK, found one */
-				if (nodeid == relation_nodeid)
-					return lappend_int(NULL, nodeid);
-			}
-		}
-	}
-
-	/* Nothing found? Return the first one in relation node list */
-	return lappend_int(NULL, linitial_int(relNodes));
-}
-#endif
-
 
 /*
  * compute_modulo
@@ -321,23 +273,6 @@ compute_modulo(unsigned int numerator, unsigned int denominator)
 	return numerator % denominator;
 }
 
-#ifndef XCP
-/*
- * get_node_from_modulo - determine node based on modulo
- *
- * compute_modulo
- */
-static int
-get_node_from_modulo(int modulo, List *nodeList)
-{
-	if (nodeList == NIL || modulo >= list_length(nodeList) || modulo < 0)
-		ereport(ERROR, (errmsg("Modulo value out of range\n")));
-
-	return list_nth_int(nodeList, modulo);
-}
-#endif
-
-
 /*
  * GetRelationDistColumn - Returns the name of the hash or modulo distribution column
  * First hash distribution is checked
@@ -364,39 +299,7 @@ char *pColName;
 bool
 IsTypeHashDistributable(Oid col_type)
 {
-#ifdef XCP
 	return (hash_func_ptr(col_type) != NULL);
-#else
-	if(col_type == INT8OID
-	|| col_type == INT2OID
-	|| col_type == OIDOID
-	|| col_type == INT4OID
-	|| col_type == BOOLOID
-	|| col_type == CHAROID
-	|| col_type == NAMEOID
-	|| col_type == INT2VECTOROID
-	|| col_type == TEXTOID
-	|| col_type == OIDVECTOROID
-	|| col_type == FLOAT4OID
-	|| col_type == FLOAT8OID
-	|| col_type == ABSTIMEOID
-	|| col_type == RELTIMEOID
-	|| col_type == CASHOID
-	|| col_type == BPCHAROID
-	|| col_type == BYTEAOID
-	|| col_type == VARCHAROID
-	|| col_type == DATEOID
-	|| col_type == TIMEOID
-	|| col_type == TIMESTAMPOID
-	|| col_type == TIMESTAMPTZOID
-	|| col_type == INTERVALOID
-	|| col_type == TIMETZOID
-	|| col_type == NUMERICOID
-	)
-		return true;
-
-	return false;
-#endif
 }
 
 /*
@@ -483,39 +386,7 @@ IsDistColumnForRelId(Oid relid, char *part_col_name)
 bool
 IsTypeModuloDistributable(Oid col_type)
 {
-#ifdef XCP
 	return (modulo_value_len(col_type) != -1);
-#else
-	if(col_type == INT8OID
-	|| col_type == INT2OID
-	|| col_type == OIDOID
-	|| col_type == INT4OID
-	|| col_type == BOOLOID
-	|| col_type == CHAROID
-	|| col_type == NAMEOID
-	|| col_type == INT2VECTOROID
-	|| col_type == TEXTOID
-	|| col_type == OIDVECTOROID
-	|| col_type == FLOAT4OID
-	|| col_type == FLOAT8OID
-	|| col_type == ABSTIMEOID
-	|| col_type == RELTIMEOID
-	|| col_type == CASHOID
-	|| col_type == BPCHAROID
-	|| col_type == BYTEAOID
-	|| col_type == VARCHAROID
-	|| col_type == DATEOID
-	|| col_type == TIMEOID
-	|| col_type == TIMESTAMPOID
-	|| col_type == TIMESTAMPTZOID
-	|| col_type == INTERVALOID
-	|| col_type == TIMETZOID
-	|| col_type == NUMERICOID
-	)
-		return true;
-
-	return false;
-#endif
 }
 
 /*
@@ -586,13 +457,8 @@ GetRoundRobinNode(Oid relid)
 	int			ret_node;
 	Relation	rel = relation_open(relid, AccessShareLock);
 
-#ifdef XCP
     Assert (IsLocatorReplicated(rel->rd_locator_info->locatorType) ||
 			rel->rd_locator_info->locatorType == LOCATOR_TYPE_RROBIN);
-#else
-    Assert (rel->rd_locator_info->locatorType == LOCATOR_TYPE_REPLICATED ||
-			rel->rd_locator_info->locatorType == LOCATOR_TYPE_RROBIN);
-#endif
 
 	ret_node = lfirst_int(rel->rd_locator_info->roundRobinNode);
 
@@ -625,14 +491,9 @@ IsTableDistOnPrimary(RelationLocInfo *rel_loc_info)
 
 	foreach(item, rel_loc_info->nodeList)
 	{
-#ifdef XCP
 		char ntype = PGXC_NODE_DATANODE;
 		if (PGXCNodeGetNodeId(primary_data_node, &ntype) == lfirst_int(item))
 			return true;
-#else
-		if (PGXCNodeGetNodeId(primary_data_node, PGXC_NODE_DATANODE) == lfirst_int(item))
-			return true;
-#endif
 	}
 	return false;
 }
@@ -671,241 +532,6 @@ IsLocatorInfoEqual(RelationLocInfo *rel_loc_info1, RelationLocInfo *rel_loc_info
 	/* Everything is equal */
 	return true;
 }
-
-
-#ifndef XCP
-/*
- * GetRelationNodes
- *
- * Get list of relation nodes
- * If the table is replicated and we are reading, we can just pick one.
- * If the table is partitioned, we apply partitioning column value, if possible.
- *
- * If the relation is partitioned, partValue will be applied if present
- * (indicating a value appears for partitioning column), otherwise it
- * is ignored.
- *
- * preferredNodes is only used when for replicated tables. If set, it will
- * use one of the nodes specified if the table is replicated on it.
- * This helps optimize for avoiding introducing additional nodes into the
- * transaction.
- *
- * The returned List is a copy, so it should be freed when finished.
- */
-ExecNodes *
-GetRelationNodes(RelationLocInfo *rel_loc_info, Datum valueForDistCol,
-				bool isValueNull, Oid typeOfValueForDistCol,
-				RelationAccessType accessType)
-{
-	ExecNodes	*exec_nodes;
-	long		hashValue;
-	int		modulo;
-	int		nodeIndex;
-	int		k;
-
-	if (rel_loc_info == NULL)
-		return NULL;
-
-	exec_nodes = makeNode(ExecNodes);
-	exec_nodes->baselocatortype = rel_loc_info->locatorType;
-
-	switch (rel_loc_info->locatorType)
-	{
-		case LOCATOR_TYPE_REPLICATED:
-
-			if (accessType == RELATION_ACCESS_UPDATE || accessType == RELATION_ACCESS_INSERT)
-			{
-				/* we need to write to all synchronously */
-				exec_nodes->nodeList = list_concat(exec_nodes->nodeList, rel_loc_info->nodeList);
-
-				/*
-				 * Write to primary node first, to reduce chance of a deadlock
-				 * on replicated tables. If -1, do not use primary copy.
-				 */
-				if (IsTableDistOnPrimary(rel_loc_info)
-						&& exec_nodes->nodeList
-						&& list_length(exec_nodes->nodeList) > 1) /* make sure more than 1 */
-				{
-					exec_nodes->primarynodelist = lappend_int(NULL,
-							  PGXCNodeGetNodeId(primary_data_node, PGXC_NODE_DATANODE));
-					list_delete_int(exec_nodes->nodeList,
-									PGXCNodeGetNodeId(primary_data_node, PGXC_NODE_DATANODE));
-				}
-			}
-			else
-			{
-				/*
-				 * In case there are nodes defined in location info, initialize node list
-				 * with a default node being the first node in list.
-				 * This node list may be changed if a better one is found afterwards.
-				 */
-				if (rel_loc_info->nodeList)
-					exec_nodes->nodeList = lappend_int(NULL,
-													   linitial_int(rel_loc_info->nodeList));
-
-				if (accessType == RELATION_ACCESS_READ_FOR_UPDATE &&
-					IsTableDistOnPrimary(rel_loc_info))
-				{
-					/*
-					 * We should ensure row is locked on the primary node to
-					 * avoid distributed deadlock if updating the same row
-					 * concurrently
-					 */
-					exec_nodes->nodeList = lappend_int(NULL,
-						   PGXCNodeGetNodeId(primary_data_node, PGXC_NODE_DATANODE));
-				}
-				else if (num_preferred_data_nodes > 0)
-				{
-					ListCell *item;
-
-					foreach(item, rel_loc_info->nodeList)
-					{
-						for (k = 0; k < num_preferred_data_nodes; k++)
-						{
-							if (PGXCNodeGetNodeId(preferred_data_node[k],
-												  PGXC_NODE_DATANODE) == lfirst_int(item))
-							{
-								exec_nodes->nodeList = lappend_int(NULL,
-																   lfirst_int(item));
-								break;
-							}
-						}
-					}
-				}
-
-				/* If nothing found just read from one of them. Use round robin mechanism */
-				if (exec_nodes->nodeList == NULL)
-					exec_nodes->nodeList = lappend_int(NULL,
-													   GetRoundRobinNode(rel_loc_info->relid));
-			}
-			break;
-
-		case LOCATOR_TYPE_HASH:
-		case LOCATOR_TYPE_MODULO:
-			if (!isValueNull)
-			{
-				hashValue = compute_hash(typeOfValueForDistCol, valueForDistCol,
-										 rel_loc_info->locatorType);
-				modulo = compute_modulo(abs(hashValue), list_length(rel_loc_info->nodeList));
-				nodeIndex = get_node_from_modulo(modulo, rel_loc_info->nodeList);
-				exec_nodes->nodeList = lappend_int(NULL, nodeIndex);
-			}
-			else
-			{
-				if (accessType == RELATION_ACCESS_INSERT)
-					/* Insert NULL to first node*/
-					exec_nodes->nodeList = lappend_int(NULL, linitial_int(rel_loc_info->nodeList));
-				else
-					exec_nodes->nodeList = list_concat(exec_nodes->nodeList, rel_loc_info->nodeList);
-			}
-			break;
-
-		case LOCATOR_TYPE_SINGLE:
-			/* just return first (there should only be one) */
-			exec_nodes->nodeList = list_concat(exec_nodes->nodeList,
-											   rel_loc_info->nodeList);
-			break;
-
-		case LOCATOR_TYPE_RROBIN:
-			/* round robin, get next one */
-			if (accessType == RELATION_ACCESS_INSERT)
-			{
-				/* write to just one of them */
-				exec_nodes->nodeList = lappend_int(NULL, GetRoundRobinNode(rel_loc_info->relid));
-			}
-			else
-			{
-				/* we need to read from all */
-				exec_nodes->nodeList = list_concat(exec_nodes->nodeList,
-												   rel_loc_info->nodeList);
-			}
-			break;
-
-			/* PGXCTODO case LOCATOR_TYPE_RANGE: */
-			/* PGXCTODO case LOCATOR_TYPE_CUSTOM: */
-		default:
-			ereport(ERROR, (errmsg("Error: no such supported locator type: %c\n",
-								   rel_loc_info->locatorType)));
-			break;
-	}
-
-	return exec_nodes;
-}
-
-/*
- * GetRelationNodesByQuals
- * A wrapper around GetRelationNodes to reduce the node list by looking at the
- * quals. varno is assumed to be the varno of reloid inside the quals. No check
- * is made to see if that's correct.
- */
-ExecNodes *
-GetRelationNodesByQuals(Oid reloid, Index varno, Node *quals,
-						RelationAccessType relaccess)
-{
-	RelationLocInfo *rel_loc_info = GetRelationLocInfo(reloid);
-	Expr			*distcol_expr = NULL;
-	ExecNodes		*exec_nodes;
-	Datum			distcol_value;
-	bool			distcol_isnull;
-	Oid				distcol_type;
-
-	if (!rel_loc_info)
-		return NULL;
-	/*
-	 * If the table distributed by value, check if we can reduce the Datanodes
-	 * by looking at the qualifiers for this relation
-	 */
-	if (IsLocatorDistributedByValue(rel_loc_info->locatorType))
-	{
-		Oid		disttype = get_atttype(reloid, rel_loc_info->partAttrNum);
-		int32	disttypmod = get_atttypmod(reloid, rel_loc_info->partAttrNum);
-		distcol_expr = pgxc_find_distcol_expr(varno, rel_loc_info->partAttrNum,
-													quals);
-		/*
-		 * If the type of expression used to find the Datanode, is not same as
-		 * the distribution column type, try casting it. This is same as what
-		 * will happen in case of inserting that type of expression value as the
-		 * distribution column value.
-		 */
-		if (distcol_expr)
-		{
-			distcol_expr = (Expr *)coerce_to_target_type(NULL,
-													(Node *)distcol_expr,
-													exprType((Node *)distcol_expr),
-													disttype, disttypmod,
-													COERCION_ASSIGNMENT,
-													COERCE_IMPLICIT_CAST, -1);
-			/*
-			 * PGXC_FQS_TODO: We should set the bound parameters here, but we don't have
-			 * PlannerInfo struct and we don't handle them right now.
-			 * Even if constant expression mutator changes the expression, it will
-			 * only simplify it, keeping the semantics same
-			 */
-			distcol_expr = (Expr *)eval_const_expressions(NULL,
-															(Node *)distcol_expr);
-		}
-	}
-
-	if (distcol_expr && IsA(distcol_expr, Const))
-	{
-		Const *const_expr = (Const *)distcol_expr;
-		distcol_value = const_expr->constvalue;
-		distcol_isnull = const_expr->constisnull;
-		distcol_type = const_expr->consttype;
-	}
-	else
-	{
-		distcol_value = (Datum) 0;
-		distcol_isnull = true;
-		distcol_type = InvalidOid;
-	}
-
-	exec_nodes = GetRelationNodes(rel_loc_info, distcol_value,
-												distcol_isnull, distcol_type,
-												relaccess);
-	return exec_nodes;
-}
-#endif
 
 /*
  * ConvertToLocatorType
@@ -1053,19 +679,12 @@ RelationBuildLocator(Relation rel)
 
 	relationLocInfo->nodeList = NIL;
 
-#ifdef XCP
 	for (j = 0; j < pgxc_class->nodeoids.dim1; j++)
 	{
 		char ntype = PGXC_NODE_DATANODE;
 		int nid = PGXCNodeGetNodeId(pgxc_class->nodeoids.values[j], &ntype);
 		relationLocInfo->nodeList = lappend_int(relationLocInfo->nodeList, nid);
 	}
-#else
-	for (j = 0; j < pgxc_class->nodeoids.dim1; j++)
-		relationLocInfo->nodeList = lappend_int(relationLocInfo->nodeList,
-												PGXCNodeGetNodeId(pgxc_class->nodeoids.values[j],
-																  PGXC_NODE_DATANODE));
-#endif
 
 	/*
 	 * If the locator type is round robin, we set a node to
@@ -1073,11 +692,7 @@ RelationBuildLocator(Relation rel)
 	 * we choose a node to use for balancing reads.
 	 */
 	if (relationLocInfo->locatorType == LOCATOR_TYPE_RROBIN
-#ifdef XCP
 		|| IsLocatorReplicated(relationLocInfo->locatorType))
-#else
-		|| relationLocInfo->locatorType == LOCATOR_TYPE_REPLICATED)
-#endif
 	{
 		int offset;
 		/*
@@ -1876,104 +1491,5 @@ int
 getLocatorNodeCount(Locator *self)
 {
 	return self->nodeCount;
-}
-#endif
-
-
-#ifndef XCP
-/*
- * pgxc_find_distcol_expr
- * Search through the quals provided and find out an expression which will give
- * us value of distribution column if exists in the quals. Say for a table
- * tab1 (val int, val2 int) distributed by hash(val), a query "SELECT * FROM
- * tab1 WHERE val = fn(x, y, z) and val2 = 3", fn(x,y,z) is the expression which
- * decides the distribution column value in the rows qualified by this query.
- * Hence return fn(x, y, z). But for a query "SELECT * FROM tab1 WHERE val =
- * fn(x, y, z) || val2 = 3", there is no expression which decides the values
- * distribution column val can take in the qualified rows. So, in such cases
- * this function returns NULL.
- */
-static Expr *
-pgxc_find_distcol_expr(Index varno, PartAttrNumber partAttrNum,
-												Node *quals)
-{
-	/* Convert the qualification into list of arguments of AND */
-	List *lquals = make_ands_implicit((Expr *)quals);
-	ListCell *qual_cell;
-	/*
-	 * For every ANDed expression, check if that expression is of the form
-	 * <distribution_col> = <expr>. If so return expr.
-	 */
-	foreach(qual_cell, lquals)
-	{
-		Expr *qual_expr = (Expr *)lfirst(qual_cell);
-		OpExpr *op;
-		Expr *lexpr;
-		Expr *rexpr;
-		Var *var_expr;
-		Expr *distcol_expr;
-
-		if (!IsA(qual_expr, OpExpr))
-			continue;
-		op = (OpExpr *)qual_expr;
-		/* If not a binary operator, it can not be '='. */
-		if (list_length(op->args) != 2)
-			continue;
-
-		lexpr = linitial(op->args);
-		rexpr = lsecond(op->args);
-
-		/*
-		 * If either of the operands is a RelabelType, extract the Var in the RelabelType.
-		 * A RelabelType represents a "dummy" type coercion between two binary compatible datatypes.
-		 * If we do not handle these then our optimization does not work in case of varchar
-		 * For example if col is of type varchar and is the dist key then
-		 * select * from vc_tab where col = 'abcdefghijklmnopqrstuvwxyz';
-		 * should be shipped to one of the nodes only
-		 */
-		if (IsA(lexpr, RelabelType))
-			lexpr = ((RelabelType*)lexpr)->arg;
-		if (IsA(rexpr, RelabelType))
-			rexpr = ((RelabelType*)rexpr)->arg;
-
-		/*
-		 * If either of the operands is a Var expression, assume the other
-		 * one is distribution column expression. If none is Var check next
-		 * qual.
-		 */
-		if (IsA(lexpr, Var))
-		{
-			var_expr = (Var *)lexpr;
-			distcol_expr = rexpr;
-		}
-		else if (IsA(rexpr, Var))
-		{
-			var_expr = (Var *)rexpr;
-			distcol_expr = lexpr;
-		}
-		else
-			continue;
-		/*
-		 * If Var found is not the distribution column of required relation,
-		 * check next qual
-		 */
-		if (var_expr->varno != varno || var_expr->varattno != partAttrNum)
-			continue;
-		/*
-		 * If the operator is not an assignment operator, check next
-		 * constraint. An operator is an assignment operator if it's
-		 * mergejoinable or hashjoinable. Beware that not every assignment
-		 * operator is mergejoinable or hashjoinable, so we might leave some
-		 * oportunity. But then we have to rely on the opname which may not
-		 * be something we know to be equality operator as well.
-		 */
-		if (!op_mergejoinable(op->opno, exprType((Node *)lexpr)) &&
-			!op_hashjoinable(op->opno, exprType((Node *)lexpr)))
-			continue;
-		/* Found the distribution column expression return it */
-		return distcol_expr;
-	}
-	/* Exhausted all quals, but no distribution column expression */
-	return NULL;
 }
 #endif

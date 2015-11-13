@@ -550,14 +550,6 @@ DefineView(ViewStmt *stmt, const char *queryString)
 						view->relname)));
 	}
 
-#ifdef PGXC
-#ifndef XCP
-	/* In case view is temporary, be sure not to use 2PC on such relations */
-	if (view->relpersistence == RELPERSISTENCE_TEMP)
-		ExecSetTempObjectIncluded();
-#endif
-#endif
-
 	/*
 	 * Create the view relation
 	 *

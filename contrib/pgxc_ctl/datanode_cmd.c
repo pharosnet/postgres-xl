@@ -113,15 +113,11 @@ cmd_t *prepare_initDatanodeMaster(char *nodeName)
 	gtmPort = (gtmIdx < 0) ? sval(VAR_gtmMasterPort) : aval(VAR_gtmProxyPorts)[gtmIdx];
 	fprintf(f,
 			"port = %s\n"
-#ifdef XCP
 			"pooler_port = %s\n"
-#endif
 			"gtm_host = '%s'\n"
 			"gtm_port = %s\n",
 			aval(VAR_datanodePorts)[idx],
-#ifdef XCP
 			aval(VAR_datanodePoolerPorts)[idx],
-#endif
 			gtmHost, gtmPort);
 	fclose(f);
 	
@@ -729,11 +725,9 @@ static int failover_oneDatanode(int datanodeIdx)
 	FILE *f;
 	char timestamp[MAXTOKEN+1];
 
-#ifdef XCP	
 	char cmd[MAXLINE];
 	int	 cmdlen;
 	bool dnReconfigured;
-#endif	
 
 #	define checkRc() do{if(WEXITSTATUS(rc_local) > rc) rc = WEXITSTATUS(rc_local);}while(0)
 
@@ -749,11 +743,6 @@ static int failover_oneDatanode(int datanodeIdx)
 	else
 		elog(NOTICE, "Failover datanode %s using GTM itself\n",
 			 aval(VAR_datanodeNames)[datanodeIdx]);
-
-#ifndef XCP	
-	/* Unregister the datanode */
-	unregister_datanode(aval(VAR_datanodeNames)[datanodeIdx]);
-#endif	
 
 	/* Promote the slave */
 	rc_local = doImmediate(aval(VAR_datanodeSlaveServers)[datanodeIdx], NULL,
@@ -792,13 +781,9 @@ static int failover_oneDatanode(int datanodeIdx)
 	var_assign(&(aval(VAR_datanodeMasterDirs)[datanodeIdx]), Strdup(aval(VAR_datanodeSlaveDirs)[datanodeIdx]));
 	var_assign(&(aval(VAR_datanodeSlaveDirs)[datanodeIdx]), Strdup("none"));
 	var_assign(&(aval(VAR_datanodePorts)[datanodeIdx]), Strdup(aval(VAR_datanodeSlavePorts)[datanodeIdx]));
-#ifdef XCP	
 	var_assign(&(aval(VAR_datanodePoolerPorts)[datanodeIdx]), Strdup(aval(VAR_datanodeSlavePoolerPorts)[datanodeIdx]));
-#endif	
 	var_assign(&(aval(VAR_datanodeSlavePorts)[datanodeIdx]), Strdup("none"));
-#ifdef XCP	
 	var_assign(&(aval(VAR_datanodeSlavePoolerPorts)[datanodeIdx]), Strdup("none"));
-#endif
 	/*
 	 * Update the configuration file
 	 */
@@ -812,29 +797,21 @@ static int failover_oneDatanode(int datanodeIdx)
 			"# Updated due to the datanode failover, %s, %s\n"
 			"datanodeMasterServers=( %s )\n"
 			"datanodePorts=( %s )\n"
-#ifdef XCP
 			"datanodePoolerPorts=( %s )\n"
-#endif			
 			"datanodeMasterDirs=( %s )\n"
 			"datanodeSlaveServers=( %s )\n"
 			"datanodeSlavePorts=( %s )\n"
-#ifdef XCP			
 			"datanodeSlavePoolerPorts=( %s )\n"
-#endif			
 			"datanodeSlaveDirs=( %s )\n"
 			"# End of the update\n",
 			aval(VAR_datanodeNames)[datanodeIdx], timeStampString(timestamp, MAXTOKEN),
 			listValue(VAR_datanodeMasterServers),
 			listValue(VAR_datanodePorts),
-#ifdef XCP
 			listValue(VAR_datanodePoolerPorts),
-#endif	
 			listValue(VAR_datanodeMasterDirs),
 			listValue(VAR_datanodeSlaveServers),
 			listValue(VAR_datanodeSlavePorts),
-#ifdef XCP
 			listValue(VAR_datanodeSlavePoolerPorts),
-#endif	
 			listValue(VAR_datanodeSlaveDirs));
 	fclose(f);
 
@@ -845,7 +822,6 @@ static int failover_oneDatanode(int datanodeIdx)
 		checkRc();
 	}
 
-#ifdef XCP	
 	cmdlen = 0;
 	cmd[0] = '\0';
 	/*
@@ -881,7 +857,6 @@ static int failover_oneDatanode(int datanodeIdx)
 		cmdlen += len;
 	}
 	dnReconfigured = false;
-#endif
 	/*
 	 * Reconfigure coordinators with new datanode
 	 */
@@ -909,16 +884,12 @@ static int failover_oneDatanode(int datanodeIdx)
 		fprintf(f,
 				"ALTER NODE %s WITH (HOST='%s', PORT=%s);\n"
 				"select pgxc_pool_reload();\n"
-#ifdef XCP				
 				"%s"
-#endif				
 				"\\q\n",
 				aval(VAR_datanodeNames)[datanodeIdx],
 				aval(VAR_datanodeMasterServers)[datanodeIdx],
-				aval(VAR_datanodePorts)[datanodeIdx]
-#ifdef XCP				
-				,dnReconfigured ? "" : cmd
-#endif				
+				aval(VAR_datanodePorts)[datanodeIdx],
+				dnReconfigured ? "" : cmd
 				);
 		dnReconfigured = true;
 		pclose(f);
@@ -936,20 +907,13 @@ static int failover_oneDatanode(int datanodeIdx)
  * Add command
  *
  *-----------------------------------------------------------------------*/
-#ifdef XCP
 int add_datanodeMaster(char *name, char *host, int port, int pooler, char *dir,
 		char *restore_dname, char *extraConf, char *extraPgHbaConf)
-#else
-int add_datanodeMaster(char *name, char *host, int port, char *dir,
-		char *restore_dname, char *extraConf, char *extraPgHbaConf)
-#endif
 {
 	FILE *f, *lockf;
 	int size, idx;
 	char port_s[MAXTOKEN+1];
-#ifdef XCP
     char pooler_s[MAXTOKEN+1];
-#endif
 	int gtmPxyIdx;
 	char *gtmHost;
 	char *gtmPort;
@@ -972,19 +936,11 @@ int add_datanodeMaster(char *name, char *host, int port, char *dir,
 		elog(ERROR, "ERROR: Node name %s duplicate.\n", name);
 		return 1;
 	}
-#ifdef XCP
 	if (checkPortConflict(host, port) || checkPortConflict(host, pooler))
 	{
 		elog(ERROR, "ERROR: port numbrer (%d) or pooler port (%d) at host %s conflicts.\n", port, pooler, host);
 		return 1;
 	}
-#else
-	if (checkPortConflict(host, port))
-	{
-		elog(ERROR, "ERROR: port numbrer (%d) at host %s conflicts.\n", port, host);
-		return 1;
-	}
-#endif
 	if (checkDirConflict(host, dir))
 	{
 		elog(ERROR, "ERROR: directory \"%s\" conflicts at host %s.\n", dir, host);
@@ -995,9 +951,7 @@ int add_datanodeMaster(char *name, char *host, int port, char *dir,
 	 */
 	idx = size = arraySizeName(VAR_datanodeNames);
 	if ((arraySizeName(VAR_datanodePorts) != size) ||
-#ifdef XCP
 	    (arraySizeName(VAR_datanodePoolerPorts) != size) ||
-#endif
 		(arraySizeName(VAR_datanodeMasterServers) != size) ||
 		(arraySizeName(VAR_datanodeMasterDirs) != size) ||
 		(arraySizeName(VAR_datanodeMaxWALSenders) != size) ||
@@ -1011,16 +965,12 @@ int add_datanodeMaster(char *name, char *host, int port, char *dir,
 	if ((extendVar(VAR_datanodeNames, idx + 1, "none") != 0) ||
 		(extendVar(VAR_datanodeMasterServers, idx + 1, "none")  != 0) ||
 		(extendVar(VAR_datanodePorts, idx + 1, "none")  != 0) ||
-#ifdef XCP		
 		(extendVar(VAR_datanodePoolerPorts, idx + 1, "none")  != 0) ||
-#endif		
 		(extendVar(VAR_datanodeMasterDirs, idx + 1, "none")  != 0) ||
 		(extendVar(VAR_datanodeMaxWALSenders, idx + 1, "none")  != 0) ||
 		(extendVar(VAR_datanodeSlaveServers, idx + 1, "none")  != 0) ||
 		(extendVar(VAR_datanodeSlavePorts, idx + 1, "none")  != 0) ||
-#ifdef XCP		
 		(extendVar(VAR_datanodeSlavePoolerPorts, idx + 1, "none")  != 0) ||
-#endif		
 		(extendVar(VAR_datanodeSlaveDirs, idx + 1, "none")  != 0) ||
 		(extendVar(VAR_datanodeArchLogDirs, idx + 1, "none")  != 0) ||
 		(extendVar(VAR_datanodeSpecificExtraConfig, idx + 1, "none")  != 0) ||
@@ -1038,22 +988,16 @@ int add_datanodeMaster(char *name, char *host, int port, char *dir,
 	 * 000 We need another way to configure specific pg_hba.conf and max_wal_senders.
 	 */
 	snprintf(port_s, MAXTOKEN, "%d", port);
-#ifdef XCP
 	snprintf(pooler_s, MAXTOKEN, "%d", pooler);
-#endif
 	assign_arrayEl(VAR_datanodeNames, idx, name, NULL);
 	assign_arrayEl(VAR_datanodeMasterServers, idx, host, NULL);
 	assign_arrayEl(VAR_datanodePorts, idx, port_s, "-1");
-#ifdef XCP
 	assign_arrayEl(VAR_datanodePoolerPorts, idx, pooler_s, "-1");
-#endif
 	assign_arrayEl(VAR_datanodeMasterDirs, idx, dir, NULL);
 	assign_arrayEl(VAR_datanodeMaxWALSenders, idx, aval(VAR_datanodeMaxWALSenders)[0], NULL);	/* Could be vulnerable */
 	assign_arrayEl(VAR_datanodeSlaveServers, idx, "none", NULL);
 	assign_arrayEl(VAR_datanodeSlavePorts, idx, "-1", NULL);
-#ifdef XCP
 	assign_arrayEl(VAR_datanodeSlavePoolerPorts, idx, "-1", NULL);
-#endif
 	assign_arrayEl(VAR_datanodeSlaveDirs, idx, "none", NULL);
 	assign_arrayEl(VAR_datanodeArchLogDirs, idx, "none", NULL);
 	assign_arrayEl(VAR_datanodeSpecificExtraConfig, idx, extraConf, NULL);
@@ -1093,16 +1037,12 @@ int add_datanodeMaster(char *name, char *host, int port, char *dir,
 	fprintAval(f, VAR_datanodeNames);
 	fprintAval(f, VAR_datanodeMasterServers);
 	fprintAval(f, VAR_datanodePorts);
-#ifdef XCP
 	fprintAval(f, VAR_datanodePoolerPorts);
-#endif
 	fprintAval(f, VAR_datanodeMasterDirs);
 	fprintAval(f, VAR_datanodeMaxWALSenders);
 	fprintAval(f, VAR_datanodeSlaveServers);
 	fprintAval(f, VAR_datanodeSlavePorts);
-#ifdef XCP
 	fprintAval(f, VAR_datanodeSlavePoolerPorts);
-#endif
 	fprintAval(f, VAR_datanodeSlaveDirs);
 	fprintAval(f, VAR_datanodeArchLogDirs);
 	fprintAval(f, VAR_datanodeSpecificExtraConfig);
@@ -1128,18 +1068,12 @@ int add_datanodeMaster(char *name, char *host, int port, char *dir,
 				"#===========================================\n"
 				"# Added at initialization. %s\n"
 				"port = %d\n"
-#ifdef XCP
 				"pooler_port = %d\n"
-#endif
 				"gtm_host = '%s'\n"
 				"gtm_port = %s\n"
 				"# End of Additon\n",
 				timeStampString(date, MAXTOKEN+1),
-#ifdef XCP
 				port, pooler, gtmHost, gtmPort);
-#else
-				port, gtmHost, gtmPort);
-#endif
 		pclose(f);
 	}
 	CleanArray(confFiles);
@@ -1272,9 +1206,7 @@ int add_datanodeSlave(char *name, char *host, int port, int pooler, char *dir, c
 	int idx;
 	FILE *f;
 	char port_s[MAXTOKEN+1];
-#ifdef XCP
     char pooler_s[MAXTOKEN+1];
-#endif
 	int kk;
 
 	/* Check if the name is valid datanode */
@@ -1367,9 +1299,7 @@ int add_datanodeSlave(char *name, char *host, int port, int pooler, char *dir, c
 	/* Need an API to expand the array to desired size */
 	if ((extendVar(VAR_datanodeSlaveServers, idx + 1, "none") != 0) ||
 		(extendVar(VAR_datanodeSlavePorts, idx + 1, "none")  != 0) ||
-#ifdef XCP		
 		(extendVar(VAR_datanodeSlavePoolerPorts, idx + 1, "none")  != 0) ||
-#endif		
 		(extendVar(VAR_datanodeSlaveDirs, idx + 1, "none")  != 0) ||
 		(extendVar(VAR_datanodeArchLogDirs, idx + 1, "none") != 0))
 	{
@@ -1379,17 +1309,13 @@ int add_datanodeSlave(char *name, char *host, int port, int pooler, char *dir, c
 
 	/* Reconfigure pgxc_ctl configuration with the new slave */
 	snprintf(port_s, MAXTOKEN, "%d", port);
-#ifdef XCP
 	snprintf(pooler_s, MAXTOKEN, "%d", pooler);
-#endif
 
 	if (!isVarYes(VAR_datanodeSlave))
 		assign_sval(VAR_datanodeSlave, "y");
 	assign_arrayEl(VAR_datanodeSlaveServers, idx, host, NULL);
 	assign_arrayEl(VAR_datanodeSlavePorts, idx, port_s, NULL);
-#ifdef XCP	
 	assign_arrayEl(VAR_datanodeSlavePoolerPorts, idx, pooler_s, NULL);
-#endif	
 	assign_arrayEl(VAR_datanodeSlaveDirs, idx, dir, NULL);
 	assign_arrayEl(VAR_datanodeArchLogDirs, idx, archDir, NULL);
 	/* Update the configuration file and backup it */
@@ -1407,9 +1333,7 @@ int add_datanodeSlave(char *name, char *host, int port, int pooler, char *dir, c
 	fprintSval(f, VAR_datanodeSlave);
 	fprintAval(f, VAR_datanodeSlaveServers);
 	fprintAval(f, VAR_datanodeSlavePorts);
-#ifdef XCP	
 	fprintAval(f, VAR_datanodeSlavePoolerPorts);
-#endif	
 	fprintAval(f, VAR_datanodeArchLogDirs);
 	fprintAval(f, VAR_datanodeSlaveDirs);
 	fprintf(f, "%s", "#----End of reconfiguration -------------------------\n");
@@ -1446,19 +1370,13 @@ int add_datanodeSlave(char *name, char *host, int port, int pooler, char *dir, c
 			"# Added to initialize the slave, %s\n"
 			"hot_standby = off\n"
 			"port = %s\n"
-#ifdef XCP
 			"pooler_port = %s\n"
-#endif
 			"wal_level = minimal\n"		/* WAL level --- minimal.   No cascade slave so far. */
 			"archive_mode = off\n"		/* No archive mode */
 			"archive_command = ''\n"	/* No archive mode */
 			"max_wal_senders = 0\n"		/* Minimum WAL senders */
 			"# End of Addition\n",
-#ifdef XCP
 			timeStampString(date, MAXTOKEN), aval(VAR_datanodeSlavePorts)[idx], aval(VAR_datanodeSlavePoolerPorts)[idx]);
-#else
-			timeStampString(date, MAXTOKEN), aval(VAR_datanodeSlavePorts)[idx]);
-#endif
 	pclose(f);
 	/* Update the slave recovery.conf */
 	if ((f = pgxc_popen_w(host, "cat >> %s/recovery.conf", dir)) == NULL)
@@ -1604,7 +1522,6 @@ int remove_datanodeMaster(char *name, int clean_opt)
 			pclose(f);
 		}
 	}
-#if 1
 	/* Stop the datanode master if running */
 	if (pingNode(aval(VAR_datanodeMasterServers)[idx], aval(VAR_datanodePorts)[idx]) == 0)
 	{
@@ -1615,14 +1532,11 @@ int remove_datanodeMaster(char *name, int clean_opt)
 	/* Cleanup the datanode master resource if specified */
 	if (clean_opt)
 		doImmediate(aval(VAR_datanodeMasterServers)[idx], NULL, "rm -rf %s", aval(VAR_datanodeMasterDirs)[idx]);
-#endif
 	/* Update configuration and backup --> should cleanup "none" entries here */
 	assign_arrayEl(VAR_datanodeNames, idx, "none", NULL);
 	assign_arrayEl(VAR_datanodeMasterDirs, idx, "none", NULL);
 	assign_arrayEl(VAR_datanodePorts, idx, "-1", "-1");
-#ifdef XCP
 	assign_arrayEl(VAR_datanodePoolerPorts, idx, "-1", "-1");
-#endif
 	assign_arrayEl(VAR_datanodeMasterServers, idx, "none", NULL);
 	assign_arrayEl(VAR_datanodeMaxWALSenders, idx, "0", "0");
 	assign_arrayEl(VAR_datanodeSlaveServers, idx, "none", NULL);
@@ -1648,9 +1562,7 @@ int remove_datanodeMaster(char *name, int clean_opt)
 	fprintAval(f, VAR_datanodeNames);
 	fprintAval(f, VAR_datanodeMasterDirs);
 	fprintAval(f, VAR_datanodePorts);
-#ifdef XCP
 	fprintAval(f, VAR_datanodePoolerPorts);
-#endif
 	fprintAval(f, VAR_datanodeMasterServers);
 	fprintAval(f, VAR_datanodeMaxWALSenders);
 	fprintAval(f, VAR_datanodeSlaveServers);
@@ -1758,13 +1670,8 @@ cmd_t *prepare_cleanDatanodeMaster(char *nodeName)
 	}
 	cmd = initCmd(aval(VAR_datanodeMasterServers)[idx]);
 	snprintf(newCommand(cmd), MAXLINE,
-#ifdef XCP
 			 "rm -rf %s; mkdir -p %s; chmod 0700 %s; rm -f /tmp/.s.*%d*",
 			 aval(VAR_datanodeMasterDirs)[idx], aval(VAR_datanodeMasterDirs)[idx], aval(VAR_datanodeMasterDirs)[idx], atoi(aval(VAR_datanodePoolerPorts)[idx]));
-#else
-			 "rm -rf %s; mkdir -p %s; chmod 0700 %s*",
-			 aval(VAR_datanodeMasterDirs)[idx], aval(VAR_datanodeMasterDirs)[idx]);
-#endif
 	return(cmd);
 }
 
@@ -1870,13 +1777,8 @@ int show_config_datanodeMaster(int flag, int idx, char *hostname)
 	lockLogFile();
 	if (outBuf[0])
 		elog(NOTICE, "%s", outBuf);
-#ifdef XCP
 	elog(NOTICE, "    Nodename: '%s', port: %s, pooler port %s\n",
 		 aval(VAR_datanodeNames)[idx], aval(VAR_datanodePorts)[idx], aval(VAR_poolerPorts)[idx]);
-#else
-	elog(NOTICE, "    Nodename: '%s', port: %s\n",
-		 aval(VAR_datanodeNames)[idx], aval(VAR_datanodePorts)[idx]);
-#endif
 	elog(NOTICE, "    MaxWALSenders: %s, Dir: '%s'\n",
 		 aval(VAR_datanodeMaxWALSenders)[idx], aval(VAR_datanodeMasterDirs)[idx]);
 	elog(NOTICE, "    ExtraConfig: '%s', Specific Extra Config: '%s'\n",
@@ -1912,13 +1814,8 @@ int show_config_datanodeSlave(int flag, int idx, char *hostname)
 	lockLogFile();
 	if (outBuf[0])
 		elog(NOTICE, "%s", outBuf);
-#ifdef XCP
 	elog(NOTICE, "    Nodename: '%s', port: %s, pooler port: %s\n",
 		 aval(VAR_datanodeNames)[idx], aval(VAR_datanodeSlavePorts)[idx], aval(VAR_poolerPorts)[idx]);
-#else
-	elog(NOTICE, "    Nodename: '%s', port: %s\n",
-		 aval(VAR_datanodeNames)[idx], aval(VAR_datanodeSlavePorts)[idx]);
-#endif
 	elog(NOTICE,"    Dir: '%s', Archive Log Dir: '%s'\n",
 		 aval(VAR_datanodeSlaveDirs)[idx], aval(VAR_datanodeArchLogDirs)[idx]);
 	unlockLogFile();

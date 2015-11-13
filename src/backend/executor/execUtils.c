@@ -113,11 +113,6 @@ CreateExecutorState(void)
 	estate->es_result_relations = NULL;
 	estate->es_num_result_relations = 0;
 	estate->es_result_relation_info = NULL;
-#ifdef PGXC
-#ifndef XCP
-	estate->es_result_remoterel = NULL;
-#endif
-#endif
 
 	estate->es_trig_target_relations = NIL;
 	estate->es_trig_tuple_slot = NULL;

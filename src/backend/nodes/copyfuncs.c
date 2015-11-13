@@ -208,11 +208,6 @@ _copyModifyTable(const ModifyTable *from)
 	COPY_NODE_FIELD(fdwPrivLists);
 	COPY_NODE_FIELD(rowMarks);
 	COPY_SCALAR_FIELD(epqParam);
-#ifdef PGXC
-#ifndef XCP
-	COPY_NODE_FIELD(remote_plans);
-#endif
-#endif
 	COPY_SCALAR_FIELD(onConflictAction);
 	COPY_NODE_FIELD(arbiterIndexes);
 	COPY_NODE_FIELD(onConflictSet);
@@ -1118,9 +1113,6 @@ _copyRemoteQuery(const RemoteQuery *from)
 	COPY_POINTER_FIELD(remote_param_types,
 	   sizeof(from->remote_param_types[0]) * from->remote_num_params);
 	COPY_SCALAR_FIELD(exec_type);
-#ifndef XCP
-	COPY_SCALAR_FIELD(is_temp);
-#endif
 
 	COPY_SCALAR_FIELD(reduce_level);
 	COPY_NODE_FIELD(base_tlist);
@@ -1382,12 +1374,6 @@ _copyAggref(const Aggref *from)
 
 	COPY_SCALAR_FIELD(aggfnoid);
 	COPY_SCALAR_FIELD(aggtype);
-#ifdef PGXC
-#ifndef XCP
-	COPY_SCALAR_FIELD(aggtrantype);
-	COPY_SCALAR_FIELD(agghas_collectfn);
-#endif /* XCP */
-#endif /* PGXC */
 	COPY_SCALAR_FIELD(aggcollid);
 	COPY_SCALAR_FIELD(inputcollid);
 	COPY_NODE_FIELD(aggdirectargs);
@@ -2290,12 +2276,6 @@ _copyRangeTblEntry(const RangeTblEntry *from)
 
 	COPY_SCALAR_FIELD(rtekind);
 
-#ifdef PGXC
-#ifndef XCP
-	COPY_STRING_FIELD(relname);
-#endif
-#endif
-
 	COPY_SCALAR_FIELD(relid);
 	COPY_SCALAR_FIELD(relkind);
 	COPY_NODE_FIELD(tablesample);
@@ -2917,12 +2897,6 @@ _copyQuery(const Query *from)
 	COPY_NODE_FIELD(rowMarks);
 	COPY_NODE_FIELD(setOperations);
 	COPY_NODE_FIELD(constraintDeps);
-#ifdef PGXC
-#ifndef XCP
-	COPY_STRING_FIELD(sql_statement);
-	COPY_SCALAR_FIELD(is_ins_child_sel_parent);
-#endif
-#endif
 
 	return newnode;
 }
@@ -4425,7 +4399,6 @@ _copyBarrierStmt(const BarrierStmt *from)
 	return newnode;
 }
 
-#ifdef XCP
 static PauseClusterStmt *
 _copyPauseClusterStmt(const PauseClusterStmt *from)
 {
@@ -4435,7 +4408,7 @@ _copyPauseClusterStmt(const PauseClusterStmt *from)
 
 	return newnode;
 }
-#endif
+
 /* ****************************************************************
  *					nodemgr.h copy functions
  * ****************************************************************
@@ -5169,11 +5142,9 @@ copyObject(const void *from)
 		case T_BarrierStmt:
 			retval = _copyBarrierStmt(from);
 			break;
-#ifdef XCP
 		case T_PauseClusterStmt:
 			retval = _copyPauseClusterStmt(from);
 			break;
-#endif
 		case T_AlterNodeStmt:
 			retval = _copyAlterNodeStmt(from);
 			break;

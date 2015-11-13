@@ -80,7 +80,6 @@ GetForceXidFromGTM(void)
 #endif /* PGXC */
 
 
-#ifdef XCP
 /*
  * Check if GlobalTransactionId associated with the current distributed session
  * equals to specified xid.
@@ -103,7 +102,6 @@ GetNextTransactionId(void)
 {
 	return next_xid;
 }
-#endif
 
 
 /*
@@ -127,10 +125,8 @@ GetNewTransactionId(bool isSubXact)
 #ifdef PGXC
 	bool increment_xid = true;
 	*timestamp_received = false;
-#ifdef XCP
 	/* Will be set if we obtain from GTM */
 	IsXidFromGTM = false;
-#endif
 #endif /* PGXC */
 	/*
 	 * Workers synchronize transaction state at the beginning of each parallel

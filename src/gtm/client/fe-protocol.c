@@ -774,7 +774,6 @@ gtmpqParseSuccess(GTM_Conn *conn, GTM_Result *result)
 					result->gr_status = GTM_RESULT_ERROR;
 					break;
 				}
-#ifdef XCP
 				if (!gtm_deserialize_pgxcnodeinfo(data, buf, size, &conn->errorMessage))
 				{
 					result->gr_status = GTM_RESULT_ERROR;
@@ -784,10 +783,6 @@ gtmpqParseSuccess(GTM_Conn *conn, GTM_Result *result)
 				{
 					result->gr_resdata.grd_node_list.nodeinfo[i] = data;
 				} 
-#else
-				gtm_deserialize_pgxcnodeinfo(data, buf, size, &conn->errorMessage);
-				result->gr_resdata.grd_node_list.nodeinfo[i] = data;
-#endif
 			}
 
 			break;

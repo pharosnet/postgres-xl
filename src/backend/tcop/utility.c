@@ -813,11 +813,7 @@ standard_ProcessUtility(Node *parsetree,
 					/* Clean also remote Coordinators */
 					sprintf(query, "CLEAN CONNECTION TO ALL FOR DATABASE %s;", stmt->dbname);
 
-#ifdef XCP
 					ExecUtilityStmtOnNodes(query, NULL, sentToRemote, true, EXEC_ON_ALL_NODES, false);
-#else
-					ExecUtilityStmtOnNodes(query, NULL, sentToRemote, true, EXEC_ON_COORDS, false);
-#endif
 				}
 #endif
 
@@ -924,32 +920,6 @@ standard_ProcessUtility(Node *parsetree,
 
 		case T_VariableSetStmt:
 			ExecSetVariableStmt((VariableSetStmt *) parsetree, isTopLevel);
-#ifdef PGXC
-#ifndef XCP
-			/* Let the pooler manage the statement */
-			if (IS_PGXC_LOCAL_COORDINATOR)
-			{
-				VariableSetStmt *stmt = (VariableSetStmt *) parsetree;
-				/*
-				 * If command is local and we are not in a transaction block do NOT
-				 * send this query to backend nodes, it is just bypassed by the backend.
-				 */
-				if (stmt->is_local)
-				{
-					if (IsTransactionBlock())
-					{
-						if (PoolManagerSetCommand(POOL_CMD_LOCAL_SET, queryString) < 0)
-							elog(ERROR, "Postgres-XC: ERROR SET query");
-					}
-				}
-				else
-				{
-					if (PoolManagerSetCommand(POOL_CMD_GLOBAL_SET, queryString) < 0)
-						elog(ERROR, "Postgres-XC: ERROR SET query");
-				}
-			}
-#endif
-#endif
 			break;
 
 		case T_VariableShowStmt:
@@ -1057,7 +1027,6 @@ standard_ProcessUtility(Node *parsetree,
 			WarnNoTransactionChain(isTopLevel, "SET CONSTRAINTS");
 			AfterTriggerSetState((ConstraintsSetStmt *) parsetree);
 #ifdef PGXC
-#ifdef XCP
 			/*
 			 * Just send statement to all the datanodes. It is effectively noop
 			 * if no transaction, because transaction will be committed and
@@ -1068,18 +1037,6 @@ standard_ProcessUtility(Node *parsetree,
 			 */
 			ExecUtilityStmtOnNodes(queryString, NULL, sentToRemote, false,
 					EXEC_ON_DATANODES, false);
-#else
-			/*
-			 * Let the pooler manage the statement, SET CONSTRAINT can just be used
-			 * inside a transaction block, hence it has no effect outside that, so use
-			 * it as a local one.
-			 */
-			if (IS_PGXC_LOCAL_COORDINATOR && IsTransactionBlock())
-			{
-				if (PoolManagerSetCommand(POOL_CMD_LOCAL_SET, queryString) < 0)
-					elog(ERROR, "Postgres-XC: ERROR SET query");
-			}
-#endif
 #endif
 			break;
 
@@ -1448,7 +1405,6 @@ standard_ProcessUtility(Node *parsetree,
 
 
 			case T_CleanConnStmt:
-#ifdef XCP
 				/*
 				 * First send command to other nodes via probably existing
 				 * connections, then clean local pooler
@@ -1456,13 +1412,6 @@ standard_ProcessUtility(Node *parsetree,
 				if (IS_PGXC_COORDINATOR)
 					ExecUtilityStmtOnNodes(queryString, NULL, sentToRemote, true, EXEC_ON_ALL_NODES, false);
 				CleanConnection((CleanConnStmt *) parsetree);
-#else
-				Assert(IS_PGXC_COORDINATOR);
-				CleanConnection((CleanConnStmt *) parsetree);
-
-				if (IS_PGXC_COORDINATOR)
-					ExecUtilityStmtOnNodes(queryString, NULL, sentToRemote, true, EXEC_ON_COORDS, false);
-#endif
 				break;
 #endif
 		case T_CommentStmt:
@@ -1661,13 +1610,9 @@ ProcessUtilitySlow(Node *parsetree,
 					 * Coordinator, if not already done so
 					 */
 					if (!sentToRemote)
-#ifdef XCP
 						stmts = AddRemoteQueryNode(stmts, queryString, is_local
 								? EXEC_ON_NONE
 								: (is_temp ? EXEC_ON_DATANODES : EXEC_ON_ALL_NODES));
-#else
-					stmts = AddRemoteQueryNode(stmts, queryString, EXEC_ON_ALL_NODES, is_temp);
-#endif
 #endif
 
 					/* ... and do it */
@@ -1679,13 +1624,6 @@ ProcessUtilitySlow(Node *parsetree,
 						{
 							Datum		toast_options;
 							static char *validnsps[] = HEAP_RELOPT_NAMESPACES;
-#ifdef PGXC
-#ifndef XCP
-							/* Set temporary object object flag in pooler */
-							if (is_temp)
-								PoolManagerSetCommand(POOL_CMD_TEMP, NULL);
-#endif
-#endif
 
 							/* Create the table itself */
 							address = DefineRelation((CreateStmt *) stmt,
@@ -1801,11 +1739,7 @@ ProcessUtilitySlow(Node *parsetree,
 										relid,
 										&is_temp);
 
-#ifdef XCP
 								stmts = AddRemoteQueryNode(stmts, queryString, exec_type);
-#else
-								stmts = AddRemoteQueryNode(stmts, queryString, exec_type, is_temp);
-#endif
 							}
 						}
 #endif
@@ -2100,11 +2034,7 @@ ProcessUtilitySlow(Node *parsetree,
 #ifdef PGXC
 				ereport(ERROR,
 						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-#ifdef XCP
 						 errmsg("Postgres-XL does not support FOREIGN DATA WRAPPER yet"),
-#else
-						 errmsg("Postgres-XC does not support FOREIGN DATA WRAPPER yet"),
-#endif
 						 errdetail("The feature is not currently supported")));
 #endif
 				address = CreateForeignDataWrapper((CreateFdwStmt *) parsetree);
@@ -2118,11 +2048,7 @@ ProcessUtilitySlow(Node *parsetree,
 #ifdef PGXC
 				ereport(ERROR,
 						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-#ifdef XCP
 						 errmsg("Postgres-XL does not support SERVER yet"),
-#else
-						 errmsg("Postgres-XC does not support SERVER yet"),
-#endif
 						 errdetail("The feature is not currently supported")));
 #endif
 				address = CreateForeignServer((CreateForeignServerStmt *) parsetree);
@@ -2136,11 +2062,7 @@ ProcessUtilitySlow(Node *parsetree,
 #ifdef PGXC
 				ereport(ERROR,
 						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-#ifdef XCP
 						 errmsg("Postgres-XL does not support USER MAPPING yet"),
-#else
-						 errmsg("Postgres-XC does not support USER MAPPING yet"),
-#endif
 						 errdetail("The feature is not currently supported")));
 #endif
 				address = CreateUserMapping((CreateUserMappingStmt *) parsetree);
@@ -2210,13 +2132,9 @@ ProcessUtilitySlow(Node *parsetree,
 #ifdef PGXC
 				if (IS_PGXC_LOCAL_COORDINATOR)
 				{
-#ifdef XCP
 					ViewStmt *stmt = (ViewStmt *) parsetree;
 
 					if (stmt->view->relpersistence != RELPERSISTENCE_TEMP)
-#else
-						if (!ExecIsTempObjectIncluded())
-#endif
 							ExecUtilityStmtOnNodes(queryString, NULL, sentToRemote, false, EXEC_ON_COORDS, false);
 				}
 #endif
@@ -2268,13 +2186,6 @@ ProcessUtilitySlow(Node *parsetree,
 					if (!stmt->is_serial)
 					{
 						bool is_temp = stmt->sequence->relpersistence == RELPERSISTENCE_TEMP;
-
-#ifndef XCP
-						/* Set temporary object flag in pooler */
-						if (is_temp)
-							PoolManagerSetCommand(POOL_CMD_TEMP, NULL);
-#endif
-
 						ExecUtilityStmtOnNodes(queryString, NULL, sentToRemote, false, EXEC_ON_ALL_NODES, is_temp);
 					}
 				}
@@ -2365,11 +2276,7 @@ ProcessUtilitySlow(Node *parsetree,
 				/* Postgres-XC does not support yet triggers */
 				ereport(ERROR,
 						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-#ifdef XCP
 						 errmsg("Postgres-XL does not support TRIGGER yet"),
-#else
-						 errmsg("Postgres-XC does not support TRIGGER yet"),
-#endif
 						 errdetail("The feature is not currently supported")));
 
 				if (IS_PGXC_LOCAL_COORDINATOR)
@@ -4331,9 +4238,6 @@ ExecUtilityStmtOnNodes(const char *queryString, ExecNodes *nodes, bool sentToRem
 		step->sql_statement = pstrdup(queryString);
 		step->force_autocommit = force_autocommit;
 		step->exec_type = exec_type;
-#ifndef XCP
-		step->is_temp = is_temp;
-#endif
 		ExecRemoteUtility(step);
 		pfree(step->sql_statement);
 		pfree(step);
@@ -4436,29 +4340,18 @@ ExecUtilityFindNodesRelkind(Oid relid, bool *is_temp)
 	switch (relkind_str)
 	{
 		case RELKIND_SEQUENCE:
-#ifndef XCP
-			*is_temp = IsTempTable(relid);
-			exec_type = EXEC_ON_ALL_NODES;
-			break;
-#endif
 		case RELKIND_RELATION:
-#ifdef XCP
-				if ((*is_temp = IsTempTable(relid)))
-				{
-					if (IsLocalTempTable(relid))
-						exec_type = EXEC_ON_NONE;
-					else
-						exec_type = EXEC_ON_DATANODES;
-				}
+			if ((*is_temp = IsTempTable(relid)))
+			{
+				if (IsLocalTempTable(relid))
+					exec_type = EXEC_ON_NONE;
 				else
-					exec_type = EXEC_ON_ALL_NODES;
-#else
-				*is_temp = IsTempTable(relid);
+					exec_type = EXEC_ON_DATANODES;
+			}
+			else
 				exec_type = EXEC_ON_ALL_NODES;
-#endif
 			break;
 
-#ifdef XCP			
 		case RELKIND_INDEX:
 			{
 				HeapTuple   tuple;
@@ -4481,7 +4374,6 @@ ExecUtilityFindNodesRelkind(Oid relid, bool *is_temp)
 				}
 			}
 			break;
-#endif
 
 		case RELKIND_VIEW:
 			if ((*is_temp = IsTempTable(relid)))

@@ -926,12 +926,6 @@ _readAggref(void)
 	else
 #endif
 	READ_OID_FIELD(aggtype);
-#ifdef PGXC
-#ifndef XCP
-	READ_OID_FIELD(aggtrantype);
-	READ_BOOL_FIELD(agghas_collectfn);
-#endif /* XCP */
-#endif /* PGXC */
 #ifdef XCP
 	if (portable_input)
 		READ_COLLID_FIELD(aggcollid);
@@ -1130,18 +1124,6 @@ _readOpExpr(void)
 #endif
 	READ_OID_FIELD(opfuncid);
 
-#ifndef XCP
-	/*
-	 * The opfuncid is stored in the textual format primarily for debugging
-	 * and documentation reasons.  We want to always read it as zero to force
-	 * it to be re-looked-up in the pg_operator entry.  This ensures that
-	 * stored rules don't have hidden dependencies on operators' functions.
-	 * (We don't currently support an ALTER OPERATOR command, but might
-	 * someday.)
-	 */
-	local_node->opfuncid = InvalidOid;
-#endif
-
 #ifdef XCP
 	if (portable_input)
 		READ_TYPID_FIELD(opresulttype);
@@ -1187,18 +1169,6 @@ _readDistinctExpr(void)
 	else
 #endif
 	READ_OID_FIELD(opfuncid);
-
-#ifndef XCP
-	/*
-	 * The opfuncid is stored in the textual format primarily for debugging
-	 * and documentation reasons.  We want to always read it as zero to force
-	 * it to be re-looked-up in the pg_operator entry.  This ensures that
-	 * stored rules don't have hidden dependencies on operators' functions.
-	 * (We don't currently support an ALTER OPERATOR command, but might
-	 * someday.)
-	 */
-	local_node->opfuncid = InvalidOid;
-#endif
 
 #ifdef XCP
 	if (portable_input)
@@ -1305,18 +1275,6 @@ _readScalarArrayOpExpr(void)
 	else
 #endif
 	READ_OID_FIELD(opfuncid);
-#ifndef XCP
-	/*
-	 * The opfuncid is stored in the textual format primarily for debugging
-	 * and documentation reasons.  We want to always read it as zero to force
-	 * it to be re-looked-up in the pg_operator entry.  This ensures that
-	 * stored rules don't have hidden dependencies on operators' functions.
-	 * (We don't currently support an ALTER OPERATOR command, but might
-	 * someday.)
-	 */
-	local_node->opfuncid = InvalidOid;
-#endif
-
 	READ_BOOL_FIELD(useOr);
 #ifdef XCP
 	if (portable_input)
@@ -2057,11 +2015,6 @@ _readRangeTblEntry(void)
 	READ_NODE_FIELD(alias);
 	READ_NODE_FIELD(eref);
 	READ_ENUM_FIELD(rtekind, RTEKind);
-#ifdef PGXC
-#ifndef XCP
-	READ_STRING_FIELD(relname);
-#endif
-#endif
 
 	switch (local_node->rtekind)
 	{
@@ -2200,12 +2153,6 @@ _readModifyTable(void)
 	READ_NODE_FIELD(fdwPrivLists);
 	READ_NODE_FIELD(rowMarks);
 	READ_INT_FIELD(epqParam);
-#ifdef PGXC
-#ifndef XCP
-	READ_NODE_FIELD(remote_plans);
-#endif
-#endif
-
 	READ_ENUM_FIELD(onConflictAction, OnConflictAction);
 #ifdef XCP
 	if (portable_input)
