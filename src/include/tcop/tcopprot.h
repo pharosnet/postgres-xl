@@ -77,7 +77,10 @@ extern void PostgresMain(int argc, char *argv[],
 			 const char *username) pg_attribute_noreturn();
 extern long get_stack_depth_rlimit(void);
 extern void ResetUsage(void);
+extern void ResetUsageGeneric(struct rusage *save_r, struct timeval *save_t);
 extern void ShowUsage(const char *title);
+extern void ShowUsageCommon(const char *title, struct rusage *save_r,
+		struct timeval *save_t);
 extern int	check_log_duration(char *msec_str, bool was_logged);
 extern void set_debug_options(int debug_flag,
 				  GucContext context, GucSource source);

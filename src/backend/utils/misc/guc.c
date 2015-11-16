@@ -467,6 +467,11 @@ bool		log_planner_stats = false;
 bool		log_executor_stats = false;
 bool		log_statement_stats = false;		/* this is sort of all three
 												 * above together */
+#ifdef XCP
+bool		log_gtm_stats = false;
+bool		log_remotesubplan_stats = false;
+#endif
+
 bool		log_btree_build_stats = false;
 char	   *event_source;
 
@@ -1242,6 +1247,26 @@ static struct config_bool ConfigureNamesBool[] =
 		false,
 		check_log_stats, NULL, NULL
 	},
+#ifdef XCP
+	{
+		{"log_remotesubplan_stats", PGC_SUSET, STATS_MONITORING,
+			gettext_noop("Writes remote subplan performance statistics to the server log."),
+			NULL
+		},
+		&log_remotesubplan_stats,
+		false,
+		NULL, NULL, NULL
+	},
+	{
+		{"log_gtm_stats", PGC_SUSET, STATS_MONITORING,
+			gettext_noop("Writes GTM performance statistics to the server log."),
+			NULL
+		},
+		&log_gtm_stats,
+		false,
+		NULL, NULL, NULL
+	},
+#endif
 #ifdef BTREE_BUILD_STATS
 	{
 		{"log_btree_build_stats", PGC_SUSET, DEVELOPER_OPTIONS,

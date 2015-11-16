@@ -36,6 +36,7 @@
 #include "libpq/libpq.h"
 #include "miscadmin.h"
 #include "pgxc/execRemote.h"
+#include "tcop/tcopprot.h"
 #include "executor/nodeSubplan.h"
 #include "nodes/nodeFuncs.h"
 #include "pgstat.h"
@@ -3230,8 +3231,8 @@ ExecRemoteUtility(RemoteQuery *node)
 
 	/*
 	 * Do not set global_session if it is a utility statement. 
- 	 * Avoids CREATE NODE error on cluster configuration.
- 	 */
+	 * Avoids CREATE NODE error on cluster configuration.
+	 */
 	pgxc_connections = get_exec_connections(NULL, node->exec_nodes, exec_type, 
 											exec_direct_type != EXEC_DIRECT_UTILITY);
 
@@ -3604,6 +3605,12 @@ AtEOXact_Remote(void)
 void
 PreCommit_Remote(char *prepareGID, char *nodestring, bool preparedLocalNode)
 {
+	struct rusage		start_r;
+	struct timeval		start_t;
+
+	if (log_gtm_stats)
+		ResetUsageCommon(&start_r, &start_t);
+
 	/*
 	 * Made node connections persistent if we are committing transaction
 	 * that touched temporary tables. We never drop that flag, so after some
@@ -3635,6 +3642,9 @@ PreCommit_Remote(char *prepareGID, char *nodestring, bool preparedLocalNode)
 	}
 	else
 		pgxc_node_remote_commit();
+
+	if (log_gtm_stats)
+		ShowUsageCommon("PreCommit_Remote", &start_r, &start_t);
 }
 
 /*
@@ -3669,6 +3679,11 @@ PreAbort_Remote(void)
 	PGXCNodeHandle	   *clean_nodes[NumCoords + NumDataNodes];
 	int					node_count = 0;
 	int 				i;
+	struct rusage		start_r;
+	struct timeval		start_t;
+
+	if (log_gtm_stats)
+		ResetUsageCommon(&start_r, &start_t);
 
 	all_handles = get_current_handles();
 	/*
@@ -3755,6 +3770,9 @@ PreAbort_Remote(void)
 
 	pfree_pgxc_all_handles(all_handles);
 
+	if (log_gtm_stats)
+		ShowUsageCommon("PreAbort_Remote", &start_r, &start_t);
+
 	return true;
 }
 
@@ -3776,6 +3794,11 @@ PrePrepare_Remote(char *prepareGID, bool localNode, bool implicit)
 {
 	/* Always include local node if running explicit prepare */
 	char *nodestring;
+	struct rusage		start_r;
+	struct timeval		start_t;
+
+	if (log_gtm_stats)
+		ResetUsageCommon(&start_r, &start_t);
 
 	/*
 	 * Primary session is doing 2PC, just commit secondary processes and exit
@@ -3804,8 +3827,12 @@ PrePrepare_Remote(char *prepareGID, bool localNode, bool implicit)
 								GetAuxilliaryTransactionId(),
 								GetTopGlobalTransactionId());
 		pfree(nodestring);
-		return NULL;
+		nodestring = NULL;
 	}
+
+	if (log_gtm_stats)
+		ShowUsageCommon("PrePrepare_Remote", &start_r, &start_t);
+
 	return nodestring;
 }
 
@@ -3816,8 +3843,17 @@ PrePrepare_Remote(char *prepareGID, bool localNode, bool implicit)
 void
 PostPrepare_Remote(char *prepareGID, bool implicit)
 {
+	struct rusage		start_r;
+	struct timeval		start_t;
+
+	if (log_gtm_stats)
+		ResetUsageCommon(&start_r, &start_t);
+
 	if (!implicit)
 		PrepareTranGTM(GetTopGlobalTransactionId());
+
+	if (log_gtm_stats)
+		ShowUsageCommon("PostPrepare_Remote", &start_r, &start_t);
 }
 
 /*
@@ -4346,7 +4382,7 @@ ExecRemoteQuery(RemoteQueryState *node)
 	}
 
 	if (combiner->tuplesortstate)
- 	{
+	{
 		if (tuplesort_gettupleslot((Tuplesortstate *) combiner->tuplesortstate,
 									  true, resultslot))
 			return resultslot;
@@ -4833,6 +4869,11 @@ ExecInitRemoteSubplan(RemoteSubplan *node, EState *estate, int eflags)
 	RemoteSubplanState *remotestate;
 	ResponseCombiner   *combiner;
 	CombineType			combineType;
+	struct rusage		start_r;
+	struct timeval		start_t;
+
+	if (log_remotesubplan_stats)
+		ResetUsageCommon(&start_r, &start_t);
 
 	remotestate = makeNode(RemoteSubplanState);
 	combiner = (ResponseCombiner *) remotestate;
@@ -5131,6 +5172,9 @@ ExecInitRemoteSubplan(RemoteSubplan *node, EState *estate, int eflags)
 			list_length(remotestate->execNodes) > 1)
 		combiner->merge_sort = true;
 
+	if (log_remotesubplan_stats)
+		ShowUsageCommon("ExecInitRemoteSubplan", &start_r, &start_t);
+
 	return remotestate;
 }
 
@@ -5382,6 +5426,8 @@ ExecRemoteSubplan(RemoteSubplanState *node)
 	RemoteSubplan  *plan = (RemoteSubplan *) combiner->ss.ps.plan;
 	EState		   *estate = combiner->ss.ps.state;
 	TupleTableSlot *resultslot = combiner->ss.ps.ps_ResultTupleSlot;
+	struct rusage	start_r;
+	struct timeval		start_t;
 
 	/* 
 	 * We allow combiner->conn_count == 0 after node initialization
@@ -5396,6 +5442,9 @@ ExecRemoteSubplan(RemoteSubplanState *node)
 	if (!node->local_exec && combiner->conn_count == 0 && 
 			combiner->cursor_count == 0)
 		return NULL;
+
+	if (log_remotesubplan_stats)
+		ResetUsageCommon(&start_r, &start_t);
 
 primary_mode_phase_two:
 	if (!node->bound)
@@ -5642,19 +5691,30 @@ primary_mode_phase_two:
 	{
 		if (tuplesort_gettupleslot((Tuplesortstate *) combiner->tuplesortstate,
 								   true, resultslot))
+		{
+			if (log_remotesubplan_stats)
+				ShowUsageCommon("ExecRemoteSubplan", &start_r, &start_t);
 			return resultslot;
+		}
 	}
 	else
 	{
 		TupleTableSlot *slot = FetchTuple(combiner);
 		if (!TupIsNull(slot))
+		{
+			if (log_remotesubplan_stats)
+				ShowUsageCommon("ExecRemoteSubplan", &start_r, &start_t);
 			return slot;
+		}
 		else if (combiner->probing_primary)
 			/* phase1 is successfully completed, run on other nodes */
 			goto primary_mode_phase_two;
 	}
 	if (combiner->errorMessage)
 		pgxc_node_report_error(combiner);
+
+	if (log_remotesubplan_stats)
+		ShowUsageCommon("ExecRemoteSubplan", &start_r, &start_t);
 
 	return NULL;
 }
@@ -5701,6 +5761,11 @@ ExecEndRemoteSubplan(RemoteSubplanState *node)
 	ResponseCombiner *combiner = (ResponseCombiner *)node;
 	RemoteSubplan    *plan = (RemoteSubplan *) combiner->ss.ps.plan;
 	int i;
+	struct rusage	start_r;
+	struct timeval		start_t;
+
+	if (log_remotesubplan_stats)
+		ResetUsageCommon(&start_r, &start_t);
 
 	if (outerPlanState(node))
 		ExecEndNode(outerPlanState(node));
@@ -5875,6 +5940,9 @@ ExecEndRemoteSubplan(RemoteSubplanState *node)
 
 	ValidateAndCloseCombiner(combiner);
 	pfree(node);
+
+	if (log_remotesubplan_stats)
+		ShowUsageCommon("ExecEndRemoteSubplan", &start_r, &start_t);
 }
 
 /*

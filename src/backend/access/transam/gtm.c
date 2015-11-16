@@ -22,6 +22,8 @@
 #include "gtm/gtm_c.h"
 #include "postmaster/autovacuum.h"
 #include "storage/backendid.h"
+#include "tcop/tcopprot.h"
+#include "utils/guc.h"
 #include "utils/lsyscache.h"
 
 /* To access sequences */
@@ -138,6 +140,11 @@ GlobalTransactionId
 BeginTranGTM(GTM_Timestamp *timestamp)
 {
 	GlobalTransactionId  xid = InvalidGlobalTransactionId;
+	struct rusage start_r;
+	struct timeval start_t;
+
+	if (log_gtm_stats)
+		ResetUsageCommon(&start_r, &start_t);
 
 	CheckConnection();
 	// TODO Isolation level
@@ -157,6 +164,9 @@ BeginTranGTM(GTM_Timestamp *timestamp)
 	if (xid)
 		IsXidFromGTM = true;
 	currentGxid = xid;
+
+	if (log_gtm_stats)
+		ShowUsageCommon("BeginTranGTM", &start_r, &start_t);
 	return xid;
 }
 
@@ -190,9 +200,15 @@ CommitTranGTM(GlobalTransactionId gxid, int waited_xid_count,
 		GlobalTransactionId *waited_xids)
 {
 	int ret;
+	struct rusage start_r;
+	struct timeval start_t;
 
 	if (!GlobalTransactionIdIsValid(gxid))
 		return 0;
+
+	if (log_gtm_stats)
+		ResetUsageCommon(&start_r, &start_t);
+
 	CheckConnection();
 	ret = -1;
 	if (conn)
@@ -216,6 +232,9 @@ CommitTranGTM(GlobalTransactionId gxid, int waited_xid_count,
 		CloseGTM();
 
 	currentGxid = InvalidGlobalTransactionId;
+
+	if (log_gtm_stats)
+		ShowUsageCommon("CommitTranGTM", &start_r, &start_t);
 	return ret;
 }
 
@@ -229,9 +248,15 @@ CommitPreparedTranGTM(GlobalTransactionId gxid,
 		GlobalTransactionId *waited_xids)
 {
 	int ret = 0;
+	struct rusage start_r;
+	struct timeval start_t;
 
 	if (!GlobalTransactionIdIsValid(gxid) || !GlobalTransactionIdIsValid(prepared_gxid))
 		return ret;
+
+	if (log_gtm_stats)
+		ResetUsageCommon(&start_r, &start_t);
+
 	CheckConnection();
 	ret = -1;
 	if (conn)
@@ -253,6 +278,10 @@ CommitPreparedTranGTM(GlobalTransactionId gxid,
 					waited_xid_count, waited_xids);
 	}
 	currentGxid = InvalidGlobalTransactionId;
+
+	if (log_gtm_stats)
+		ShowUsageCommon("CommitPreparedTranGTM", &start_r, &start_t);
+
 	return ret;
 }
 
@@ -320,10 +349,16 @@ int
 PrepareTranGTM(GlobalTransactionId gxid)
 {
 	int ret;
+	struct rusage start_r;
+	struct timeval start_t;
 
 	if (!GlobalTransactionIdIsValid(gxid))
 		return 0;
 	CheckConnection();
+
+	if (log_gtm_stats)
+		ResetUsageCommon(&start_r, &start_t);
+
 	ret = -1;
 	if (conn)
 		ret = prepare_transaction(conn, gxid);
@@ -341,6 +376,10 @@ PrepareTranGTM(GlobalTransactionId gxid)
 			ret = prepare_transaction(conn, gxid);
 	}
 	currentGxid = InvalidGlobalTransactionId;
+
+	if (log_gtm_stats)
+		ShowUsageCommon("PrepareTranGTM", &start_r, &start_t);
+
 	return ret;
 }
 
@@ -380,7 +419,14 @@ GTM_Snapshot
 GetSnapshotGTM(GlobalTransactionId gxid, bool canbe_grouped)
 {
 	GTM_Snapshot ret_snapshot = NULL;
+	struct rusage start_r;
+	struct timeval start_t;
+
 	CheckConnection();
+
+	if (log_gtm_stats)
+		ResetUsageCommon(&start_r, &start_t);
+
 	if (conn)
 		ret_snapshot = get_snapshot(conn, gxid, canbe_grouped);
 	if (ret_snapshot == NULL)
@@ -390,6 +436,10 @@ GetSnapshotGTM(GlobalTransactionId gxid, bool canbe_grouped)
 		if (conn)
 			ret_snapshot = get_snapshot(conn, gxid, canbe_grouped);
 	}
+
+	if (log_gtm_stats)
+		ShowUsageCommon("GetSnapshotGTM", &start_r, &start_t);
+
 	return ret_snapshot;
 }
 

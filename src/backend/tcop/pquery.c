@@ -1359,7 +1359,11 @@ PortalRunSelect(Portal portal,
 	QueryDesc  *queryDesc;
 	ScanDirection direction;
 	uint32		nprocessed;
+	struct		rusage start_r;
+	struct		timeval start_t;
 
+	if (log_executor_stats)
+		ResetUsageCommon(&start_r, &start_t);
 	/*
 	 * NB: queryDesc will be NULL if we are fetching from a held cursor or a
 	 * completed utility query; can't use it in that path.
@@ -1481,6 +1485,8 @@ PortalRunSelect(Portal portal,
 		}
 	}
 
+	if (log_executor_stats)
+		ShowUsageCommon("PortalRunSelect", &start_r, &start_t);
 	return nprocessed;
 }
 

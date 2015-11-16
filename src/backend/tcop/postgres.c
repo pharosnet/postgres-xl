@@ -5063,14 +5063,20 @@ static struct rusage Save_r;
 static struct timeval Save_t;
 
 void
-ResetUsage(void)
+ResetUsageCommon(struct rusage *save_r, struct timeval *save_t)
 {
-	getrusage(RUSAGE_SELF, &Save_r);
-	gettimeofday(&Save_t, NULL);
+	getrusage(RUSAGE_SELF, save_r);
+	gettimeofday(save_t, NULL);
 }
 
 void
-ShowUsage(const char *title)
+ResetUsage(void)
+{
+	ResetUsageCommon(&Save_r, &Save_t);
+}
+
+void
+ShowUsageCommon(const char *title, struct rusage *save_r, struct timeval *save_t)
 {
 	StringInfoData str;
 	struct timeval user,
@@ -5082,17 +5088,17 @@ ShowUsage(const char *title)
 	gettimeofday(&elapse_t, NULL);
 	memcpy((char *) &user, (char *) &r.ru_utime, sizeof(user));
 	memcpy((char *) &sys, (char *) &r.ru_stime, sizeof(sys));
-	if (elapse_t.tv_usec < Save_t.tv_usec)
+	if (elapse_t.tv_usec < save_t->tv_usec)
 	{
 		elapse_t.tv_sec--;
 		elapse_t.tv_usec += 1000000;
 	}
-	if (r.ru_utime.tv_usec < Save_r.ru_utime.tv_usec)
+	if (r.ru_utime.tv_usec < save_r->ru_utime.tv_usec)
 	{
 		r.ru_utime.tv_sec--;
 		r.ru_utime.tv_usec += 1000000;
 	}
-	if (r.ru_stime.tv_usec < Save_r.ru_stime.tv_usec)
+	if (r.ru_stime.tv_usec < save_r->ru_stime.tv_usec)
 	{
 		r.ru_stime.tv_sec--;
 		r.ru_stime.tv_usec += 1000000;
@@ -5110,12 +5116,12 @@ ShowUsage(const char *title)
 	appendStringInfoString(&str, "! system usage stats:\n");
 	appendStringInfo(&str,
 				"!\t%ld.%06ld elapsed %ld.%06ld user %ld.%06ld system sec\n",
-					 (long) (elapse_t.tv_sec - Save_t.tv_sec),
-					 (long) (elapse_t.tv_usec - Save_t.tv_usec),
-					 (long) (r.ru_utime.tv_sec - Save_r.ru_utime.tv_sec),
-					 (long) (r.ru_utime.tv_usec - Save_r.ru_utime.tv_usec),
-					 (long) (r.ru_stime.tv_sec - Save_r.ru_stime.tv_sec),
-					 (long) (r.ru_stime.tv_usec - Save_r.ru_stime.tv_usec));
+					 (long) (elapse_t.tv_sec - save_t->tv_sec),
+					 (long) (elapse_t.tv_usec - save_t->tv_usec),
+					 (long) (r.ru_utime.tv_sec - save_r->ru_utime.tv_sec),
+					 (long) (r.ru_utime.tv_usec - save_r->ru_utime.tv_usec),
+					 (long) (r.ru_stime.tv_sec - save_r->ru_stime.tv_sec),
+					 (long) (r.ru_stime.tv_usec - save_r->ru_stime.tv_usec));
 	appendStringInfo(&str,
 					 "!\t[%ld.%06ld user %ld.%06ld sys total]\n",
 					 (long) user.tv_sec,
@@ -5125,28 +5131,28 @@ ShowUsage(const char *title)
 #if defined(HAVE_GETRUSAGE)
 	appendStringInfo(&str,
 					 "!\t%ld/%ld [%ld/%ld] filesystem blocks in/out\n",
-					 r.ru_inblock - Save_r.ru_inblock,
+					 r.ru_inblock - save_r->ru_inblock,
 	/* they only drink coffee at dec */
-					 r.ru_oublock - Save_r.ru_oublock,
+					 r.ru_oublock - save_r->ru_oublock,
 					 r.ru_inblock, r.ru_oublock);
 	appendStringInfo(&str,
 			  "!\t%ld/%ld [%ld/%ld] page faults/reclaims, %ld [%ld] swaps\n",
-					 r.ru_majflt - Save_r.ru_majflt,
-					 r.ru_minflt - Save_r.ru_minflt,
+					 r.ru_majflt - save_r->ru_majflt,
+					 r.ru_minflt - save_r->ru_minflt,
 					 r.ru_majflt, r.ru_minflt,
-					 r.ru_nswap - Save_r.ru_nswap,
+					 r.ru_nswap - save_r->ru_nswap,
 					 r.ru_nswap);
 	appendStringInfo(&str,
 		 "!\t%ld [%ld] signals rcvd, %ld/%ld [%ld/%ld] messages rcvd/sent\n",
-					 r.ru_nsignals - Save_r.ru_nsignals,
+					 r.ru_nsignals - save_r->ru_nsignals,
 					 r.ru_nsignals,
-					 r.ru_msgrcv - Save_r.ru_msgrcv,
-					 r.ru_msgsnd - Save_r.ru_msgsnd,
+					 r.ru_msgrcv - save_r->ru_msgrcv,
+					 r.ru_msgsnd - save_r->ru_msgsnd,
 					 r.ru_msgrcv, r.ru_msgsnd);
 	appendStringInfo(&str,
 			 "!\t%ld/%ld [%ld/%ld] voluntary/involuntary context switches\n",
-					 r.ru_nvcsw - Save_r.ru_nvcsw,
-					 r.ru_nivcsw - Save_r.ru_nivcsw,
+					 r.ru_nvcsw - save_r->ru_nvcsw,
+					 r.ru_nivcsw - save_r->ru_nivcsw,
 					 r.ru_nvcsw, r.ru_nivcsw);
 #endif   /* HAVE_GETRUSAGE */
 
@@ -5159,6 +5165,12 @@ ShowUsage(const char *title)
 			 errdetail_internal("%s", str.data)));
 
 	pfree(str.data);
+}
+
+void
+ShowUsage(const char *title)
+{
+	ShowUsageCommon(title, &Save_r, &Save_t);
 }
 
 /*
