@@ -57,6 +57,7 @@ pool_listen(unsigned short port, const char *unixSocketName)
 	struct sockaddr_un unix_addr;
 	int			maxconn;
 
+
 #ifdef HAVE_UNIX_SOCKETS
 	if (Lock_AF_UNIX(port, unixSocketName) < 0)
 		return -1;
@@ -71,6 +72,8 @@ pool_listen(unsigned short port, const char *unixSocketName)
 	strcpy(unix_addr.sun_path, sock_path);
 	len = sizeof(unix_addr.sun_family) +
 		strlen(unix_addr.sun_path) + 1;
+
+
 
 	/* bind the name to the descriptor */
 	if (bind(fd, (struct sockaddr *) & unix_addr, len) < 0)
@@ -88,6 +91,8 @@ pool_listen(unsigned short port, const char *unixSocketName)
 	/* tell kernel we're a server */
 	if (listen(fd, maxconn) < 0)
 		return -1;
+
+
 
 	/* Arrange to unlink the socket file at exit */
 	on_proc_exit(StreamDoUnlink, 0);
@@ -595,7 +600,7 @@ pool_recvfds(PoolPort *port, int *fds, int count)
 	{
 		ereport(ERROR,
 				(errcode(ERRCODE_PROTOCOL_VIOLATION),
-				 errmsg("incomplete message from client")));
+				 errmsg("incomplete message from client [size: %u errno %u]",r,errno)));
 		goto failure;
 	}
 

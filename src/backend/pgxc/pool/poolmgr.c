@@ -66,6 +66,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <poll.h>
 #include "pgxc/pause.h"
 #include "storage/procarray.h"
 
@@ -110,7 +111,7 @@ static MemoryContext PoolerAgentContext = NULL;
 /* Pool to all the databases (linked list) */
 static DatabasePool *databasePools = NULL;
 
-/* PoolAgents */
+/* PoolAgents and the poll array*/
 static int	agentCount = 0;
 static PoolAgent **poolAgents;
 
@@ -233,7 +234,7 @@ PoolManagerInit()
 	{
 		ereport(ERROR,
 				(errcode(ERRCODE_OUT_OF_MEMORY),
-				 errmsg("out of memory")));
+				 errmsg("out of memory while initializing pool agents")));
 	}
 
 	PoolerLoop();
@@ -377,8 +378,8 @@ GetPoolManagerHandle(void)
 			{
 				saved_errno = errno;
 				ereport(WARNING,
-						(errmsg("could not create Unix-domain socket in directory \"%s\"",
-								socketdir)));
+						(errmsg("could not create Unix-domain socket in directory \"%s\", errno: %d",
+								socketdir, saved_errno)));
 			}
 			else
 			{
@@ -1819,23 +1820,26 @@ acquire_connection(DatabasePool *dbPool, Oid node)
 		slot = nodePool->slot[--(nodePool->freeSize)];
 
 	retry:
-		/*
-		 * Make sure connection is ok, destroy connection slot if there is a
-		 * problem.
-		 */
-		poll_result = pqReadReady((PGconn *) slot->conn);
-
-		if (poll_result == 0)
-			break; 		/* ok, no data */
-		else if (poll_result < 0)
+		if (PQsocket((PGconn *) slot->conn) > 0)
 		{
-			if (errno == EAGAIN || errno == EINTR)
-				goto retry;
+			/*
+			 * Make sure connection is ok, destroy connection slot if there is a
+			 * problem.
+			 */
+			poll_result = pqReadReady((PGconn *) slot->conn);
 
-			elog(WARNING, "Error in checking connection, errno = %d", errno);
+			if (poll_result == 0)
+				break; 		/* ok, no data */
+			else if (poll_result < 0)
+			{
+				if (errno == EAGAIN || errno == EINTR)
+					goto retry;
+
+				elog(WARNING, "Error in checking connection, errno = %d", errno);
+			}
+			else
+				elog(WARNING, "Unexpected data on connection, cleaning.");
 		}
-		else
-			elog(WARNING, "Unexpected data on connection, cleaning.");
 
 		destroy_slot(slot);
 		slot = NULL;
@@ -2046,6 +2050,9 @@ PoolerLoop(void)
 {
 	StringInfoData 	input_message;
 	time_t			last_maintenance = (time_t) 0;
+	int				maintenance_timeout;
+	struct pollfd	*pool_fd;
+	int i;
 
 #ifdef HAVE_UNIX_SOCKETS
 	if (Unix_socket_directories)
@@ -2096,12 +2103,23 @@ PoolerLoop(void)
 		pfree(rawstring);
 	}
 #endif
+
+	pool_fd = (struct pollfd *) palloc((MaxConnections + 1) * sizeof(struct pollfd));
+
+	if (server_fd == -1)
+	{
+		/* log error */
+		return;
+	}
+
 	initStringInfo(&input_message);
+
+	pool_fd[0].fd = server_fd;
+	pool_fd[0].events = POLLIN; 
 
 	for (;;)
 	{
-		int			nfds;
-		fd_set		rfds;
+
 		int			retval;
 		int			i;
 
@@ -2112,25 +2130,17 @@ PoolerLoop(void)
 		if (!PostmasterIsAlive())
 			exit(1);
 
-		/* watch for incoming connections */
-		FD_ZERO(&rfds);
-		FD_SET(server_fd, &rfds);
-
-		nfds = server_fd;
-
 		/* watch for incoming messages */
-		for (i = 0; i < agentCount; i++)
+		for (i = 1; i <= agentCount; i++)
 		{
-			PoolAgent  *agent = poolAgents[i];
-			int			sockfd = Socket(agent->port);
-			FD_SET		(sockfd, &rfds);
-
-			nfds = Max(nfds, sockfd);
+			PoolAgent *agent = poolAgents[i - 1];
+			int sockfd = Socket(agent->port);
+			pool_fd[i].fd = sockfd;
+			pool_fd[i].events = POLLIN;
 		}
 
 		if (PoolMaintenanceTimeout > 0)
 		{
-			struct timeval	maintenance_timeout;
 			int				timeout_val;
 			double			timediff;
 
@@ -2149,13 +2159,10 @@ PoolerLoop(void)
 			else
 				timeout_val = PoolMaintenanceTimeout - rint(timediff);
 
-			maintenance_timeout.tv_sec = timeout_val;
-			maintenance_timeout.tv_usec = 0;
-			/* wait for event */
-			retval = select(nfds + 1, &rfds, NULL, NULL, &maintenance_timeout);
+			maintenance_timeout = timeout_val * 1000;
 		}
 		else
-		retval = select(nfds + 1, &rfds, NULL, NULL, NULL);
+			maintenance_timeout = -1;
 		/*
 		 * Emergency bailout if postmaster has died.  This is to avoid the
 		 * necessity for manual cleanup of all postmaster children.
@@ -2171,21 +2178,33 @@ PoolerLoop(void)
 			got_SIGHUP = false;
 			ProcessConfigFile(PGC_SIGHUP);
 		}
+
 		if (shutdown_requested)
 		{
-			for (i = agentCount - 1; i >= 0; i--)
+			for (i = agentCount - 1; agentCount > 0 && i >= 0; i--)
 			{
 				PoolAgent  *agent = poolAgents[i];
-
 				agent_destroy(agent);
 			}
+
 			while (databasePools)
 				if (destroy_database_pool(databasePools->database,
 										  databasePools->user_name) == 0)
 					break;
+			
 			close(server_fd);
 			exit(0);
 		}
+
+		/* wait for event */
+		retval = poll(pool_fd, agentCount + 1, maintenance_timeout);
+		if (retval < 0)
+		{
+			if (errno == EINTR || errno == EAGAIN)
+				continue;
+			elog(FATAL, "poll returned with error %d", retval);
+		}
+
 		if (retval > 0)
 		{
 			/*
@@ -2193,15 +2212,17 @@ PoolerLoop(void)
 			 * and trailing items are shifted, so scroll downward
 			 * to avoid problem
 			 */
-			for (i = agentCount - 1; i >= 0; i--)
+			for (i = agentCount - 1; agentCount > 0 && i >= 0; i--)
 			{
-				PoolAgent  *agent = poolAgents[i];
-				int			sockfd = Socket(agent->port);
+				PoolAgent *agent = poolAgents[i];
+				int sockfd = Socket(agent->port);
 
-				if (FD_ISSET(sockfd, &rfds))
+				if ((sockfd == pool_fd[i + 1].fd) && 
+						(pool_fd[i + 1].revents & POLLIN))
 					agent_handle_input(agent, &input_message);
 			}
-			if (FD_ISSET(server_fd, &rfds))
+
+			if (pool_fd[0].revents & POLLIN)
 				agent_create();
 		}
 		else if (retval == 0)

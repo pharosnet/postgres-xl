@@ -80,6 +80,10 @@ typedef struct
 	PGXCNodePoolSlot **dn_connections; /* one for each Datanode */
 	PGXCNodePoolSlot **coord_connections; /* one for each Coordinator */
 } PoolAgent;
+/*
+ * Helper to poll for all pooler sockets
+ */
+typedef struct pollfd Pollfd;
 
 
 extern int	PoolConnKeepAlive;
