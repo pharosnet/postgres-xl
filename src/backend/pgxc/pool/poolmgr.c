@@ -1169,6 +1169,9 @@ agent_handle_input(PoolAgent * agent, StringInfo s)
 				cancel_query_on_connections(agent, datanodelist, coordlist);
 				list_free(datanodelist);
 				list_free(coordlist);
+
+				/* Send success result */
+				pool_sendres(&agent->port, QUERY_CANCEL_COMPLETED);
 				break;
 			case 'o':			/* Lock/unlock pooler */
 				pool_getmessage(&agent->port, s, 8);
@@ -1476,6 +1479,12 @@ PoolManagerCancelQuery(int dn_count, int* dn_list, int co_count, int* co_list)
 	}
 	pool_putmessage(&poolHandle->port, 'h', (char *) buf, (2 + dn_count + co_count) * sizeof(uint32));
 	pool_flush(&poolHandle->port);
+
+	/* Receive result message */
+	if (pool_recvres(&poolHandle->port) != QUERY_CANCEL_COMPLETED)
+		ereport(WARNING,
+				(errcode(ERRCODE_INTERNAL_ERROR),
+				 errmsg("Query cancel not completed")));
 }
 
 /*

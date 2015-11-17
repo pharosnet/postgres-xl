@@ -25,6 +25,9 @@
 #define CLEAN_CONNECTION_TX_REMAIN			2
 #define	CLEAN_CONNECTION_EOF				-1
 
+/* Results for query cancel */
+#define QUERY_CANCEL_COMPLETED				0
+
 /* Results for pooler connection info check */
 #define POOL_CHECK_SUCCESS					0
 #define POOL_CHECK_FAILED					1

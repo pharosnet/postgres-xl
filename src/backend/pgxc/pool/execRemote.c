@@ -3678,6 +3678,9 @@ PreAbort_Remote(void)
 	PGXCNodeAllHandles *all_handles;
 	PGXCNodeHandle	   *clean_nodes[NumCoords + NumDataNodes];
 	int					node_count = 0;
+	int					cancel_dn_count = 0, cancel_co_count = 0;
+	int					cancel_dn_list[NumDataNodes];
+	int					cancel_co_list[NumCoords];
 	int 				i;
 	struct rusage		start_r;
 	struct timeval		start_t;
@@ -3703,6 +3706,7 @@ PreAbort_Remote(void)
 			 */
 			handle->combiner = NULL;
 			clean_nodes[node_count++] = handle;
+			cancel_co_list[cancel_co_count++] = i;
 		}
 	}
 
@@ -3721,6 +3725,7 @@ PreAbort_Remote(void)
 			 */
 			handle->combiner = NULL;
 			clean_nodes[node_count++] = handle;
+			cancel_dn_list[cancel_dn_count++] = i;
 		}
 		else if (handle->state == DN_CONNECTION_STATE_COPY_IN ||
 				handle->state == DN_CONNECTION_STATE_COPY_OUT)
@@ -3732,8 +3737,15 @@ PreAbort_Remote(void)
 			 */
 			handle->combiner = NULL;
 			clean_nodes[node_count++] = handle;
+			cancel_dn_list[cancel_dn_count++] = i;
 		}
 	}
+
+	/*
+	 * Cancel running queries on the datanodes and the coordinators.
+	 */
+	PoolManagerCancelQuery(cancel_dn_count, cancel_dn_list, cancel_co_count,
+			cancel_co_list);
 
 	/*
 	 * Now read and discard any data from the connections found "dirty"
