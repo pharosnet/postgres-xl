@@ -1080,12 +1080,42 @@ send_some(PGXCNodeHandle *handle, int len)
 
 		if (len > 0)
 		{
+			struct pollfd pool_fd;
+			int poll_ret;
+
 			/*
-			 * We did not send it all
-			 * return 1 to indicate that data is still pending.
+			 * Wait for the socket to become ready again to receive more data.
+			 * For some cases, especially while writing large sums of data
+			 * during COPY protocol and when the remote node is not capable of
+			 * handling data at the same speed, we might otherwise go in a
+			 * useless tight loop, consuming all available local resources
+			 *
+			 * Use a small timeout of 1s to avoid infinite wait
 			 */
-			result = 1;
-			break;
+			pool_fd.fd = handle->sock;
+			pool_fd.events = POLLOUT;
+
+			poll_ret = poll(&pool_fd, 1, 1000);
+			if (poll_ret < 0)
+			{
+				if (errno == EAGAIN || errno == EINTR)
+					continue;
+				else
+				{
+					add_error_message(handle, "poll failed ");
+					handle->outEnd = 0;
+					return -1;
+				}
+			}
+			else if (poll_ret == 1)
+			{
+				if (pool_fd.revents & POLLHUP)
+				{
+					add_error_message(handle, "remote end disconnected");
+					handle->outEnd = 0;
+					return -1;
+				}
+			}
 		}
 	}
 
