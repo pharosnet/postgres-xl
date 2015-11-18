@@ -2955,3 +2955,24 @@ do_show_help(char *line)
 			  );
 	}
 }
+
+int
+get_any_available_coord(int except)
+{
+	int ii;
+	for (ii = 0; aval(VAR_coordMasterServers)[ii]; ii++)
+	{
+		if (ii == except)
+			continue;
+
+		if (!is_none(aval(VAR_coordMasterServers)[ii]))
+		{
+			if (pingNode(aval(VAR_coordMasterServers)[ii],
+						aval(VAR_coordPorts)[ii]) == 0)
+				return ii;
+		}
+	}
+
+	elog(ERROR, "ERROR: failed to find any running coordinator");
+	return -1;
+}

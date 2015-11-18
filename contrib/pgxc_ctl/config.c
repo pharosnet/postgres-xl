@@ -336,6 +336,8 @@ static void emptyCoordSlaves()
 		add_val(find_var(VAR_coordSlaveServers), "none");
 		add_val(find_var(VAR_coordSlaveDirs), "none");
 		add_val(find_var(VAR_coordArchLogDirs), "none");
+		add_val(find_var(VAR_coordSlavePorts), "none");
+		add_val(find_var(VAR_coordSlavePoolerPorts), "none");
 	}
 }
 
@@ -355,8 +357,10 @@ static void emptyDatanodeSlaves()
 	for (ii = 0; ii < arraySizeName(VAR_datanodeSlaveServers); ii++)
 	{
 		add_val(find_var(VAR_datanodeSlaveServers), "none");
-		add_val(find_var(VAR_coordSlaveDirs), "none");
-		add_val(find_var(VAR_coordArchLogDirs), "none");
+		add_val(find_var(VAR_datanodeSlaveDirs), "none");
+		add_val(find_var(VAR_datanodeArchLogDirs), "none");
+		add_val(find_var(VAR_datanodeSlavePorts), "-1");
+		add_val(find_var(VAR_datanodeSlavePoolerPorts), "-1");
 	}
 }
 

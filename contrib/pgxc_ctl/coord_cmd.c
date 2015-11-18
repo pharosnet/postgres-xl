@@ -104,9 +104,11 @@ cmd_t *prepare_initCoordinatorMaster(char *nodeName)
 	appendCmdEl(cmdInitdb, (cmdPgConf = initCmd(aval(VAR_coordMasterServers)[jj])));
 	snprintf(newCommand(cmdPgConf), MAXLINE,
 			 "cat >> %s/postgresql.conf", aval(VAR_coordMasterDirs)[jj]);
-	if (!is_none(sval(VAR_coordExtraConfig)))
+	if (doesExist(VAR_coordExtraConfig, 0) &&
+		!is_none(sval(VAR_coordExtraConfig)))
 		AddMember(confFiles, sval(VAR_coordExtraConfig));
-	if (!is_none(aval(VAR_coordSpecificExtraConfig)[jj]))
+	if (doesExist(VAR_coordSpecificExtraConfig, jj) &&
+		!is_none(aval(VAR_coordSpecificExtraConfig)[jj]))
 		AddMember(confFiles, aval(VAR_coordSpecificExtraConfig)[jj]);
 	if ((f = prepareLocalStdin((cmdPgConf->localStdin = Malloc(MAXPATH+1)), MAXPATH, confFiles)) == NULL)
 	{
@@ -534,6 +536,7 @@ static cmd_t *prepare_configureDataNode(char *nodeName)
 	int ii;
 	int jj;
 	int idx;
+	int connCordIndx;
 	FILE *f;
 	bool is_preferred;
 
@@ -545,11 +548,16 @@ static cmd_t *prepare_configureDataNode(char *nodeName)
 	if (is_none(aval(VAR_datanodeMasterServers)[idx]))
 		return NULL;
 	cmd = initCmd(NULL);
+
 	/* We use one of the coordinators to send queries to datanodes */
+	connCordIndx = get_any_available_coord(-1);
+	if (connCordIndx == -1)
+		return NULL;
+
 	snprintf(newCommand(cmd), MAXLINE,
 			 "psql -p %d -h %s -a %s %s",
-			 atoi(aval(VAR_coordPorts)[0]),
-			 aval(VAR_coordMasterServers)[0],
+			 atoi(aval(VAR_coordPorts)[connCordIndx]),
+			 aval(VAR_coordMasterServers)[connCordIndx],
 			 sval(VAR_defaultDatabase),
 			 sval(VAR_pgxcOwner));
 	if ((f = prepareLocalStdin(newFilename(cmd->localStdin), MAXPATH, NULL)) == NULL)
@@ -937,6 +945,7 @@ int add_coordinatorMaster(char *name, char *host, int port, int pooler,
 	char port_s[MAXTOKEN+1];
 	char pooler_s[MAXTOKEN+1];
 	int gtmPxyIdx;
+	int connCordIndx;
 	char *gtmHost;
 	char *gtmPort;
 	char pgdumpall_out[MAXPATH+1];
@@ -1119,8 +1128,16 @@ int add_coordinatorMaster(char *name, char *host, int port, int pooler,
 		pclose(f);
 	}
 
+	/* find any available coordinator */
+	connCordIndx = get_any_available_coord(-1);
+	if (connCordIndx == -1)
+		return 1;
+
 	/* Lock ddl */
-	if ((lockf = pgxc_popen_wRaw("psql -h %s -p %s %s", aval(VAR_coordMasterServers)[0], aval(VAR_coordPorts)[0], sval(VAR_defaultDatabase))) == NULL)
+	if ((lockf = pgxc_popen_wRaw("psql -h %s -p %s %s",
+					aval(VAR_coordMasterServers)[connCordIndx],
+					aval(VAR_coordPorts)[connCordIndx],
+					sval(VAR_defaultDatabase))) == NULL)
 	{
 		elog(ERROR, "ERROR: could not open psql command, %s\n", strerror(errno));
 		return 1;
@@ -1131,7 +1148,8 @@ int add_coordinatorMaster(char *name, char *host, int port, int pooler,
 	/* pg_dumpall */
 	createLocalFileName(GENERAL, pgdumpall_out, MAXPATH);
 	doImmediateRaw("pg_dumpall -p %s -h %s -s --include-nodes --dump-nodes --file=%s",
-				   aval(VAR_coordPorts)[0], aval(VAR_coordMasterServers)[0], pgdumpall_out);
+				   aval(VAR_coordPorts)[connCordIndx],
+				   aval(VAR_coordMasterServers)[connCordIndx], pgdumpall_out);
 
 	/* Start the new coordinator */
 	doImmediate(host, NULL, "pg_ctl start -Z restoremode -D %s -o -i", dir);
@@ -1172,7 +1190,10 @@ int add_coordinatorMaster(char *name, char *host, int port, int pooler,
 	{
 		if (!is_none(aval(VAR_datanodeNames)[ii]))
 		{
-			if ((f = pgxc_popen_wRaw("psql -h %s -p %d %s", aval(VAR_coordMasterServers)[0], atoi(aval(VAR_coordPorts)[0]), sval(VAR_defaultDatabase))) == NULL)
+			if ((f = pgxc_popen_wRaw("psql -h %s -p %d %s",
+							aval(VAR_coordMasterServers)[connCordIndx],
+							atoi(aval(VAR_coordPorts)[connCordIndx]),
+							sval(VAR_defaultDatabase))) == NULL)
 			{
 				elog(ERROR, "ERROR: cannot connect to the coordinator master %s.\n", aval(VAR_coordNames)[ii]);
 				continue;
@@ -1499,12 +1520,9 @@ int remove_coordinatorMaster(char *name, int clean_opt)
 	{
 		if (doesExist(VAR_datanodeNames, ii) && !is_none(aval(VAR_datanodeNames)[ii]))
 		{
-			int coord_idx;
-
-			if (idx == 0)
-				coord_idx = 1;
-			else
-				coord_idx  = 0;
+			int coord_idx = get_any_available_coord(idx);
+			if (coord_idx == -1)
+				return 1;
 
 			f = pgxc_popen_wRaw("psql -p %d -h %s %s", atoi(aval(VAR_coordPorts)[coord_idx]), aval(VAR_coordMasterServers)[coord_idx], sval(VAR_defaultDatabase));
 			if (f == NULL)

@@ -101,9 +101,11 @@ cmd_t *prepare_initDatanodeMaster(char *nodeName)
 			"listen_addresses = '*'\n"
 			"max_connections = 100\n",
 			timeStampString(timeStamp, MAXTOKEN));
-	if (!is_none(sval(VAR_datanodeExtraConfig)))
+	if (doesExist(VAR_datanodeExtraConfig, 0) &&
+		!is_none(sval(VAR_datanodeExtraConfig)))
 		AddMember(fileList, sval(VAR_datanodeExtraConfig));
-	if (!is_none(aval(VAR_datanodeSpecificExtraConfig)[idx]))
+	if (doesExist(VAR_datanodeSpecificExtraConfig, idx) &&
+		!is_none(aval(VAR_datanodeSpecificExtraConfig)[idx]))
 		AddMember(fileList, aval(VAR_datanodeSpecificExtraConfig)[idx]);
 	appendFiles(f, fileList);
 	CleanArray(fileList);
@@ -915,6 +917,7 @@ int add_datanodeMaster(char *name, char *host, int port, int pooler, char *dir,
 	char port_s[MAXTOKEN+1];
     char pooler_s[MAXTOKEN+1];
 	int gtmPxyIdx;
+	int connCordIdx;
 	char *gtmHost;
 	char *gtmPort;
 	char pgdumpall_out[MAXPATH+1];
@@ -1173,12 +1176,20 @@ int add_datanodeMaster(char *name, char *host, int port, int pooler, char *dir,
 		}
 	}
 
+	/* find any available coordinator */
+	connCordIdx = get_any_available_coord(-1);
+	if (connCordIdx == -1)
+		return 1;
+
 	/* Issue CREATE NODE  on datanodes */
 	for (ii = 0; aval(VAR_datanodeNames)[ii]; ii++)
 	{
 		if (!is_none(aval(VAR_datanodeNames)[ii]))
 		{
-			if ((f = pgxc_popen_wRaw("psql -h %s -p %s %s", aval(VAR_coordMasterServers)[0], aval(VAR_coordPorts)[0], sval(VAR_defaultDatabase))) == NULL)
+			if ((f = pgxc_popen_wRaw("psql -h %s -p %s %s",
+							aval(VAR_coordMasterServers)[connCordIdx],
+							aval(VAR_coordPorts)[connCordIdx],
+							sval(VAR_defaultDatabase))) == NULL)
 			{
 				elog(ERROR, "ERROR: cannot connect to the coordinator %s.\n", aval(VAR_coordNames)[0]);
 				continue;
@@ -1453,6 +1464,7 @@ int remove_datanodeMaster(char *name, int clean_opt)
 	 */
 
 	int idx;
+	int connCordIdx;
 	int ii;
 	FILE *f;
 	char **namelist = NULL;
@@ -1505,13 +1517,22 @@ int remove_datanodeMaster(char *name, int clean_opt)
 			pclose(f);
 		}
 	}
+
+	/* find any available coordinator */
+	connCordIdx = get_any_available_coord(-1);
+	if (connCordIdx == -1)
+		return 1;
+
 	/* Issue DROP NODE  on datanodes */
 	for (ii = 0; aval(VAR_datanodeNames)[ii]; ii++)
 	{
 		if (!is_none(aval(VAR_datanodeNames)[ii]) &&
 			strcmp(aval(VAR_datanodeNames)[ii], name) != 0)
 		{
-			if ((f = pgxc_popen_wRaw("psql -h %s -p %s %s", aval(VAR_coordMasterServers)[0], aval(VAR_coordPorts)[0], sval(VAR_defaultDatabase))) == NULL)
+			if ((f = pgxc_popen_wRaw("psql -h %s -p %s %s",
+							aval(VAR_coordMasterServers)[connCordIdx],
+							aval(VAR_coordPorts)[connCordIdx],
+							sval(VAR_defaultDatabase))) == NULL)
 			{
 				elog(ERROR, "ERROR: cannot connect to the coordinator %s.\n", aval(VAR_coordNames)[0]);
 				continue;
