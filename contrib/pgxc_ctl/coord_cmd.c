@@ -318,7 +318,7 @@ cmd_t *prepare_initCoordinatorSlave(char *nodeName)
 	fprintf(f,
 			"#==========================================\n"
 			"# Added to initialize the slave, %s\n"
-			"hot_standby = off\n"
+			"hot_standby = on\n"
 			"port = %s\n"
 			"pooler_port = %s\n"
 			"wal_level = minimal\n"
@@ -1383,7 +1383,7 @@ int add_coordinatorSlave(char *name, char *host, int port, int pooler_port, char
 	fprintf(f,
 			"#==========================================\n"
 			"# Added to initialize the slave, %s\n"
-			"hot_standby = off\n"
+			"hot_standby = on\n"
 			"port = %d\n"
 			"pooler_port = %d\n"
 			"wal_level = minimal\n"		/* WAL level --- minimal.   No cascade slave so far. */

@@ -320,7 +320,7 @@ cmd_t *prepare_initDatanodeSlave(char *nodeName)
 	fprintf(f,
 			"#==========================================\n"
 			"# Added to startup the slave, %s\n"
-			"hot_standby = off\n"
+			"hot_standby = on\n"
 			"port = %s\n"
 			"pooler_port = %s\n"
 			"# End of addition\n",
@@ -1379,7 +1379,7 @@ int add_datanodeSlave(char *name, char *host, int port, int pooler, char *dir, c
 	fprintf(f,
 			"#==========================================\n"
 			"# Added to initialize the slave, %s\n"
-			"hot_standby = off\n"
+			"hot_standby = on\n"
 			"port = %s\n"
 			"pooler_port = %s\n"
 			"wal_level = minimal\n"		/* WAL level --- minimal.   No cascade slave so far. */
