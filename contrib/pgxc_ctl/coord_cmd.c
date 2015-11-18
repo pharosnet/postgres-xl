@@ -2047,8 +2047,10 @@ static int failover_oneCoordinator(int coordIdx)
 	 * Determine the target gtm
 	 */
 	gtmPxyIdx= getEffectiveGtmProxyIdxFromServerName(aval(VAR_coordSlaveServers)[coordIdx]);
-	gtmHost = (gtmPxyIdx < 0) ? sval(VAR_gtmMasterServer) : aval(VAR_gtmProxyServers)[coordIdx];
-	gtmPort = (gtmPxyIdx < 0) ? sval(VAR_gtmMasterPort) : aval(VAR_gtmProxyPorts)[coordIdx];
+	gtmHost = (gtmPxyIdx < 0) ? sval(VAR_gtmMasterServer) :
+		aval(VAR_gtmProxyServers)[gtmPxyIdx];
+	gtmPort = (gtmPxyIdx < 0) ? sval(VAR_gtmMasterPort) :
+		aval(VAR_gtmProxyPorts)[gtmPxyIdx];
 	if (gtmPxyIdx >= 0)
 		elog(NOTICE, "Failover coordinator %s using gtm %s\n",
 			 aval(VAR_coordNames)[coordIdx], aval(VAR_gtmProxyNames)[gtmPxyIdx]);
