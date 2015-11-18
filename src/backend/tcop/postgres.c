@@ -4258,13 +4258,15 @@ PostgresMain(int argc, char *argv[],
 	xc_lockForBackupKey1 = Int32GetDatum(XC_LOCK_FOR_BACKUP_KEY_2);
 
 #ifdef XCP
-	if (IsUnderPostmaster)
+	/*
+	 * Prepare to handle distributed requests. Do that after sending down
+	 * ReadyForQuery, to avoid pooler blocking.
+	 *
+	 * Also do this only when we can access the catalogs. For example, a
+	 * wal-sender can't do that since its not connected to a specific database
+	 */
+	if (IsUnderPostmaster && !am_walsender)
 	{
-		/*
-		 * Prepare to handle distributed requests.
-		 * Do that after sending down ReadyForQuery, to avoid pooler
-		 * blocking.
-		 */
 		start_xact_command();
 		InitMultinodeExecutor(false);
 		finish_xact_command();
