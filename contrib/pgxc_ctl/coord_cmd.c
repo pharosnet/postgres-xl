@@ -1533,18 +1533,18 @@ int remove_coordinatorMaster(char *name, int clean_opt)
 		doImmediate(aval(VAR_coordMasterServers)[idx], NULL, "rm -rf %s", aval(VAR_coordMasterDirs)[idx]);
 #endif
 	/* Update configuration and backup --> should cleanup "none" entries here */
-	assign_arrayEl(VAR_coordNames, idx, "none", NULL);
-	assign_arrayEl(VAR_coordMasterDirs, idx, "none", NULL);
-	assign_arrayEl(VAR_coordPorts, idx, "-1", "-1");
-	assign_arrayEl(VAR_poolerPorts, idx, "-1", "-1");
-	assign_arrayEl(VAR_coordMasterServers, idx, "none", NULL);
-	assign_arrayEl(VAR_coordMaxWALSenders, idx, "0", "0");
-	assign_arrayEl(VAR_coordSlaveServers, idx, "none", NULL);
-	assign_arrayEl(VAR_coordSlavePorts, idx, "none", NULL);
-	assign_arrayEl(VAR_coordSlavePoolerPorts, idx, "none", NULL);
-	assign_arrayEl(VAR_coordSlaveDirs, idx, "none", NULL);
-	assign_arrayEl(VAR_coordArchLogDirs, idx, "none", NULL);
-	assign_arrayEl(VAR_coordSpecificExtraConfig, idx, "none", NULL);
+	replace_arrayEl(VAR_coordNames, idx, "none", NULL);
+	replace_arrayEl(VAR_coordMasterDirs, idx, "none", NULL);
+	replace_arrayEl(VAR_coordPorts, idx, "-1", "-1");
+	replace_arrayEl(VAR_poolerPorts, idx, "-1", "-1");
+	replace_arrayEl(VAR_coordMasterServers, idx, "none", NULL);
+	replace_arrayEl(VAR_coordMaxWALSenders, idx, "0", "0");
+	replace_arrayEl(VAR_coordSlaveServers, idx, "none", NULL);
+	replace_arrayEl(VAR_coordSlavePorts, idx, "none", NULL);
+	replace_arrayEl(VAR_coordSlavePoolerPorts, idx, "none", NULL);
+	replace_arrayEl(VAR_coordSlaveDirs, idx, "none", NULL);
+	replace_arrayEl(VAR_coordArchLogDirs, idx, "none", NULL);
+	replace_arrayEl(VAR_coordSpecificExtraConfig, idx, "none", NULL);
 	handle_no_slaves();
 	/*
 	 * Write config files
@@ -1628,11 +1628,11 @@ int remove_coordinatorSlave(char *name, int clean_opt)
 	/*
 	 * Maintain variables
 	 */
-	assign_arrayEl(VAR_coordSlaveServers, idx, "none", NULL);
-	assign_arrayEl(VAR_coordSlavePorts, idx, "none", NULL);
-	assign_arrayEl(VAR_coordSlavePoolerPorts, idx, "none", NULL);
-	assign_arrayEl(VAR_coordSlaveDirs, idx, "none", NULL);
-	assign_arrayEl(VAR_coordArchLogDirs, idx, "none", NULL);
+	replace_arrayEl(VAR_coordSlaveServers, idx, "none", NULL);
+	replace_arrayEl(VAR_coordSlavePorts, idx, "none", NULL);
+	replace_arrayEl(VAR_coordSlavePoolerPorts, idx, "none", NULL);
+	replace_arrayEl(VAR_coordSlaveDirs, idx, "none", NULL);
+	replace_arrayEl(VAR_coordArchLogDirs, idx, "none", NULL);
 	handle_no_slaves();
 	/*
 	 * Maintain configuration file

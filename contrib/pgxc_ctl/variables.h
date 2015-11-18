@@ -62,6 +62,7 @@ void reset_value(pgxc_ctl_var *var);
 void assign_val(char *dest, char *src);
 void assign_sval(char *name, char *val);
 void assign_arrayEl(char *name, int idx, char *val, char *pad);
+void replace_arrayEl(char *name, int idx, char *val, char *pad);
 pgxc_ctl_var *confirm_var(char *name);
 void reset_var_val(char *name, char *val);
 void reset_var(char *name);

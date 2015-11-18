@@ -432,7 +432,8 @@ int extendVar(char *name, int newSize, char *def_value)
  * If pad is NULL, then "none" will be padded.
  * Returns *val if success, NULL if failed
  */
-void assign_arrayEl(char *name, int idx, char *val, char *pad)
+void assign_arrayEl_internal(char *name, int idx, char *val, char *pad,
+		int extend)
 {
 	pgxc_ctl_var *var = confirm_var(name);
 
@@ -441,11 +442,21 @@ void assign_arrayEl(char *name, int idx, char *val, char *pad)
 	/*
 	 * Pad if needed
 	 */
-	extendVar(name, idx+1, pad);
+	if (extend)
+		extendVar(name, idx+1, pad);
 	Free(var->val[idx]);
 	var->val[idx] = Strdup(val);
 }
 
+void assign_arrayEl(char *name, int idx, char *val, char *pad)
+{
+	return assign_arrayEl_internal(name, idx, val, pad, TRUE);
+}
+
+void replace_arrayEl(char *name, int idx, char *val, char *pad)
+{
+	return assign_arrayEl_internal(name, idx, val, pad, FALSE);
+}
 
 int doesExist(char *name, int idx)
 {

@@ -1533,16 +1533,16 @@ int remove_datanodeMaster(char *name, int clean_opt)
 	if (clean_opt)
 		doImmediate(aval(VAR_datanodeMasterServers)[idx], NULL, "rm -rf %s", aval(VAR_datanodeMasterDirs)[idx]);
 	/* Update configuration and backup --> should cleanup "none" entries here */
-	assign_arrayEl(VAR_datanodeNames, idx, "none", NULL);
-	assign_arrayEl(VAR_datanodeMasterDirs, idx, "none", NULL);
-	assign_arrayEl(VAR_datanodePorts, idx, "-1", "-1");
-	assign_arrayEl(VAR_datanodePoolerPorts, idx, "-1", "-1");
-	assign_arrayEl(VAR_datanodeMasterServers, idx, "none", NULL);
-	assign_arrayEl(VAR_datanodeMaxWALSenders, idx, "0", "0");
-	assign_arrayEl(VAR_datanodeSlaveServers, idx, "none", NULL);
-	assign_arrayEl(VAR_datanodeSlaveDirs, idx, "none", NULL);
-	assign_arrayEl(VAR_datanodeArchLogDirs, idx, "none", NULL);
-	assign_arrayEl(VAR_datanodeSpecificExtraConfig, idx, "none", NULL);
+	replace_arrayEl(VAR_datanodeNames, idx, "none", NULL);
+	replace_arrayEl(VAR_datanodeMasterDirs, idx, "none", NULL);
+	replace_arrayEl(VAR_datanodePorts, idx, "-1", "-1");
+	replace_arrayEl(VAR_datanodePoolerPorts, idx, "-1", "-1");
+	replace_arrayEl(VAR_datanodeMasterServers, idx, "none", NULL);
+	replace_arrayEl(VAR_datanodeMaxWALSenders, idx, "0", "0");
+	replace_arrayEl(VAR_datanodeSlaveServers, idx, "none", NULL);
+	replace_arrayEl(VAR_datanodeSlaveDirs, idx, "none", NULL);
+	replace_arrayEl(VAR_datanodeArchLogDirs, idx, "none", NULL);
+	replace_arrayEl(VAR_datanodeSpecificExtraConfig, idx, "none", NULL);
 	handle_no_slaves();
 	/*
 	 * Write config files
@@ -1626,9 +1626,9 @@ int remove_datanodeSlave(char *name, int clean_opt)
 	/*
 	 * Maintain variables
 	 */
-	assign_arrayEl(VAR_datanodeSlaveServers, idx, "none", NULL);
-	assign_arrayEl(VAR_datanodeSlaveDirs, idx, "none", NULL);
-	assign_arrayEl(VAR_datanodeArchLogDirs, idx, "none", NULL);
+	replace_arrayEl(VAR_datanodeSlaveServers, idx, "none", NULL);
+	replace_arrayEl(VAR_datanodeSlaveDirs, idx, "none", NULL);
+	replace_arrayEl(VAR_datanodeArchLogDirs, idx, "none", NULL);
 	handle_no_slaves();
 	/*
 	 * Maintain configuration file
