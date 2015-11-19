@@ -373,6 +373,7 @@ subquery_planner(PlannerGlobal *glob, Query *parse,
 	root->rowMarks = NIL;
 	root->hasInheritedTarget = false;
 	root->grouping_map = NULL;
+	root->recursiveOk = true;
 
 	root->hasRecursion = hasRecursion;
 	if (hasRecursion)
