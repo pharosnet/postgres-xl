@@ -1373,6 +1373,9 @@ cancel_query_on_connections(PoolAgent *agent, List *datanodelist, List *coordlis
 		if (agent->dn_connections == NULL)
 			break;
 
+		if (!agent->dn_connections[node])
+			continue;
+
 		bRet = PQcancel((PGcancel *) agent->dn_connections[node]->xc_cancelConn, errbuf, sizeof(errbuf));
 		if (bRet != false)
 		{
@@ -1390,6 +1393,9 @@ cancel_query_on_connections(PoolAgent *agent, List *datanodelist, List *coordlis
 
 		if (agent->coord_connections == NULL)
 			break;
+
+		if (!agent->coord_connections[node])
+			continue;
 
 		bRet = PQcancel((PGcancel *) agent->coord_connections[node]->xc_cancelConn, errbuf, sizeof(errbuf));
 		if (bRet != false)
