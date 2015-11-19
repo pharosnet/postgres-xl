@@ -1044,11 +1044,19 @@ setup_connection(Archive *AH, DumpOptions *dopt, const char *dumpencoding,
 		if (dopt->serializable_deferrable && AH->sync_snapshot_id == NULL)
 			ExecuteSqlStatement(AH,
 								"SET TRANSACTION ISOLATION LEVEL "
-								"SERIALIZABLE, READ ONLY, DEFERRABLE");
+								"SERIALIZABLE, "
+#ifndef XCP
+								"READ ONLY, "
+#endif
+								"DEFERRABLE");
 		else
 			ExecuteSqlStatement(AH,
 								"SET TRANSACTION ISOLATION LEVEL "
-								"REPEATABLE READ, READ ONLY");
+								"REPEATABLE READ"
+#ifndef XCP
+								", READ ONLY"
+#endif
+								);
 	}
 	else if (AH->remoteVersion >= 70400)
 	{
@@ -15135,7 +15143,7 @@ dumpSequenceData(Archive *fout, TableDataInfo *tdinfo)
 	 * obtained from GTM.
 	 */
 	resetPQExpBuffer(query);
-	appendPQExpBufferStr(query, "SELECT pg_catalog.setval(");
+	appendPQExpBufferStr(query, "SELECT pg_catalog.nextval(");
 	appendStringLiteralAH(query, fmtId(tbinfo->dobj.name), fout);
 	appendPQExpBuffer(query, ");\n");
 	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);

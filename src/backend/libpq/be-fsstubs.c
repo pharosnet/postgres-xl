@@ -940,6 +940,13 @@ lo_get(PG_FUNCTION_ARGS)
 	Oid			loOid = PG_GETARG_OID(0);
 	bytea	   *result;
 
+#ifdef PGXC
+	ereport(ERROR,
+			(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+			 errmsg("Postgres-XL does not yet support large objects"),
+			 errdetail("The feature is not currently supported")));
+#endif
+
 	result = lo_get_fragment_internal(loOid, 0, -1);
 
 	PG_RETURN_BYTEA_P(result);
@@ -955,6 +962,13 @@ lo_get_fragment(PG_FUNCTION_ARGS)
 	int64		offset = PG_GETARG_INT64(1);
 	int32		nbytes = PG_GETARG_INT32(2);
 	bytea	   *result;
+
+#ifdef PGXC
+	ereport(ERROR,
+			(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+			 errmsg("Postgres-XL does not yet support large objects"),
+			 errdetail("The feature is not currently supported")));
+#endif
 
 	if (nbytes < 0)
 		ereport(ERROR,
@@ -976,6 +990,13 @@ lo_from_bytea(PG_FUNCTION_ARGS)
 	bytea	   *str = PG_GETARG_BYTEA_PP(1);
 	LargeObjectDesc *loDesc;
 	int written PG_USED_FOR_ASSERTS_ONLY;
+
+#ifdef PGXC
+	ereport(ERROR,
+			(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+			 errmsg("Postgres-XL does not yet support large objects"),
+			 errdetail("The feature is not currently supported")));
+#endif
 
 	CreateFSContext();
 
@@ -999,6 +1020,13 @@ lo_put(PG_FUNCTION_ARGS)
 	bytea	   *str = PG_GETARG_BYTEA_PP(2);
 	LargeObjectDesc *loDesc;
 	int written PG_USED_FOR_ASSERTS_ONLY;
+
+#ifdef PGXC
+	ereport(ERROR,
+			(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+			 errmsg("Postgres-XL does not yet support large objects"),
+			 errdetail("The feature is not currently supported")));
+#endif
 
 	CreateFSContext();
 
