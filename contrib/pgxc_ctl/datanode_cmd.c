@@ -183,9 +183,9 @@ cmd_t *prepare_initDatanodeMaster(char *nodeName)
 			"#=================================================\n"
 			"# Addition at initialization, %s\n",
 			timeStampString(timeStamp, MAXTOKEN));
-	if (!is_none(sval(VAR_datanodeExtraPgHba)))
+	if (doesExist(VAR_datanodeExtraPgHba, 0) && !is_none(sval(VAR_datanodeExtraPgHba)))
 		AddMember(fileList, sval(VAR_datanodeExtraPgHba));
-	if (!is_none(aval(VAR_datanodeSpecificExtraPgHba)[idx]))
+	if (doesExist(VAR_datanodeSpecificExtraPgHba, idx) && !is_none(aval(VAR_datanodeSpecificExtraPgHba)[idx]))
 		AddMember(fileList, aval(VAR_datanodeSpecificExtraPgHba)[idx]);
 	appendFiles(f, fileList);
 	CleanArray(fileList);

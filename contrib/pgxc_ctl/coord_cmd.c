@@ -178,9 +178,9 @@ cmd_t *prepare_initCoordinatorMaster(char *nodeName)
 			"#=================================================\n"
 			"# Addition at initialization, %s\n",
 			timeStampString(timestamp, MAXTOKEN));
-	if (!is_none(sval(VAR_coordExtraPgHba)))
+	if (doesExist(VAR_coordExtraPgHba, 0) && !is_none(sval(VAR_coordExtraPgHba)))
 		AddMember(confFiles, sval(VAR_coordExtraPgHba));
-	if (!is_none(aval(VAR_coordSpecificExtraPgHba)[jj]))
+	if (doesExist(VAR_coordSpecificExtraPgHba, jj) && !is_none(aval(VAR_coordSpecificExtraPgHba)[jj]))
 		AddMember(confFiles, aval(VAR_coordSpecificExtraPgHba)[jj]);
 	appendFiles(f, confFiles);
 	CleanArray(confFiles);
