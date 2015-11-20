@@ -50,6 +50,7 @@
 #include "utils/datum.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
+#include "utils/pg_rusage.h"
 #include "utils/tuplesort.h"
 #include "utils/snapmgr.h"
 #include "utils/builtins.h"

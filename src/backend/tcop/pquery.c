@@ -39,6 +39,7 @@
 #include "tcop/pquery.h"
 #include "tcop/utility.h"
 #include "utils/memutils.h"
+#include "utils/pg_rusage.h"
 #include "utils/snapmgr.h"
 
 

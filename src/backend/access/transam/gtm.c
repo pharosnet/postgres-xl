@@ -25,6 +25,7 @@
 #include "tcop/tcopprot.h"
 #include "utils/guc.h"
 #include "utils/lsyscache.h"
+#include "utils/pg_rusage.h"
 
 /* To access sequences */
 #define MyCoordName \
