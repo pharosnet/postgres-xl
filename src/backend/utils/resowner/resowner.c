@@ -490,6 +490,10 @@ ResourceOwnerDelete(ResourceOwner owner)
 		pfree(owner->files);
 	if (owner->dsms)
 		pfree(owner->dsms);
+#ifdef XCP
+	if (owner->stmts)
+		pfree(owner->stmts);
+#endif
 
 	pfree(owner);
 }
