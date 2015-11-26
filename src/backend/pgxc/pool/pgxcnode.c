@@ -1923,7 +1923,15 @@ get_any_handle(List *datanodelist)
 					{
 						ereport(ERROR,
 								(errcode(ERRCODE_INSUFFICIENT_RESOURCES),
-								 errmsg("Failed to get pooled connections")));
+								 errmsg("Failed to get pooled connections"),
+								 errhint("This may happen because one or more nodes are "
+									 "currently unreachable, either because of node or "
+									 "network failure.\n Its also possible that the target node "
+									 "may have hit the connection limit or the pooler is "
+									 "configured with low connections.\n Please check "
+									 "if all nodes are running fine and also review "
+									 "max_connections and max_pool_size configuration "
+									 "parameters")));
 					}
 					pgxc_node_init(&dn_handles[node], fds[0], true);
 					datanode_count++;
@@ -2143,7 +2151,15 @@ get_handles(List *datanodelist, List *coordlist, bool is_coord_only_query, bool 
 				list_free(co_allocate);
 			ereport(ERROR,
 					(errcode(ERRCODE_INSUFFICIENT_RESOURCES),
-					 errmsg("Failed to get pooled connections")));
+					 errmsg("Failed to get pooled connections"),
+					 errhint("This may happen because one or more nodes are "
+						 "currently unreachable, either because of node or "
+						 "network failure.\n Its also possible that the target node "
+						 "may have hit the connection limit or the pooler is "
+						 "configured with low connections.\n Please check "
+						 "if all nodes are running fine and also review "
+						 "max_connections and max_pool_size configuration "
+						 "parameters")));
 		}
 		/* Initialisation for Datanodes */
 		if (dn_allocate)
