@@ -391,7 +391,7 @@ cmd_t *prepare_startDatanodeMaster(char *nodeName)
 	}
 	cmdStartDatanodeMaster = initCmd(aval(VAR_datanodeMasterServers)[idx]);
 	snprintf(newCommand(cmdStartDatanodeMaster), MAXLINE,
-			 "pg_ctl start -Z datanode -D %s -o -i", aval(VAR_datanodeMasterDirs)[idx]);
+			 "pg_ctl start -w -Z datanode -D %s -o -i", aval(VAR_datanodeMasterDirs)[idx]);
 	return(cmdStartDatanodeMaster);
 }
 
@@ -457,7 +457,7 @@ cmd_t *prepare_startDatanodeSlave(char *nodeName)
 
 	cmd = cmdStartDatanodeSlave = initCmd(aval(VAR_datanodeSlaveServers)[idx]);
 	snprintf(newCommand(cmdStartDatanodeSlave), MAXLINE,
-			 "pg_ctl start -Z datanode -D %s",
+			 "pg_ctl start -w -Z datanode -D %s",
 			 aval(VAR_datanodeSlaveDirs)[idx]);
 	
 	/* Change the master to synchronous mode */
@@ -534,11 +534,11 @@ cmd_t *prepare_stopDatanodeMaster(char *nodeName, char *immediate)
 	cmdStopDatanodeMaster = initCmd(aval(VAR_datanodeMasterServers)[idx]);
 	if (immediate)
 		snprintf(newCommand(cmdStopDatanodeMaster), MAXLINE,
-				 "pg_ctl stop -Z datanode -D %s -m %s",
+				 "pg_ctl stop -w -Z datanode -D %s -m %s",
 				 aval(VAR_datanodeMasterDirs)[idx], immediate);
 	else
 		snprintf(newCommand(cmdStopDatanodeMaster), MAXLINE,
-				 "pg_ctl stop -Z datanode -D %s",
+				 "pg_ctl stop -w -Z datanode -D %s",
 				 aval(VAR_datanodeMasterDirs)[idx]);
 	return(cmdStopDatanodeMaster);
 }
@@ -631,10 +631,10 @@ cmd_t *prepare_stopDatanodeSlave(char *nodeName, char *immediate)
 	appendCmdEl(cmdMasterToAsyncMode, (cmdStopSlave = initCmd(aval(VAR_datanodeSlaveServers)[idx])));
 	if (immediate)
 		snprintf(newCommand(cmdStopSlave), MAXLINE,
-				 "pg_ctl stop -Z datanode -D %s -m %s", aval(VAR_datanodeSlaveDirs)[idx], immediate);
+				 "pg_ctl stop -w -Z datanode -D %s -m %s", aval(VAR_datanodeSlaveDirs)[idx], immediate);
 	else
 		snprintf(newCommand(cmdStopSlave), MAXLINE,
-				 "pg_ctl stop -Z datanode -D %s", aval(VAR_datanodeSlaveDirs)[idx]);
+				 "pg_ctl stop -w -Z datanode -D %s", aval(VAR_datanodeSlaveDirs)[idx]);
 	return(cmd);
 }
 
@@ -1142,7 +1142,7 @@ int add_datanodeMaster(char *name, char *host, int port, int pooler, char *dir,
 				   pgdumpall_out);
 
 	/* Start the new datanode */
-	doImmediate(host, NULL, "pg_ctl start -Z restoremode -D %s -o -i", dir);
+	doImmediate(host, NULL, "pg_ctl start -w -Z restoremode -D %s -o -i", dir);
 
 	/* Allow the new datanode to start up by sleeping for a couple of seconds */
 	pg_usleep(2000000L);
@@ -1152,7 +1152,7 @@ int add_datanodeMaster(char *name, char *host, int port, int pooler, char *dir,
 	doImmediateRaw("rm -f %s", pgdumpall_out);
 
 	/* Quit the new datanode */
-	doImmediate(host, NULL, "pg_ctl stop -Z restoremode -D %s", dir);
+	doImmediate(host, NULL, "pg_ctl stop -w -Z restoremode -D %s", dir);
 
 	/* Start the new datanode with --datanode option */
 	AddMember(nodelist, name);
@@ -1364,9 +1364,9 @@ int add_datanodeSlave(char *name, char *host, int port, int pooler, char *dir, c
 	 * transactions this coordinator is not involved.
 	 */
 	doImmediate(aval(VAR_datanodeMasterServers)[idx], NULL, 
-				"pg_ctl stop -Z datanode -D %s -m fast", aval(VAR_datanodeMasterDirs)[idx]);
+				"pg_ctl stop -w -Z datanode -D %s -m fast", aval(VAR_datanodeMasterDirs)[idx]);
 	doImmediate(aval(VAR_datanodeMasterServers)[idx], NULL, 
-				"pg_ctl start -Z datanode -D %s", aval(VAR_datanodeMasterDirs)[idx]);
+				"pg_ctl start -w -Z datanode -D %s", aval(VAR_datanodeMasterDirs)[idx]);
 	/* pg_basebackup */
 	doImmediate(host, NULL, "pg_basebackup -p %s -h %s -D %s -x",
 				aval(VAR_datanodePorts)[idx], aval(VAR_datanodeMasterServers)[idx], dir);
@@ -1409,7 +1409,7 @@ int add_datanodeSlave(char *name, char *host, int port, int pooler, char *dir, c
 			aval(VAR_datanodeArchLogDirs)[idx], aval(VAR_datanodeArchLogDirs)[idx]);
 	pclose(f);
 	/* Start the slave */
-	doImmediate(host, NULL, "pg_ctl start -Z datanode -D %s", dir);
+	doImmediate(host, NULL, "pg_ctl start -w -Z datanode -D %s", dir);
 	return 0;
 }
 

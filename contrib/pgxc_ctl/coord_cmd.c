@@ -273,7 +273,7 @@ cmd_t *prepare_initCoordinatorSlave(char *nodeName)
 		/* Master is not running. Must start it first */
 		appendCmdEl(cmdBuildDir, (cmdStartMaster = initCmd(aval(VAR_coordMasterServers)[idx])));
 		snprintf(newCommand(cmdStartMaster), MAXLINE,
-				 "pg_ctl start -Z coordinator -D %s -o -i",
+				 "pg_ctl start -w -Z coordinator -D %s -o -i",
 				 aval(VAR_coordMasterDirs)[idx]);
 	}
 	/*
@@ -1152,7 +1152,7 @@ int add_coordinatorMaster(char *name, char *host, int port, int pooler,
 				   aval(VAR_coordMasterServers)[connCordIndx], pgdumpall_out);
 
 	/* Start the new coordinator */
-	doImmediate(host, NULL, "pg_ctl start -Z restoremode -D %s -o -i", dir);
+	doImmediate(host, NULL, "pg_ctl start -w -Z restoremode -D %s -o -i", dir);
 
 	/* Allow the new coordinator to start up by sleeping for a couple of seconds */
 	pg_usleep(2000000L);
@@ -1162,7 +1162,7 @@ int add_coordinatorMaster(char *name, char *host, int port, int pooler,
 	doImmediateRaw("rm -f %s", pgdumpall_out);
 
 	/* Quit the new coordinator */
-	doImmediate(host, NULL, "pg_ctl stop -Z restoremode -D %s", dir);
+	doImmediate(host, NULL, "pg_ctl stop -w -Z restoremode -D %s", dir);
 
 	/* Start the new coordinator with --coordinator option */
 	AddMember(nodelist, name);
@@ -1368,9 +1368,9 @@ int add_coordinatorSlave(char *name, char *host, int port, int pooler_port, char
 	 * transactions this coordinator is not involved.
 	 */
 	doImmediate(aval(VAR_coordMasterServers)[idx], NULL, 
-				"pg_ctl stop -Z coordinator -D %s -m fast", aval(VAR_coordMasterDirs)[idx]);
+				"pg_ctl stop -w -Z coordinator -D %s -m fast", aval(VAR_coordMasterDirs)[idx]);
 	doImmediate(aval(VAR_coordMasterServers)[idx], NULL, 
-				"pg_ctl start -Z coordinator -D %s", aval(VAR_coordMasterDirs)[idx]);
+				"pg_ctl start -w -Z coordinator -D %s", aval(VAR_coordMasterDirs)[idx]);
 	/* pg_basebackup */
 	doImmediate(host, NULL, "pg_basebackup -p %s -h %s -D %s -x",
 				aval(VAR_coordPorts)[idx], aval(VAR_coordMasterServers)[idx], dir);
@@ -1416,7 +1416,7 @@ int add_coordinatorSlave(char *name, char *host, int port, int pooler_port, char
 	pclose(f);
 
 	/* Start the slave */
-	doImmediate(host, NULL, "pg_ctl start -Z coordinator -D %s", dir);
+	doImmediate(host, NULL, "pg_ctl start -w -Z coordinator -D %s", dir);
 	return 0;
 }
 
@@ -1711,7 +1711,7 @@ cmd_t *prepare_startCoordinatorMaster(char *nodeName)
 	}
 	cmd = cmdPgCtl = initCmd(aval(VAR_coordMasterServers)[idx]);
 	snprintf(newCommand(cmdPgCtl), MAXLINE,
-			 "pg_ctl start -Z coordinator -D %s -o -i",
+			 "pg_ctl start -w -Z coordinator -D %s -o -i",
 			 aval(VAR_coordMasterDirs)[idx]);
 	return(cmd);
 }
@@ -1771,7 +1771,7 @@ cmd_t *prepare_startCoordinatorSlave(char *nodeName)
 	}
 	cmd = cmdPgCtlStart = initCmd(aval(VAR_coordSlaveServers)[idx]);
 	snprintf(newCommand(cmdPgCtlStart), MAXLINE,
-			 "pg_ctl start -Z coordinator -D %s -o -i",
+			 "pg_ctl start -w -Z coordinator -D %s -o -i",
 			 aval(VAR_coordSlaveDirs)[idx]);
 
 	/* Postgresql.conf at the Master */
@@ -1853,11 +1853,11 @@ cmd_t *prepare_stopCoordinatorMaster(char *nodeName, char *immediate)
 	cmd = initCmd(aval(VAR_coordMasterServers)[idx]);
 	if (immediate)
 		snprintf(newCommand(cmd), MAXLINE,
-				 "pg_ctl stop -Z coordinator -D %s -m %s",
+				 "pg_ctl stop -w -Z coordinator -D %s -m %s",
 				 aval(VAR_coordMasterDirs)[idx], immediate);
 	else
 		snprintf(newCommand(cmd), MAXLINE,
-				 "pg_ctl stop -Z coordinator -D %s",
+				 "pg_ctl stop -w -Z coordinator -D %s",
 				 aval(VAR_coordMasterDirs)[idx]);
 	return(cmd);
 }
@@ -1944,11 +1944,11 @@ cmd_t *prepare_stopCoordinatorSlave(char *nodeName, char *immediate)
 		cmd = cmdPgCtlStop = initCmd(aval(VAR_coordSlaveServers)[idx]);
 	if (immediate)
 		snprintf(newCommand(cmdPgCtlStop), MAXLINE,
-				 "pg_ctl stop -Z coordinator -D %s -m %s",
+				 "pg_ctl stop -w -Z coordinator -D %s -m %s",
 				 aval(VAR_coordSlaveDirs)[idx], immediate);
 	else
 		snprintf(newCommand(cmdPgCtlStop), MAXLINE,
-				 "pg_ctl stop -Z coordinator -D %s",
+				 "pg_ctl stop -w -Z coordinator -D %s",
 				 aval(VAR_coordSlaveDirs)[idx]);
 	return(cmd);
 }
