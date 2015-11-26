@@ -941,7 +941,7 @@ GTM_HandleGlobalXmin(GTM_PGXCNodeType type, char *node_name,
 
 	*errcode = 0;
 
-	elog(LOG, "node_name: %s, remoteIdle: %d, reported_xmin: %d, global_xmin: %d",
+	elog(DEBUG1, "node_name: %s, remoteIdle: %d, reported_xmin: %d, global_xmin: %d",
 			node_name, remoteIdle, *reported_xmin,
 			GTM_GlobalXmin);
 
