@@ -68,12 +68,16 @@ extern Snapshot GetSnapshotData(Snapshot snapshot);
 extern bool ProcArrayInstallImportedXmin(TransactionId xmin,
 							 TransactionId sourcexid);
 extern bool ProcArrayInstallRestoredXmin(TransactionId xmin, PGPROC *proc);
+void ProcArrayCheckXminConsistency(TransactionId global_xmin);
 
 extern RunningTransactions GetRunningTransactionData(void);
 
 extern bool TransactionIdIsInProgress(TransactionId xid);
 extern bool TransactionIdIsActive(TransactionId xid);
 extern TransactionId GetOldestXmin(Relation rel, bool ignoreVacuum);
+extern TransactionId GetOldestXminInternal(Relation rel, bool ignoreVacuum,
+		bool computeLocal, bool *isIdle, TransactionId lastGlobalXmin,
+		TransactionId lastReportedXmin);
 extern TransactionId GetOldestActiveTransactionId(void);
 extern TransactionId GetOldestSafeDecodingTransactionId(void);
 

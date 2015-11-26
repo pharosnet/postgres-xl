@@ -28,7 +28,6 @@
 #endif
 
 #include <time.h>
-
 #include "gtm/gtm_c.h"
 
 #include "gtm/gtm_ip.h"
@@ -40,6 +39,7 @@
 #include "gtm/gtm_serialize.h"
 #include "gtm/register.h"
 #include "gtm/assert.h"
+#include "pgxc/pgxc.h"
 
 extern bool Backup_synchronously;
 
@@ -77,7 +77,9 @@ static int alter_sequence_internal(GTM_Conn *conn, GTM_SequenceKey key, GTM_Sequ
 								   GTM_Sequence minval, GTM_Sequence maxval,
 								   GTM_Sequence startval, GTM_Sequence lastval, bool cycle, bool is_restart, bool is_backup);
 static int node_register_worker(GTM_Conn *conn, GTM_PGXCNodeType type, const char *host, GTM_PGXCNodePort port,
-								char *node_name, char *datafolder, GTM_PGXCNodeStatus status, bool is_backup);
+								char *node_name, char *datafolder,
+								GTM_PGXCNodeStatus status, bool is_backup,
+								GlobalTransactionId *xmin);
 static int node_unregister_worker(GTM_Conn *conn, GTM_PGXCNodeType type, const char * node_name, bool is_backup);
 static int report_barrier_internal(GTM_Conn *conn, char *barrier_id, bool is_backup);
 /*
@@ -1654,7 +1656,8 @@ int node_register(GTM_Conn *conn,
 			GTM_PGXCNodeType type,
 			GTM_PGXCNodePort port,
 			char *node_name,
-			char *datafolder)
+			char *datafolder,
+			GlobalTransactionId *xmin)
 {
 	char host[1024];
 	int rc;
@@ -1665,7 +1668,8 @@ int node_register(GTM_Conn *conn,
 		return -1;
 	}
 
-	return node_register_worker(conn, type, host, port, node_name, datafolder, NODE_CONNECTED, false);
+	return node_register_worker(conn, type, host, port, node_name, datafolder,
+			NODE_CONNECTED, false, xmin);
 }
 
 int node_register_internal(GTM_Conn *conn,
@@ -1674,27 +1678,11 @@ int node_register_internal(GTM_Conn *conn,
 						   GTM_PGXCNodePort port,
 						   char *node_name,
 						   char *datafolder,
-						   GTM_PGXCNodeStatus status)
+						   GTM_PGXCNodeStatus status,
+						   GlobalTransactionId *xmin)
 {
-	return node_register_worker(conn, type, host, port, node_name, datafolder, status, false);
-}
-
-int bkup_node_register(GTM_Conn *conn,
-					   GTM_PGXCNodeType type,
-					   GTM_PGXCNodePort port,
-					   char *node_name,
-					   char *datafolder)
-{
-	char host[1024];
-	int rc;
-
-	node_get_local_addr(conn, host, sizeof(host), &rc);
-	if (rc != 0)
-	{
-		return -1;
-	}
-
-	return node_register_worker(conn, type, host, port, node_name, datafolder, NODE_CONNECTED, true);
+	return node_register_worker(conn, type, host, port, node_name, datafolder,
+			status, false, xmin);
 }
 
 int bkup_node_register_internal(GTM_Conn *conn,
@@ -1703,9 +1691,11 @@ int bkup_node_register_internal(GTM_Conn *conn,
 								GTM_PGXCNodePort port,
 								char *node_name,
 								char *datafolder,
-								GTM_PGXCNodeStatus status)
+								GTM_PGXCNodeStatus status,
+								GlobalTransactionId xmin)
 {
-	return node_register_worker(conn, type, host, port, node_name, datafolder, status, true);
+	return node_register_worker(conn, type, host, port, node_name, datafolder,
+			status, true, &xmin);
 }
 
 static int node_register_worker(GTM_Conn *conn,
@@ -1715,7 +1705,8 @@ static int node_register_worker(GTM_Conn *conn,
 								char *node_name,
 								char *datafolder,
 								GTM_PGXCNodeStatus status,
-								bool is_backup)
+								bool is_backup,
+								GlobalTransactionId *xmin)
 {
 	GTM_Result *res = NULL;
 	time_t finish_time;
@@ -1754,7 +1745,9 @@ static int node_register_worker(GTM_Conn *conn,
 		/* Data Folder (var-len) */
 		gtmpqPutnchar(datafolder, strlen(datafolder), conn) ||
 		/* Node Status */
-		gtmpqPutInt(status, sizeof(GTM_PGXCNodeStatus), conn))
+		gtmpqPutInt(status, sizeof(GTM_PGXCNodeStatus), conn) ||
+		/* Recent Xmin */
+		gtmpqPutnchar((char *)xmin, sizeof (GlobalTransactionId), conn))
 	{
 		goto send_failed;
 	}
@@ -1790,6 +1783,8 @@ static int node_register_worker(GTM_Conn *conn,
 		{
 			Assert(res->gr_resdata.grd_node.type == type);
 			Assert((strcmp(res->gr_resdata.grd_node.node_name,node_name) == 0));
+			if (xmin)
+				*xmin = res->gr_resdata.grd_node.xmin;
 		}
 
 		return res->gr_status;
@@ -2217,7 +2212,6 @@ snapshot_get_multi(GTM_Conn *conn, int txn_count, GlobalTransactionId *gxid,
 		memcpy(status_out, &res->gr_resdata.grd_txn_rc_multi.status, sizeof(int) * (*txn_count_out));
 		memcpy(xmin_out, &res->gr_snapshot.sn_xmin, sizeof(GlobalTransactionId));
 		memcpy(xmax_out, &res->gr_snapshot.sn_xmax, sizeof(GlobalTransactionId));
-		memcpy(recent_global_xmin_out, &res->gr_snapshot.sn_recent_global_xmin, sizeof(GlobalTransactionId));
 		memcpy(xcnt_out, &res->gr_snapshot.sn_xcnt, sizeof(int32));
 	}
 
@@ -2430,3 +2424,64 @@ send_failed:
 	conn->result->gr_status = GTM_RESULT_COMM_ERROR;
 	return -1;
 }
+
+int
+report_global_xmin(GTM_Conn *conn, const char *node_name,
+		GTM_PGXCNodeType type, GlobalTransactionId *gxid,
+		GlobalTransactionId *global_xmin,
+		bool isIdle, int *errcode)
+{
+	GTM_Result *res = NULL;
+	time_t 		finish_time;
+
+	if (gtmpqPutMsgStart('C', true, conn) ||
+		gtmpqPutInt(MSG_REPORT_XMIN, sizeof (GTM_MessageType), conn) ||
+		gtmpqPutnchar((char *)gxid, sizeof(GlobalTransactionId), conn) ||
+		gtmpqPutc(isIdle, conn) ||
+		gtmpqPutInt(type, sizeof (GTM_PGXCNodeType), conn) ||
+		gtmpqPutInt(strlen(node_name), sizeof (GTM_StrLen), conn) ||
+		gtmpqPutnchar(node_name, strlen(node_name), conn))
+	{
+		goto send_failed;
+	}
+
+	/* Finish the message. */
+	if (gtmpqPutMsgEnd(conn))
+	{
+		goto send_failed;
+	}
+
+	/* Flush to ensure backend gets it. */
+	if (gtmpqFlush(conn))
+	{
+		goto send_failed;
+	}
+
+	finish_time = time(NULL) + CLIENT_GTM_TIMEOUT;
+	if (gtmpqWaitTimed(true, false, conn, finish_time) ||
+		gtmpqReadData(conn) < 0)
+	{
+		goto receive_failed;
+	}
+
+	if ((res = GTMPQgetResult(conn)) == NULL)
+	{
+		goto receive_failed;
+	}
+
+	if (res->gr_status == GTM_RESULT_OK)
+	{
+		*gxid = res->gr_resdata.grd_report_xmin.reported_xmin;
+		*global_xmin = res->gr_resdata.grd_report_xmin.global_xmin;
+		*errcode = res->gr_resdata.grd_report_xmin.errcode;
+	}
+	return res->gr_status;
+
+receive_failed:
+send_failed:
+	conn->result = makeEmptyResultIfIsNull(conn->result);
+	conn->result->gr_status = GTM_RESULT_COMM_ERROR;
+	return -1;
+
+}
+

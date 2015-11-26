@@ -17,7 +17,7 @@ endif
 
 OBJS=proxy_main.o proxy_thread.o proxy_utils.o gtm_proxy_opt.o
 
-OTHERS= ../libpq/libpqcomm.a ../path/libgtmpath.a ../recovery/libgtmrecovery.a ../client/libgtmclient.a ../common/libgtm.a
+OTHERS= ../libpq/libpqcomm.a ../path/libgtmpath.a ../client/libgtmclient.a ../common/libgtm.a
 
 LDFLAGS=-L$(top_builddir)/common -L$(top_builddir)/libpq
 

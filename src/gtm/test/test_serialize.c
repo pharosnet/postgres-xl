@@ -42,12 +42,11 @@ test_snapshotdata_1(void)
 
   data->sn_xmin = 128;
   data->sn_xmax = 256;
-  data->sn_recent_global_xmin = 512;
   data->sn_xcnt = 1024;
   data->sn_xip  = 2048;
 
-  printf("sn_xmin=%d, sn_xmax=%d, sn_recent_global_xmin=%d, sn_xcnt=%d, sn_xip=%d\n",
-	 data->sn_xmin, data->sn_xmax, data->sn_recent_global_xmin, data->sn_xcnt, data->sn_xip);
+  printf("sn_xmin=%d, sn_xmax=%d, sn_xcnt=%d, sn_xip=%d\n",
+	 data->sn_xmin, data->sn_xmax, data->sn_xcnt, data->sn_xip);
 
   /* serialize */
   buflen = sizeof(GTM_SnapshotData);
@@ -61,8 +60,8 @@ test_snapshotdata_1(void)
   /* deserialize */
   data2 = (GTM_SnapshotData *)malloc(sizeof(GTM_SnapshotData));
   gtm_deserialize_snapshotdata(data2, buf, buflen);
-  printf("sn_xmin=%d, sn_xmax=%d, sn_recent_global_xmin=%d, sn_xcnt=%d, sn_xip=%d\n",
-	 data2->sn_xmin, data2->sn_xmax, data2->sn_recent_global_xmin, data2->sn_xcnt, data2->sn_xip);
+  printf("sn_xmin=%d, sn_xmax=%d, sn_xcnt=%d, sn_xip=%d\n",
+	 data2->sn_xmin, data2->sn_xmax, data2->sn_xcnt, data2->sn_xip);
 
   TEARDOWN();
 
@@ -88,7 +87,6 @@ build_dummy_gtm_transactioninfo()
 
   data->gti_current_snapshot.sn_xmin = 128;
   data->gti_current_snapshot.sn_xmax = 256;
-  data->gti_current_snapshot.sn_recent_global_xmin = 512;
   data->gti_current_snapshot.sn_xcnt = 1024;
   data->gti_current_snapshot.sn_xip  = 2048;
 
@@ -149,7 +147,6 @@ test_transactioninfo_1(void)
   _ASSERT(data2->gti_coordcount==5);
   _ASSERT(data2->gti_current_snapshot.sn_xmin==128);
   _ASSERT(data2->gti_current_snapshot.sn_xmax==256);
-  _ASSERT(data2->gti_current_snapshot.sn_recent_global_xmin==512);
   _ASSERT(data2->gti_current_snapshot.sn_xcnt==1024);
   _ASSERT(data2->gti_current_snapshot.sn_xip==2048);
 

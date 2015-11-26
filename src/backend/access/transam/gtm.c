@@ -21,6 +21,7 @@
 #include "pgxc/pgxc.h"
 #include "gtm/gtm_c.h"
 #include "postmaster/autovacuum.h"
+#include "postmaster/clustermon.h"
 #include "storage/backendid.h"
 #include "tcop/tcopprot.h"
 #include "utils/guc.h"
@@ -98,6 +99,8 @@ InitGTM(void)
 			elog(DEBUG1, "Autovacuum worker: connection established to GTM with string %s", conn_str);
 		else if (IsAutoVacuumLauncherProcess())
 			elog(DEBUG1, "Autovacuum launcher: connection established to GTM with string %s", conn_str);
+		else if (IsClusterMonitorProcess())
+			elog(DEBUG1, "Cluster monitor: connection established to GTM with string %s", conn_str);
 		else
 			elog(DEBUG1, "Postmaster child: connection established to GTM with string %s", conn_str);
 	}
@@ -133,6 +136,8 @@ CloseGTM(void)
 		elog(DEBUG1, "Autovacuum worker: connection to GTM closed");
 	else if (IsAutoVacuumLauncherProcess())
 		elog(DEBUG1, "Autovacuum launcher: connection to GTM closed");
+	else if (IsClusterMonitorProcess())
+		elog(DEBUG1, "Cluster monitor: connection to GTM closed");
 	else
 		elog(DEBUG1, "Postmaster child: connection to GTM closed");
 }
@@ -607,7 +612,7 @@ RenameSequenceGTM(char *seqname, const char *newseqname)
  * Connection for registering is just used once then closed
  */
 int
-RegisterGTM(GTM_PGXCNodeType type, GTM_PGXCNodePort port, char *datafolder)
+RegisterGTM(GTM_PGXCNodeType type, GlobalTransactionId *xmin)
 {
 	int ret;
 
@@ -616,7 +621,7 @@ RegisterGTM(GTM_PGXCNodeType type, GTM_PGXCNodePort port, char *datafolder)
 	if (!conn)
 		return EOF;
 
-	ret = node_register(conn, type, port, PGXCNodeName, datafolder);
+	ret = node_register(conn, type, 0, PGXCNodeName, "", xmin);
 
 	/* If something went wrong, retry once */
 	if (ret < 0)
@@ -624,7 +629,8 @@ RegisterGTM(GTM_PGXCNodeType type, GTM_PGXCNodePort port, char *datafolder)
 		CloseGTM();
 		InitGTM();
 		if (conn)
-			ret = node_register(conn, type, port, PGXCNodeName, datafolder);
+			ret = node_register(conn, type, 0, PGXCNodeName, "",
+					xmin);
 	}
 
 	return ret;
@@ -681,3 +687,20 @@ ReportBarrierGTM(char *barrier_id)
 	return(report_barrier(conn, barrier_id));
 }
 
+int
+ReportGlobalXmin(GlobalTransactionId *gxid, GlobalTransactionId *global_xmin,
+		bool isIdle)
+{
+	int errcode = GTM_ERRCODE_UNKNOWN;
+
+	CheckConnection();
+	if (!conn)
+		return EOF;
+
+	if (report_global_xmin(conn, PGXCNodeName,
+			IS_PGXC_COORDINATOR ?  GTM_NODE_COORDINATOR : GTM_NODE_DATANODE,
+			gxid, global_xmin, isIdle, &errcode))
+		return errcode;
+	else
+		return 0;
+}

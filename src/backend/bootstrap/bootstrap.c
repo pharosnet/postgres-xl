@@ -318,6 +318,9 @@ AuxiliaryProcessMain(int argc, char *argv[])
 			case PoolerProcess:
 				statmsg = "pooler process";
 				break;
+			case ClusterMonitorProcess:
+				statmsg = "cluster monitor process";
+				break;
 #endif
 			case StartupProcess:
 				statmsg = "startup process";
@@ -421,6 +424,11 @@ AuxiliaryProcessMain(int argc, char *argv[])
 		case PoolerProcess:
 			/* don't set signals, pool manager has its own agenda */
 			PoolManagerInit();
+			proc_exit(1);		/* should never return */
+
+		case ClusterMonitorProcess:
+			/* don't set signals, cluster monitor has its own agenda */
+			ClusterMonitorInit();
 			proc_exit(1);		/* should never return */
 #endif
 

@@ -477,70 +477,6 @@ GlobalTransactionIdDidAbort(GlobalTransactionId transactionId)
 	return false;
 }
 
-/*
- * GlobalTransactionIdPrecedes --- is id1 logically < id2?
- */
-bool
-GlobalTransactionIdPrecedes(GlobalTransactionId id1, GlobalTransactionId id2)
-{
-	/*
-	 * If either ID is a permanent XID then we can just do unsigned
-	 * comparison.	If both are normal, do a modulo-2^31 comparison.
-	 */
-	int32		diff;
-
-	if (!GlobalTransactionIdIsNormal(id1) || !GlobalTransactionIdIsNormal(id2))
-		return (id1 < id2);
-
-	diff = (int32) (id1 - id2);
-	return (diff < 0);
-}
-
-/*
- * GlobalTransactionIdPrecedesOrEquals --- is id1 logically <= id2?
- */
-bool
-GlobalTransactionIdPrecedesOrEquals(GlobalTransactionId id1, GlobalTransactionId id2)
-{
-	int32		diff;
-
-	if (!GlobalTransactionIdIsNormal(id1) || !GlobalTransactionIdIsNormal(id2))
-		return (id1 <= id2);
-
-	diff = (int32) (id1 - id2);
-	return (diff <= 0);
-}
-
-/*
- * GlobalTransactionIdFollows --- is id1 logically > id2?
- */
-bool
-GlobalTransactionIdFollows(GlobalTransactionId id1, GlobalTransactionId id2)
-{
-	int32		diff;
-
-	if (!GlobalTransactionIdIsNormal(id1) || !GlobalTransactionIdIsNormal(id2))
-		return (id1 > id2);
-
-	diff = (int32) (id1 - id2);
-	return (diff > 0);
-}
-
-/*
- * GlobalTransactionIdFollowsOrEquals --- is id1 logically >= id2?
- */
-bool
-GlobalTransactionIdFollowsOrEquals(GlobalTransactionId id1, GlobalTransactionId id2)
-{
-	int32		diff;
-
-	if (!GlobalTransactionIdIsNormal(id1) || !GlobalTransactionIdIsNormal(id2))
-		return (id1 >= id2);
-
-	diff = (int32) (id1 - id2);
-	return (diff >= 0);
-}
-
 
 /*
  * Set that the transaction is doing vacuum
@@ -2684,6 +2620,60 @@ ProcessGetNextGXIDTransactionCommand(Port *myport, StringInfo message)
 	return;
 }
 
+void
+ProcessReportXminCommand(Port *myport, StringInfo message, bool is_backup)
+{
+	StringInfoData buf;
+	GlobalTransactionId gxid;
+	GTM_StrLen nodelen;
+	char node_name[NI_MAXHOST];
+	GTM_PGXCNodeType    type;
+	GlobalTransactionId	global_xmin;
+	int errcode;
+	bool remoteIdle;
+
+	const char *data = pq_getmsgbytes(message, sizeof (gxid));
+
+	if (data == NULL)
+		ereport(ERROR,
+				(EPROTO,
+				 errmsg("Message does not contain valid GXID")));
+	memcpy(&gxid, data, sizeof (gxid));
+
+	/* Read number of running transactions */
+	remoteIdle = pq_getmsgbyte(message);
+
+	/* Read Node Type */
+	type = pq_getmsgint(message, sizeof (GTM_PGXCNodeType));
+
+	/* get node name */
+	nodelen = pq_getmsgint(message, sizeof (GTM_StrLen));
+	memcpy(node_name, (char *)pq_getmsgbytes(message, nodelen), nodelen);
+	node_name[nodelen] = '\0';
+	pq_getmsgend(message);
+
+	global_xmin = GTM_HandleGlobalXmin(type, node_name, &gxid, remoteIdle,
+			&errcode);
+
+	{
+		/*
+		 * Send a SUCCESS message back to the client
+		 */
+		pq_beginmessage(&buf, 'S');
+		pq_sendint(&buf, REPORT_XMIN_RESULT, 4);
+		if (myport->remote_type == GTM_NODE_GTM_PROXY)
+		{
+			GTM_ProxyMsgHeader proxyhdr;
+			proxyhdr.ph_conid = myport->conn_id;
+			pq_sendbytes(&buf, (char *)&proxyhdr, sizeof (GTM_ProxyMsgHeader));
+		}
+		pq_sendbytes(&buf, (char *)&gxid, sizeof (GlobalTransactionId));
+		pq_sendbytes(&buf, (char *)&global_xmin, sizeof (GlobalTransactionId));
+		pq_sendbytes(&buf, (char *)&errcode, sizeof (errcode));
+		pq_endmessage(myport, &buf);
+		pq_flush(myport);
+	}
+}
 
 /*
  * Mark GTM as shutting down. This point onwards no new GXID are issued to
@@ -2752,6 +2742,12 @@ void GTM_WriteRestorePointXid(FILE *f)
 	
 	elog(DEBUG1, "Saving transaction restoration info, backed-up gxid: %u", GTMTransactions.gt_backedUpXid);
 	fprintf(f, "%u\n", GTMTransactions.gt_backedUpXid);
+}
+
+GlobalTransactionId
+GTM_GetLatestCompletedXID(void)
+{
+	return GTMTransactions.gt_latestCompletedXid;
 }
 
 /*

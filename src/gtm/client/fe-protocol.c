@@ -512,14 +512,6 @@ gtmpqParseSuccess(GTM_Conn *conn, GTM_Result *result)
 				break;
 			}
 
-			if (gtmpqGetnchar((char *)&result->gr_snapshot.sn_recent_global_xmin,
-						   sizeof (GlobalTransactionId), conn))
-			{
-				result->gr_status = GTM_RESULT_ERROR;
-				break;
-			}
-
-
 			if (gtmpqGetInt((int *)&result->gr_snapshot.sn_xcnt,
 						   sizeof (int32), conn))
 			{
@@ -739,6 +731,13 @@ gtmpqParseSuccess(GTM_Conn *conn, GTM_Result *result)
 				break;
 			}
 			result->gr_resdata.grd_node.node_name[result->gr_resdata.grd_node.len] = '\0';
+
+			if (result->gr_type == NODE_UNREGISTER_RESULT)
+				break;
+
+			if (gtmpqGetInt((char *)&result->gr_resdata.grd_node.xmin, sizeof
+						(GlobalTransactionId), conn))
+				result->gr_status = GTM_RESULT_ERROR;
 			break;
 
 		case NODE_LIST_RESULT:
@@ -789,6 +788,28 @@ gtmpqParseSuccess(GTM_Conn *conn, GTM_Result *result)
 		}
 		case BARRIER_RESULT:
 			break;
+
+		case REPORT_XMIN_RESULT:
+			if (gtmpqGetnchar((char *)&result->gr_resdata.grd_report_xmin.reported_xmin,
+							  sizeof (GlobalTransactionId), conn))
+			{
+				result->gr_status = GTM_RESULT_ERROR;
+				break;
+			}
+			if (gtmpqGetnchar((char *)&result->gr_resdata.grd_report_xmin.global_xmin,
+							  sizeof (GlobalTransactionId), conn))
+			{
+				result->gr_status = GTM_RESULT_ERROR;
+				break;
+			}
+			if (gtmpqGetnchar((char *)&result->gr_resdata.grd_report_xmin.errcode,
+							  sizeof (int), conn))
+			{
+				result->gr_status = GTM_RESULT_ERROR;
+				break;
+			}
+			break;
+
 		default:
 			printfGTMPQExpBuffer(&conn->errorMessage,
 							  "unexpected result type from server; result typr was \"%d\"\n",

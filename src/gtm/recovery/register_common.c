@@ -29,6 +29,8 @@
 #include "gtm/gtm_client.h"
 #include "gtm/gtm_serialize.h"
 #include "gtm/gtm_standby.h"
+#include "gtm/gtm_time.h"
+#include "gtm/gtm_txn.h"
 #include "gtm/libpq.h"
 #include "gtm/libpq-int.h"
 #include "gtm/pqformat.h"
@@ -45,7 +47,6 @@
 typedef struct GTM_NodeInfoHashBucket
 {
 	gtm_List        *nhb_list;
-	GTM_RWLock  nhb_lock;
 } GTM_PGXCNodeInfoHashBucket;
 
 static char GTMPGXCNodeFile[GTM_NODE_FILE_MAX_PATH];
@@ -53,11 +54,16 @@ static char GTMPGXCNodeFile[GTM_NODE_FILE_MAX_PATH];
 /* Lock access of record file when necessary */
 static GTM_RWLock RegisterFileLock;
 
+/* Lock to control registration/unregistration of nodes */
+static GTM_RWLock PGXCNodesLock;
+
 static int NodeRegisterMagic = 0xeaeaeaea;
 static int NodeUnregisterMagic = 0xebebebeb;
 static int NodeEndMagic = 0xefefefef;
 
 static GTM_PGXCNodeInfoHashBucket GTM_PGXCNodes[NODE_HASH_TABLE_SIZE];
+static GlobalTransactionId GTM_GlobalXmin = FirstNormalGlobalTransactionId;
+static GTM_Timestamp GTM_GlobalXminComputedTime;
 
 static GTM_PGXCNodeInfo *pgxcnode_find_info(GTM_PGXCNodeType type, char *node_name);
 static uint32 pgxcnode_gethash(char *nodename);
@@ -76,12 +82,11 @@ pgxcnode_get_all(GTM_PGXCNodeInfo **data, size_t maxlen)
 	int node = 0;
 	int i;
 
+	GTM_RWLockAcquire(&PGXCNodesLock, GTM_LOCKMODE_READ);
+
 	for (i = 0; i < NODE_HASH_TABLE_SIZE; i++)
 	{
 		bucket = &GTM_PGXCNodes[i];
-
-		GTM_RWLockAcquire(&bucket->nhb_lock, GTM_LOCKMODE_READ);
-
 		gtm_foreach(elem, bucket->nhb_list)
 		{
 			GTM_PGXCNodeInfo *curr_nodeinfo = NULL;
@@ -96,9 +101,8 @@ pgxcnode_get_all(GTM_PGXCNodeInfo **data, size_t maxlen)
 			if (node == maxlen)
 				break;
 		}
-
-		GTM_RWLockRelease(&bucket->nhb_lock);
 	}
+	GTM_RWLockRelease(&PGXCNodesLock);
 
 	return node;
 }
@@ -111,12 +115,10 @@ pgxcnode_find_by_type(GTM_PGXCNodeType type, GTM_PGXCNodeInfo **data, size_t max
 	int node = 0;
 	int i;
 
+	GTM_RWLockAcquire(&PGXCNodesLock, GTM_LOCKMODE_READ);
 	for (i = 0; i < NODE_HASH_TABLE_SIZE; i++)
 	{
 		bucket = &GTM_PGXCNodes[i];
-
-		GTM_RWLockAcquire(&bucket->nhb_lock, GTM_LOCKMODE_READ);
-
 		gtm_foreach(elem, bucket->nhb_list)
 		{
 			GTM_PGXCNodeInfo *cur = NULL;
@@ -133,9 +135,8 @@ pgxcnode_find_by_type(GTM_PGXCNodeType type, GTM_PGXCNodeInfo **data, size_t max
 			if (node == maxlen)
 				break;
 		}
-
-		GTM_RWLockRelease(&bucket->nhb_lock);
 	}
+	GTM_RWLockRelease(&PGXCNodesLock);
 
 	return node;
 }
@@ -153,8 +154,7 @@ pgxcnode_find_info(GTM_PGXCNodeType type, char *node_name)
 
 	bucket = &GTM_PGXCNodes[hash];
 
-	GTM_RWLockAcquire(&bucket->nhb_lock, GTM_LOCKMODE_READ);
-
+	GTM_RWLockAcquire(&PGXCNodesLock, GTM_LOCKMODE_READ);
 	gtm_foreach(elem, bucket->nhb_list)
 	{
 		curr_nodeinfo = (GTM_PGXCNodeInfo *) gtm_lfirst(elem);
@@ -164,7 +164,7 @@ pgxcnode_find_info(GTM_PGXCNodeType type, char *node_name)
 		curr_nodeinfo = NULL;
 	}
 
-	GTM_RWLockRelease(&bucket->nhb_lock);
+	GTM_RWLockRelease(&PGXCNodesLock);
 
 	return curr_nodeinfo;
 }
@@ -213,13 +213,13 @@ pgxcnode_remove_info(GTM_PGXCNodeInfo *nodeinfo)
 
 	bucket = &GTM_PGXCNodes[hash];
 
-	GTM_RWLockAcquire(&bucket->nhb_lock, GTM_LOCKMODE_WRITE);
+	GTM_RWLockAcquire(&PGXCNodesLock, GTM_LOCKMODE_WRITE);
 	GTM_RWLockAcquire(&nodeinfo->node_lock, GTM_LOCKMODE_WRITE);
 
 	bucket->nhb_list = gtm_list_delete(bucket->nhb_list, nodeinfo);
 
 	GTM_RWLockRelease(&nodeinfo->node_lock);
-	GTM_RWLockRelease(&bucket->nhb_lock);
+	GTM_RWLockRelease(&PGXCNodesLock);
 
     return 0;
 }
@@ -236,7 +236,12 @@ pgxcnode_add_info(GTM_PGXCNodeInfo *nodeinfo)
 
 	bucket = &GTM_PGXCNodes[hash];
 
-	GTM_RWLockAcquire(&bucket->nhb_lock, GTM_LOCKMODE_WRITE);
+	GTM_RWLockAcquire(&PGXCNodesLock, GTM_LOCKMODE_WRITE);
+
+	elog(LOG, "Nodeinfo->reported_xmin - %d:%d", nodeinfo->reported_xmin,
+			GTM_GlobalXmin);
+	if (!GlobalTransactionIdIsValid(nodeinfo->reported_xmin))
+		nodeinfo->reported_xmin = GTM_GlobalXmin;
 
 	gtm_foreach(elem, bucket->nhb_list)
 	{
@@ -249,7 +254,7 @@ pgxcnode_add_info(GTM_PGXCNodeInfo *nodeinfo)
 		{
 			if (curr_nodeinfo->status == NODE_CONNECTED)
 			{
-				GTM_RWLockRelease(&bucket->nhb_lock);
+				GTM_RWLockRelease(&PGXCNodesLock);
 				ereport(LOG,
 						(EEXIST,
 						 errmsg("Node with the given ID number already exists - %s %d:%d",
@@ -296,7 +301,7 @@ pgxcnode_add_info(GTM_PGXCNodeInfo *nodeinfo)
 
 				/* Set socket number with the new one */
 				curr_nodeinfo->socket = nodeinfo->socket;
-				GTM_RWLockRelease(&bucket->nhb_lock);
+				GTM_RWLockRelease(&PGXCNodesLock);
 				return 0;
 			}
 		}
@@ -306,7 +311,7 @@ pgxcnode_add_info(GTM_PGXCNodeInfo *nodeinfo)
 	 * Safe to add the structure to the list
 	 */
 	bucket->nhb_list = gtm_lappend(bucket->nhb_list, nodeinfo);
-	GTM_RWLockRelease(&bucket->nhb_lock);
+	GTM_RWLockRelease(&PGXCNodesLock);
 
     return 0;
 }
@@ -380,6 +385,7 @@ Recovery_PGXCNodeRegister(GTM_PGXCNodeType	type,
 						  GTM_PGXCNodePort	port,
 						  char			*proxyname,
 						  GTM_PGXCNodeStatus	status,
+						  GlobalTransactionId	*xmin,
 						  char			*ipaddress,
 						  char			*datafolder,
 						  bool			in_recovery,
@@ -408,6 +414,8 @@ Recovery_PGXCNodeRegister(GTM_PGXCNodeType	type,
 		nodeinfo->ipaddress = pgxcnode_copy_char(ipaddress);
 	nodeinfo->status = status;
 	nodeinfo->socket = socket;
+	nodeinfo->reported_xmin = *xmin;
+	nodeinfo->reported_xmin_time = GTM_TimestampGetCurrent();
 
 	elog(DEBUG1, "Recovery_PGXCNodeRegister Request info: type=%d, nodename=%s, port=%d," \
 			  "datafolder=%s, ipaddress=%s, status=%d",
@@ -426,6 +434,9 @@ Recovery_PGXCNodeRegister(GTM_PGXCNodeType	type,
 	 */
 	if (!in_recovery && errcode == 0)
 		Recovery_RecordRegisterInfo(nodeinfo, true);
+
+	if (xmin)
+		*xmin = nodeinfo->reported_xmin;
 
 	return errcode;
 }
@@ -460,11 +471,10 @@ Recovery_SaveRegisterInfo(void)
 		return;
 	}
 
+	GTM_RWLockAcquire(&PGXCNodesLock, GTM_LOCKMODE_READ);
 	for (hash = 0; hash < NODE_HASH_TABLE_SIZE; hash++)
 	{
 		bucket = &GTM_PGXCNodes[hash];
-
-		GTM_RWLockAcquire(&bucket->nhb_lock, GTM_LOCKMODE_READ);
 
 		/* Write one by one information about registered nodes */
 		gtm_foreach(elem, bucket->nhb_list)
@@ -536,9 +546,8 @@ Recovery_SaveRegisterInfo(void)
 
 			GTM_RWLockRelease(&nodeinfo->node_lock);
 		}
-
-		GTM_RWLockRelease(&bucket->nhb_lock);
 	}
+	GTM_RWLockRelease(&PGXCNodesLock);
 
 	close(ctlfd);
 
@@ -745,11 +754,20 @@ Recovery_PGXCNodeRegisterCoordProcess(char *coord_node, int coord_procid,
 	 */
 	nodeinfo = pgxcnode_find_info(GTM_NODE_COORDINATOR, coord_node);
 
-	if (nodeinfo == NULL)
+	while (nodeinfo == NULL)
 	{
-		if (Recovery_PGXCNodeRegister(GTM_NODE_COORDINATOR, coord_node, 0, NULL,
-									  NODE_CONNECTED, NULL, NULL, false, 0))
-				return 0;
+		GlobalTransactionId xmin = InvalidGlobalTransactionId;
+		int errcode = Recovery_PGXCNodeRegister(GTM_NODE_COORDINATOR, coord_node, 0, NULL,
+									  NODE_CONNECTED,
+									  &xmin,
+									  NULL, NULL, false, 0);
+
+		/*
+		 * If another thread registers before we get a chance, just look for
+		 * the nodeinfo again
+		 */
+		if (errcode != 0 && errcode != EEXIST)
+			return 0;
 
 		nodeinfo = pgxcnode_find_info(GTM_NODE_COORDINATOR, coord_node);
 	}
@@ -886,4 +904,321 @@ retry:
 
 		elog(DEBUG1, "MSG_BACKEND_DISCONNECT rc=%d done.", _rc);
 	}
+}
+
+void
+GTM_InitNodeManager(void)
+{
+	int ii;
+
+	for (ii = 0; ii < NODE_HASH_TABLE_SIZE; ii++)
+	{
+		GTM_PGXCNodes[ii].nhb_list = gtm_NIL;
+	}
+
+	GTM_RWLockInit(&RegisterFileLock);
+	GTM_RWLockInit(&PGXCNodesLock);
+}
+
+/* 
+ * Set to 120 seconds, but should be a few multiple for cluster monitor naptime
+ */ 
+#define GTM_REPORT_XMIN_DELAY_THRESHOLD (120 * 1000)
+
+GlobalTransactionId
+GTM_HandleGlobalXmin(GTM_PGXCNodeType type, char *node_name,
+		GlobalTransactionId *reported_xmin, bool remoteIdle, int *errcode)
+{
+	GTM_PGXCNodeInfo *all_nodes[MAX_NODES];
+	int num_nodes;
+	GTM_Timestamp current_time;
+	GTM_PGXCNodeInfo *mynodeinfo;
+	int ii;
+	GlobalTransactionId global_xmin;
+	GlobalTransactionId	non_idle_global_xmin;
+	GlobalTransactionId idle_global_xmin;
+	bool excludeSelf = false;
+
+	*errcode = 0;
+
+	elog(LOG, "node_name: %s, remoteIdle: %d, reported_xmin: %d, global_xmin: %d",
+			node_name, remoteIdle, *reported_xmin,
+			GTM_GlobalXmin);
+
+	/*
+	 * Hold the PGXCNodesLock in READ mode until we are done with the
+	 * GlobalXmin calculation. We don't want any new node to join the cluster,
+	 * but its OK for other nodes to report and do these computation in
+	 * parallel. If the other guy beats us and advances the GlobalXmin beyond
+	 * what we compute, we accept that calculation
+	 */
+	GTM_RWLockAcquire(&PGXCNodesLock, GTM_LOCKMODE_READ);
+	
+	mynodeinfo = pgxcnode_find_info(type, node_name);
+	if (mynodeinfo == NULL)
+	{
+		*errcode = GTM_ERRCODE_NODE_NOT_REGISTERED;
+		GTM_RWLockRelease(&PGXCNodesLock);
+		elog(LOG, "GTM_ERRCODE_NODE_NOT_REGISTERED - node_name %s", node_name);
+		return InvalidGlobalTransactionId;
+	}
+
+	GTM_RWLockAcquire(&mynodeinfo->node_lock, GTM_LOCKMODE_WRITE);
+
+	/*
+	 * If we were excluded from the GlobalXmin calculation because we failed to
+	 * report our status for GTM_REPORT_XMIN_DELAY_THRESHOLD seconds, we can
+	 * only join the cluster back iff the GlobalXmin hasn't advanced beyond
+	 * what we'd last reported. Otherwise its possible that some nodes are way
+	 * ahead of us. So we must give up and restart all over again (this is done
+	 * via PANIC in Cluster Monitor process on the remote side
+	 *
+	 * The GTM_REPORT_XMIN_DELAY_THRESHOLD is of many order higher than the
+	 * naptime used by Cluster Monitor. So unless there was a network outage or
+	 * the remote node got serious busy such that the Cluster Monitor did not
+	 * get opportunity to report xmin in a timely fashion, we shouldn't get
+	 * into this situation often.
+	 *
+	 * The exception to this rule is that if the remote node is idle, then we
+	 * actually ignore the xmin reported by it and instead calculate a new xmin
+	 * for it and send it back in respone. The remote node will still done
+	 * final sanity check and either accept that xmin or kill itself via PANIC
+	 * mechanism.
+	 */
+	if ((mynodeinfo->excluded) &&
+			GlobalTransactionIdPrecedes(mynodeinfo->reported_xmin,
+				GTM_GlobalXmin) && !remoteIdle)
+	{
+		*errcode = GTM_ERRCODE_NODE_EXCLUDED;
+		GTM_RWLockRelease(&mynodeinfo->node_lock);
+		GTM_RWLockRelease(&PGXCNodesLock);
+		elog(LOG, "GTM_ERRCODE_NODE_EXCLUDED - node_name %s", node_name);
+		return InvalidGlobalTransactionId;
+	}
+
+	/*
+	 * The remote node must not report a xmin which precedes the xmin it had
+	 * reported in the past. If it ever happens, send an error back and let the
+	 * remote node restart itself
+	 */
+	if (!remoteIdle && GlobalTransactionIdPrecedes(*reported_xmin, mynodeinfo->reported_xmin))
+	{
+		*errcode = GTM_ERRCODE_TOO_OLD_XMIN;
+		GTM_RWLockRelease(&mynodeinfo->node_lock);
+		GTM_RWLockRelease(&PGXCNodesLock);
+		elog(LOG, "GTM_ERRCODE_TOO_OLD_XMIN - node_name %s", node_name);
+		return InvalidGlobalTransactionId;
+	}
+
+	elog(DEBUG1, "node_name: %s, remoteIdle: %d, reported_xmin: %d, nodeinfo->reported_xmin: %d",
+			mynodeinfo->nodename, remoteIdle, *reported_xmin,
+			mynodeinfo->reported_xmin);
+
+	/*
+	 * If the remote node is idle, there is a danger that it may keep reporting
+	 * a very old xmin (usually capped by latestCompletedXid). To handle such
+	 * cases, which can be quite common in a large cluster, we check if the
+	 * remote node has reported idle status and the reported xmin is same as
+	 * what it reported in the last cycle and mark such node as "idle".
+	 * Xmin reported by such a node is ignored and we compute xmin for it
+	 * locally, here on the GTM.
+	 *
+	 * There are two strategies we follow:
+	 *
+	 * 1. We compute the lower bound of xmins reported by all non-idle remote
+	 * nodes and assign that to this guy. This assumes that there is zero
+	 * chance that a currently active (non-idle) node will send something to
+	 * this guy which is older than the xmin computed
+	 *
+	 * 2. If all nodes are reporting their status as idle, we compute the lower
+	 * bound of xmins reported by all idle nodes. This guarantees that the
+	 * GlobalXmin can advance to a reasonable point even when all nodes have
+	 * turned idle.
+	 *
+	 * In any case, the remote node will do its own sanity check before
+	 * accepting the xmin computed by us and bail out if it doesn't agree with
+	 * that.
+	 */ 
+	if (remoteIdle &&
+		GlobalTransactionIdEquals(mynodeinfo->reported_xmin,
+				*reported_xmin))
+		mynodeinfo->idle = true;
+	else
+	{
+		mynodeinfo->idle = false;
+		mynodeinfo->reported_xmin = *reported_xmin;
+	}
+	mynodeinfo->excluded = false;
+	mynodeinfo->reported_xmin_time = current_time = GTM_TimestampGetCurrent();
+
+	GTM_RWLockRelease(&mynodeinfo->node_lock);
+	
+	/* Compute both, idle as well as non-idle xmin */
+	non_idle_global_xmin = InvalidGlobalTransactionId;
+	idle_global_xmin = InvalidGlobalTransactionId;
+
+	num_nodes = pgxcnode_get_all(all_nodes, MAX_NODES);
+
+	elog(DEBUG1, "num_nodes - %d", num_nodes);
+
+	for (ii = 0; ii < num_nodes; ii++)
+	{
+		GlobalTransactionId xid;
+		GTM_PGXCNodeInfo *nodeinfo = all_nodes[ii];
+
+		elog(DEBUG1, "nodeinfo %p, type: %d, exclude %c, idle %c, xmin %d, time %lld",
+				nodeinfo, nodeinfo->type, nodeinfo->excluded ? 'T' : 'F',
+				nodeinfo->idle ? 'T' : 'F',
+				nodeinfo->reported_xmin, nodeinfo->reported_xmin_time);
+
+		if (nodeinfo->excluded)
+			continue;
+
+		if (nodeinfo->type != GTM_NODE_COORDINATOR && nodeinfo->type !=
+				GTM_NODE_DATANODE)
+			continue;
+
+		if (GTM_TimestampDifferenceExceeds(nodeinfo->reported_xmin_time,
+					current_time, GTM_REPORT_XMIN_DELAY_THRESHOLD))
+		{
+			elog(LOG, "Timediff exceeds threshold - %ld:%ld - excluding the "
+					"node from GlobalXmin calculation",
+					nodeinfo->reported_xmin_time, current_time);
+
+			GTM_RWLockAcquire(&nodeinfo->node_lock, GTM_LOCKMODE_WRITE);
+			if (GTM_TimestampDifferenceExceeds(nodeinfo->reported_xmin_time,
+						current_time, GTM_REPORT_XMIN_DELAY_THRESHOLD))
+			{
+				nodeinfo->excluded = true;
+				GTM_RWLockRelease(&nodeinfo->node_lock);
+				continue;
+			}
+			GTM_RWLockRelease(&nodeinfo->node_lock);
+		}
+
+		/*
+		 * If the remote node is idle, don't include its reported xmin in the
+		 * calculation which could be quite stale
+		 */
+		if (mynodeinfo->idle && (nodeinfo == mynodeinfo))
+			continue;
+
+		/*
+		 * Now grab the lock on the nodeinfo so that no further changes are
+		 * possible to its state.
+		 */
+		GTM_RWLockAcquire(&nodeinfo->node_lock, GTM_LOCKMODE_READ);
+
+		/* 
+		 * Just check again if the excluded state hasn't changed. Shouldn't
+		 * happen too often anyways
+		 */
+		if (nodeinfo->excluded)
+		{
+			GTM_RWLockRelease(&nodeinfo->node_lock);
+			continue;
+		}
+
+		xid = nodeinfo->reported_xmin;
+		if (!nodeinfo->idle)
+		{
+			if (!GlobalTransactionIdIsValid(non_idle_global_xmin))
+				non_idle_global_xmin = xid;
+			else if (GlobalTransactionIdPrecedes(xid, non_idle_global_xmin))
+				non_idle_global_xmin = xid;
+		}
+		else
+		{
+			if (!GlobalTransactionIdIsValid(idle_global_xmin))
+				idle_global_xmin = xid;
+			else if (GlobalTransactionIdPrecedes(xid, idle_global_xmin))
+				idle_global_xmin = xid;
+		}
+		GTM_RWLockRelease(&nodeinfo->node_lock);
+	}
+
+	/*
+	 * If the remote node is idle, a new xmin might have been computed for it
+	 * by us. We first try for non_idle_global_xmin, but if all nodes are idle,
+	 * we use the idle_global_xmin
+	 */
+	if (mynodeinfo && mynodeinfo->idle)
+	{
+		GTM_RWLockAcquire(&mynodeinfo->node_lock, GTM_LOCKMODE_WRITE);
+		if (GlobalTransactionIdIsValid(non_idle_global_xmin))
+		{
+			if (GlobalTransactionIdFollows(non_idle_global_xmin,
+						mynodeinfo->reported_xmin))
+				*reported_xmin = mynodeinfo->reported_xmin = non_idle_global_xmin;
+		}
+		else if (GlobalTransactionIdIsValid(idle_global_xmin))
+		{
+			if (GlobalTransactionIdFollows(non_idle_global_xmin,
+						mynodeinfo->reported_xmin))
+				*reported_xmin = mynodeinfo->reported_xmin = idle_global_xmin;
+		}
+		mynodeinfo->reported_xmin_time = current_time;
+		GTM_RWLockRelease(&mynodeinfo->node_lock);
+	}
+
+	/*
+	 * Now all nodes that must be excluded from GlobalXmin computation have
+	 * been marked correctly and xmin computed and set for an idle remote node,
+	 * if so. Lets compute the GlobalXmin
+	 */
+
+	/*
+	 * GlobalXmin is capped by the latestCompletedXid. Since any future
+	 * additions/changes can't cross this horizon, it seems appropriate to use
+	 * this as upper bound for GlobalXmin computation
+	 */
+	global_xmin = GTMTransactions.gt_latestCompletedXid;
+	if (!GlobalTransactionIdIsValid(global_xmin))
+		global_xmin = FirstNormalGlobalTransactionId;
+	else
+		GlobalTransactionIdAdvance(global_xmin);
+
+	for (ii = 0; ii < num_nodes; ii++)
+	{
+		GlobalTransactionId xid;
+		GTM_PGXCNodeInfo *nodeinfo = all_nodes[ii];
+
+		if (nodeinfo->excluded)
+			continue;
+
+		if (nodeinfo->type != GTM_NODE_COORDINATOR && nodeinfo->type !=
+				GTM_NODE_DATANODE)
+			continue;
+
+		/* Fetch once */
+		xid = nodeinfo->reported_xmin;
+		if (!GlobalTransactionIdIsValid(global_xmin))
+			global_xmin = xid;
+		else if (GlobalTransactionIdPrecedes(xid, global_xmin))
+			global_xmin = xid;
+	}
+	GTM_RWLockRelease(&PGXCNodesLock);
+
+	/*
+	 * Now update the GTM_GlobalXmin and also record the time when its updated
+	 * but iff someone else has not beaten us in the calculation already, which
+	 * is possible because we did the calculation holding only a READ lock on
+	 * PGXCNodesLock
+	 */
+	if (GlobalTransactionIdIsValid(global_xmin))
+	{
+		GTM_RWLockAcquire(&PGXCNodesLock, GTM_LOCKMODE_WRITE);
+		if (GlobalTransactionIdPrecedes(GTM_GlobalXmin, global_xmin))
+		{
+			GTM_GlobalXmin = global_xmin;
+			GTM_GlobalXminComputedTime = current_time;
+		}
+		else
+			global_xmin = GTM_GlobalXmin;
+		GTM_RWLockRelease(&PGXCNodesLock);
+	}
+
+
+	elog(DEBUG1, "GTM_HandleGlobalXmin - %d", global_xmin);
+	return global_xmin;
 }

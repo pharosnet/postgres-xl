@@ -86,10 +86,6 @@ gtm_serialize_snapshotdata(GTM_SnapshotData *data, char *buf, size_t buflen)
 	memcpy(buf + len, &(data->sn_xmax), sizeof(GlobalTransactionId));
 	len += sizeof(GlobalTransactionId);
 
-	/* GTM_SnapshotData.sn_recent_global_xmin */
-	memcpy(buf + len, &(data->sn_recent_global_xmin), sizeof(GlobalTransactionId));
-	len += sizeof(GlobalTransactionId);
-
 	/* GTM_SnapshotData.sn_xcnt */
 	memcpy(buf + len, &(data->sn_xcnt), sizeof(uint32));
 	len += sizeof(uint32);
@@ -128,10 +124,6 @@ gtm_deserialize_snapshotdata(GTM_SnapshotData *data, const char *buf, size_t buf
 
 	/* GTM_SnapshotData.sn_xmax */
 	memcpy(&(data->sn_xmax), buf + len, sizeof(GlobalTransactionId));
-	len += sizeof(GlobalTransactionId);
-
-	/* GTM_SnapshotData.sn_recent_global_xmin */
-	memcpy(&(data->sn_recent_global_xmin), buf + len, sizeof(GlobalTransactionId));
 	len += sizeof(GlobalTransactionId);
 
 	/* GTM_SnapshotData.sn_xcnt */
@@ -209,7 +201,6 @@ gtm_serialize_transactioninfo(GTM_TransactionInfo *data, char *buf, size_t bufle
 	int len = 0;
 	char *buf2;
 	int i;
-	int namelen;
 
 	/* size check */
 	if (gtm_get_transactioninfo_size(data) > buflen)
@@ -671,7 +662,10 @@ gtm_get_pgxcnodeinfo_size(GTM_PGXCNodeInfo *data)
 
 	len += sizeof(GTM_PGXCNodeStatus);   /* status */
 
-	len += sizeof(uint32);			/* max_sessions */
+	len += sizeof(bool);				/* excluded ?*/
+	len += sizeof(GlobalTransactionId);	/* xmin */
+	len += sizeof(GTM_Timestamp);		/* reported timestamp */
+
 	len += sizeof(uint32);			/* num_sessions */
 	if (data->num_sessions > 0)		/* sessions */
 		len += (data->num_sessions * sizeof(GTM_PGXCSession));
@@ -761,6 +755,15 @@ gtm_serialize_pgxcnodeinfo(GTM_PGXCNodeInfo *data, char *buf, size_t buflen)
 	/* GTM_PGXCNodeInfo.status */
 	memcpy(buf + len, &(data->status), sizeof(GTM_PGXCNodeStatus));
 	len += sizeof(GTM_PGXCNodeStatus);
+
+	memcpy(buf + len, &(data->excluded), sizeof(bool));
+	len += sizeof(bool);
+
+	memcpy(buf + len, &(data->reported_xmin), sizeof(GlobalTransactionId));
+	len += sizeof(GlobalTransactionId);
+
+	memcpy(buf + len, &(data->reported_xmin_time), sizeof(GTM_Timestamp));
+	len += sizeof(GTM_Timestamp);
 
 	/* GTM_PGXCNodeInfo.sessions */
 	len_wk = data->max_sessions;
@@ -900,6 +903,18 @@ gtm_deserialize_pgxcnodeinfo(GTM_PGXCNodeInfo *data, const char *buf, size_t buf
 	}
 	memcpy(&(data->status), buf + len, sizeof(GTM_PGXCNodeStatus));
 	len += sizeof(GTM_PGXCNodeStatus);
+
+	/* GTM_PGXCNodeInfo.excluded */
+	memcpy(&(data->excluded), buf + len, sizeof (bool));
+	len += sizeof (bool);
+
+	/* GTM_PGXCNodeInfo.reported_xmin */
+	memcpy(&(data->reported_xmin), buf + len, sizeof (GlobalTransactionId));
+	len += sizeof (GlobalTransactionId);
+
+	/* GTM_PGXCNodeInfo.reported_xmin_time */
+	memcpy(&(data->reported_xmin_time), buf + len, sizeof (GTM_Timestamp));
+	len += sizeof (GTM_Timestamp);
 
 	/* GTM_PGXCNodeInfo.sessions */
 	memcpy(&len_wk, buf + len, sizeof(uint32));

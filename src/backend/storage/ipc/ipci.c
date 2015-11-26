@@ -153,6 +153,7 @@ CreateSharedMemoryAndSemaphores(bool makePrivate, int port)
 			size = add_size(size, SharedQueueShmemSize());
 		if (IS_PGXC_COORDINATOR)
 			size = add_size(size, ClusterLockShmemSize());
+		size = add_size(size, ClusterMonitorShmemSize());
 #endif
 		size = add_size(size, BTreeShmemSize());
 		size = add_size(size, SyncScanShmemSize());
@@ -274,6 +275,7 @@ CreateSharedMemoryAndSemaphores(bool makePrivate, int port)
 		SharedQueuesInit();
 	if (IS_PGXC_COORDINATOR)
 		ClusterLockShmemInit();
+	ClusterMonitorShmemInit();
 #endif
 
 	/*

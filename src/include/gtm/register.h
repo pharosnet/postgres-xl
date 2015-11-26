@@ -58,6 +58,16 @@ typedef struct GTM_PGXCNodeInfo
 	char			*ipaddress;	/* IP address of the nodes */
 	char			*datafolder;	/* Data folder of the node */
 	GTM_PGXCNodeStatus	status;		/* Node status */
+	bool				excluded;			/* 
+											 *  Has the node timed out and be
+											 * excluded from xmin computation?
+											 */
+	bool				idle;				/* Has the node been idle since
+											 * last report
+											 */
+	GlobalTransactionId	reported_xmin;		/* Last reported xmin */
+	GTM_Timestamp			reported_xmin_time;	/* Time when last report was
+											   received */
 	int 			max_sessions;
 	int 			num_sessions;
 	GTM_PGXCSession	*sessions;
@@ -77,6 +87,7 @@ int Recovery_PGXCNodeRegister(GTM_PGXCNodeType	type,
 				GTM_PGXCNodePort	port,
 				char			*proxyname,
 				GTM_PGXCNodeStatus	status,
+				GlobalTransactionId	*xmin,
 				char			*ipaddress,
 				char			*datafolder,
 				bool			in_recovery,
@@ -103,4 +114,7 @@ void ProcessPGXCNodeList(Port *myport, StringInfo message);
 void ProcessGTMBeginBackup(Port *myport, StringInfo message);
 void ProcessGTMEndBackup(Port *myport, StringInfo message);
 
+void GTM_InitNodeManager(void);
+GlobalTransactionId GTM_HandleGlobalXmin(GTM_PGXCNodeType type, char *node_name,
+		GlobalTransactionId *reported_xmin, bool remoteIdle, int *errcode);
 #endif /* GTM_NODE_H */

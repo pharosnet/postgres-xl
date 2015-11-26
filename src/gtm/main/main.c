@@ -233,7 +233,7 @@ BaseInit()
 
 	GTM_InitTxnManager();
 	GTM_InitSeqManager();
-
+	GTM_InitNodeManager();
 }
 
 static void
@@ -1337,6 +1337,10 @@ ProcessCommand(Port *myport, StringInfo input_message)
 		case MSG_TXN_GET_GID_DATA:
 		case MSG_TXN_GET_NEXT_GXID:
 		case MSG_TXN_GXID_LIST:
+#ifdef XCP
+		case MSG_REPORT_XMIN:
+		case MSG_BKUP_REPORT_XMIN:
+#endif
 			ProcessTransactionCommand(myport, mtype, input_message);
 			break;
 
@@ -1667,6 +1671,14 @@ ProcessTransactionCommand(Port *myport, GTM_MessageType mtype, StringInfo messag
 			ProcessGXIDListCommand(myport, message);
 			break;
 
+		case MSG_REPORT_XMIN:
+			ProcessReportXminCommand(myport, message, false);
+			break;
+
+		case MSG_BKUP_REPORT_XMIN:
+			ProcessReportXminCommand(myport, message, true);
+			break;
+			
 		default:
 			Assert(0);			/* Shouldn't come here.. keep compiler quite */
 	}

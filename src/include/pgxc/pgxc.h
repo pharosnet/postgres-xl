@@ -19,8 +19,8 @@
 #ifndef PGXC_H
 #define PGXC_H
 
-#include "storage/lwlock.h"
 #include "postgres.h"
+#include "storage/lwlock.h"
 
 extern bool isPGXCCoordinator;
 extern bool isPGXCDataNode;

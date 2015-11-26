@@ -99,7 +99,8 @@ heap_page_prune_opt(Relation relation, Buffer buffer)
 	else
 		OldestXmin = RecentGlobalDataXmin;
 
-	Assert(TransactionIdIsValid(OldestXmin));
+	if (!TransactionIdIsValid(OldestXmin))
+		return;
 
 	/*
 	 * Let's see if we really need pruning.

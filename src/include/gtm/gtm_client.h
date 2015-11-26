@@ -112,6 +112,7 @@ typedef union GTM_ResultData
 		GTM_PGXCNodeType	type;			/* NODE_REGISTER */
 		size_t				len;
 		char				*node_name;		/* NODE_UNREGISTER */
+		GlobalTransactionId xmin;
 	} grd_node;
 
 	struct
@@ -119,6 +120,13 @@ typedef union GTM_ResultData
 		int				num_node;
 		GTM_PGXCNodeInfo		*nodeinfo[MAX_NODES];
 	} grd_node_list;
+
+	struct
+	{
+		GlobalTransactionId		reported_xmin;
+		GlobalTransactionId		global_xmin;
+		int						errcode;
+	} grd_report_xmin;						/* REPORT_XMIN */
 
 	/*
 	 * TODO
@@ -252,18 +260,17 @@ int node_register(GTM_Conn *conn,
 				  GTM_PGXCNodeType type,
 				  GTM_PGXCNodePort port,
 				  char *node_name,
-				  char *datafolder);
-int bkup_node_register(GTM_Conn *conn,
-					   GTM_PGXCNodeType type,
-					   GTM_PGXCNodePort port,
-					   char *node_name,
-					   char *datafolder);
-int node_register(GTM_Conn *conn, GTM_PGXCNodeType type, GTM_PGXCNodePort port,	char *node_name, char *datafolder);
+				  char *datafolder,
+				  GlobalTransactionId *xmin);
+int node_register(GTM_Conn *conn, GTM_PGXCNodeType type, GTM_PGXCNodePort port,
+		char *node_name, char *datafolder, GlobalTransactionId *xmin);
 int node_register_internal(GTM_Conn *conn, GTM_PGXCNodeType type, const char *host,	GTM_PGXCNodePort port, char *node_name,
-						   char *datafolder, GTM_PGXCNodeStatus status);
-int bkup_node_register(GTM_Conn *conn, GTM_PGXCNodeType type, GTM_PGXCNodePort port, char *node_name, char *datafolder);
+						   char *datafolder, GTM_PGXCNodeStatus status,
+						   GlobalTransactionId *xmin);
 int bkup_node_register_internal(GTM_Conn *conn, GTM_PGXCNodeType type, const char *host, GTM_PGXCNodePort port,
-								char *node_name, char *datafolder, GTM_PGXCNodeStatus status);
+								char *node_name, char *datafolder,
+								GTM_PGXCNodeStatus status,
+								GlobalTransactionId xmin);
 
 int node_unregister(GTM_Conn *conn, GTM_PGXCNodeType type, const char *node_name);
 int bkup_node_unregister(GTM_Conn *conn, GTM_PGXCNodeType type, const char * node_name);
@@ -271,6 +278,10 @@ int backend_disconnect(GTM_Conn *conn, bool is_postmaster, GTM_PGXCNodeType type
 char *node_get_local_addr(GTM_Conn *conn, char *buf, size_t buflen, int *rc);
 int register_session(GTM_Conn *conn, const char *coord_name, int coord_procid,
 				 int coord_backendid);
+int report_global_xmin(GTM_Conn *conn, const char *node_name,
+		GTM_PGXCNodeType type, GlobalTransactionId *gxid,
+		GlobalTransactionId *global_xmin,
+		bool isIdle, int *errcode);
 
 /*
  * Sequence Management API

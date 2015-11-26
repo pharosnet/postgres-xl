@@ -184,12 +184,10 @@ GTM_GetTransactionSnapshot(GTM_TransactionHandle handle[], int txn_count, int *s
 	if (GlobalTransactionIdPrecedes(xmin, globalxmin))
 		globalxmin = xmin;
 
-	GTMTransactions.gt_recent_global_xmin = globalxmin;
 
 	snapshot->sn_xmin = xmin;
 	snapshot->sn_xmax = xmax;
 	snapshot->sn_xcnt = count;
-	snapshot->sn_recent_global_xmin = globalxmin;
 
 	/*
 	 * Now, before the proc array lock is released, set the xmin in the txninfo
@@ -235,7 +233,6 @@ GTM_GetTransactionSnapshot(GTM_TransactionHandle handle[], int txn_count, int *s
 					mysnap->sn_xmin = snapshot->sn_xmin;
 					mysnap->sn_xmax = snapshot->sn_xmax;
 					mysnap->sn_xcnt = snapshot->sn_xcnt;
-					mysnap->sn_recent_global_xmin = snapshot->sn_recent_global_xmin;
 					memcpy(mysnap->sn_xip, snapshot->sn_xip,
 							sizeof (GlobalTransactionId) * snapshot->sn_xcnt);
 				}
@@ -257,7 +254,6 @@ GTM_GetTransactionSnapshot(GTM_TransactionHandle handle[], int txn_count, int *s
 			mysnap->sn_xmin = snapshot->sn_xmin;
 			mysnap->sn_xmax = snapshot->sn_xmax;
 			mysnap->sn_xcnt = snapshot->sn_xcnt;
-			mysnap->sn_recent_global_xmin = snapshot->sn_recent_global_xmin;
 			memcpy(mysnap->sn_xip, snapshot->sn_xip,
 					sizeof (GlobalTransactionId) * snapshot->sn_xcnt);
 		}
@@ -269,9 +265,9 @@ GTM_GetTransactionSnapshot(GTM_TransactionHandle handle[], int txn_count, int *s
 
 	GTM_RWLockRelease(&GTMTransactions.gt_TransArrayLock);
 
-	elog(DEBUG1, "GTM_GetTransactionSnapshot: (%u:%u:%u:%u)",
+	elog(DEBUG1, "GTM_GetTransactionSnapshot: (%u:%u:%u)",
 			snapshot->sn_xmin, snapshot->sn_xmax,
-			snapshot->sn_xcnt, snapshot->sn_recent_global_xmin);
+			snapshot->sn_xcnt);
 	return snapshot;
 }
 
@@ -338,7 +334,6 @@ ProcessGetSnapshotCommand(Port *myport, StringInfo message, bool get_gxid)
 	pq_sendbytes(&buf, (char *)&status, sizeof(int) * txn_count);
 	pq_sendbytes(&buf, (char *)&snapshot->sn_xmin, sizeof (GlobalTransactionId));
 	pq_sendbytes(&buf, (char *)&snapshot->sn_xmax, sizeof (GlobalTransactionId));
-	pq_sendbytes(&buf, (char *)&snapshot->sn_recent_global_xmin, sizeof (GlobalTransactionId));
 	pq_sendint(&buf, snapshot->sn_xcnt, sizeof (int));
 	pq_sendbytes(&buf, (char *)snapshot->sn_xip,
 				 sizeof(GlobalTransactionId) * snapshot->sn_xcnt);
@@ -404,7 +399,6 @@ ProcessGetSnapshotCommandMulti(Port *myport, StringInfo message)
 	pq_sendbytes(&buf, (char *)status, sizeof(int) * txn_count);
 	pq_sendbytes(&buf, (char *)&snapshot->sn_xmin, sizeof (GlobalTransactionId));
 	pq_sendbytes(&buf, (char *)&snapshot->sn_xmax, sizeof (GlobalTransactionId));
-	pq_sendbytes(&buf, (char *)&snapshot->sn_recent_global_xmin, sizeof (GlobalTransactionId));
 	pq_sendint(&buf, snapshot->sn_xcnt, sizeof (int));
 	pq_sendbytes(&buf, (char *)snapshot->sn_xip,
 				 sizeof(GlobalTransactionId) * snapshot->sn_xcnt);

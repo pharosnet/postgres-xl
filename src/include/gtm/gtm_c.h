@@ -110,7 +110,6 @@ typedef struct GTM_SnapshotData
 {
 	GlobalTransactionId		sn_xmin;
 	GlobalTransactionId		sn_xmax;
-	GlobalTransactionId		sn_recent_global_xmin;
 	uint32				sn_xcnt;
 	GlobalTransactionId		*sn_xip;
 } GTM_SnapshotData;
@@ -150,5 +149,10 @@ typedef enum GTM_PortLastCall
 #define GlobalTransactionIdIsValid(gxid) ((GlobalTransactionId) (gxid)) != InvalidGlobalTransactionId
 
 #define _(x) gettext(x)
+
+#define GTM_ERRCODE_TOO_OLD_XMIN 1
+#define GTM_ERRCODE_NODE_NOT_REGISTERED 2
+#define GTM_ERRCODE_NODE_EXCLUDED 3
+#define GTM_ERRCODE_UNKNOWN 4
 
 #endif   /* GTM_C_H */

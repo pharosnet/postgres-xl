@@ -261,6 +261,9 @@ static pid_t StartupPID = 0,
 #ifdef PGXC /* PGXC_COORD */
 			PgPoolerPID = 0,
 #endif /* PGXC_COORD */
+#ifdef XCP
+			ClusterMonPID = 0,
+#endif
 			BgWriterPID = 0,
 			CheckpointerPID = 0,
 			WalWriterPID = 0,
@@ -581,6 +584,7 @@ Datum xc_lockForBackupKey1;
 Datum xc_lockForBackupKey2;
 
 #define StartPoolManager()		StartChildProcess(PoolerProcess)
+#define StartClusterMonitor()	StartChildProcess(ClusterMonitorProcess)
 #endif
 
 #define StartupDataBase()		StartChildProcess(StartupProcess)
@@ -1359,6 +1363,7 @@ PostmasterMain(int argc, char *argv[])
 
 	MemoryContextSwitchTo(oldcontext);
 #endif /* PGXC */
+
 	/* Some workers may be scheduled to start now */
 	maybe_start_bgworker();
 
@@ -1780,6 +1785,12 @@ ServerLoop(void)
 		if (PgPoolerPID == 0 && pmState == PM_RUN)
 			PgPoolerPID = StartPoolManager();
 #endif /* PGXC */
+
+#ifdef XCP
+		/* If we have lost the cluster monitor, try to start a new one */
+		if (ClusterMonPID == 0 && pmState == PM_RUN)
+			ClusterMonPID = StartClusterMonitor();
+#endif
 
 		/* If we have lost the archiver, try to start a new one. */
 		if (PgArchPID == 0 && PgArchStartupAllowed())
@@ -2482,6 +2493,10 @@ SIGHUP_handler(SIGNAL_ARGS)
 		if (PgPoolerPID != 0)
 			signal_child(PgPoolerPID, SIGHUP);
 #endif /* PGXC */
+#ifdef XCP
+		if (ClusterMonPID != 0)
+			signal_child(ClusterMonPID, SIGHUP);
+#endif
 		if (BgWriterPID != 0)
 			signal_child(BgWriterPID, SIGHUP);
 		if (CheckpointerPID != 0)
@@ -2571,7 +2586,8 @@ pmdie(SIGNAL_ARGS)
 				/* and the pool manager too */
 				if (PgPoolerPID != 0)
 					signal_child(PgPoolerPID, SIGTERM);
-
+ 				if (ClusterMonPID != 0)
+ 					signal_child(ClusterMonPID, SIGTERM);
 #endif
 
 				/*
@@ -2619,6 +2635,9 @@ pmdie(SIGNAL_ARGS)
 			/* and the pool manager too */
 			if (PgPoolerPID != 0)
 				signal_child(PgPoolerPID, SIGTERM);
+			/* and the cluster monitor too */
+			if (ClusterMonPID != 0)
+				signal_child(ClusterMonPID, SIGTERM);
 #endif /* XCP */
 			SignalUnconnectedWorkers(SIGTERM);
 			if (pmState == PM_RECOVERY)
@@ -2649,6 +2668,10 @@ pmdie(SIGNAL_ARGS)
 				/* and the walwriter too */
 				if (WalWriterPID != 0)
 					signal_child(WalWriterPID, SIGTERM);
+#ifdef XCP
+				if (ClusterMonPID != 0)
+					signal_child(ClusterMonPID, SIGTERM);
+#endif
 				pmState = PM_WAIT_BACKENDS;
 			}
 
@@ -2806,6 +2829,11 @@ reaper(SIGNAL_ARGS)
 			if (PgPoolerPID == 0)
 				PgPoolerPID = StartPoolManager();
 #endif /* PGXC */
+
+#ifdef XCP
+			if (ClusterMonPID == 0)
+				ClusterMonPID = StartClusterMonitor();
+#endif
 
 			/* workers may be scheduled to start now */
 			maybe_start_bgworker();
@@ -2991,6 +3019,16 @@ reaper(SIGNAL_ARGS)
 		}
 #endif
 
+#ifdef XCP
+		if (pid == ClusterMonPID)
+		{
+			ClusterMonPID = 0;
+			if (!EXIT_STATUS_0(exitstatus))
+				HandleChildCrash(pid, exitstatus,
+						_("cluster monitor process"));
+			continue;
+		}
+#endif
 		/* Was it one of our background workers? */
 		if (CleanupBackgroundWorker(pid, exitstatus))
 		{
@@ -3426,6 +3464,19 @@ HandleChildCrash(int pid, int exitstatus, const char *procname)
 	}
 #endif /* PGXC */
 
+#ifdef XCP
+	if (pid == ClusterMonPID)
+		ClusterMonPID = 0;
+	else if (ClusterMonPID != 0 && !FatalError)
+	{
+		ereport(DEBUG2,
+			(errmsg_internal("sending %s to process %d",
+							 (SendStop ? "SIGSTOP" : "SIGQUIT"),
+							 (int) ClusterMonPID)));
+		signal_child(ClusterMonPID, (SendStop ? SIGSTOP : SIGQUIT));
+	}
+#endif
+
 	/*
 	 * Force a power-cycle of the pgarch process too.  (This isn't absolutely
 	 * necessary, but it seems like a good idea for robustness, and it
@@ -3611,6 +3662,9 @@ PostmasterStateMachine(void)
 #ifdef PGXC
 			PgPoolerPID == 0 &&
 #endif
+#ifdef XCP
+			ClusterMonPID == 0 &&
+#endif
 			WalReceiverPID == 0 &&
 			BgWriterPID == 0 &&
 			(CheckpointerPID == 0 ||
@@ -3710,6 +3764,9 @@ PostmasterStateMachine(void)
 			/* These other guys should be dead already */
 #ifdef PGXC
 			Assert(PgPoolerPID == 0);
+#endif
+#ifdef XCP
+			Assert(ClusterMonPID == 0);
 #endif
 			Assert(StartupPID == 0);
 			Assert(WalReceiverPID == 0);
@@ -3922,6 +3979,10 @@ TerminateChildren(int signal)
 #ifdef PGXC /* PGXC_COORD */
 	if (PgPoolerPID != 0)
 		signal_child(PgPoolerPID, SIGQUIT);
+#endif
+#ifdef XCP
+	if (ClusterMonPID != 0)
+		signal_child(ClusterMonPID, signal);
 #endif
 	if (BgWriterPID != 0)
 		signal_child(BgWriterPID, signal);
@@ -5333,6 +5394,10 @@ StartChildProcess(AuxProcType type)
 			case PoolerProcess:
 				ereport(LOG,
 						(errmsg("could not fork pool manager process: %m")));
+				break;
+			case ClusterMonitorProcess:
+				ereport(LOG,
+						(errmsg("could not fork cluster monitor process: %m")));
 				break;
 #endif
 			case StartupProcess:

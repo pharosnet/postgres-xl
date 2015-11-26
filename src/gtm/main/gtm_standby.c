@@ -164,8 +164,6 @@ gtm_standby_restore_gxid(void)
 						txn.gt_transactions_array[i].gti_current_snapshot.sn_xmin;
 		GTMTransactions.gt_transactions_array[handle].gti_current_snapshot.sn_xmax =
 						txn.gt_transactions_array[i].gti_current_snapshot.sn_xmax;
-		GTMTransactions.gt_transactions_array[handle].gti_current_snapshot.sn_recent_global_xmin =
-						txn.gt_transactions_array[i].gti_current_snapshot.sn_recent_global_xmin;
 		GTMTransactions.gt_transactions_array[handle].gti_current_snapshot.sn_xcnt =
 						txn.gt_transactions_array[i].gti_current_snapshot.sn_xcnt;
 		GTMTransactions.gt_transactions_array[handle].gti_current_snapshot.sn_xip =
@@ -225,6 +223,7 @@ gtm_standby_restore_node(void)
 			 data[i].type, data[i].nodename, data[i].datafolder);
 		if (Recovery_PGXCNodeRegister(data[i].type, data[i].nodename, data[i].port,
 					 data[i].proxyname, data[i].status,
+					 &data[i].reported_xmin,
 					 data[i].ipaddress, data[i].datafolder, true,
 					 -1 /* dummy socket */) != 0)
 		{
@@ -265,7 +264,8 @@ gtm_standby_register_self(const char *node_name, int port, const char *datadir)
 	standbyDataDir= (char *)datadir;
 
 	rc = node_register_internal(GTM_ActiveConn, GTM_NODE_GTM, standbyHostName, standbyPortNumber,
-								standbyNodeName, standbyDataDir, NODE_DISCONNECTED);
+								standbyNodeName, standbyDataDir,
+								NODE_DISCONNECTED, InvalidGlobalTransactionId);
 	if (rc < 0)
 	{
 		elog(DEBUG1, "Failed to register a standby-GTM status.");
@@ -297,7 +297,8 @@ gtm_standby_activate_self(void)
 	}
 
 	rc = node_register_internal(GTM_ActiveConn, GTM_NODE_GTM, standbyHostName, standbyPortNumber,
-								standbyNodeName, standbyDataDir, NODE_CONNECTED);
+								standbyNodeName, standbyDataDir,
+								NODE_CONNECTED, InvalidGlobalTransactionId);
 
 	if (rc < 0)
 	{

@@ -33,5 +33,10 @@
 #endif
 
 GTM_Timestamp GTM_TimestampGetCurrent(void);
+void GTM_TimestampDifference(GTM_Timestamp start_time, GTM_Timestamp stop_time,
+					long *secs, int *microsecs);
+bool GTM_TimestampDifferenceExceeds(GTM_Timestamp start_time,
+						   GTM_Timestamp stop_time,
+						   int msec);
 
 #endif

@@ -49,7 +49,6 @@ dump_transactioninfo_elog(GTM_TransactionInfo *txn)
 
 	elog(LOG, "  sn_xmin: %d", txn->gti_current_snapshot.sn_xmin);
 	elog(LOG, "  sn_xmax: %d", txn->gti_current_snapshot.sn_xmax);
-	elog(LOG, "  sn_recent_global_xmin: %d", txn->gti_current_snapshot.sn_recent_global_xmin);
 	elog(LOG, "  sn_xcnt: %d", txn->gti_current_snapshot.sn_xcnt);
 
 	/* Print all the GXIDs in snapshot */

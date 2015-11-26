@@ -657,7 +657,7 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 	before_shmem_exit(ShutdownPostgres, 0);
 
 	/* The autovacuum launcher is done here */
-	if (IsAutoVacuumLauncherProcess())
+	if (IsAutoVacuumLauncherProcess() || IsClusterMonitorProcess())
 		return;
 
 	/*
