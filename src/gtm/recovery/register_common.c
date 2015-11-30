@@ -75,14 +75,15 @@ static char *pgxcnode_copy_char(const char *str);
 #define pgxcnode_port_equal(port1,port2) (port1 == port2)
 
 size_t
-pgxcnode_get_all(GTM_PGXCNodeInfo **data, size_t maxlen)
+pgxcnode_get_all(GTM_PGXCNodeInfo **data, size_t maxlen, bool locked)
 {
 	GTM_PGXCNodeInfoHashBucket *bucket;
 	gtm_ListCell *elem;
 	int node = 0;
 	int i;
 
-	GTM_RWLockAcquire(&PGXCNodesLock, GTM_LOCKMODE_READ);
+	if (!locked)
+		GTM_RWLockAcquire(&PGXCNodesLock, GTM_LOCKMODE_READ);
 
 	for (i = 0; i < NODE_HASH_TABLE_SIZE; i++)
 	{
@@ -102,7 +103,9 @@ pgxcnode_get_all(GTM_PGXCNodeInfo **data, size_t maxlen)
 				break;
 		}
 	}
-	GTM_RWLockRelease(&PGXCNodesLock);
+	
+	if (!locked)
+		GTM_RWLockRelease(&PGXCNodesLock);
 
 	return node;
 }
@@ -938,27 +941,18 @@ GTM_HandleGlobalXmin(GTM_PGXCNodeType type, char *node_name,
 	GlobalTransactionId	non_idle_global_xmin;
 	GlobalTransactionId idle_global_xmin;
 	bool excludeSelf = false;
+	gtm_ListCell *elem;
 
 	*errcode = 0;
 
 	elog(DEBUG1, "node_name: %s, remoteIdle: %d, reported_xmin: %d, global_xmin: %d",
 			node_name, remoteIdle, *reported_xmin,
 			GTM_GlobalXmin);
-
-	/*
-	 * Hold the PGXCNodesLock in READ mode until we are done with the
-	 * GlobalXmin calculation. We don't want any new node to join the cluster,
-	 * but its OK for other nodes to report and do these computation in
-	 * parallel. If the other guy beats us and advances the GlobalXmin beyond
-	 * what we compute, we accept that calculation
-	 */
-	GTM_RWLockAcquire(&PGXCNodesLock, GTM_LOCKMODE_READ);
 	
 	mynodeinfo = pgxcnode_find_info(type, node_name);
 	if (mynodeinfo == NULL)
 	{
 		*errcode = GTM_ERRCODE_NODE_NOT_REGISTERED;
-		GTM_RWLockRelease(&PGXCNodesLock);
 		elog(LOG, "GTM_ERRCODE_NODE_NOT_REGISTERED - node_name %s", node_name);
 		return InvalidGlobalTransactionId;
 	}
@@ -991,7 +985,6 @@ GTM_HandleGlobalXmin(GTM_PGXCNodeType type, char *node_name,
 	{
 		*errcode = GTM_ERRCODE_NODE_EXCLUDED;
 		GTM_RWLockRelease(&mynodeinfo->node_lock);
-		GTM_RWLockRelease(&PGXCNodesLock);
 		elog(LOG, "GTM_ERRCODE_NODE_EXCLUDED - node_name %s", node_name);
 		return InvalidGlobalTransactionId;
 	}
@@ -1005,7 +998,6 @@ GTM_HandleGlobalXmin(GTM_PGXCNodeType type, char *node_name,
 	{
 		*errcode = GTM_ERRCODE_TOO_OLD_XMIN;
 		GTM_RWLockRelease(&mynodeinfo->node_lock);
-		GTM_RWLockRelease(&PGXCNodesLock);
 		elog(LOG, "GTM_ERRCODE_TOO_OLD_XMIN - node_name %s", node_name);
 		return InvalidGlobalTransactionId;
 	}
@@ -1057,7 +1049,15 @@ GTM_HandleGlobalXmin(GTM_PGXCNodeType type, char *node_name,
 	non_idle_global_xmin = InvalidGlobalTransactionId;
 	idle_global_xmin = InvalidGlobalTransactionId;
 
-	num_nodes = pgxcnode_get_all(all_nodes, MAX_NODES);
+	/*
+	 * Hold the PGXCNodesLock in READ mode until we are done with the
+	 * GlobalXmin calculation. We don't want any new node to join the cluster,
+	 * but its OK for other nodes to report and do these computation in
+	 * parallel. If the other guy beats us and advances the GlobalXmin beyond
+	 * what we compute, we accept that calculation
+	 */
+	GTM_RWLockAcquire(&PGXCNodesLock, GTM_LOCKMODE_READ);
+	num_nodes = pgxcnode_get_all(all_nodes, MAX_NODES, true);
 
 	elog(DEBUG1, "num_nodes - %d", num_nodes);
 
@@ -1178,6 +1178,26 @@ GTM_HandleGlobalXmin(GTM_PGXCNodeType type, char *node_name,
 	else
 		GlobalTransactionIdAdvance(global_xmin);
 
+	GTM_RWLockAcquire(&GTMTransactions.gt_TransArrayLock, GTM_LOCKMODE_READ);
+	gtm_foreach(elem, GTMTransactions.gt_open_transactions)
+	{
+		volatile GTM_TransactionInfo *gtm_txninfo = (GTM_TransactionInfo *)gtm_lfirst(elem);
+		GlobalTransactionId xid;
+
+		/* Update globalxmin to be the smallest valid xmin */
+		xid = gtm_txninfo->gti_xmin;		/* fetch just once */
+		if (GlobalTransactionIdIsNormal(xid) &&
+			GlobalTransactionIdPrecedes(xid, global_xmin))
+			global_xmin = xid;
+
+		/* Fetch xid just once - see GetNewTransactionId */
+		xid = gtm_txninfo->gti_gxid;
+		if (GlobalTransactionIdIsNormal(xid) &&
+			GlobalTransactionIdPrecedes(xid, global_xmin))
+			global_xmin = xid;
+	}
+	GTM_RWLockRelease(&GTMTransactions.gt_TransArrayLock);
+	
 	for (ii = 0; ii < num_nodes; ii++)
 	{
 		GlobalTransactionId xid;

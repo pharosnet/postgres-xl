@@ -381,7 +381,7 @@ ProcessPGXCNodeList(Port *myport, StringInfo message)
 	memset(data, 0, sizeof(GTM_PGXCNodeInfo *) * MAX_NODES);
 	memset(s_data, 0, sizeof(char *) * MAX_NODES);
 
-	num_node = pgxcnode_get_all(data, MAX_NODES);
+	num_node = pgxcnode_get_all(data, MAX_NODES, false);
 
 	for (i = 0; i < num_node; i++)
 	{

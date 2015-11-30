@@ -79,7 +79,7 @@ typedef struct GTM_PGXCNodeInfo
 /* Maximum number of nodes that can be registered */
 #define MAX_NODES 1024
 
-size_t pgxcnode_get_all(GTM_PGXCNodeInfo **data, size_t maxlen);
+size_t pgxcnode_get_all(GTM_PGXCNodeInfo **data, size_t maxlen, bool locked);
 size_t pgxcnode_find_by_type(GTM_PGXCNodeType type, GTM_PGXCNodeInfo **data, size_t maxlen);
 
 int Recovery_PGXCNodeRegister(GTM_PGXCNodeType	type,
