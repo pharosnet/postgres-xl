@@ -29,15 +29,101 @@ bool
 GTM_RWLockAcquire(GTM_RWLock *lock, GTM_LockMode mode)
 {
 	int status = EINVAL;
+#ifdef GTM_LOCK_DEBUG
+	int indx;
+	int ii;
+#endif
 
 	switch (mode)
 	{
 		case GTM_LOCKMODE_WRITE:
+#ifdef GTM_LOCK_DEBUG
+			pthread_mutex_lock(&lock->lk_debug_mutex);
+			for (ii = 0; ii < lock->rd_holders_count; ii++)
+			{
+				if (pthread_equal(lock->rd_holders[ii], pthread_self()))
+					elog(WARNING, "Thread %p already owns a read-lock and may deadlock",
+							(void *) pthread_self());
+			}
+			if (pthread_equal(lock->wr_owner, pthread_self()))
+				elog(WARNING, "Thread %p already owns a write-lock and may deadlock",
+						(void *) pthread_self());
+			indx = lock->wr_waiters_count;
+			if (indx < GTM_LOCK_DEBUG_MAX_READ_TRACKERS)
+				lock->wr_waiters[lock->wr_waiters_count++] = pthread_self();
+			else
+				indx = -1;
+			pthread_mutex_unlock(&lock->lk_debug_mutex);
+#endif
 			status = pthread_rwlock_wrlock(&lock->lk_lock);
+#ifdef GTM_LOCK_DEBUG
+			if (!status)
+			{
+				pthread_mutex_lock(&lock->lk_debug_mutex);
+				lock->wr_granted = true;
+				lock->wr_owner = pthread_self();
+				lock->rd_holders_count = 0;
+				lock->rd_holders_overflow = false;
+				if (indx != -1)
+				{
+					lock->wr_waiters[indx] = 0;
+					lock->wr_waiters_count--;
+				}
+				pthread_mutex_unlock(&lock->lk_debug_mutex);
+			}
+			else
+				elog(ERROR, "pthread_rwlock_wrlock returned %d", status);
+#endif
 			break;
 
 		case GTM_LOCKMODE_READ:
+#ifdef GTM_LOCK_DEBUG
+			pthread_mutex_lock(&lock->lk_debug_mutex);
+			if (lock->wr_waiters_count > 0)
+			{
+				for (ii = 0; ii < lock->rd_holders_count; ii++)
+				{
+					if (pthread_equal(lock->rd_holders[ii], pthread_self()))
+						elog(WARNING, "Thread %p already owns a read-lock and "
+								"there are blocked writers - this may deadlock",
+									(void *) pthread_self());
+				}
+			}
+			if (pthread_equal(lock->wr_owner, pthread_self()))
+				elog(WARNING, "Thread %p already owns a write-lock and may deadlock",
+						(void *) pthread_self());
+			indx = lock->rd_waiters_count;
+			if (indx < GTM_LOCK_DEBUG_MAX_READ_TRACKERS)
+				lock->rd_waiters[lock->rd_waiters_count++] = pthread_self();
+			else
+				indx = -1;
+			pthread_mutex_unlock(&lock->lk_debug_mutex);
+#endif
+			/* Now acquire the lock */
 			status = pthread_rwlock_rdlock(&lock->lk_lock);
+
+#ifdef GTM_LOCK_DEBUG
+			if (!status)
+			{
+				pthread_mutex_lock(&lock->lk_debug_mutex);
+				lock->wr_granted = false;
+				if (lock->rd_holders_count == GTM_LOCK_DEBUG_MAX_READ_TRACKERS)
+					lock->rd_holders_overflow = true;
+				else
+				{
+					lock->rd_holders[lock->rd_holders_count++] = pthread_self();
+					lock->rd_holders_overflow = false;
+					if (indx != -1)
+					{
+						lock->rd_waiters[indx] = 0;
+						lock->rd_waiters_count--;
+					}
+				}
+				pthread_mutex_unlock(&lock->lk_debug_mutex);
+			}
+			else
+				elog(ERROR, "pthread_rwlock_rdlock returned %d", status);
+#endif
 			break;
 
 		default:
@@ -56,6 +142,42 @@ GTM_RWLockRelease(GTM_RWLock *lock)
 {
 	int status;
 	status = pthread_rwlock_unlock(&lock->lk_lock);
+#ifdef GTM_LOCK_DEBUG
+	if (status)
+		elog(PANIC, "pthread_rwlock_unlock returned %d", status);
+	else
+	{
+		pthread_mutex_lock(&lock->lk_debug_mutex);
+		if (lock->wr_granted)
+		{
+			Assert(pthread_equal(lock->wr_owner, pthread_self()));
+			lock->wr_granted = false;
+			lock->wr_owner = 0;
+		}
+		else
+		{
+			int ii;
+			bool found = false;
+			for (ii = 0; ii < lock->rd_holders_count; ii++)
+			{
+				if (pthread_equal(lock->rd_holders[ii], pthread_self()))
+				{
+					found = true;
+					lock->rd_holders[ii] =
+						lock->rd_holders[lock->rd_holders_count - 1];
+					lock->rd_holders_count--;
+					lock->rd_holders[lock->rd_holders_count] = 0;
+					break;
+				}
+			}
+
+			if (!found && !lock->rd_holders_overflow)
+				elog(PANIC, "Thread %p does not own a read-lock",
+						(void *)pthread_self());
+		}
+		pthread_mutex_unlock(&lock->lk_debug_mutex);
+	}
+#endif
 	return status ? false : true;
 }
 
@@ -65,6 +187,10 @@ GTM_RWLockRelease(GTM_RWLock *lock)
 int
 GTM_RWLockInit(GTM_RWLock *lock)
 {
+#ifdef GTM_LOCK_DEBUG
+	memset(lock, 0, sizeof (GTM_RWLock));
+	pthread_mutex_init(&lock->lk_debug_mutex, NULL);
+#endif
 	return pthread_rwlock_init(&lock->lk_lock, NULL);
 }
 
@@ -92,10 +218,38 @@ GTM_RWLockConditionalAcquire(GTM_RWLock *lock, GTM_LockMode mode)
 	{
 		case GTM_LOCKMODE_WRITE:
 			status = pthread_rwlock_trywrlock(&lock->lk_lock);
+#ifdef GTM_LOCK_DEBUG
+			if (!status)
+			{
+				pthread_mutex_lock(&lock->lk_debug_mutex);
+				lock->wr_granted = true;
+				lock->wr_owner = pthread_self();
+				lock->rd_holders_count = 0;
+				lock->rd_holders_overflow = false;
+				pthread_mutex_unlock(&lock->lk_debug_mutex);
+			}
+#endif
 			break;
 
 		case GTM_LOCKMODE_READ:
 			status = pthread_rwlock_tryrdlock(&lock->lk_lock);
+#ifdef GTM_LOCK_DEBUG
+			if (!status)
+			{
+				pthread_mutex_lock(&lock->lk_debug_mutex);
+				if (lock->rd_holders_count == GTM_LOCK_DEBUG_MAX_READ_TRACKERS)
+				{
+					elog(WARNING, "Too many threads waiting for a read-lock");
+					lock->rd_holders_overflow = true;
+				}
+				else
+				{
+					lock->rd_holders[lock->rd_holders_count++] = pthread_self();
+					lock->rd_holders_overflow = false;
+				}
+				pthread_mutex_unlock(&lock->lk_debug_mutex);
+			}
+#endif
 			break;
 
 		default:

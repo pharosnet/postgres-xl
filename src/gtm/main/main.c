@@ -213,6 +213,9 @@ InitGTMProcess()
 static void
 BaseInit()
 {
+	/* Initialize standby lock before doing anything else */
+	Recovery_InitStandbyLock();
+
 	checkDataDir();
 	SetDataDir();
 	ChangeToDataDir();
@@ -547,18 +550,6 @@ main(int argc, char *argv[])
 		free(dest_port);
 		dest_port = NULL;
 	}
-	/*
-	 * Check options for the standby mode.
-	 */
-	if (Recovery_IsStandby())
-	{
-		if (active_addr == NULL || active_port < 1)
-		{
-			help(argv[0]);
-			exit(1);
-		}
-		Recovery_StandbySetConnInfo(active_addr, active_port);
-	}
 
 	if (GTMDataDir == NULL)
 	{
@@ -601,6 +592,20 @@ main(int argc, char *argv[])
 	 * useful
 	 */
 	BaseInit();
+
+	/*
+	 * Check options for the standby mode. Do it after StandbyLock has been
+	 * initialised in BaseInit()
+	 */
+	if (Recovery_IsStandby())
+	{
+		if (active_addr == NULL || active_port < 1)
+		{
+			help(argv[0]);
+			exit(1);
+		}
+		Recovery_StandbySetConnInfo(active_addr, active_port);
+	}
 
 	/*
 	 * Establish a connection between the active and standby.

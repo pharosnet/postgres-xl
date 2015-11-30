@@ -16,10 +16,23 @@
 #define GTM_LOCK_H
 
 #include <pthread.h>
-
 typedef struct GTM_RWLock
 {
 	pthread_rwlock_t lk_lock;
+#ifdef GTM_LOCK_DEBUG
+#define GTM_LOCK_DEBUG_MAX_READ_TRACKERS	1024
+	pthread_mutex_t	lk_debug_mutex;
+	int				wr_waiters_count;
+	pthread_t		wr_waiters[GTM_LOCK_DEBUG_MAX_READ_TRACKERS];
+	bool			wr_granted;
+	pthread_t		wr_owner;
+	int				rd_holders_count;
+	bool			rd_holders_overflow;
+	pthread_t		rd_holders[GTM_LOCK_DEBUG_MAX_READ_TRACKERS];
+	int				rd_waiters_count;
+	bool			rd_waiters_overflow;
+	pthread_t		rd_waiters[GTM_LOCK_DEBUG_MAX_READ_TRACKERS];
+#endif
 } GTM_RWLock;
 
 typedef struct GTM_MutexLock

@@ -47,9 +47,6 @@ gtm_standby_start_startup(void)
 	}
 	elog(LOG, "Connection established to the GTM active.");
 
-	/* Initialize standby lock */
-	Recovery_InitStandbyLock();
-
 	return 1;
 }
 
