@@ -122,18 +122,7 @@ ClusterMonitorInit(void)
 										  ALLOCSET_DEFAULT_MAXSIZE);
 	MemoryContextSwitchTo(ClusterMonitorMemCxt);
 
-	InitPostgres(NULL, InvalidOid, NULL, InvalidOid, NULL);
-
     SetProcessingMode(NormalProcessing);
-
-	/*
-	 * Start a dummy transaction so that we start computing OldestXmin
-	 * with the current latestCompletedXid, especially when this server is just
-	 * started and joining the cluster
-	 */
-	StartTransactionCommand();
-	(void) GetTopTransactionId();
-	CommitTransactionCommand();
 
 	/*
 	 * Register this node with the GTM
