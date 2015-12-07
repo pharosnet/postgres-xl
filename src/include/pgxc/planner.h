@@ -102,7 +102,6 @@ typedef struct
 							 */
 	RemoteQueryExecType	exec_type;
 	int			reduce_level;		/* in case of reduced JOIN, it's level    */
-	List			*base_tlist;		/* in case of isReduced, the base tlist   */
 	char			*outer_alias;
 	char			*inner_alias;
 	int			outer_reduce_level;
@@ -115,6 +114,29 @@ typedef struct
 	bool			has_row_marks;		/* Did SELECT had FOR UPDATE/SHARE? */
 	bool			has_ins_child_sel_parent;	/* This node is part of an INSERT SELECT that
 								 * inserts into child by selecting from its parent */
+
+	bool            rq_finalise_aggs;   /* Aggregates should be finalised at
+										   the 
+										 * Datanode */
+	bool            rq_sortgroup_colno; /* Use resno for sort group references
+										 * instead of expressions */
+	Query           *remote_query;  /* Query structure representing the query
+									   to be
+									 * sent to the datanodes */
+	List            *base_tlist;    /* the targetlist representing the result
+									   of 
+									 * the query to be sent to the datanode */
+
+	/*
+	 * Reference targetlist of Vars to match the Vars in the plan nodes on
+	 * coordinator to the corresponding Vars in the remote_query.  These
+	 * targetlists are used to while replacing/adding targetlist and quals in
+	 * the remote_query.
+	 */ 
+	List            *coord_var_tlist;
+	List            *query_var_tlist;
+	bool			is_temp;
+
 } RemoteQuery;
 
 /*
@@ -186,7 +208,8 @@ typedef enum
 								 * by FQS, but such expressions might be
 								 * supported by FQS in future
 								 */
-	SS_HAS_AGG_EXPR				/* it has aggregate expressions */
+	SS_HAS_AGG_EXPR,			/* it has aggregate expressions */
+	SS_UPDATES_DISTRIBUTION_COLUMN	/* query updates distribution column */
 } ShippabilityStat;
 
 /* forbid SQL if unsafe, useful to turn off for development */
@@ -199,5 +222,9 @@ extern PlannedStmt *pgxc_direct_planner(Query *query, int cursorOptions,
 										ParamListInfo boundParams);
 extern List *AddRemoteQueryNode(List *stmts, const char *queryString,
 								RemoteQueryExecType remoteExecType);
+extern PlannedStmt *pgxc_planner(Query *query, int cursorOptions,
+		                                 ParamListInfo boundParams);
+extern ExecNodes *pgxc_is_query_shippable(Query *query, int query_level);
+
 
 #endif   /* PGXCPLANNER_H */

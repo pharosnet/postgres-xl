@@ -2951,6 +2951,77 @@ get_exec_connections(RemoteQueryState *planstate,
 
 	if (exec_nodes)
 	{
+		if (exec_nodes->en_expr)
+		{
+			/* execution time determining of target Datanodes */
+			bool isnull;
+			ExprState *estate = ExecInitExpr(exec_nodes->en_expr,
+											 (PlanState *) planstate);
+			Datum partvalue = ExecEvalExpr(estate,
+										   planstate->combiner.ss.ps.ps_ExprContext,
+										   &isnull,
+										   NULL);
+			RelationLocInfo *rel_loc_info = GetRelationLocInfo(exec_nodes->en_relid);
+			/* PGXCTODO what is the type of partvalue here */
+			ExecNodes *nodes = GetRelationNodes(rel_loc_info,
+												partvalue,
+												isnull,
+												exec_nodes->accesstype);
+			/*
+			 * en_expr is set by pgxc_set_en_expr only for distributed
+			 * relations while planning DMLs, hence a select for update
+			 * on a replicated table here is an assertion
+			 */
+			Assert(!(exec_nodes->accesstype == RELATION_ACCESS_READ_FOR_UPDATE &&
+						IsRelationReplicated(rel_loc_info)));
+
+			if (nodes)
+			{
+				nodelist = nodes->nodeList;
+				primarynode = nodes->primarynodelist;
+				pfree(nodes);
+			}
+			FreeRelationLocInfo(rel_loc_info);
+		}
+		else if (OidIsValid(exec_nodes->en_relid))
+		{
+			RelationLocInfo *rel_loc_info = GetRelationLocInfo(exec_nodes->en_relid);
+			ExecNodes *nodes = GetRelationNodes(rel_loc_info, 0, true, exec_nodes->accesstype);
+
+			/*
+			 * en_relid is set only for DMLs, hence a select for update on a
+			 * replicated table here is an assertion
+			 */
+			Assert(!(exec_nodes->accesstype == RELATION_ACCESS_READ_FOR_UPDATE &&
+						IsRelationReplicated(rel_loc_info)));
+
+			/* Use the obtained list for given table */
+			if (nodes)
+				nodelist = nodes->nodeList;
+
+			/*
+			 * Special handling for ROUND ROBIN distributed tables. The target
+			 * node must be determined at the execution time
+			 */
+			if (rel_loc_info->locatorType == LOCATOR_TYPE_RROBIN && nodes)
+			{
+				nodelist = nodes->nodeList;
+				primarynode = nodes->primarynodelist;
+			}
+			else if (nodes)
+			{
+				if (exec_type == EXEC_ON_DATANODES || exec_type == EXEC_ON_ALL_NODES)
+				{
+					nodelist = exec_nodes->nodeList;
+					primarynode = exec_nodes->primarynodelist;
+				}
+			}
+
+			if (nodes)
+				pfree(nodes);
+			FreeRelationLocInfo(rel_loc_info);
+		}
+		else
 		{
 			if (exec_type == EXEC_ON_DATANODES || exec_type == EXEC_ON_ALL_NODES)
 				nodelist = exec_nodes->nodeList;
@@ -3058,6 +3129,15 @@ pgxc_start_command_on_connection(PGXCNodeHandle *connection,
 		/* need to use Extended Query Protocol */
 		int	fetch = 0;
 		bool	prepared = false;
+		char	nodetype = PGXC_NODE_DATANODE;
+
+		/* if prepared statement is referenced see if it is already
+		 * exist */
+		if (step->statement)
+			prepared =
+				ActivateDatanodeStatementOnNode(step->statement,
+						PGXCNodeGetNodeId(connection->nodeoid,
+							&nodetype));
 
 		/*
 		 * execute and fetch rows only if they will be consumed
@@ -4159,7 +4239,7 @@ ExecInitRemoteQuery(RemoteQuery *node, EState *estate, int eflags)
 
 	remotestate = makeNode(RemoteQueryState);
 	combiner = (ResponseCombiner *) remotestate;
-	InitResponseCombiner(combiner, 0, COMBINE_TYPE_NONE);
+	InitResponseCombiner(combiner, 0, node->combine_type);
 	combiner->ss.ps.plan = (Plan *) node;
 	combiner->ss.ps.state = estate;
 
@@ -4168,8 +4248,7 @@ ExecInitRemoteQuery(RemoteQuery *node, EState *estate, int eflags)
 	combiner->request_type = REQUEST_TYPE_QUERY;
 
 	ExecInitResultTupleSlot(estate, &combiner->ss.ps);
-	if (node->scan.plan.targetlist)
-		ExecAssignResultTypeFromTL((PlanState *) remotestate);
+	ExecAssignResultTypeFromTL((PlanState *) remotestate);
 
 	/*
 	 * If there are parameters supplied, get them into a form to be sent to the

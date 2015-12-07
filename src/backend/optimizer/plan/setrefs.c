@@ -612,6 +612,29 @@ set_plan_refs(PlannerInfo *root, Plan *plan, int rtoffset)
 					fix_scan_list(root, splan->scan.plan.qual, rtoffset);
 			}
 			break;
+#ifdef PGXC
+		case T_RemoteQuery:
+			{
+#if 0
+				RemoteQuery	   *splan = (RemoteQuery *) plan;
+
+				/*
+				 * If base_tlist is set, it means that we have a reduced remote
+				 * query plan. So need to set the var references accordingly.
+				 */
+				if (splan->base_tlist)
+					set_remote_references(root, splan, rtoffset);
+				splan->scan.plan.targetlist =
+					fix_scan_list(root, splan->scan.plan.targetlist, rtoffset);
+				splan->scan.plan.qual =
+					fix_scan_list(root, splan->scan.plan.qual, rtoffset);
+				splan->base_tlist =
+					fix_scan_list(root, splan->base_tlist, rtoffset);
+				splan->scan.scanrelid += rtoffset;
+#endif
+			}
+			break;
+#endif
 		case T_ForeignScan:
 			set_foreignscan_references(root, (ForeignScan *) plan, rtoffset);
 			break;

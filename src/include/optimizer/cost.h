@@ -75,6 +75,7 @@ extern bool enable_material;
 extern bool enable_mergejoin;
 extern bool enable_hashjoin;
 #ifdef PGXC
+extern bool enable_fast_query_shipping;
 extern bool enable_remotejoin;
 extern bool enable_remotegroup;
 #endif

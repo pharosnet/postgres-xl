@@ -104,6 +104,9 @@ static int locate_modulo_insert(Locator *self, Datum value, bool isnull,
 			  bool *hasprimary);
 static int locate_modulo_select(Locator *self, Datum value, bool isnull,
 			  bool *hasprimary);
+static Expr * pgxc_find_distcol_expr(Index varno,
+					   AttrNumber attrNum,
+					   Node *quals);
 #endif
 
 static const unsigned int xc_mod_m[] =
@@ -168,6 +171,40 @@ static const unsigned int xc_mod_r[][6] =
   {0x3fffffff, 0x3fffffff, 0x3fffffff, 0x3fffffff, 0x3fffffff, 0x3fffffff},
   {0x7fffffff, 0x7fffffff, 0x7fffffff, 0x7fffffff, 0x7fffffff, 0x7fffffff}
 };
+
+/*
+ * GetPreferredReplicationNode
+ * Pick any Datanode from given list, however fetch a preferred node first.
+ */
+List *
+GetPreferredReplicationNode(List *relNodes)
+{
+	ListCell	*item;
+	int			nodeid = -1;
+
+	if (list_length(relNodes) <= 0)
+		elog(ERROR, "a list of nodes should have at least one node");
+
+	foreach(item, relNodes)
+	{
+		int cnt_nodes;
+		char nodetype = PGXC_NODE_DATANODE;
+		for (cnt_nodes = 0;
+				cnt_nodes < num_preferred_data_nodes && nodeid < 0;
+				cnt_nodes++)
+		{
+			if (PGXCNodeGetNodeId(preferred_data_node[cnt_nodes],
+								  &nodetype) == lfirst_int(item))
+				nodeid = lfirst_int(item);
+		}
+		if (nodeid >= 0)
+			break;
+	}
+	if (nodeid < 0)
+		return list_make1_int(linitial_int(relNodes));
+
+	return list_make1_int(nodeid);
+}
 
 /*
  * GetAnyDataNode
@@ -1493,3 +1530,265 @@ getLocatorNodeCount(Locator *self)
 	return self->nodeCount;
 }
 #endif
+
+/*
+ * GetRelationNodes
+ *
+ * Get list of relation nodes
+ * If the table is replicated and we are reading, we can just pick one.
+ * If the table is partitioned, we apply partitioning column value, if possible.
+ *
+ * If the relation is partitioned, partValue will be applied if present
+ * (indicating a value appears for partitioning column), otherwise it
+ * is ignored.
+ *
+ * preferredNodes is only used when for replicated tables. If set, it will
+ * use one of the nodes specified if the table is replicated on it.
+ * This helps optimize for avoiding introducing additional nodes into the
+ * transaction.
+ *
+ * The returned List is a copy, so it should be freed when finished.
+ */
+ExecNodes *
+GetRelationNodes(RelationLocInfo *rel_loc_info, Datum valueForDistCol,
+				bool isValueNull,
+				RelationAccessType accessType)
+{
+	ExecNodes	*exec_nodes;
+	int			*nodenums;
+	int			i, count;
+	Locator		*locator;
+	Oid typeOfValueForDistCol = InvalidOid;
+
+	if (rel_loc_info == NULL)
+		return NULL;
+
+
+	if (IsLocatorDistributedByValue(rel_loc_info->locatorType))
+	{
+		/* A sufficient lock level needs to be taken at a higher level */
+		Relation rel = relation_open(rel_loc_info->relid, NoLock);
+		TupleDesc	tupDesc = RelationGetDescr(rel);
+		Form_pg_attribute *attr = tupDesc->attrs;
+		/* Get the hash type of relation */
+		typeOfValueForDistCol = attr[rel_loc_info->partAttrNum - 1]->atttypid;
+		relation_close(rel, NoLock);
+	}
+
+	exec_nodes = makeNode(ExecNodes);
+	exec_nodes->baselocatortype = rel_loc_info->locatorType;
+	exec_nodes->accesstype = accessType;
+
+	locator = createLocator(rel_loc_info->locatorType,
+							accessType,
+							typeOfValueForDistCol,
+							LOCATOR_LIST_LIST,
+							0,
+							(void *)rel_loc_info->nodeList,
+							(void **)&nodenums,
+							false);
+	count = GET_NODES(locator, valueForDistCol, isValueNull, NULL);
+
+	for (i = 0; i < count; i++)
+		exec_nodes->nodeList = lappend_int(exec_nodes->nodeList, nodenums[i]);
+
+	freeLocator(locator);
+	return exec_nodes;
+}
+
+/*
+ * GetRelationNodesByQuals
+ * A wrapper around GetRelationNodes to reduce the node list by looking at the
+ * quals. varno is assumed to be the varno of reloid inside the quals. No check
+ * is made to see if that's correct.
+ */
+ExecNodes *
+GetRelationNodesByQuals(Oid reloid, Index varno, Node *quals,
+						RelationAccessType relaccess)
+{
+	RelationLocInfo *rel_loc_info = GetRelationLocInfo(reloid);
+	Expr			*distcol_expr = NULL;
+	ExecNodes		*exec_nodes;
+	Datum			distcol_value;
+	bool			distcol_isnull;
+
+	if (!rel_loc_info)
+		return NULL;
+	/*
+	 * If the table distributed by value, check if we can reduce the Datanodes
+	 * by looking at the qualifiers for this relation
+	 */
+	if (IsRelationDistributedByValue(rel_loc_info))
+	{
+		Oid		disttype = get_atttype(reloid, rel_loc_info->partAttrNum);
+		int32	disttypmod = get_atttypmod(reloid, rel_loc_info->partAttrNum);
+		distcol_expr = pgxc_find_distcol_expr(varno, rel_loc_info->partAttrNum,
+													quals);
+		/*
+		 * If the type of expression used to find the Datanode, is not same as
+		 * the distribution column type, try casting it. This is same as what
+		 * will happen in case of inserting that type of expression value as the
+		 * distribution column value.
+		 */
+		if (distcol_expr)
+		{
+			distcol_expr = (Expr *)coerce_to_target_type(NULL,
+													(Node *)distcol_expr,
+													exprType((Node *)distcol_expr),
+													disttype, disttypmod,
+													COERCION_ASSIGNMENT,
+													COERCE_IMPLICIT_CAST, -1);
+			/*
+			 * PGXC_FQS_TODO: We should set the bound parameters here, but we don't have
+			 * PlannerInfo struct and we don't handle them right now.
+			 * Even if constant expression mutator changes the expression, it will
+			 * only simplify it, keeping the semantics same
+			 */
+			distcol_expr = (Expr *)eval_const_expressions(NULL,
+															(Node *)distcol_expr);
+		}
+	}
+
+	if (distcol_expr && IsA(distcol_expr, Const))
+	{
+		Const *const_expr = (Const *)distcol_expr;
+		distcol_value = const_expr->constvalue;
+		distcol_isnull = const_expr->constisnull;
+	}
+	else
+	{
+		distcol_value = (Datum) 0;
+		distcol_isnull = true;
+	}
+
+	exec_nodes = GetRelationNodes(rel_loc_info, distcol_value,
+												distcol_isnull,
+												relaccess);
+	return exec_nodes;
+}
+
+/*
+ * GetRelationDistribColumn
+ * Return hash column name for relation or NULL if relation is not distributed.
+ */
+char *
+GetRelationDistribColumn(RelationLocInfo *locInfo)
+{
+	/* No relation, so simply leave */
+	if (!locInfo)
+		return NULL;
+
+	/* No distribution column if relation is not distributed with a key */
+	if (!IsRelationDistributedByValue(locInfo))
+		return NULL;
+
+	/* Return column name */
+	return get_attname(locInfo->relid, locInfo->partAttrNum);
+}
+
+/*
+ * pgxc_find_distcol_expr
+ * Search through the quals provided and find out an expression which will give
+ * us value of distribution column if exists in the quals. Say for a table
+ * tab1 (val int, val2 int) distributed by hash(val), a query "SELECT * FROM
+ * tab1 WHERE val = fn(x, y, z) and val2 = 3", fn(x,y,z) is the expression which
+ * decides the distribution column value in the rows qualified by this query.
+ * Hence return fn(x, y, z). But for a query "SELECT * FROM tab1 WHERE val =
+ * fn(x, y, z) || val2 = 3", there is no expression which decides the values
+ * distribution column val can take in the qualified rows. So, in such cases
+ * this function returns NULL.
+ */
+static Expr *
+pgxc_find_distcol_expr(Index varno,
+					   AttrNumber attrNum,
+					   Node *quals)
+{
+	List *lquals;
+	ListCell *qual_cell;
+
+	/* If no quals, no distribution column expression */
+	if (!quals)
+		return NULL;
+
+	/* Convert the qualification into List if it's not already so */
+	if (!IsA(quals, List))
+		lquals = make_ands_implicit((Expr *)quals);
+	else
+		lquals = (List *)quals;
+
+	/*
+	 * For every ANDed expression, check if that expression is of the form
+	 * <distribution_col> = <expr>. If so return expr.
+	 */
+	foreach(qual_cell, lquals)
+	{
+		Expr *qual_expr = (Expr *)lfirst(qual_cell);
+		OpExpr *op;
+		Expr *lexpr;
+		Expr *rexpr;
+		Var *var_expr;
+		Expr *distcol_expr;
+
+		if (!IsA(qual_expr, OpExpr))
+			continue;
+		op = (OpExpr *)qual_expr;
+		/* If not a binary operator, it can not be '='. */
+		if (list_length(op->args) != 2)
+			continue;
+
+		lexpr = linitial(op->args);
+		rexpr = lsecond(op->args);
+
+		/*
+		 * If either of the operands is a RelabelType, extract the Var in the RelabelType.
+		 * A RelabelType represents a "dummy" type coercion between two binary compatible datatypes.
+		 * If we do not handle these then our optimization does not work in case of varchar
+		 * For example if col is of type varchar and is the dist key then
+		 * select * from vc_tab where col = 'abcdefghijklmnopqrstuvwxyz';
+		 * should be shipped to one of the nodes only
+		 */
+		if (IsA(lexpr, RelabelType))
+			lexpr = ((RelabelType*)lexpr)->arg;
+		if (IsA(rexpr, RelabelType))
+			rexpr = ((RelabelType*)rexpr)->arg;
+
+		/*
+		 * If either of the operands is a Var expression, assume the other
+		 * one is distribution column expression. If none is Var check next
+		 * qual.
+		 */
+		if (IsA(lexpr, Var))
+		{
+			var_expr = (Var *)lexpr;
+			distcol_expr = rexpr;
+		}
+		else if (IsA(rexpr, Var))
+		{
+			var_expr = (Var *)rexpr;
+			distcol_expr = lexpr;
+		}
+		else
+			continue;
+		/*
+		 * If Var found is not the distribution column of required relation,
+		 * check next qual
+		 */
+		if (var_expr->varno != varno || var_expr->varattno != attrNum)
+			continue;
+		/*
+		 * If the operator is not an assignment operator, check next
+		 * constraint. An operator is an assignment operator if it's
+		 * mergejoinable or hashjoinable. Beware that not every assignment
+		 * operator is mergejoinable or hashjoinable, so we might leave some
+		 * oportunity. But then we have to rely on the opname which may not
+		 * be something we know to be equality operator as well.
+		 */
+		if (!op_mergejoinable(op->opno, exprType((Node *)lexpr)) &&
+			!op_hashjoinable(op->opno, exprType((Node *)lexpr)))
+			continue;
+		/* Found the distribution column expression return it */
+		return distcol_expr;
+	}
+	/* Exhausted all quals, but no distribution column expression */
+	return NULL;
+}

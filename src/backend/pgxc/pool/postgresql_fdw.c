@@ -67,29 +67,3 @@ is_immutable_func(Oid funcid)
 	return (DatumGetChar(datum) == PROVOLATILE_IMMUTABLE);
 }
 
-/*
- * Check whether the ExprState node should be evaluated in foreign server.
- *
- * An expression which consists of expressions below will be evaluated in
- * the foreign server.
- *  - constant value
- *  - variable (foreign table column)
- *  - external parameter (parameter of prepared statement)
- *  - array
- *  - bool expression (AND/OR/NOT)
- *  - NULL test (IS [NOT] NULL)
- *  - operator
- *    - IMMUTABLE only
- *    - It is required that the meaning of the operator be the same as the
- *      local server in the foreign server.
- *  - function
- *    - IMMUTABLE only
- *    - It is required that the meaning of the operator be the same as the
- *      local server in the foreign server.
- *  - scalar array operator (ANY/ALL)
- */
-bool
-pgxc_is_expr_shippable(Expr *node, bool *has_aggs)
-{
-	return false;
-}

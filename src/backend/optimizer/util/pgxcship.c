@@ -19,6 +19,9 @@
 #include "catalog/pg_inherits_fn.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_proc.h"
+#ifdef PGXC
+#include "catalog/pg_trigger.h"
+#endif
 #include "catalog/pg_type.h"
 #include "catalog/pgxc_node.h"
 #include "commands/trigger.h"
@@ -31,6 +34,7 @@
 #include "parser/parsetree.h"
 #include "parser/parse_coerce.h"
 #include "parser/parse_type.h"
+#include "pgxc/locator.h"
 #include "pgxc/pgxcnode.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
@@ -92,7 +96,8 @@ typedef enum
 								 */
 	SS_HAS_AGG_EXPR,			/* it has aggregate expressions */
 	SS_UNSHIPPABLE_TYPE,		/* the type of expression is unshippable */
-	SS_UNSHIPPABLE_TRIGGER		/* the type of trigger is unshippable */
+	SS_UNSHIPPABLE_TRIGGER,		/* the type of trigger is unshippable */
+	SS_UPDATES_DISTRIBUTION_COLUMN	/* query updates the distribution column */
 } ShippabilityStat;
 
 /* Manipulation of shippability reason */
@@ -116,6 +121,7 @@ static bool pgxc_query_needs_coord(Query *query);
 static bool pgxc_query_contains_only_pg_catalog(List *rtable);
 static bool pgxc_is_var_distrib_column(Var *var, List *rtable);
 static bool pgxc_distinct_has_distcol(Query *query);
+static bool pgxc_targetlist_has_distcol(Query *query);
 static ExecNodes *pgxc_FQS_find_datanodes_recurse(Node *node, Query *query,
 											Bitmapset **relids);
 static ExecNodes *pgxc_FQS_datanodes_for_rtr(Index varno, Query *query);
@@ -396,7 +402,7 @@ pgxc_FQS_find_datanodes(Query *query)
 		 * replicated JOIN, choose only one of them. If one of them is a
 		 * preferred node choose that one, otherwise choose the first one.
 		 */
-		if (IsExecNodesReplicated(exec_nodes) &&
+		if (IsLocatorReplicated(exec_nodes->baselocatortype) &&
 			exec_nodes->accesstype == RELATION_ACCESS_READ)
 		{
 			List *tmp_list = exec_nodes->nodeList;
@@ -475,7 +481,7 @@ pgxc_FQS_get_relation_nodes(RangeTblEntry *rte, Index varno, Query *query)
 												 query->jointree->quals, rel_access);
 	else
 		rel_exec_nodes = GetRelationNodes(rel_loc_info, (Datum) 0,
-										  true, InvalidOid, rel_access);
+										  true, rel_access);
 
 	if (!rel_exec_nodes)
 		return NULL;
@@ -923,6 +929,11 @@ pgxc_shippability_walker(Node *node, Shippability_context *sc_context)
 			if (query->distinctClause && !pgxc_distinct_has_distcol(query))
 				pgxc_set_shippability_reason(sc_context, SS_NEED_SINGLENODE);
 
+			
+			if ((query->commandType == CMD_UPDATE) &&
+					pgxc_targetlist_has_distcol(query))
+				pgxc_set_shippability_reason(sc_context, SS_UPDATES_DISTRIBUTION_COLUMN);
+
 
 			/*
 			 * walk the entire query tree to analyse the query. We will walk the
@@ -941,27 +952,6 @@ pgxc_shippability_walker(Node *node, Shippability_context *sc_context)
 			 */
 			if (sc_context->sc_max_varlevelsup != 0)
 				pgxc_set_shippability_reason(sc_context, SS_VARLEVEL);
-
-			/* Check shippability of triggers on this query */
-			if (query->commandType == CMD_UPDATE ||
-				query->commandType == CMD_INSERT ||
-				query->commandType == CMD_DELETE)
-			{
-				RangeTblEntry *rte = (RangeTblEntry *)
-					list_nth(query->rtable, query->resultRelation - 1);
-
-				if (!pgxc_check_triggers_shippability(rte->relid,
-													  query->commandType))
-					pgxc_set_shippability_reason(sc_context,
-												 SS_UNSHIPPABLE_TRIGGER);
-
-				/*
-				 * PGXCTODO: For the time being Postgres-XC does not support
-				 * global constraints, but once it does it will be necessary
-				 * to add here evaluation of the shippability of indexes and
-				 * constraints of the relation used for INSERT/UPDATE/DELETE.
-				 */
-			}
 
 			/*
 			 * Walk the join tree of the query and find the
@@ -1120,6 +1110,8 @@ pgxc_shippability_walker(Node *node, Shippability_context *sc_context)
 		case T_PlaceHolderVar:
 		case T_AppendRelInfo:
 		case T_PlaceHolderInfo:
+		case T_OnConflictExpr:
+		case T_WithCheckOption:
 		{
 			/* PGXCTODO: till we exhaust this list */
 			pgxc_set_shippability_reason(sc_context, SS_UNSUPPORTED_EXPR);
@@ -1150,12 +1142,6 @@ pgxc_shippability_walker(Node *node, Shippability_context *sc_context)
 static bool
 pgxc_query_needs_coord(Query *query)
 {
-	/*
-	 * If the query is an EXEC DIRECT on the same Coordinator where it's fired,
-	 * it should not be shipped
-	 */
-	if (query->is_local)
-		return true;
 	/*
 	 * If the query involves just the catalog tables, and is not an EXEC DIRECT
 	 * statement, it can be evaluated completely on the Coordinator. No need to
@@ -2002,4 +1988,36 @@ pgxc_is_join_shippable(ExecNodes *inner_en, ExecNodes *outer_en, Relids in_relid
 		return pgxc_merge_exec_nodes(inner_en, outer_en);
 	else
 		return NULL;
+}
+
+static
+bool pgxc_targetlist_has_distcol(Query *query)
+{
+	RangeTblEntry   *rte = rt_fetch(query->resultRelation, query->rtable);
+	RelationLocInfo	*rel_loc_info;
+	ListCell   *lc;
+	const char *distcol;
+
+	/* distribution column only applies to the relations */
+	if (rte->rtekind != RTE_RELATION ||
+		rte->relkind != RELKIND_RELATION)
+		return false;
+	rel_loc_info = GetRelationLocInfo(rte->relid);
+	if (!rel_loc_info)
+		return false;
+
+	distcol = GetRelationDistribColumn(rel_loc_info);
+	if (!distcol)
+		return false;
+
+	foreach(lc, query->targetList)
+	{
+		TargetEntry *tle = (TargetEntry *) lfirst(lc);
+
+		if (tle->resjunk)
+			continue;
+		if (strcmp(tle->resname, distcol) == 0)
+			return true;
+	}
+	return false;
 }

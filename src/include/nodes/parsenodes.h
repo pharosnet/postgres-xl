@@ -818,6 +818,10 @@ typedef struct RangeTblEntry
 	 * code that is being actively worked on.  FIXME someday.
 	 */
 
+#ifdef PGXC
+	char		*relname;
+#endif
+
 	/*
 	 * Fields valid for a plain relation RTE (else zero):
 	 */

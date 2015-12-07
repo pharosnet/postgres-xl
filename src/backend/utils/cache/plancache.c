@@ -434,6 +434,9 @@ CompleteCachedPlan(CachedPlanSource *plansource,
 	plansource->parserSetupArg = parserSetupArg;
 	plansource->cursor_options = cursor_options;
 	plansource->fixed_result = fixed_result;
+#ifdef PGXC
+	//plansource->stmt_name = NULL;
+#endif
 	plansource->resultDesc = PlanCacheComputeResultDesc(querytree_list);
 
 	MemoryContextSwitchTo(oldcxt);
@@ -1036,7 +1039,8 @@ BuildCachedPlan(CachedPlanSource *plansource, List *qlist,
 	 * If this plansource belongs to a named prepared statement, store the stmt
 	 * name for the Datanode queries.
 	 */
-	if (IS_PGXC_LOCAL_COORDINATOR && plansource->stmt_name)
+	if (IS_PGXC_LOCAL_COORDINATOR && plansource->stmt_name &&
+			plansource->stmt_name[0] != '\0')
 	{
 		ListCell	*lc;
 		int 		n;

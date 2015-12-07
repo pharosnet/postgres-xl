@@ -68,6 +68,9 @@ typedef struct
 	ListCell	*roundRobinNode;	/* index of the next one to use */
 } RelationLocInfo;
 
+#define IsRelationReplicated(rel_loc)			IsLocatorReplicated((rel_loc)->locatorType)
+#define IsRelationColumnDistributed(rel_loc) 	IsLocatorColumnDistributed((rel_loc)->locatorType)
+#define IsRelationDistributedByValue(rel_loc)	IsLocatorDistributedByValue((rel_loc)->locatorType)
 /*
  * Nodes to execute on
  * primarynodelist is for replicated table writes, where to execute first.
@@ -86,6 +89,10 @@ typedef struct
 	RelationAccessType accesstype;		/* Access type to determine execution nodes */
 } ExecNodes;
 
+
+#define IsExecNodesReplicated(en) IsLocatorReplicated((en)->baselocatortype)
+#define IsExecNodesColumnDistributed(en) IsLocatorColumnDistributed((en)->baselocatortype)
+#define IsExecNodesDistributedByValue(en) IsLocatorDistributedByValue((en)->baselocatortype)
 
 typedef enum
 {
@@ -157,6 +164,14 @@ extern bool IsLocatorInfoEqual(RelationLocInfo *rel_loc_info1, RelationLocInfo *
 extern bool IsHashColumn(RelationLocInfo *rel_loc_info, char *part_col_name);
 extern bool IsHashColumnForRelId(Oid relid, char *part_col_name);
 extern int	GetRoundRobinNode(Oid relid);
+extern ExecNodes *GetRelationNodes(RelationLocInfo *rel_loc_info,
+								   Datum valueForDistCol,
+								   bool isValueNull,
+								   RelationAccessType accessType);
+extern ExecNodes *GetRelationNodesByQuals(Oid reloid,
+										  Index varno,
+										  Node *quals,
+										  RelationAccessType relaccess);
 
 extern bool IsTypeHashDistributable(Oid col_type);
 extern List *GetAllDataNodes(void);
@@ -172,5 +187,7 @@ extern bool IsModuloColumnForRelId(Oid relid, char *part_col_name);
 extern char *GetRelationDistColumn(RelationLocInfo *rel_loc_info);
 extern bool IsDistColumnForRelId(Oid relid, char *part_col_name);
 extern void FreeExecNodes(ExecNodes **exec_nodes);
+extern List *GetPreferredReplicationNode(List *relNodes);
+extern char *GetRelationDistribColumn(RelationLocInfo *locInfo);
 
 #endif   /* LOCATOR_H */

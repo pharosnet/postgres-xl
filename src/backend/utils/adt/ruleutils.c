@@ -127,6 +127,12 @@ typedef struct
 	bool		varprefix;		/* TRUE to print prefixes on Vars */
 	ParseExprKind special_exprkind;		/* set only for exprkinds needing
 										 * special handling */
+#ifdef PGXC
+	bool		finalise_aggs;	/* should Datanode finalise the aggregates? */
+	bool		sortgroup_colno;/* instead of expression use resno for
+								 * sortgrouprefs.
+								 */
+#endif /* PGXC */
 } deparse_context;
 
 /*
@@ -378,7 +384,11 @@ static void get_tablesample_def(TableSampleClause *tablesample,
 					deparse_context *context);
 static void get_query_def(Query *query, StringInfo buf, List *parentnamespace,
 			  TupleDesc resultDesc,
-			  int prettyFlags, int wrapColumn, int startIndent);
+			  int prettyFlags, int wrapColumn, int startIndent
+#ifdef PGXC
+			  , bool finalise_aggregates, bool sortgroup_colno
+#endif /* PGXC */
+				);
 static void get_values_def(List *values_lists, deparse_context *context);
 static void get_with_clause(Query *query, deparse_context *context);
 static void get_select_query_def(Query *query, deparse_context *context,
@@ -4306,7 +4316,11 @@ make_ruledef(StringInfo buf, HeapTuple ruletup, TupleDesc rulettc,
 		{
 			query = (Query *) lfirst(action);
 			get_query_def(query, buf, NIL, NULL,
-						  prettyFlags, WRAP_COLUMN_DEFAULT, 0);
+						  prettyFlags, WRAP_COLUMN_DEFAULT, 0
+#ifdef PGXC
+						  , false, false
+#endif /* PGXC */
+				);
 			if (prettyFlags)
 				appendStringInfoString(buf, ";\n");
 			else
@@ -4324,8 +4338,12 @@ make_ruledef(StringInfo buf, HeapTuple ruletup, TupleDesc rulettc,
 
 		query = (Query *) linitial(actions);
 		get_query_def(query, buf, NIL, NULL,
-					  prettyFlags, WRAP_COLUMN_DEFAULT, 0);
-		appendStringInfoChar(buf, ';');
+					  prettyFlags, WRAP_COLUMN_DEFAULT, 0
+#ifdef PGXC
+						, false, false
+#endif /* PGXC */
+		);
+		appendStringInfo(buf, ";");
 	}
 }
 
@@ -4388,8 +4406,12 @@ make_viewdef(StringInfo buf, HeapTuple ruletup, TupleDesc rulettc,
 	ev_relation = heap_open(ev_class, AccessShareLock);
 
 	get_query_def(query, buf, NIL, RelationGetDescr(ev_relation),
-				  prettyFlags, wrapColumn, 0);
-	appendStringInfoChar(buf, ';');
+				  prettyFlags, wrapColumn, 0
+#ifdef PGXC
+				  , false, false
+#endif /* PGXC */
+				  );
+	appendStringInfo(buf, ";");
 
 	heap_close(ev_relation, AccessShareLock);
 }
@@ -4448,9 +4470,11 @@ get_tablesample_def(TableSampleClause *tablesample, deparse_context *context)
  * ----------
  */
 void
-deparse_query(Query *query, StringInfo buf, List *parentnamespace)
+deparse_query(Query *query, StringInfo buf, List *parentnamespace,
+				bool finalise_aggs, bool sortgroup_colno)
 {
-	get_query_def(query, buf, parentnamespace, NULL, 0, 0, 0);
+	get_query_def(query, buf, parentnamespace, NULL, 0, 0, 0, finalise_aggs,
+			sortgroup_colno);
 }
 
 /* code borrowed from get_insert_query_def */
@@ -4580,7 +4604,8 @@ get_query_def_from_valuesList(Query *query, StringInfo buf)
 		/* Add the SELECT */
 		get_query_def(select_rte->subquery, buf, NIL, NULL,
 					  context.prettyFlags, context.wrapColumn,
-					  context.indentLevel);
+					  context.indentLevel,
+					  context.finalise_aggs, context.sortgroup_colno);
 	}
 	else if (values_rte)
 	{
@@ -4619,7 +4644,8 @@ get_query_def_from_valuesList(Query *query, StringInfo buf)
 static void
 get_query_def(Query *query, StringInfo buf, List *parentnamespace,
 			  TupleDesc resultDesc,
-			  int prettyFlags, int wrapColumn, int startIndent)
+			  int prettyFlags, int wrapColumn, int startIndent,
+			  bool finalise_aggs, bool sortgroup_colno)
 {
 	deparse_context context;
 	deparse_namespace dpns;
@@ -4649,6 +4675,8 @@ get_query_def(Query *query, StringInfo buf, List *parentnamespace,
 	context.wrapColumn = wrapColumn;
 	context.indentLevel = startIndent;
 	context.special_exprkind = EXPR_KIND_NONE;
+	context.finalise_aggs = finalise_aggs;
+	context.sortgroup_colno = sortgroup_colno;
 
 	set_deparse_for_query(&dpns, query, parentnamespace);
 
@@ -4782,7 +4810,9 @@ get_with_clause(Query *query, deparse_context *context)
 			appendContextKeyword(context, "", 0, 0, 0);
 		get_query_def((Query *) cte->ctequery, buf, context->namespaces, NULL,
 					  context->prettyFlags, context->wrapColumn,
-					  context->indentLevel);
+					  context->indentLevel,
+					  context->finalise_aggs,
+					  context->sortgroup_colno);
 		if (PRETTY_INDENT(context))
 			appendContextKeyword(context, "", 0, 0, 0);
 		appendStringInfoChar(buf, ')');
@@ -5280,7 +5310,9 @@ get_setop_query(Node *setOp, Query *query, deparse_context *context,
 			appendStringInfoChar(buf, '(');
 		get_query_def(subquery, buf, context->namespaces, resultDesc,
 					  context->prettyFlags, context->wrapColumn,
-					  context->indentLevel);
+					  context->indentLevel,
+					  context->finalise_aggs,
+					  context->sortgroup_colno);
 		if (need_paren)
 			appendStringInfoChar(buf, ')');
 	}
@@ -5810,7 +5842,9 @@ get_insert_query_def(Query *query, deparse_context *context)
 		/* Add the SELECT */
 		get_query_def(select_rte->subquery, buf, NIL, NULL,
 					  context->prettyFlags, context->wrapColumn,
-					  context->indentLevel);
+					  context->indentLevel,
+					  context->finalise_aggs,
+					  context->sortgroup_colno);
 	}
 	else if (values_rte)
 	{
@@ -9219,7 +9253,9 @@ get_sublink_expr(SubLink *sublink, deparse_context *context)
 
 	get_query_def(query, buf, context->namespaces, NULL,
 				  context->prettyFlags, context->wrapColumn,
-				  context->indentLevel);
+				  context->indentLevel,
+				  context->finalise_aggs,
+				  context->sortgroup_colno);
 
 	if (need_paren)
 		appendStringInfoString(buf, "))");
@@ -9366,7 +9402,9 @@ get_from_clause_item(Node *jtnode, Query *query, deparse_context *context)
 				appendStringInfoChar(buf, '(');
 				get_query_def(rte->subquery, buf, context->namespaces, NULL,
 							  context->prettyFlags, context->wrapColumn,
-							  context->indentLevel);
+							  context->indentLevel,
+							  context->finalise_aggs,
+							  context->sortgroup_colno);
 				appendStringInfoChar(buf, ')');
 				break;
 			case RTE_FUNCTION:

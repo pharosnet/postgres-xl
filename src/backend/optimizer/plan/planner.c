@@ -171,7 +171,16 @@ planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 	if (planner_hook)
 		result = (*planner_hook) (parse, cursorOptions, boundParams);
 	else
-		result = standard_planner(parse, cursorOptions, boundParams);
+#ifdef PGXC
+		/*
+		 * A Coordinator receiving a query from another Coordinator
+		 * is not allowed to go into PGXC planner.
+		 */
+		if (IS_PGXC_COORDINATOR && !IsConnFromCoord())
+			result = pgxc_planner(parse, cursorOptions, boundParams);
+		else
+#endif
+			result = standard_planner(parse, cursorOptions, boundParams);
 	return result;
 }
 
