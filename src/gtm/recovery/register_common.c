@@ -388,7 +388,6 @@ Recovery_PGXCNodeRegister(GTM_PGXCNodeType	type,
 						  GTM_PGXCNodePort	port,
 						  char			*proxyname,
 						  GTM_PGXCNodeStatus	status,
-						  GlobalTransactionId	*xmin,
 						  char			*ipaddress,
 						  char			*datafolder,
 						  bool			in_recovery,
@@ -417,7 +416,7 @@ Recovery_PGXCNodeRegister(GTM_PGXCNodeType	type,
 		nodeinfo->ipaddress = pgxcnode_copy_char(ipaddress);
 	nodeinfo->status = status;
 	nodeinfo->socket = socket;
-	nodeinfo->reported_xmin = *xmin;
+	nodeinfo->reported_xmin = InvalidGlobalTransactionId;
 	nodeinfo->reported_xmin_time = GTM_TimestampGetCurrent();
 
 	elog(DEBUG1, "Recovery_PGXCNodeRegister Request info: type=%d, nodename=%s, port=%d," \
@@ -437,9 +436,6 @@ Recovery_PGXCNodeRegister(GTM_PGXCNodeType	type,
 	 */
 	if (!in_recovery && errcode == 0)
 		Recovery_RecordRegisterInfo(nodeinfo, true);
-
-	if (xmin)
-		*xmin = nodeinfo->reported_xmin;
 
 	return errcode;
 }
@@ -759,10 +755,8 @@ Recovery_PGXCNodeRegisterCoordProcess(char *coord_node, int coord_procid,
 
 	while (nodeinfo == NULL)
 	{
-		GlobalTransactionId xmin = InvalidGlobalTransactionId;
 		int errcode = Recovery_PGXCNodeRegister(GTM_NODE_COORDINATOR, coord_node, 0, NULL,
 									  NODE_CONNECTED,
-									  &xmin,
 									  NULL, NULL, false, 0);
 
 		/*
@@ -930,7 +924,7 @@ GTM_InitNodeManager(void)
 
 GlobalTransactionId
 GTM_HandleGlobalXmin(GTM_PGXCNodeType type, char *node_name,
-		GlobalTransactionId *reported_xmin, bool remoteIdle, int *errcode)
+		GlobalTransactionId reported_xmin, int *errcode)
 {
 	GTM_PGXCNodeInfo *all_nodes[MAX_NODES];
 	int num_nodes;
@@ -938,15 +932,13 @@ GTM_HandleGlobalXmin(GTM_PGXCNodeType type, char *node_name,
 	GTM_PGXCNodeInfo *mynodeinfo;
 	int ii;
 	GlobalTransactionId global_xmin;
-	GlobalTransactionId	non_idle_global_xmin;
-	GlobalTransactionId idle_global_xmin;
 	bool excludeSelf = false;
 	gtm_ListCell *elem;
 
 	*errcode = 0;
 
-	elog(DEBUG1, "node_name: %s, remoteIdle: %d, reported_xmin: %d, global_xmin: %d",
-			node_name, remoteIdle, *reported_xmin,
+	elog(DEBUG1, "node_name: %s, reported_xmin: %d, global_xmin: %d",
+			node_name, reported_xmin,
 			GTM_GlobalXmin);
 	
 	mynodeinfo = pgxcnode_find_info(type, node_name);
@@ -981,7 +973,7 @@ GTM_HandleGlobalXmin(GTM_PGXCNodeType type, char *node_name,
 	 */
 	if ((mynodeinfo->excluded) &&
 			GlobalTransactionIdPrecedes(mynodeinfo->reported_xmin,
-				GTM_GlobalXmin) && !remoteIdle)
+				GTM_GlobalXmin))
 	{
 		*errcode = GTM_ERRCODE_NODE_EXCLUDED;
 		GTM_RWLockRelease(&mynodeinfo->node_lock);
@@ -994,7 +986,7 @@ GTM_HandleGlobalXmin(GTM_PGXCNodeType type, char *node_name,
 	 * reported in the past. If it ever happens, send an error back and let the
 	 * remote node restart itself
 	 */
-	if (!remoteIdle && GlobalTransactionIdPrecedes(*reported_xmin, mynodeinfo->reported_xmin))
+	if (GlobalTransactionIdPrecedes(reported_xmin, mynodeinfo->reported_xmin))
 	{
 		*errcode = GTM_ERRCODE_TOO_OLD_XMIN;
 		GTM_RWLockRelease(&mynodeinfo->node_lock);
@@ -1002,52 +994,18 @@ GTM_HandleGlobalXmin(GTM_PGXCNodeType type, char *node_name,
 		return InvalidGlobalTransactionId;
 	}
 
-	elog(DEBUG1, "node_name: %s, remoteIdle: %d, reported_xmin: %d, nodeinfo->reported_xmin: %d",
-			mynodeinfo->nodename, remoteIdle, *reported_xmin,
+	elog(DEBUG1, "node_name: %s, reported_xmin: %d, nodeinfo->reported_xmin: %d",
+			mynodeinfo->nodename, reported_xmin,
 			mynodeinfo->reported_xmin);
 
-	/*
-	 * If the remote node is idle, there is a danger that it may keep reporting
-	 * a very old xmin (usually capped by latestCompletedXid). To handle such
-	 * cases, which can be quite common in a large cluster, we check if the
-	 * remote node has reported idle status and the reported xmin is same as
-	 * what it reported in the last cycle and mark such node as "idle".
-	 * Xmin reported by such a node is ignored and we compute xmin for it
-	 * locally, here on the GTM.
-	 *
-	 * There are two strategies we follow:
-	 *
-	 * 1. We compute the lower bound of xmins reported by all non-idle remote
-	 * nodes and assign that to this guy. This assumes that there is zero
-	 * chance that a currently active (non-idle) node will send something to
-	 * this guy which is older than the xmin computed
-	 *
-	 * 2. If all nodes are reporting their status as idle, we compute the lower
-	 * bound of xmins reported by all idle nodes. This guarantees that the
-	 * GlobalXmin can advance to a reasonable point even when all nodes have
-	 * turned idle.
-	 *
-	 * In any case, the remote node will do its own sanity check before
-	 * accepting the xmin computed by us and bail out if it doesn't agree with
-	 * that.
-	 */ 
-	if (remoteIdle &&
-		GlobalTransactionIdEquals(mynodeinfo->reported_xmin,
-				*reported_xmin))
-		mynodeinfo->idle = true;
-	else
-	{
-		mynodeinfo->idle = false;
-		mynodeinfo->reported_xmin = *reported_xmin;
-	}
+	mynodeinfo->reported_xmin = reported_xmin;
 	mynodeinfo->excluded = false;
 	mynodeinfo->reported_xmin_time = current_time = GTM_TimestampGetCurrent();
 
 	GTM_RWLockRelease(&mynodeinfo->node_lock);
 	
-	/* Compute both, idle as well as non-idle xmin */
-	non_idle_global_xmin = InvalidGlobalTransactionId;
-	idle_global_xmin = InvalidGlobalTransactionId;
+	/* Compute global xmin */
+	global_xmin = InvalidGlobalTransactionId;
 
 	/*
 	 * Hold the PGXCNodesLock in READ mode until we are done with the
@@ -1063,12 +1021,10 @@ GTM_HandleGlobalXmin(GTM_PGXCNodeType type, char *node_name,
 
 	for (ii = 0; ii < num_nodes; ii++)
 	{
-		GlobalTransactionId xid;
 		GTM_PGXCNodeInfo *nodeinfo = all_nodes[ii];
 
-		elog(DEBUG1, "nodeinfo %p, type: %d, exclude %c, idle %c, xmin %d, time %lld",
+		elog(DEBUG1, "nodeinfo %p, type: %d, exclude %c, xmin %d, time %lld",
 				nodeinfo, nodeinfo->type, nodeinfo->excluded ? 'T' : 'F',
-				nodeinfo->idle ? 'T' : 'F',
 				nodeinfo->reported_xmin, nodeinfo->reported_xmin_time);
 
 		if (nodeinfo->excluded)
@@ -1097,13 +1053,6 @@ GTM_HandleGlobalXmin(GTM_PGXCNodeType type, char *node_name,
 		}
 
 		/*
-		 * If the remote node is idle, don't include its reported xmin in the
-		 * calculation which could be quite stale
-		 */
-		if (mynodeinfo->idle && (nodeinfo == mynodeinfo))
-			continue;
-
-		/*
 		 * Now grab the lock on the nodeinfo so that no further changes are
 		 * possible to its state.
 		 */
@@ -1119,46 +1068,7 @@ GTM_HandleGlobalXmin(GTM_PGXCNodeType type, char *node_name,
 			continue;
 		}
 
-		xid = nodeinfo->reported_xmin;
-		if (!nodeinfo->idle)
-		{
-			if (!GlobalTransactionIdIsValid(non_idle_global_xmin))
-				non_idle_global_xmin = xid;
-			else if (GlobalTransactionIdPrecedes(xid, non_idle_global_xmin))
-				non_idle_global_xmin = xid;
-		}
-		else
-		{
-			if (!GlobalTransactionIdIsValid(idle_global_xmin))
-				idle_global_xmin = xid;
-			else if (GlobalTransactionIdPrecedes(xid, idle_global_xmin))
-				idle_global_xmin = xid;
-		}
 		GTM_RWLockRelease(&nodeinfo->node_lock);
-	}
-
-	/*
-	 * If the remote node is idle, a new xmin might have been computed for it
-	 * by us. We first try for non_idle_global_xmin, but if all nodes are idle,
-	 * we use the idle_global_xmin
-	 */
-	if (mynodeinfo && mynodeinfo->idle)
-	{
-		GTM_RWLockAcquire(&mynodeinfo->node_lock, GTM_LOCKMODE_WRITE);
-		if (GlobalTransactionIdIsValid(non_idle_global_xmin))
-		{
-			if (GlobalTransactionIdFollows(non_idle_global_xmin,
-						mynodeinfo->reported_xmin))
-				*reported_xmin = mynodeinfo->reported_xmin = non_idle_global_xmin;
-		}
-		else if (GlobalTransactionIdIsValid(idle_global_xmin))
-		{
-			if (GlobalTransactionIdFollows(non_idle_global_xmin,
-						mynodeinfo->reported_xmin))
-				*reported_xmin = mynodeinfo->reported_xmin = idle_global_xmin;
-		}
-		mynodeinfo->reported_xmin_time = current_time;
-		GTM_RWLockRelease(&mynodeinfo->node_lock);
 	}
 
 	/*

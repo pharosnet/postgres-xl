@@ -78,8 +78,8 @@ ClusterMonitorInit(void)
 									GTM_NODE_COORDINATOR;
 	GlobalTransactionId oldestXmin;
 	GlobalTransactionId newOldestXmin;
-	GlobalTransactionId reportedXmin;
 	GlobalTransactionId lastGlobalXmin;
+	GlobalTransactionId latestCompletedXid;
 	int status;
 
 	am_clustermon = true;
@@ -124,15 +124,10 @@ ClusterMonitorInit(void)
 
     SetProcessingMode(NormalProcessing);
 
-	/*
-	 * Register this node with the GTM
-	 */
-	oldestXmin = InvalidGlobalTransactionId;
-	if (RegisterGTM(nodetype, &oldestXmin) < 0)
+	if (RegisterGTM(nodetype) < 0)
 	{
 		UnregisterGTM(nodetype);
-		oldestXmin = InvalidGlobalTransactionId;
-		if (RegisterGTM(nodetype, &oldestXmin) < 0)
+		if (RegisterGTM(nodetype) < 0)
 		{
 			ereport(LOG,
 					(errcode(ERRCODE_IO_ERROR),
@@ -140,12 +135,6 @@ ClusterMonitorInit(void)
 		}
 	}
 
-	/*
-	 * If the registration is successful, GTM would send us back current
-	 * GlobalXmin. Initialise our local state to the same value
-	 */
-	ClusterMonitorSetReportedGlobalXmin(oldestXmin);
-	
 	/*
 	 * If an exception is encountered, processing resumes here.
 	 *
@@ -208,31 +197,45 @@ ClusterMonitorInit(void)
 	{
 		struct timeval nap;
 		int			rc;
-		bool	isIdle;
 
 		/*
 		 * Compute RecentGlobalXmin, report it to the GTM and sleep for the set
 		 * interval. Keep doing this forever
 		 */
-		isIdle = false;
-		reportedXmin = ClusterMonitorGetReportedGlobalXmin();
 		lastGlobalXmin = ClusterMonitorGetGlobalXmin();
-		oldestXmin = GetOldestXminInternal(NULL, false, true, &isIdle,
-				lastGlobalXmin, reportedXmin);
+		oldestXmin = GetOldestXminInternal(NULL, false, true, lastGlobalXmin);
 
-		if (GlobalTransactionIdPrecedes(oldestXmin, reportedXmin))
-			oldestXmin = reportedXmin;
-
-		if (GlobalTransactionIdPrecedes(oldestXmin, lastGlobalXmin))
-			oldestXmin = lastGlobalXmin;
-
-		if ((status = ReportGlobalXmin(&oldestXmin, &newOldestXmin, isIdle)))
+		if ((status = ReportGlobalXmin(oldestXmin, &newOldestXmin,
+						&latestCompletedXid)))
 		{
 			elog(DEBUG2, "Failed to report RecentGlobalXmin to GTM - %d:%d",
 					status, newOldestXmin);
 			if (status == GTM_ERRCODE_TOO_OLD_XMIN ||
 				status == GTM_ERRCODE_NODE_EXCLUDED)
+			{
+				/*
+				 * If we haven't seen a new transaction for a very long time or
+				 * were disconncted for a while or excluded from the xmin
+				 * computation for any reason, our xmin calculation could be
+				 * well in the past, especially because its capped by the
+				 * latestCompletedXid which may not advance on an idle server.
+				 * In such cases, use the value of latestCompletedXid as
+				 * returned by GTM and then recompute local xmin.
+				 *
+				 * If the GTM's global xmin advances even further while we are
+				 * ready with a new xmin, just repeat the entire exercise as
+				 * long as GTM keeps returning us a more current value of
+				 * latestCompletedXid and thus pushing forward our local xmin
+				 * calculation
+				 */
+				if (GlobalTransactionIdIsValid(latestCompletedXid) &&
+						TransactionIdPrecedes(oldestXmin, latestCompletedXid))
+				{
+					SetLatestCompletedXid(latestCompletedXid);
+					continue;
+				}
 				elog(PANIC, "Global xmin computation mismatch");
+			}
 		}
 		else
 		{

@@ -1220,8 +1220,8 @@ TransactionIdIsActive(TransactionId xid)
 TransactionId
 GetOldestXmin(Relation rel, bool ignoreVacuum)
 {
-	return GetOldestXminInternal(rel, ignoreVacuum, false, NULL,
-			InvalidTransactionId, InvalidTransactionId);
+	return GetOldestXminInternal(rel, ignoreVacuum, false,
+			InvalidTransactionId);
 }
 
 /*
@@ -1245,8 +1245,7 @@ GetOldestXmin(Relation rel, bool ignoreVacuum)
  */
 TransactionId
 GetOldestXminInternal(Relation rel, bool ignoreVacuum, bool computeLocal,
-		bool *isIdle, TransactionId lastGlobalXmin,
-		TransactionId lastReportedXmin)
+		TransactionId lastGlobalXmin)
 {
 	ProcArrayStruct *arrayP = procArray;
 	TransactionId result;
@@ -1292,8 +1291,6 @@ GetOldestXminInternal(Relation rel, bool ignoreVacuum, bool computeLocal,
 	else
 		TransactionIdAdvance(result);
 
-	if (isIdle)
-		*isIdle = true;
 #else
 	Assert(TransactionIdIsNormal(result));
 	TransactionIdAdvance(result);
@@ -1344,28 +1341,10 @@ GetOldestXminInternal(Relation rel, bool ignoreVacuum, bool computeLocal,
 				result = xmin;
 
 			/*
-			 * If we found a normal xid or a transaction running with xmin set,
-			 * we are not idle
-			 */
-			if (isIdle &&
-				(TransactionIdIsNormal(xmin) || TransactionIdIsNormal(xid)))
-				*isIdle = false;
-
-			/*
-			 * If we see an xid or an xmin which precedes either the last
-			 * reported xmin or the GlobalXmin calculated by the
+			 * If we see an xid or an xmin which precedes the GlobalXmin calculated by the
 			 * Cluster Monitor process then it signals bad things and we must
 			 * abort and restart the database server
 			 */
-			if (TransactionIdIsValid(lastReportedXmin))
-			{
-				if ((TransactionIdIsValid(xmin) && TransactionIdPrecedes(xmin, lastReportedXmin)) ||
-					(TransactionIdIsValid(xid) && TransactionIdPrecedes(xid,
-																		lastReportedXmin)))
-					elog(PANIC, "Found xid (%d) or xmin (%d) precedes last "
-							"reported xmin (%d)", xid, xmin, lastReportedXmin);
-			}
-
 			if (TransactionIdIsValid(lastGlobalXmin))
 			{
 				if ((TransactionIdIsValid(xmin) && TransactionIdPrecedes(xmin, lastGlobalXmin)) ||
@@ -4385,4 +4364,38 @@ ProcArrayCheckXminConsistency(TransactionId global_xmin)
 					"PGPROC %d ahead of GlobalXmin %d", xid, pgprocno,
 					global_xmin);
 	}
+}
+
+void
+SetLatestCompletedXid(TransactionId latestCompletedXid)
+{
+	int index;
+	ProcArrayStruct *arrayP = procArray;
+
+	if (!TransactionIdIsValid(latestCompletedXid))
+		return;
+
+	LWLockAcquire(XidGenLock, LW_EXCLUSIVE);
+
+	if (TransactionIdPrecedes(latestCompletedXid,
+				ShmemVariableCache->latestCompletedXid))
+	{
+		LWLockRelease(ProcArrayLock);
+		return;
+	}
+
+	for (index = 0; index < arrayP->numProcs; index++)
+	{
+		int			pgprocno = arrayP->pgprocnos[index];
+		volatile PGXACT *pgxact = &allPgXact[pgprocno];
+		TransactionId pxid = pgxact->xid;
+		
+		if (TransactionIdPrecedesOrEquals(pxid, latestCompletedXid))
+			elog(PANIC, "Cannot set latestCompletedXid to %d while another "
+					"process is running with an older xid %d",
+					latestCompletedXid, pxid);
+	}
+
+	ShmemVariableCache->latestCompletedXid = latestCompletedXid;
+	LWLockRelease(ProcArrayLock);
 }

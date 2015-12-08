@@ -44,7 +44,7 @@ extern int CommitPreparedTranGTM(GlobalTransactionId gxid,
 extern GTM_Snapshot GetSnapshotGTM(GlobalTransactionId gxid, bool canbe_grouped);
 
 /* Node registration APIs with GTM */
-extern int RegisterGTM(GTM_PGXCNodeType type, GlobalTransactionId *xmin);
+extern int RegisterGTM(GTM_PGXCNodeType type);
 extern int UnregisterGTM(GTM_PGXCNodeType type);
 
 /* Sequence interface APIs with GTM */
@@ -62,6 +62,7 @@ extern int DropSequenceGTM(char *name, GTM_SequenceKeyType type);
 extern int RenameSequenceGTM(char *seqname, const char *newseqname);
 /* Barrier */
 extern int ReportBarrierGTM(char *barrier_id);
-extern int ReportGlobalXmin(GlobalTransactionId *gxid,
-		GlobalTransactionId *global_xmin, bool isIdle);
+extern int ReportGlobalXmin(GlobalTransactionId gxid,
+		GlobalTransactionId *global_xmin,
+		GlobalTransactionId *latest_completed_xid);
 #endif /* ACCESS_GTM_H */

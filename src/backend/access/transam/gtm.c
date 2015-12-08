@@ -612,7 +612,7 @@ RenameSequenceGTM(char *seqname, const char *newseqname)
  * Connection for registering is just used once then closed
  */
 int
-RegisterGTM(GTM_PGXCNodeType type, GlobalTransactionId *xmin)
+RegisterGTM(GTM_PGXCNodeType type)
 {
 	int ret;
 
@@ -621,7 +621,7 @@ RegisterGTM(GTM_PGXCNodeType type, GlobalTransactionId *xmin)
 	if (!conn)
 		return EOF;
 
-	ret = node_register(conn, type, 0, PGXCNodeName, "", xmin);
+	ret = node_register(conn, type, 0, PGXCNodeName, "");
 
 	/* If something went wrong, retry once */
 	if (ret < 0)
@@ -629,8 +629,7 @@ RegisterGTM(GTM_PGXCNodeType type, GlobalTransactionId *xmin)
 		CloseGTM();
 		InitGTM();
 		if (conn)
-			ret = node_register(conn, type, 0, PGXCNodeName, "",
-					xmin);
+			ret = node_register(conn, type, 0, PGXCNodeName, "");
 	}
 
 	return ret;
@@ -688,8 +687,8 @@ ReportBarrierGTM(char *barrier_id)
 }
 
 int
-ReportGlobalXmin(GlobalTransactionId *gxid, GlobalTransactionId *global_xmin,
-		bool isIdle)
+ReportGlobalXmin(GlobalTransactionId gxid, GlobalTransactionId *global_xmin,
+		GlobalTransactionId *latest_completed_xid)
 {
 	int errcode = GTM_ERRCODE_UNKNOWN;
 
@@ -699,7 +698,7 @@ ReportGlobalXmin(GlobalTransactionId *gxid, GlobalTransactionId *global_xmin,
 
 	if (report_global_xmin(conn, PGXCNodeName,
 			IS_PGXC_COORDINATOR ?  GTM_NODE_COORDINATOR : GTM_NODE_DATANODE,
-			gxid, global_xmin, isIdle, &errcode))
+			gxid, global_xmin, latest_completed_xid, &errcode))
 		return errcode;
 	else
 		return 0;

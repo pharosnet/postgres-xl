@@ -87,7 +87,6 @@ int Recovery_PGXCNodeRegister(GTM_PGXCNodeType	type,
 				GTM_PGXCNodePort	port,
 				char			*proxyname,
 				GTM_PGXCNodeStatus	status,
-				GlobalTransactionId	*xmin,
 				char			*ipaddress,
 				char			*datafolder,
 				bool			in_recovery,
@@ -116,5 +115,5 @@ void ProcessGTMEndBackup(Port *myport, StringInfo message);
 
 void GTM_InitNodeManager(void);
 GlobalTransactionId GTM_HandleGlobalXmin(GTM_PGXCNodeType type, char *node_name,
-		GlobalTransactionId *reported_xmin, bool remoteIdle, int *errcode);
+		GlobalTransactionId reported_xmin, int *errcode);
 #endif /* GTM_NODE_H */

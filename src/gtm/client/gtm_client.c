@@ -78,8 +78,7 @@ static int alter_sequence_internal(GTM_Conn *conn, GTM_SequenceKey key, GTM_Sequ
 								   GTM_Sequence startval, GTM_Sequence lastval, bool cycle, bool is_restart, bool is_backup);
 static int node_register_worker(GTM_Conn *conn, GTM_PGXCNodeType type, const char *host, GTM_PGXCNodePort port,
 								char *node_name, char *datafolder,
-								GTM_PGXCNodeStatus status, bool is_backup,
-								GlobalTransactionId *xmin);
+								GTM_PGXCNodeStatus status, bool is_backup);
 static int node_unregister_worker(GTM_Conn *conn, GTM_PGXCNodeType type, const char * node_name, bool is_backup);
 static int report_barrier_internal(GTM_Conn *conn, char *barrier_id, bool is_backup);
 /*
@@ -1656,8 +1655,7 @@ int node_register(GTM_Conn *conn,
 			GTM_PGXCNodeType type,
 			GTM_PGXCNodePort port,
 			char *node_name,
-			char *datafolder,
-			GlobalTransactionId *xmin)
+			char *datafolder)
 {
 	char host[1024];
 	int rc;
@@ -1669,7 +1667,7 @@ int node_register(GTM_Conn *conn,
 	}
 
 	return node_register_worker(conn, type, host, port, node_name, datafolder,
-			NODE_CONNECTED, false, xmin);
+			NODE_CONNECTED, false);
 }
 
 int node_register_internal(GTM_Conn *conn,
@@ -1678,11 +1676,10 @@ int node_register_internal(GTM_Conn *conn,
 						   GTM_PGXCNodePort port,
 						   char *node_name,
 						   char *datafolder,
-						   GTM_PGXCNodeStatus status,
-						   GlobalTransactionId *xmin)
+						   GTM_PGXCNodeStatus status)
 {
 	return node_register_worker(conn, type, host, port, node_name, datafolder,
-			status, false, xmin);
+			status, false);
 }
 
 int bkup_node_register_internal(GTM_Conn *conn,
@@ -1691,11 +1688,10 @@ int bkup_node_register_internal(GTM_Conn *conn,
 								GTM_PGXCNodePort port,
 								char *node_name,
 								char *datafolder,
-								GTM_PGXCNodeStatus status,
-								GlobalTransactionId xmin)
+								GTM_PGXCNodeStatus status)
 {
 	return node_register_worker(conn, type, host, port, node_name, datafolder,
-			status, true, &xmin);
+			status, true);
 }
 
 static int node_register_worker(GTM_Conn *conn,
@@ -1705,8 +1701,7 @@ static int node_register_worker(GTM_Conn *conn,
 								char *node_name,
 								char *datafolder,
 								GTM_PGXCNodeStatus status,
-								bool is_backup,
-								GlobalTransactionId *xmin)
+								bool is_backup)
 {
 	GTM_Result *res = NULL;
 	time_t finish_time;
@@ -1745,9 +1740,7 @@ static int node_register_worker(GTM_Conn *conn,
 		/* Data Folder (var-len) */
 		gtmpqPutnchar(datafolder, strlen(datafolder), conn) ||
 		/* Node Status */
-		gtmpqPutInt(status, sizeof(GTM_PGXCNodeStatus), conn) ||
-		/* Recent Xmin */
-		gtmpqPutnchar((char *)xmin, sizeof (GlobalTransactionId), conn))
+		gtmpqPutInt(status, sizeof(GTM_PGXCNodeStatus), conn))
 	{
 		goto send_failed;
 	}
@@ -1783,8 +1776,6 @@ static int node_register_worker(GTM_Conn *conn,
 		{
 			Assert(res->gr_resdata.grd_node.type == type);
 			Assert((strcmp(res->gr_resdata.grd_node.node_name,node_name) == 0));
-			if (xmin)
-				*xmin = res->gr_resdata.grd_node.xmin;
 		}
 
 		return res->gr_status;
@@ -2427,17 +2418,17 @@ send_failed:
 
 int
 report_global_xmin(GTM_Conn *conn, const char *node_name,
-		GTM_PGXCNodeType type, GlobalTransactionId *gxid,
+		GTM_PGXCNodeType type, GlobalTransactionId gxid,
 		GlobalTransactionId *global_xmin,
-		bool isIdle, int *errcode)
+		GlobalTransactionId *latest_completed_xid,
+		int *errcode)
 {
 	GTM_Result *res = NULL;
 	time_t 		finish_time;
 
 	if (gtmpqPutMsgStart('C', true, conn) ||
 		gtmpqPutInt(MSG_REPORT_XMIN, sizeof (GTM_MessageType), conn) ||
-		gtmpqPutnchar((char *)gxid, sizeof(GlobalTransactionId), conn) ||
-		gtmpqPutc(isIdle, conn) ||
+		gtmpqPutnchar((char *)&gxid, sizeof(GlobalTransactionId), conn) ||
 		gtmpqPutInt(type, sizeof (GTM_PGXCNodeType), conn) ||
 		gtmpqPutInt(strlen(node_name), sizeof (GTM_StrLen), conn) ||
 		gtmpqPutnchar(node_name, strlen(node_name), conn))
@@ -2471,7 +2462,7 @@ report_global_xmin(GTM_Conn *conn, const char *node_name,
 
 	if (res->gr_status == GTM_RESULT_OK)
 	{
-		*gxid = res->gr_resdata.grd_report_xmin.reported_xmin;
+		*latest_completed_xid = res->gr_resdata.grd_report_xmin.latest_completed_xid;
 		*global_xmin = res->gr_resdata.grd_report_xmin.global_xmin;
 		*errcode = res->gr_resdata.grd_report_xmin.errcode;
 	}

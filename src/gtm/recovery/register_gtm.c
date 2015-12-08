@@ -63,7 +63,6 @@ ProcessPGXCNodeRegister(Port *myport, StringInfo message, bool is_backup)
 	int			len;
 	StringInfoData		buf;
 	GTM_PGXCNodeStatus	status;
-	GlobalTransactionId	xmin;
 
 	/* Read Node Type */
 	memcpy(&type, pq_getmsgbytes(message, sizeof (GTM_PGXCNodeType)),
@@ -108,13 +107,10 @@ ProcessPGXCNodeRegister(Port *myport, StringInfo message, bool is_backup)
 
 	status = pq_getmsgint(message, sizeof (GTM_PGXCNodeStatus));
 
-	memcpy(&xmin, pq_getmsgbytes(message, sizeof (GlobalTransactionId)),
-			sizeof (GlobalTransactionId));
-
 	elog(DEBUG1,
 		 "ProcessPGXCNodeRegister: ipaddress = \"%s\", node name = \"%s\", proxy name = \"%s\", "
-		 "datafolder \"%s\", status = %d, xmin = %d",
-		 ipaddress, node_name, proxyname, datafolder, status, xmin);
+		 "datafolder \"%s\", status = %d",
+		 ipaddress, node_name, proxyname, datafolder, status);
 
 	if ((type!=GTM_NODE_GTM_PROXY) &&
 		(type!=GTM_NODE_GTM_PROXY_POSTMASTER) &&
@@ -166,7 +162,7 @@ ProcessPGXCNodeRegister(Port *myport, StringInfo message, bool is_backup)
 	}
 
 	if (Recovery_PGXCNodeRegister(type, node_name, port,
-								  proxyname, status, &xmin,
+								  proxyname, status,
 								  ipaddress, datafolder, false, myport->sock))
 	{
 		ereport(ERROR,
@@ -207,8 +203,7 @@ ProcessPGXCNodeRegister(Port *myport, StringInfo message, bool is_backup)
 											  port,
 											  node_name,
 											  datafolder,
-											  status,
-											  xmin);
+											  status);
 
 			elog(DEBUG1, "node_register_internal() returns rc %d.", _rc);
 
@@ -240,7 +235,6 @@ ProcessPGXCNodeRegister(Port *myport, StringInfo message, bool is_backup)
 		pq_sendint(&buf, strlen(node_name), 4);
 		/* Node name (var-len) */
 		pq_sendbytes(&buf, node_name, strlen(node_name));
-		pq_sendint(&buf, xmin, sizeof (GlobalTransactionId));
 		pq_endmessage(myport, &buf);
 
 		if (myport->remote_type != GTM_NODE_GTM_PROXY)

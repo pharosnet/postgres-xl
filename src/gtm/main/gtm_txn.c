@@ -2630,7 +2630,6 @@ ProcessReportXminCommand(Port *myport, StringInfo message, bool is_backup)
 	GTM_PGXCNodeType    type;
 	GlobalTransactionId	global_xmin;
 	int errcode;
-	bool remoteIdle;
 
 	const char *data = pq_getmsgbytes(message, sizeof (gxid));
 
@@ -2639,9 +2638,6 @@ ProcessReportXminCommand(Port *myport, StringInfo message, bool is_backup)
 				(EPROTO,
 				 errmsg("Message does not contain valid GXID")));
 	memcpy(&gxid, data, sizeof (gxid));
-
-	/* Read number of running transactions */
-	remoteIdle = pq_getmsgbyte(message);
 
 	/* Read Node Type */
 	type = pq_getmsgint(message, sizeof (GTM_PGXCNodeType));
@@ -2652,8 +2648,7 @@ ProcessReportXminCommand(Port *myport, StringInfo message, bool is_backup)
 	node_name[nodelen] = '\0';
 	pq_getmsgend(message);
 
-	global_xmin = GTM_HandleGlobalXmin(type, node_name, &gxid, remoteIdle,
-			&errcode);
+	global_xmin = GTM_HandleGlobalXmin(type, node_name, gxid, &errcode);
 
 	{
 		/*
@@ -2667,7 +2662,7 @@ ProcessReportXminCommand(Port *myport, StringInfo message, bool is_backup)
 			proxyhdr.ph_conid = myport->conn_id;
 			pq_sendbytes(&buf, (char *)&proxyhdr, sizeof (GTM_ProxyMsgHeader));
 		}
-		pq_sendbytes(&buf, (char *)&gxid, sizeof (GlobalTransactionId));
+		pq_sendbytes(&buf, (char *)&GTMTransactions.gt_latestCompletedXid, sizeof (GlobalTransactionId));
 		pq_sendbytes(&buf, (char *)&global_xmin, sizeof (GlobalTransactionId));
 		pq_sendbytes(&buf, (char *)&errcode, sizeof (errcode));
 		pq_endmessage(myport, &buf);

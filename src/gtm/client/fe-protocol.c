@@ -732,12 +732,6 @@ gtmpqParseSuccess(GTM_Conn *conn, GTM_Result *result)
 			}
 			result->gr_resdata.grd_node.node_name[result->gr_resdata.grd_node.len] = '\0';
 
-			if (result->gr_type == NODE_UNREGISTER_RESULT)
-				break;
-
-			if (gtmpqGetInt((char *)&result->gr_resdata.grd_node.xmin, sizeof
-						(GlobalTransactionId), conn))
-				result->gr_status = GTM_RESULT_ERROR;
 			break;
 
 		case NODE_LIST_RESULT:
@@ -790,7 +784,7 @@ gtmpqParseSuccess(GTM_Conn *conn, GTM_Result *result)
 			break;
 
 		case REPORT_XMIN_RESULT:
-			if (gtmpqGetnchar((char *)&result->gr_resdata.grd_report_xmin.reported_xmin,
+			if (gtmpqGetnchar((char *)&result->gr_resdata.grd_report_xmin.latest_completed_xid,
 							  sizeof (GlobalTransactionId), conn))
 			{
 				result->gr_status = GTM_RESULT_ERROR;

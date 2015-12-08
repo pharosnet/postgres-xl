@@ -220,7 +220,6 @@ gtm_standby_restore_node(void)
 			 data[i].type, data[i].nodename, data[i].datafolder);
 		if (Recovery_PGXCNodeRegister(data[i].type, data[i].nodename, data[i].port,
 					 data[i].proxyname, data[i].status,
-					 &data[i].reported_xmin,
 					 data[i].ipaddress, data[i].datafolder, true,
 					 -1 /* dummy socket */) != 0)
 		{
@@ -262,7 +261,7 @@ gtm_standby_register_self(const char *node_name, int port, const char *datadir)
 
 	rc = node_register_internal(GTM_ActiveConn, GTM_NODE_GTM, standbyHostName, standbyPortNumber,
 								standbyNodeName, standbyDataDir,
-								NODE_DISCONNECTED, InvalidGlobalTransactionId);
+								NODE_DISCONNECTED);
 	if (rc < 0)
 	{
 		elog(DEBUG1, "Failed to register a standby-GTM status.");
@@ -295,7 +294,7 @@ gtm_standby_activate_self(void)
 
 	rc = node_register_internal(GTM_ActiveConn, GTM_NODE_GTM, standbyHostName, standbyPortNumber,
 								standbyNodeName, standbyDataDir,
-								NODE_CONNECTED, InvalidGlobalTransactionId);
+								NODE_CONNECTED);
 
 	if (rc < 0)
 	{
