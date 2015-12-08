@@ -239,6 +239,7 @@ ClusterMonitorInit(void)
 		}
 		else
 		{
+			SetLatestCompletedXid(latestCompletedXid);
 			ClusterMonitorSetReportedGlobalXmin(oldestXmin);
 			elog(DEBUG2, "Updating global_xmin to %d", newOldestXmin);
 			if (GlobalTransactionIdIsValid(newOldestXmin))
