@@ -4384,21 +4384,6 @@ SetLatestCompletedXid(TransactionId latestCompletedXid)
 		return;
 	}
 
-	for (index = 0; index < arrayP->numProcs; index++)
-	{
-		int			pgprocno = arrayP->pgprocnos[index];
-		volatile PGXACT *pgxact = &allPgXact[pgprocno];
-		TransactionId pxid = pgxact->xid;
-		
-		if (!TransactionIdIsValid(pxid))
-			continue;
-
-		if (TransactionIdPrecedesOrEquals(pxid, latestCompletedXid))
-			elog(PANIC, "Cannot set latestCompletedXid to %d while another "
-					"process is running with an older xid %d",
-					latestCompletedXid, pxid);
-	}
-
 	ShmemVariableCache->latestCompletedXid = latestCompletedXid;
 	LWLockRelease(ProcArrayLock);
 }
