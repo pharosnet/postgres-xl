@@ -2713,7 +2713,9 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 							distributePlan->distributionNodes, nodenum);
 				bms_free(tmpset);
 			}
-			else
+			else if (!(IsA(result_plan, Result) && result_plan->lefttree ==
+						NULL &&
+						bms_num_members(root->distribution->restrictNodes) == 1))
 				result_plan = (Plan *) make_remotesubplan(root,
 														  result_plan,
 														  root->distribution,
