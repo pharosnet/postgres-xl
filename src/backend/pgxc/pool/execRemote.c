@@ -1924,6 +1924,7 @@ pgxc_node_remote_cleanup_all(void)
 			continue;
 		}
 		new_connections[new_conn_count++] = handle;
+		handle->combiner = NULL;
 	}
 	for (i = 0; i < handles->dn_conn_count; i++)
 	{
@@ -1949,6 +1950,7 @@ pgxc_node_remote_cleanup_all(void)
 			continue;
 		}
 		new_connections[new_conn_count++] = handle;
+		handle->combiner = NULL;
 	}
 
 	if (new_conn_count)
