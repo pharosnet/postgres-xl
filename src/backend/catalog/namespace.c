@@ -3254,9 +3254,15 @@ OverrideSearchPathMatchesCurrent(OverrideSearchPath *path)
 		else
 			return false;
 	}
+
 	/* If path->addCatalog, next item should be pg_catalog. */
 	if (path->addCatalog)
 	{
+		if (lc && lfirst_oid(lc) == STORM_CATALOG_NAMESPACE)
+			lc = lnext(lc);
+		else
+			return false;
+
 		if (lc && lfirst_oid(lc) == PG_CATALOG_NAMESPACE)
 			lc = lnext(lc);
 		else
