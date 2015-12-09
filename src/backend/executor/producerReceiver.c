@@ -144,7 +144,7 @@ producerDestroyReceiver(DestReceiver *self)
 {
 	ProducerState *myState = (ProducerState *) self;
 
-	elog(LOG, "Producer stats: total %ld tuples, %ld tuples to self, %ld to other nodes",
+	elog(DEBUG2, "Producer stats: total %ld tuples, %ld tuples to self, %ld to other nodes",
 		 myState->tcount, myState->selfcount, myState->othercount);
 
 	if (myState->consumer)

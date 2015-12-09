@@ -1250,7 +1250,7 @@ CHECK:
 #ifdef SQUEUE_STAT
 	elog(DEBUG1, "Producer %s is done, there were %ld pauses", squeue->sq_key, squeue->stat_paused);
 #endif
-	elog(LOG, "Producer %s is done", squeue->sq_key);
+	elog(DEBUG1, "Producer %s is done", squeue->sq_key);
 
 	LWLockAcquire(SQueuesLock, LW_EXCLUSIVE);
 
