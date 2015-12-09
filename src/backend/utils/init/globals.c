@@ -77,6 +77,7 @@ char		postgres_exec_path[MAXPGPATH];		/* full path to backend */
 Oid			MyCoordId = InvalidOid;
 
 int 		MyCoordPid = 0;
+LocalTransactionId	MyCoordLxid = 0;
 
 BackendId	MyFirstBackendId = InvalidBackendId;
 #endif

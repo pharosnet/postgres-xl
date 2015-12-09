@@ -39,6 +39,7 @@ extern PGDLLIMPORT BackendId MyBackendId;		/* backend id of this backend */
 extern PGDLLIMPORT Oid MyCoordId;
 
 extern PGDLLIMPORT int MyCoordPid;
+extern PGDLLIMPORT LocalTransactionId MyCoordLxid;
 
 /* BackendId of the first backend of the distributed session on the node */
 extern PGDLLIMPORT BackendId MyFirstBackendId;

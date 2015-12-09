@@ -31,6 +31,7 @@
 #include "access/gtm.h"
 /* PGXC_COORD */
 #include "gtm/gtm_c.h"
+#include "gtm/gtm_gxid.h"
 #include "pgxc/execRemote.h"
 #include "pgxc/pause.h"
 /* PGXC_DATANODE */
@@ -782,7 +783,7 @@ GetAuxilliaryTransactionId()
 {
 	TransactionState s = CurrentTransactionState;
 	if (!GlobalTransactionIdIsValid(s->auxilliaryTransactionId))
-		s->auxilliaryTransactionId = BeginTranGTM(NULL);
+		s->auxilliaryTransactionId = BeginTranGTM(NULL, NULL);
 	return s->auxilliaryTransactionId;
 }
 
@@ -2253,6 +2254,17 @@ CommitTransaction(void)
 			break;
 	}
 
+	/*
+	 * Insert notifications sent by NOTIFY commands into the queue.  This
+	 * should be late in the pre-commit sequence to minimize time spent
+	 * holding the notify-insertion lock.
+	 *
+	 * XXX XL: Since PreCommit_Notify may assign transaction ID for a
+	 * transaction which till now doesn't have one, we want to process this
+	 * before doing any XL specific transaction handling
+	 */
+	PreCommit_Notify();
+
 #ifdef PGXC
 	/*
 	 * If we are a Coordinator and currently serving the client,
@@ -2369,13 +2381,6 @@ CommitTransaction(void)
 	 * errors to be raised for failure patterns found at commit.
 	 */
 	PreCommit_CheckForSerializationFailure();
-
-	/*
-	 * Insert notifications sent by NOTIFY commands into the queue.  This
-	 * should be late in the pre-commit sequence to minimize time spent
-	 * holding the notify-insertion lock.
-	 */
-	PreCommit_Notify();
 
 #ifdef PGXC
 	if (IS_PGXC_DATANODE || !IsConnFromCoord())
@@ -6715,6 +6720,21 @@ AtEOXact_WaitedXids(void)
 		}
 	}
 
+}
+
+/*
+ * Remember the XID assigned to the top transaction. Even if multiple datanodes
+ * report XIDs, they should always report the same XID given that they are tied
+ * by an unique global session identifier
+ */ 
+void
+SetTopTransactionId(GlobalTransactionId xid)
+{
+	TransactionState s = CurrentTransactionState;
+	Assert(!GlobalTransactionIdIsValid(s->transactionId) ||
+			GlobalTransactionIdEquals(s->transactionId, xid));
+	s->transactionId = xid;
+	elog(DEBUG2, "Assigning XID received from the remote node - %d", xid);
 }
 #endif
 #endif

@@ -34,7 +34,10 @@
 #ifdef PGXC
 #include "pgxc/pgxc.h"
 #include "access/gtm.h"
+#include "libpq/libpq.h"
 #include "storage/procarray.h"
+#include "tcop/tcopprot.h"
+#include "utils/lsyscache.h"
 #endif
 
 
@@ -184,7 +187,23 @@ GetNewTransactionId(bool isSubXact)
 		if (MyPgXact->vacuumFlags & PROC_IN_VACUUM)
 			next_xid = xid = (TransactionId) BeginTranAutovacuumGTM();
 		else
-			next_xid = xid = (TransactionId) BeginTranGTM(timestamp);
+		{
+			char global_session[NAMEDATALEN + 13 + 13];
+
+			/*
+			 * Generate unique global session identifier using coordinator
+			 * name, backend pid and virtual XID. 
+			 *
+			 * For global transactions i.e. those which may involve more than
+			 * one node, this code will be executed only on the coordinator and
+			 * hence its correct to use PGXCNodeName and fields from MyProc to
+			 * generate the global session identifier
+			 */
+			sprintf(global_session, "%s_%d_%d", PGXCNodeName, MyProc->pid,
+					MyProc->lxid);
+			next_xid = xid = (TransactionId) BeginTranGTM(timestamp,
+					global_session);
+		}
 		*timestamp_received = true;
 	}
 #endif /* PGXC */
@@ -205,6 +224,34 @@ GetNewTransactionId(bool isSubXact)
 			next_xid = InvalidTransactionId;
 			if (TransactionIdFollowsOrEquals(xid, ShmemVariableCache->nextXid))
 				ShmemVariableCache->nextXid = xid;
+		}
+		else if ((IsConnFromCoord() || IsConnFromDatanode()) &&
+			MyCoordId != InvalidOid && MyCoordPid != 0 &&
+			MyCoordLxid != InvalidLocalTransactionId)
+		{
+			char global_session[NAMEDATALEN + 13 + 13];
+
+			/*
+			 * If we are running on a remote coordinator or a datanode,
+			 * start a new transaction and associate it with a global session
+			 * identifier which is guaranteed to be unique across the cluster
+			 */
+			sprintf(global_session, "%s_%d_%d", get_pgxc_nodename(MyCoordId), MyCoordPid,
+					MyCoordLxid);
+			xid = (TransactionId) BeginTranGTM(timestamp, global_session);
+			if (TransactionIdIsValid(xid))
+			{
+				/*
+				 * Let the coordinator know about GXID assigned to this
+				 * transaction
+				 */
+				if (whereToSendOutput == DestRemote &&
+						!IS_PGXC_LOCAL_COORDINATOR)
+				{
+					pq_putmessage('x', (const char *) &xid, sizeof (GlobalTransactionId));
+					IsXidFromGTM = false;
+				}
+			}
 		}
 		else
 			ereport(ERROR,

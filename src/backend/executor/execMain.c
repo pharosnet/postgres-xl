@@ -181,6 +181,12 @@ standard_ExecutorStart(QueryDesc *queryDesc, int eflags)
 		!(eflags & EXEC_FLAG_EXPLAIN_ONLY))
 		ExecCheckXactReadOnly(queryDesc->plannedstmt);
 
+#ifdef XCP
+	if (queryDesc->plannedstmt->commandType != CMD_SELECT ||
+		queryDesc->plannedstmt->hasModifyingCTE)
+		GetTopTransactionId();
+#endif
+
 	/*
 	 * Build EState, switch into per-query memory context for startup.
 	 */

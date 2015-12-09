@@ -1780,11 +1780,7 @@ ProcessResponse(GTMProxy_ThreadInfo *thrinfo, GTMProxy_CommandInfo *cmdinfo,
 					elog(ERROR, "Too few GXIDs");
 				}
 
-				gxid = res->gr_resdata.grd_txn_get_multi.start_gxid + cmdinfo->ci_res_index;
-
-				/* Handle wraparound */
-				if (gxid < res->gr_resdata.grd_txn_get_multi.start_gxid)
-					gxid += FirstNormalGlobalTransactionId;
+				gxid = res->gr_resdata.grd_txn_get_multi.txn_gxid[cmdinfo->ci_res_index];
 
 				/* Send back to each client the same timestamp value asked in this message */
 				timestamp = res->gr_resdata.grd_txn_get_multi.timestamp;
@@ -2116,12 +2112,16 @@ ProcessTransactionCommand(GTMProxy_ConnectionInfo *conninfo, GTM_Conn *gtm_conn,
 		GTM_MessageType mtype, StringInfo message)
 {
 	GTMProxy_CommandData cmd_data;
+	uint32 global_sessionid_len;
 
 	switch (mtype)
 	{
 		case MSG_TXN_BEGIN_GETGXID:
 			cmd_data.cd_beg.iso_level = pq_getmsgint(message, sizeof (GTM_IsolationLevel));
 			cmd_data.cd_beg.rdonly = pq_getmsgbyte(message);
+			global_sessionid_len = pq_getmsgint(message, sizeof (uint32));
+			memcpy(cmd_data.cd_beg.global_sessionid, pq_getmsgbytes(message,
+					global_sessionid_len), global_sessionid_len);
 			GTMProxy_CommandPending(conninfo, mtype, cmd_data);
 			break;
 
@@ -2422,6 +2422,10 @@ GTMProxy_ProcessPendingCommands(GTMProxy_ThreadInfo *thrinfo)
 					if (gtmpqPutInt(cmdinfo->ci_data.cd_beg.iso_level,
 								sizeof (GTM_IsolationLevel), gtm_conn) ||
 						gtmpqPutc(cmdinfo->ci_data.cd_beg.rdonly, gtm_conn) ||
+						gtmpqPutInt(strlen(cmdinfo->ci_data.cd_beg.global_sessionid) + 1,
+							sizeof (uint32), gtm_conn) ||
+						gtmpqPutnchar(cmdinfo->ci_data.cd_beg.global_sessionid,
+							strlen(cmdinfo->ci_data.cd_beg.global_sessionid) + 1, gtm_conn) ||
 						gtmpqPutInt(cmdinfo->ci_conn->con_id, sizeof (GTMProxy_ConnID), gtm_conn))
 						elog(ERROR, "Error sending data");
 

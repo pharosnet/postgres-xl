@@ -23,7 +23,7 @@ extern GlobalTransactionId currentGxid;
 extern bool IsGTMConnected(void);
 extern void InitGTM(void);
 extern void CloseGTM(void);
-extern GlobalTransactionId BeginTranGTM(GTM_Timestamp *timestamp);
+extern GlobalTransactionId BeginTranGTM(GTM_Timestamp *timestamp, const char *globalSession);
 extern GlobalTransactionId BeginTranAutovacuumGTM(void);
 extern int CommitTranGTM(GlobalTransactionId gxid, int waited_xid_count,
 		GlobalTransactionId *waited_xids);

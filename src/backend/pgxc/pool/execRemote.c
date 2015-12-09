@@ -47,6 +47,7 @@
 #include "pgxc/nodemgr.h"
 #include "pgxc/poolmgr.h"
 #include "storage/ipc.h"
+#include "storage/proc.h"
 #include "utils/datum.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
@@ -854,6 +855,17 @@ HandleWaitXids(char *msg_body, size_t len)
 	}
 }
 
+static void
+HandleGlobalTransactionId(char *msg_body, size_t len)
+{
+	GlobalTransactionId xid;
+
+	Assert(len == sizeof (GlobalTransactionId));
+	memcpy(&xid, &msg_body[0], sizeof (GlobalTransactionId));
+
+	SetTopTransactionId(xid);
+}
+
 /*
  * Examine the specified combiner state and determine if command was completed
  * successfully
@@ -1494,6 +1506,10 @@ FetchTuple(ResponseCombiner *combiner)
 			/* Now slot is responsible for freeng the descriptor */
 			combiner->tuple_desc = NULL;
 		}
+		else if (res == RESPONSE_ASSIGN_GXID)
+		{
+			/* Do nothing. It must have been handled in handle_response() */
+		}
 		else
 		{
 			// Can not get here?
@@ -1558,6 +1574,10 @@ pgxc_node_receive_responses(const int conn_count, PGXCNodeHandle ** connections,
 
 				case RESPONSE_WAITXIDS:
 					break;
+
+				case RESPONSE_ASSIGN_GXID:
+					break;
+
 				default:
 					/* Inconsistent responses */
 					add_error_message(to_receive[i], "Unexpected response from the Datanodes");
@@ -1719,6 +1739,9 @@ handle_response(PGXCNodeHandle *conn, ResponseCombiner *combiner)
 			case 'W':
 				HandleWaitXids(msg, msg_len);	
 				return RESPONSE_WAITXIDS;
+			case 'x':
+				HandleGlobalTransactionId(msg, msg_len);
+				return RESPONSE_ASSIGN_GXID;
 			default:
 				/* sync lost? */
 				elog(WARNING, "Received unsupported message type: %c", msg_type);
@@ -1797,6 +1820,7 @@ pgxc_node_begin(int conn_count, PGXCNodeHandle **connections,
 	PGXCNodeHandle *new_connections[conn_count];
 	int new_count = 0;
 	char 		   *init_str;
+	char 			lxid[13];
 
 	/*
 	 * If no remote connections, we don't have anything to do
@@ -1860,6 +1884,10 @@ pgxc_node_begin(int conn_count, PGXCNodeHandle **connections,
 	/* Verify status */
 	if (!ValidateAndCloseCombiner(&combiner))
 		return EOF;
+
+	/* Send virtualXID to the remote nodes using SET command */
+	sprintf(lxid, "%d", MyProc->lxid);
+	PGXCNodeSetParam(true, "coordinator_lxid", lxid);
 
 	/* after transactions are started send down local set commands */
 	init_str = PGXCNodeGetTransactionParamStr();
@@ -4360,16 +4388,7 @@ ExecRemoteQuery(RemoteQueryState *node)
 		stat_statement();
 		stat_transaction(total_conn_count);
 
-		gxid = GetCurrentTransactionId();
-
-		if (!GlobalTransactionIdIsValid(gxid))
-		{
-			pfree_pgxc_all_handles(pgxc_connections);
-			ereport(ERROR,
-					(errcode(ERRCODE_INTERNAL_ERROR),
-					 errmsg("Failed to get next transaction ID")));
-		}
-
+		gxid = GetCurrentTransactionIdIfAny();
 		/* See if we have a primary node, execute on it first before the others */
 		if (primaryconnection)
 		{
@@ -4401,6 +4420,8 @@ ExecRemoteQuery(RemoteQueryState *node)
 					pgxc_node_receive(1, &primaryconnection, NULL);
 				else if (res == RESPONSE_COMPLETE || res == RESPONSE_ERROR)
 				    /* Get ReadyForQuery */
+					continue;
+				else if (res == RESPONSE_ASSIGN_GXID)
 					continue;
 				else
 					ereport(ERROR,
@@ -5334,15 +5355,7 @@ ExecFinishInitRemoteSubplan(RemoteSubplanState *node)
 		combiner->current_conn = 0;
 	}
 
-	gxid = GetCurrentTransactionId();
-	if (!GlobalTransactionIdIsValid(gxid))
-	{
-		combiner->conn_count = 0;
-		pfree(combiner->connections);
-		ereport(ERROR,
-				(errcode(ERRCODE_INTERNAL_ERROR),
-				 errmsg("Failed to get next transaction ID")));
-	}
+	gxid = GetCurrentTransactionIdIfAny();
 
 	/* extract parameter data types */
 	if (node->nParamRemote > 0)

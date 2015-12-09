@@ -51,6 +51,7 @@ extern bool EnforceTwoPhaseCommit;
 #define RESPONSE_ERROR 6
 #define RESPONSE_READY 10
 #define RESPONSE_WAITXIDS 11
+#define RESPONSE_ASSIGN_GXID 12
 #endif
 
 typedef enum

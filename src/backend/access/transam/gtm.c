@@ -143,7 +143,7 @@ CloseGTM(void)
 }
 
 GlobalTransactionId
-BeginTranGTM(GTM_Timestamp *timestamp)
+BeginTranGTM(GTM_Timestamp *timestamp, const char *globalSession)
 {
 	GlobalTransactionId  xid = InvalidGlobalTransactionId;
 	struct rusage start_r;
@@ -155,7 +155,7 @@ BeginTranGTM(GTM_Timestamp *timestamp)
 	CheckConnection();
 	// TODO Isolation level
 	if (conn)
-		xid =  begin_transaction(conn, GTM_ISOLATION_RC, timestamp);
+		xid =  begin_transaction(conn, GTM_ISOLATION_RC, globalSession, timestamp);
 
 	/* If something went wrong (timeout), try and reset GTM connection
 	 * and retry. This is safe at the beginning of a transaction.
@@ -165,11 +165,13 @@ BeginTranGTM(GTM_Timestamp *timestamp)
 		CloseGTM();
 		InitGTM();
 		if (conn)
-			xid = begin_transaction(conn, GTM_ISOLATION_RC, timestamp);
+			xid = begin_transaction(conn, GTM_ISOLATION_RC, globalSession, timestamp);
 	}
 	if (xid)
 		IsXidFromGTM = true;
 	currentGxid = xid;
+
+	elog(DEBUG2, "BeginTranGTM - session:%s, xid: %d", globalSession, xid);
 
 	if (log_gtm_stats)
 		ShowUsageCommon("BeginTranGTM", &start_r, &start_t);
@@ -198,6 +200,8 @@ BeginTranAutovacuumGTM(void)
 			xid =  begin_transaction_autovacuum(conn, GTM_ISOLATION_RC);
 	}
 	currentGxid = xid;
+
+	elog(DEBUG3, "BeginTranGTM - %d", xid);
 	return xid;
 }
 
@@ -214,6 +218,8 @@ CommitTranGTM(GlobalTransactionId gxid, int waited_xid_count,
 
 	if (log_gtm_stats)
 		ResetUsageCommon(&start_r, &start_t);
+
+	elog(DEBUG3, "CommitTranGTM: %d", gxid);
 
 	CheckConnection();
 	ret = -1;
@@ -262,6 +268,8 @@ CommitPreparedTranGTM(GlobalTransactionId gxid,
 
 	if (log_gtm_stats)
 		ResetUsageCommon(&start_r, &start_t);
+
+	elog(DEBUG3, "CommitPreparedTranGTM: %d:%d", gxid, prepared_gxid);
 
 	CheckConnection();
 	ret = -1;

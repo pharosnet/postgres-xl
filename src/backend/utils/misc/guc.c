@@ -2951,6 +2951,18 @@ static struct config_int ConfigureNamesInt[] =
 		64, 1, MAX_KILOBYTES,
 		NULL, NULL, NULL
 	},
+
+	{
+		{"coordinator_lxid", PGC_USERSET, UNGROUPED,
+			gettext_noop("Sets the coordinator local transaction identifier."),
+			NULL,
+			GUC_IS_NAME | GUC_REPORT | GUC_NO_SHOW_ALL | GUC_NOT_IN_SAMPLE | GUC_DISALLOW_IN_FILE | GUC_NOT_WHILE_SEC_REST
+		},
+		&MyCoordLxid,
+		0, 0, INT_MAX,
+		NULL, NULL, NULL
+	},
+
 #endif
 #endif /* PGXC */
 
@@ -3413,6 +3425,7 @@ static struct config_string ConfigureNamesString[] =
 		"none",
 		check_global_session, assign_global_session, NULL
 	},
+
 
 	{
 		{"pgxc_catalog_remap", PGC_SIGHUP, XC_HOUSEKEEPING_OPTIONS,

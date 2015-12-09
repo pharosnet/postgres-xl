@@ -144,6 +144,7 @@ typedef union GTMProxy_CommandData
 	{
 		bool			rdonly;
 		GTM_IsolationLevel	iso_level;
+		char			global_sessionid[GTM_MAX_SESSION_ID_LEN];
 	} cd_beg;
 
 	struct

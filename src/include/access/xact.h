@@ -336,6 +336,7 @@ extern GlobalTransactionId GetAuxilliaryTransactionId(void);
 extern GlobalTransactionId GetTopGlobalTransactionId(void);
 extern void SetAuxilliaryTransactionId(GlobalTransactionId gxid);
 extern void SetTopGlobalTransactionId(GlobalTransactionId gxid);
+extern void SetTopTransactionId(GlobalTransactionId xid);
 #endif
 extern TransactionId GetStableLatestTransactionId(void);
 extern SubTransactionId GetCurrentSubTransactionId(void);

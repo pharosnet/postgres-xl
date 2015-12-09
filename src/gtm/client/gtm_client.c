@@ -420,13 +420,22 @@ send_failed:
 
 int
 bkup_begin_transaction(GTM_Conn *conn, GTM_IsolationLevel isolevel,
-					   bool read_only, uint32 client_id, GTM_Timestamp timestamp)
+					   bool read_only,
+					   char *global_sessionid,
+					   uint32 client_id, GTM_Timestamp timestamp)
 {
+	uint32 global_sessionid_len = global_sessionid ?
+		strlen(global_sessionid) + 1 : 1;
+	char *eos = "\0";
+
 	 /* Start the message. */
 	if (gtmpqPutMsgStart('C', true, conn) ||
 		gtmpqPutInt(MSG_BKUP_TXN_BEGIN, sizeof (GTM_MessageType), conn) ||
 		gtmpqPutInt(isolevel, sizeof (GTM_IsolationLevel), conn) ||
 		gtmpqPutc(read_only, conn) ||
+		gtmpqPutInt(global_sessionid_len, sizeof (uint32), conn) ||
+		gtmpqPutnchar(global_sessionid ? global_sessionid : eos,
+			global_sessionid_len, conn) ||
 		gtmpqPutInt(client_id, sizeof (uint32), conn) ||
 		gtmpqPutnchar((char *)&timestamp, sizeof(GTM_Timestamp), conn))
 		goto send_failed;
@@ -449,14 +458,22 @@ send_failed:
 int
 bkup_begin_transaction_gxid(GTM_Conn *conn, GlobalTransactionId gxid,
 							GTM_IsolationLevel isolevel, bool read_only,
+							char *global_sessionid,
 							uint32 client_id, GTM_Timestamp timestamp)
 {
+	uint32 global_sessionid_len = global_sessionid ?
+		strlen(global_sessionid) + 1 : 1;
+	char *eos = "\0";
+
 	 /* Start the message. */
 	if (gtmpqPutMsgStart('C', true, conn) ||
 		gtmpqPutInt(MSG_BKUP_TXN_BEGIN_GETGXID, sizeof (GTM_MessageType), conn) ||
 		gtmpqPutInt(gxid, sizeof(GlobalTransactionId), conn) ||
 		gtmpqPutInt(isolevel, sizeof (GTM_IsolationLevel), conn) ||
 		gtmpqPutc(read_only, conn) ||
+		gtmpqPutInt(global_sessionid_len, sizeof (uint32), conn) ||
+		gtmpqPutnchar(global_sessionid ? global_sessionid : eos,
+			global_sessionid_len, conn) ||
 		gtmpqPutInt(client_id, sizeof (uint32), conn) ||
 		gtmpqPutnchar((char *)&timestamp, sizeof(GTM_Timestamp), conn))
 		goto send_failed;
@@ -476,17 +493,25 @@ send_failed:
 }
 
 GlobalTransactionId
-begin_transaction(GTM_Conn *conn, GTM_IsolationLevel isolevel, GTM_Timestamp *timestamp)
+begin_transaction(GTM_Conn *conn, GTM_IsolationLevel isolevel,
+		char *global_sessionid,
+		GTM_Timestamp *timestamp)
 {
 	bool txn_read_only = false;
 	GTM_Result *res = NULL;
 	time_t finish_time;
+	uint32 global_sessionid_len = global_sessionid ?
+		strlen(global_sessionid) + 1 : 1;
+	char *eos = "\0";
 
 	 /* Start the message. */
 	if (gtmpqPutMsgStart('C', true, conn) ||
 		gtmpqPutInt(MSG_TXN_BEGIN_GETGXID, sizeof (GTM_MessageType), conn) ||
 		gtmpqPutInt(isolevel, sizeof (GTM_IsolationLevel), conn) ||
-		gtmpqPutc(txn_read_only, conn))
+		gtmpqPutc(txn_read_only, conn) ||
+		gtmpqPutInt(global_sessionid_len, sizeof (uint32), conn) ||
+		gtmpqPutnchar(global_sessionid ? global_sessionid : eos,
+			global_sessionid_len, conn))
 		goto send_failed;
 
 	/* Finish the message. */
@@ -612,7 +637,6 @@ commit_transaction(GTM_Conn *conn, GlobalTransactionId gxid,
 		int status;
 		status = commit_transaction_multi(conn, 1, &gxid, &txn_count_out,
 				&status_out);
-		Assert(txn_count_out == 1);
 		return status;
 	}
 	else
@@ -1937,7 +1961,9 @@ begin_transaction_multi(GTM_Conn *conn, int txn_count, GTM_IsolationLevel *txn_i
 	if (res->gr_status == GTM_RESULT_OK)
 	{
 		memcpy(txn_count_out, &res->gr_resdata.grd_txn_get_multi.txn_count, sizeof(int));
-		memcpy(gxid_out, &res->gr_resdata.grd_txn_get_multi.start_gxid, sizeof(GlobalTransactionId));
+		memcpy(gxid_out, res->gr_resdata.grd_txn_get_multi.txn_gxid,
+				sizeof(GlobalTransactionId) *
+				res->gr_resdata.grd_txn_get_multi.txn_count);
 		memcpy(ts_out, &res->gr_resdata.grd_txn_get_multi.timestamp, sizeof(GTM_Timestamp));
 	}
 
@@ -1953,12 +1979,11 @@ send_failed:
 
 int
 bkup_begin_transaction_multi(GTM_Conn *conn, int txn_count,
-							 GlobalTransactionId start_gxid, GTM_IsolationLevel *isolevel,
+							 GlobalTransactionId *gxid, GTM_IsolationLevel *isolevel,
 							 bool *read_only, uint32 *client_id,
 							 GTMProxy_ConnID *txn_connid)
 {
 	int ii;
-	GlobalTransactionId gxid = start_gxid;
 
 	/* Start the message. */
 	if (gtmpqPutMsgStart('C', true, conn)) /* FIXME: no proxy header */
@@ -1970,9 +1995,7 @@ bkup_begin_transaction_multi(GTM_Conn *conn, int txn_count,
 
 	for (ii = 0; ii < txn_count; ii++, gxid++)
 	{
-		if (gxid == InvalidGlobalTransactionId)
-			gxid = FirstNormalGlobalTransactionId;
-		if (gtmpqPutInt(gxid, sizeof(GlobalTransactionId), conn) ||
+		if (gtmpqPutInt(gxid[ii], sizeof(GlobalTransactionId), conn) ||
 			gtmpqPutInt(isolevel[ii], sizeof(GTM_IsolationLevel), conn) ||
 			gtmpqPutc(read_only[ii], conn) ||
 			gtmpqPutInt(client_id[ii], sizeof (uint32), conn) ||

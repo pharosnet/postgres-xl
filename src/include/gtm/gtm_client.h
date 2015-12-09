@@ -75,7 +75,7 @@ typedef union GTM_ResultData
 	struct
 	{
 		int				txn_count; 				/* TXN_BEGIN_GETGXID_MULTI */
-		GlobalTransactionId		start_gxid;
+		GlobalTransactionId		txn_gxid[GTM_MAX_GLOBAL_TRANSACTIONS];
 		GTM_Timestamp			timestamp;
 	} grd_txn_get_multi;
 
@@ -184,12 +184,15 @@ size_t get_sequence_list(GTM_Conn *, GTM_SeqInfo **);
 /*
  * Transaction Management API
  */
-GlobalTransactionId begin_transaction(GTM_Conn *conn, GTM_IsolationLevel isolevel, GTM_Timestamp *timestamp);
+GlobalTransactionId begin_transaction(GTM_Conn *conn, GTM_IsolationLevel isolevel,
+						  char *global_sessionid,
+						  GTM_Timestamp *timestamp);
 int bkup_begin_transaction(GTM_Conn *conn, GTM_IsolationLevel isolevel,
-						   bool read_only, uint32 client_id,
-						   GTM_Timestamp timestamp);
+						   bool read_only, char *global_sessionid,
+						   uint32 client_id, GTM_Timestamp timestamp);
 int bkup_begin_transaction_gxid(GTM_Conn *conn, GlobalTransactionId gxid,
 								GTM_IsolationLevel isolevel, bool read_only,
+								char *global_sessionid,
 								uint32 client_id, GTM_Timestamp timestamp);
 
 GlobalTransactionId begin_transaction_autovacuum(GTM_Conn *conn, GTM_IsolationLevel isolevel);
@@ -226,7 +229,7 @@ begin_transaction_multi(GTM_Conn *conn, int txn_count, GTM_IsolationLevel *txn_i
 			int *txn_count_out, GlobalTransactionId *gxid_out, GTM_Timestamp *ts_out);
 int
 bkup_begin_transaction_multi(GTM_Conn *conn, int txn_count,
-							 GlobalTransactionId start_gxid, GTM_IsolationLevel *isolevel,
+							 GlobalTransactionId *gxid, GTM_IsolationLevel *isolevel,
 							 bool *read_only,
 							 uint32 *client_id,
 							 GTMProxy_ConnID *txn_connid);

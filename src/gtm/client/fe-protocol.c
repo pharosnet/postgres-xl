@@ -441,8 +441,9 @@ gtmpqParseSuccess(GTM_Conn *conn, GTM_Result *result)
 				result->gr_status = GTM_RESULT_ERROR;
 				break;
 			}
-			if (gtmpqGetnchar((char *)&result->gr_resdata.grd_txn_get_multi.start_gxid,
-						   sizeof (GlobalTransactionId), conn))
+			if (gtmpqGetnchar((char *)result->gr_resdata.grd_txn_get_multi.txn_gxid,
+						   sizeof (GlobalTransactionId) * result->gr_resdata.grd_txn_get_multi.txn_count,
+						   conn))
 			{
 				result->gr_status = GTM_RESULT_ERROR;
 				break;

@@ -37,7 +37,12 @@ extern void GlobalTransactionIdAbort(GlobalTransactionId transactionId);
 
 /* in transam/varsup.c */
 extern GlobalTransactionId GTM_GetGlobalTransactionId(GTM_TransactionHandle handle);
-extern GlobalTransactionId GTM_GetGlobalTransactionIdMulti(GTM_TransactionHandle handle[], int txn_count);
+extern bool GTM_GetGlobalTransactionIdMulti(
+		GTM_TransactionHandle handle[],
+		int txn_count,
+		GlobalTransactionId gxids[],
+		GTM_TransactionHandle new_handle[],
+		int *new_txn_count);
 extern GlobalTransactionId ReadNewGlobalTransactionId(void);
 extern GlobalTransactionId GTM_GetLatestCompletedXID(void);
 extern void SetGlobalTransactionIdLimit(GlobalTransactionId oldest_datfrozenxid);
@@ -68,11 +73,13 @@ typedef enum GTM_TransactionStates
 	GTM_TXN_ABORTED
 } GTM_TransactionStates;
 
+#define GTM_MAX_SESSION_ID_LEN			64
+
 typedef struct GTM_TransactionInfo
 {
 	GTM_TransactionHandle	gti_handle;
 	uint32					gti_client_id;
-
+	char					gti_global_session_id[GTM_MAX_SESSION_ID_LEN];
 	bool					gti_in_use;
 	GlobalTransactionId		gti_gxid;
 	GTM_TransactionStates	gti_state;
@@ -149,9 +156,11 @@ bool GTM_IsGXIDInProgress(GlobalTransactionId gxid);
 /* Transaction Control */
 void GTM_InitTxnManager(void);
 GTM_TransactionHandle GTM_BeginTransaction(GTM_IsolationLevel isolevel,
-										   bool readonly);
+										   bool readonly,
+										   const char *global_sessionid);
 int GTM_BeginTransactionMulti(GTM_IsolationLevel isolevel[],
 										   bool readonly[],
+										   const char *global_sessionid[],
 										   GTMProxy_ConnID connid[],
 										   int txn_count,
 										   GTM_TransactionHandle txns[]);
@@ -191,6 +200,7 @@ void ProcessBeginTransactionCommand(Port *myport, StringInfo message);
 void ProcessBkupBeginTransactionCommand(Port *myport, StringInfo message);
 void GTM_BkupBeginTransactionMulti(GTM_IsolationLevel *isolevel,
 								   bool *readonly,
+								   const char **global_sessionid,
 								   uint32 *client_id,
 								   GTMProxy_ConnID *connid,
 								   int	txn_count);
@@ -219,6 +229,7 @@ void GTM_SaveTxnInfo(FILE *ctlf);
 void GTM_RestoreTxnInfo(FILE *ctlf, GlobalTransactionId next_gxid);
 void GTM_BkupBeginTransaction(GTM_IsolationLevel isolevel,
 							  bool readonly,
+							  const char *global_sessionid,
 							  uint32 client_id);
 void ProcessBkupBeginTransactionGetGXIDCommand(Port *myport, StringInfo message);
 void ProcessBkupBeginTransactionGetGXIDCommandMulti(Port *myport, StringInfo message);
