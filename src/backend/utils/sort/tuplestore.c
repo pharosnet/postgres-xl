@@ -503,7 +503,7 @@ tuplestore_end(Tuplestorestate *state)
 
 	if (state->stat_name)
 	{
-		elog(LOG, "Tuplestore %s did %ld writes and %ld reads, "
+		elog(DEBUG1, "Tuplestore %s did %ld writes and %ld reads, "
 				  "it spilled to disk after %ld writes and %ld reads, "
 				  "now deleted %d memtuples out of %d", state->stat_name,
 				  state->stat_write_count, state->stat_read_count,
