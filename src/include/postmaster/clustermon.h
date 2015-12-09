@@ -20,6 +20,7 @@ typedef struct
 {
 	slock_t				mutex;
 	GlobalTransactionId	reported_recent_global_xmin;
+	GlobalTransactionId	reporting_recent_global_xmin;
 	GlobalTransactionId	gtm_recent_global_xmin;
 } ClusterMonitorCtlData;
 
@@ -32,6 +33,7 @@ extern bool IsClusterMonitorProcess(void);
 extern int	StartClusterMonitor(void);
 GlobalTransactionId ClusterMonitorGetGlobalXmin(void);
 void ClusterMonitorSetGlobalXmin(GlobalTransactionId xmin);
+GlobalTransactionId ClusterMonitorGetReportingXmin(void);
 
 #ifdef EXEC_BACKEND
 extern void ClusterMonitorIAm(void);

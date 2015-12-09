@@ -60,6 +60,7 @@ static void cm_sighup_handler(SIGNAL_ARGS);
 static void cm_sigterm_handler(SIGNAL_ARGS);
 static void ClusterMonitorSetReportedGlobalXmin(GlobalTransactionId xmin);
 static GlobalTransactionId ClusterMonitorGetReportedGlobalXmin(void);
+static void ClusterMonitorSetReportingGlobalXmin(GlobalTransactionId xmin);
 
 /* PID of clustser monitoring process */
 int			ClusterMonitorPid = 0;
@@ -203,7 +204,10 @@ ClusterMonitorInit(void)
 		 * interval. Keep doing this forever
 		 */
 		lastGlobalXmin = ClusterMonitorGetGlobalXmin();
+ 		LWLockAcquire(ClusterMonitorLock, LW_EXCLUSIVE);
 		oldestXmin = GetOldestXminInternal(NULL, false, true, lastGlobalXmin);
+		ClusterMonitorSetReportingGlobalXmin(oldestXmin);
+		LWLockRelease(ClusterMonitorLock);
 
 		if ((status = ReportGlobalXmin(oldestXmin, &newOldestXmin,
 						&latestCompletedXid)))
@@ -245,6 +249,8 @@ ClusterMonitorInit(void)
 			if (GlobalTransactionIdIsValid(newOldestXmin))
 				ClusterMonitorSetGlobalXmin(newOldestXmin);
 		}
+
+		ClusterMonitorSetReportingGlobalXmin(InvalidGlobalTransactionId);
 
 		/*
 		 * Repeat at every 30 seconds
@@ -373,6 +379,9 @@ ClusterMonitorSetGlobalXmin(GlobalTransactionId xmin)
 	ClusterMonitorCtl->gtm_recent_global_xmin = xmin;
 	SpinLockRelease(&ClusterMonitorCtl->mutex);
 
+	if (TransactionIdPrecedes(ShmemVariableCache->latestCompletedXid, xmin))
+		ShmemVariableCache->latestCompletedXid = xmin;
+
 	LWLockRelease(ProcArrayLock);
 }
 
@@ -397,4 +406,27 @@ ClusterMonitorGetReportedGlobalXmin(void)
 	SpinLockRelease(&ClusterMonitorCtl->mutex);
 
 	return reported_xmin;
+}
+
+static void
+ClusterMonitorSetReportingGlobalXmin(GlobalTransactionId xmin)
+{
+	elog(DEBUG2, "ClusterMonitorSetReportingGlobalXmin - old %d, new %d",
+			ClusterMonitorCtl->reporting_recent_global_xmin,
+			xmin);
+	SpinLockAcquire(&ClusterMonitorCtl->mutex);
+	ClusterMonitorCtl->reporting_recent_global_xmin = xmin;
+	SpinLockRelease(&ClusterMonitorCtl->mutex);
+}
+
+GlobalTransactionId
+ClusterMonitorGetReportingGlobalXmin(void)
+{
+	GlobalTransactionId reporting_xmin;
+
+	SpinLockAcquire(&ClusterMonitorCtl->mutex);
+	reporting_xmin = ClusterMonitorCtl->reporting_recent_global_xmin;
+	SpinLockRelease(&ClusterMonitorCtl->mutex);
+
+	return reporting_xmin;
 }

@@ -141,13 +141,18 @@ extern PGDLLIMPORT LWLockPadded *MainLWLockArray;
 #define BarrierLock					(&MainLWLockArray[38].lock)
 #define NodeTableLock				(&MainLWLockArray[39].lock)
 #define SQueuesLock					(&MainLWLockArray[40].lock)
+#define ClusterMonitorLock			(&MainLWLockArray[41].lock)
+#define CommitTsControlLock			(&MainLWLockArray[42].lock)
+#define CommitTsLock				(&MainLWLockArray[43].lock)
+#define ReplicationOriginLock		(&MainLWLockArray[44].lock)
+#else
+#define CommitTsControlLock			(&MainLWLockArray[38].lock)
+#define CommitTsLock				(&MainLWLockArray[39].lock)
+#define ReplicationOriginLock		(&MainLWLockArray[40].lock)
 #endif
-#define CommitTsControlLock			(&MainLWLockArray[41].lock)
-#define CommitTsLock				(&MainLWLockArray[42].lock)
-#define ReplicationOriginLock		(&MainLWLockArray[43].lock)
 
 #ifdef PGXC
-#define NUM_INDIVIDUAL_LWLOCKS		44
+#define NUM_INDIVIDUAL_LWLOCKS		45
 #else
 #define NUM_INDIVIDUAL_LWLOCKS		41
 #endif

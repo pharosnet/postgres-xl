@@ -68,6 +68,7 @@
 #include "access/xlog.h"
 #include "catalog/catalog.h"
 #include "miscadmin.h"
+#include "postmaster/clustermon.h"
 #include "storage/proc.h"
 #include "storage/procarray.h"
 #include "storage/spin.h"
@@ -1319,7 +1320,7 @@ GetOldestXminInternal(Relation rel, bool ignoreVacuum, bool computeLocal,
 			/* Fetch xid just once - see GetNewTransactionId */
 			TransactionId xid = pgxact->xid;
 #ifdef XCP
-			TransactionId xmin;
+			TransactionId xmin = pgxact->xmin; /* Fetch just once */
 #endif
 
 			/* First consider the transaction's own Xid, if any */
@@ -1335,7 +1336,10 @@ GetOldestXminInternal(Relation rel, bool ignoreVacuum, bool computeLocal,
 			 * Xid, that could determine some not-yet-set Xmin.
 			 */
 #ifdef XCP
-			xmin = pgxact->xmin; /* Fetch just once */
+
+			elog(DEBUG3, "proc: pid:%d, xmin: %d, xid: %d", proc->pid,
+					xmin, xid);
+
 			if (TransactionIdIsNormal(xmin) &&
 				 TransactionIdPrecedes(xmin, result))
 				result = xmin;
@@ -3174,44 +3178,57 @@ static void
 GetSnapshotDataFromGTM(Snapshot snapshot)
 {
 	GTM_Snapshot gtm_snapshot;
+	GlobalTransactionId reporting_xmin;
 	bool canbe_grouped = (!FirstSnapshotSet) || (!IsolationUsesXactSnapshot());
+	bool xmin_changed = false;
 
 	/*
-	 * A transaction requesting a snapshot typically does not need an XID
-	 * assigned to it and we recently made a provision for backends to obtain
-	 * snapshots from the GTM without first obtaining an XID. But this lead to
-	 * an interesting situation.
+	 * We never want to use a snapshot whose xmin is older than the
+	 * RecentGlobalXmin computed by the GTM. While it does not look likely that
+	 * that this will ever happen because both these computations happen on the
+	 * GTM, we are still worried about a race condition where a backend sends a
+	 * snapshot request, and before snapshot is received, the cluster monitor
+	 * reports our Xmin (which obviously does not include this snapshot's
+	 * xmin). Now if GTM processes the snapshot request first, computes
+	 * snapshot's xmin and then receives our Xmin-report, it may actually moves
+	 * RecentGlobalXmin beyond snapshot's xmin assuming some transactions
+	 * finished in between.
 	 *
-	 * If a backend can request a snapshot without associated XID, GTM has no
-	 * information about such transactions or snapshots (we don't report BEGIN
-	 * TRANSACTION * to GTM until an XID is assigned). So it may advance
-	 * RecentGlobalXmin beyond the horizon mandated by a snapshot currently
-	 * being used by a backend. That would most likely result in tuples being
-	 * removed while they are still visible to an on-going scan.
+	 * We try to introduce some interlock between the Xmin reporting and
+	 * snapshot request. Since we don't want to wait on a lock while Xmin is
+	 * being reported by the cluster monitor process, we just make sure that
+	 * the snapshot's xmin is not older than the Xmin we are currently
+	 * reporting. Given that this is a very rare possibility, we just get a
+	 * fresh snapshot from the GTM.
 	 *
-	 * Ideally we need a mechanism for GTM to track active snapshots and ensure
-	 * that RecentGlobalXmin does not go past the lowest xmins of all such
-	 * snapshots. But since we currently don't have a mechanism to do so, we
-	 * force an XID assignment for this transaction which then acts as an
-	 * anchor to track xmin at the GTM.
-	 *
-	 * XXX We do it only when snapshots are obtained on a local coordinator.
-	 * That means for cases where a datanode or a remote coordinator gets a
-	 * direct snapshot from the GTM, it is still vulerable to tuples getting
-	 * removed underneath a scan. But the requirements for a direct datanode
-	 * snapshot are limited such as pgxc_node catalog scan at connection
-	 * establishment or auto-analyze scans. Nevertheless, we MUST fix this
-	 * before going to production release
-	 */ 
+	 */
+	
+	LWLockAcquire(ClusterMonitorLock, LW_SHARED);
+
+retry:
+	reporting_xmin = ClusterMonitorGetReportingGlobalXmin();
+	
+	xmin_changed = false;
+	if (TransactionIdIsValid(reporting_xmin) &&
+		!TransactionIdIsValid(MyPgXact->xmin))
+	{
+		MyPgXact->xmin = reporting_xmin;
+		xmin_changed = true;
+	}
+
 	gtm_snapshot = GetSnapshotGTM(GetCurrentTransactionIdIfAny(), canbe_grouped);
 
-	
 	if (!gtm_snapshot)
 		ereport(ERROR,
 				(errcode(ERRCODE_CONNECTION_FAILURE),
 				 errmsg("GTM error, could not obtain snapshot. Current XID = %d, Autovac = %d", GetCurrentTransactionId(), IsAutoVacuumWorkerProcess())));
 	else
 	{
+		if (xmin_changed)
+			MyPgXact->xmin = InvalidTransactionId;
+		if (TransactionIdPrecedes(gtm_snapshot->sn_xmin, reporting_xmin))
+			goto retry;
+
 		/* 
 		 * Set RecentGlobalXmin by copying from the shared memory state
 		 * maintained by the Clutser Monitor
@@ -3227,6 +3244,7 @@ GetSnapshotDataFromGTM(Snapshot snapshot)
 				gtm_snapshot->sn_xcnt, gtm_snapshot->sn_xip, SNAPSHOT_DIRECT);
 		GetSnapshotFromGlobalSnapshot(snapshot);
 	}
+	LWLockRelease(ClusterMonitorLock);
 }
 
 static void
