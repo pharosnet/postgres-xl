@@ -105,6 +105,7 @@
 #include "access/sysattr.h"
 #include "catalog/index.h"
 #include "catalog/pg_collation.h"
+#include "catalog/pg_operator.h"
 #include "catalog/pg_opfamily.h"
 #include "catalog/pg_statistic.h"
 #include "catalog/pg_type.h"
@@ -1437,6 +1438,50 @@ Datum
 icnlikesel(PG_FUNCTION_ARGS)
 {
 	PG_RETURN_FLOAT8(patternsel(fcinfo, Pattern_Type_Like_IC, true));
+}
+
+/*
+ *		boolvarsel		- Selectivity of Boolean variable.
+ *
+ * This can actually be called on any boolean-valued expression.  If it
+ * involves only Vars of the specified relation, and if there are statistics
+ * about the Var or expression (the latter is possible if it's indexed) then
+ * we'll produce a real estimate; otherwise it's just a default.
+ */
+Selectivity
+boolvarsel(PlannerInfo *root, Node *arg, int varRelid)
+{
+	VariableStatData vardata;
+	double		selec;
+
+	examine_variable(root, arg, varRelid, &vardata);
+	if (HeapTupleIsValid(vardata.statsTuple))
+	{
+		/*
+		 * A boolean variable V is equivalent to the clause V = 't', so we
+		 * compute the selectivity as if that is what we have.
+		 */
+		selec = var_eq_const(&vardata, BooleanEqualOperator,
+							 BoolGetDatum(true), false, true);
+	}
+	else if (is_funcclause(arg))
+	{
+		/*
+		 * If we have no stats and it's a function call, estimate 0.3333333.
+		 * This seems a pretty unprincipled choice, but Postgres has been
+		 * using that estimate for function calls since 1992.  The hoariness
+		 * of this behavior suggests that we should not be in too much hurry
+		 * to use another value.
+		 */
+		selec = 0.3333333;
+	}
+	else
+	{
+		/* Otherwise, the default estimate is 0.5 */
+		selec = 0.5;
+	}
+	ReleaseVariableStats(vardata);
+	return selec;
 }
 
 /*
@@ -3932,16 +3977,8 @@ convert_string_datum(Datum value, Oid typid)
 		size_t xfrmlen2 PG_USED_FOR_ASSERTS_ONLY;
 
 		/*
-		 * Note: originally we guessed at a suitable output buffer size, and
-		 * only needed to call strxfrm twice if our guess was too small.
-		 * However, it seems that some versions of Solaris have buggy strxfrm
-		 * that can write past the specified buffer length in that scenario.
-		 * So, do it the dumb way for portability.
-		 *
-		 * Yet other systems (e.g., glibc) sometimes return a smaller value
-		 * from the second call than the first; thus the Assert must be <= not
-		 * == as you'd expect.  Can't any of these people program their way
-		 * out of a paper bag?
+		 * XXX: We could guess at a suitable output buffer size and only call
+		 * strxfrm twice if our guess is too small.
 		 *
 		 * XXX: strxfrm doesn't support UTF-8 encoding on Win32, it can return
 		 * bogus data or set an error. This is not really a problem unless it
@@ -3974,6 +4011,11 @@ convert_string_datum(Datum value, Oid typid)
 #endif
 		xfrmstr = (char *) palloc(xfrmlen + 1);
 		xfrmlen2 = strxfrm(xfrmstr, val, xfrmlen + 1);
+
+		/*
+		 * Some systems (e.g., glibc) can return a smaller value from the
+		 * second call than the first; thus the Assert must be <= not ==.
+		 */
 		Assert(xfrmlen2 <= xfrmlen);
 		pfree(val);
 		val = xfrmstr;
@@ -4635,8 +4677,8 @@ examine_simple_variable(PlannerInfo *root, Var *var,
  * *isdefault: set to TRUE if the result is a default rather than based on
  * anything meaningful.
  *
- * NB: be careful to produce an integral result, since callers may compare
- * the result to exact integer counts.
+ * NB: be careful to produce a positive integral result, since callers may
+ * compare the result to exact integer counts, or might divide by it.
  */
 double
 get_variable_numdistinct(VariableStatData *vardata, bool *isdefault)
@@ -4717,7 +4759,7 @@ get_variable_numdistinct(VariableStatData *vardata, bool *isdefault)
 	 * If we had an absolute estimate, use that.
 	 */
 	if (stadistinct > 0.0)
-		return stadistinct;
+		return clamp_row_est(stadistinct);
 
 	/*
 	 * Otherwise we need to get the relation size; punt if not available.
@@ -4738,7 +4780,7 @@ get_variable_numdistinct(VariableStatData *vardata, bool *isdefault)
 	 * If we had a relative estimate, use that.
 	 */
 	if (stadistinct < 0.0)
-		return floor((-stadistinct * ntuples) + 0.5);
+		return clamp_row_est(-stadistinct * ntuples);
 
 	/*
 	 * With no data, estimate ndistinct = ntuples if the table is small, else
@@ -4746,7 +4788,7 @@ get_variable_numdistinct(VariableStatData *vardata, bool *isdefault)
 	 * that the behavior isn't discontinuous.
 	 */
 	if (ntuples < DEFAULT_NUM_DISTINCT)
-		return ntuples;
+		return clamp_row_est(ntuples);
 
 	*isdefault = true;
 	return DEFAULT_NUM_DISTINCT;

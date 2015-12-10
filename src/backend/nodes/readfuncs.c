@@ -493,7 +493,6 @@ _readQuery(void)
 	READ_NODE_FIELD(rtable);
 	READ_NODE_FIELD(jointree);
 	READ_NODE_FIELD(targetList);
-	READ_NODE_FIELD(withCheckOptions);
 	READ_NODE_FIELD(onConflict);
 	READ_NODE_FIELD(returningList);
 	READ_NODE_FIELD(groupClause);
@@ -550,6 +549,7 @@ _readWithCheckOption(void)
 
 	READ_ENUM_FIELD(kind, WCOKind);
 	READ_STRING_FIELD(relname);
+	READ_STRING_FIELD(polname);
 	READ_NODE_FIELD(qual);
 	READ_BOOL_FIELD(cascaded);
 
@@ -653,85 +653,6 @@ _readCommonTableExpr(void)
 	READ_NODE_FIELD(ctecoltypes);
 	READ_NODE_FIELD(ctecoltypmods);
 	READ_NODE_FIELD(ctecolcollations);
-
-	READ_DONE();
-}
-
-/*
- * _readRangeTableSample
- */
-static RangeTableSample *
-_readRangeTableSample(void)
-{
-	READ_LOCALS(RangeTableSample);
-
-	READ_NODE_FIELD(relation);
-	READ_STRING_FIELD(method);
-	READ_NODE_FIELD(repeatable);
-	READ_NODE_FIELD(args);
-
-	READ_DONE();
-}
-
-/*
- * _readTableSampleClause
- */
-static TableSampleClause *
-_readTableSampleClause(void)
-{
-	READ_LOCALS(TableSampleClause);
-
-#ifdef XCP
-	if (portable_input)
-	{
-		char *tsmname;
-
-		token = pg_strtok(&length);		/* skip :fldname */ \
-		token = pg_strtok(&length);		/* tsmname */
-		tsmname = nullable_string(token, length);
-
-		if (tsmname)
-			local_node->tsmid = get_tablesample_method_id(tsmname);
-		else
-			local_node->tsmid = InvalidOid;
-	}
-	else
-	{
-#endif
-	READ_OID_FIELD(tsmid);
-#ifdef XCP
-	}
-#endif
-	
-	READ_BOOL_FIELD(tsmseqscan);
-	READ_BOOL_FIELD(tsmpagemode);
-
-#ifdef XCP
-	if (portable_input)
-	{
-		READ_FUNCID_FIELD(tsminit);
-		READ_FUNCID_FIELD(tsmnextblock);
-		READ_FUNCID_FIELD(tsmnexttuple);
-		READ_FUNCID_FIELD(tsmexaminetuple);
-		READ_FUNCID_FIELD(tsmend);
-		READ_FUNCID_FIELD(tsmreset);
-		READ_FUNCID_FIELD(tsmcost);
-	}
-	else
-	{
-#endif
-	READ_OID_FIELD(tsminit);
-	READ_OID_FIELD(tsmnextblock);
-	READ_OID_FIELD(tsmnexttuple);
-	READ_OID_FIELD(tsmexaminetuple);
-	READ_OID_FIELD(tsmend);
-	READ_OID_FIELD(tsmreset);
-	READ_OID_FIELD(tsmcost);
-#ifdef XCP
-	}
-#endif
-	READ_NODE_FIELD(repeatable);
-	READ_NODE_FIELD(args);
 
 	READ_DONE();
 }
@@ -963,7 +884,7 @@ _readGroupingFunc(void)
 	READ_NODE_FIELD(args);
 	READ_NODE_FIELD(refs);
 	READ_NODE_FIELD(cols);
-	READ_INT_FIELD(agglevelsup);
+	READ_UINT_FIELD(agglevelsup);
 	READ_LOCATION_FIELD(location);
 
 	READ_DONE();
@@ -1990,9 +1911,9 @@ _readOnConflictExpr(void)
 	READ_ENUM_FIELD(action, OnConflictAction);
 	READ_NODE_FIELD(arbiterElems);
 	READ_NODE_FIELD(arbiterWhere);
+	READ_OID_FIELD(constraint);
 	READ_NODE_FIELD(onConflictSet);
 	READ_NODE_FIELD(onConflictWhere);
-	READ_OID_FIELD(constraint);
 	READ_INT_FIELD(exclRelIndex);
 	READ_NODE_FIELD(exclRelTlist);
 
@@ -2105,6 +2026,32 @@ _readRangeTblFunction(void)
 	READ_DONE();
 }
 
+/*
+ * _readTableSampleClause
+ */
+static TableSampleClause *
+_readTableSampleClause(void)
+{
+	READ_LOCALS(TableSampleClause);
+
+#ifdef XCP
+	if (portable_input)
+	{
+		READ_FUNCID_FIELD(tsmhandler);
+	}
+	else
+	{
+#endif
+	READ_OID_FIELD(tsmhandler);
+#ifdef XCP
+	}
+#endif
+	READ_NODE_FIELD(args);
+	READ_NODE_FIELD(repeatable);
+
+	READ_DONE();
+}
+
 
 #ifdef XCP
 /*
@@ -2117,7 +2064,6 @@ _readPlan(void)
 
 	READ_DONE();
 }
-
 
 
 /*
@@ -2380,6 +2326,7 @@ static SampleScan *
 _readSampleScan(void)
 {
 	READ_SCAN_FIELDS(SampleScan);
+	READ_NODE_FIELD(tablesample);
 
 	READ_DONE();
 }
@@ -3471,10 +3418,6 @@ parseNodeString(void)
 		return_value = _readRowMarkClause();
 	else if (MATCH("COMMONTABLEEXPR", 15))
 		return_value = _readCommonTableExpr();
-	else if (MATCH("RANGETABLESAMPLE", 16))
-		return_value = _readRangeTableSample();
-	else if (MATCH("TABLESAMPLECLAUSE", 17))
-		return_value = _readTableSampleClause();
 	else if (MATCH("SETOPERATIONSTMT", 16))
 		return_value = _readSetOperationStmt();
 	else if (MATCH("ALIAS", 5))
@@ -3577,6 +3520,8 @@ parseNodeString(void)
 		return_value = _readRangeTblEntry();
 	else if (MATCH("RANGETBLFUNCTION", 16))
 		return_value = _readRangeTblFunction();
+	else if (MATCH("TABLESAMPLECLAUSE", 17))
+		return_value = _readTableSampleClause();
 	else if (MATCH("NOTIFY", 6))
 		return_value = _readNotifyStmt();
 	else if (MATCH("DECLARECURSOR", 13))

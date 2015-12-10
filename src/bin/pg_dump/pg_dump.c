@@ -167,6 +167,7 @@ static void dumpType(Archive *fout, DumpOptions *dopt, TypeInfo *tyinfo);
 static void dumpBaseType(Archive *fout, DumpOptions *dopt, TypeInfo *tyinfo);
 static void dumpEnumType(Archive *fout, DumpOptions *dopt, TypeInfo *tyinfo);
 static void dumpRangeType(Archive *fout, DumpOptions *dopt, TypeInfo *tyinfo);
+static void dumpUndefinedType(Archive *fout, DumpOptions *dopt, TypeInfo *tyinfo);
 static void dumpDomain(Archive *fout, DumpOptions *dopt, TypeInfo *tyinfo);
 static void dumpCompositeType(Archive *fout, DumpOptions *dopt, TypeInfo *tyinfo);
 static void dumpCompositeTypeColComments(Archive *fout, TypeInfo *tyinfo);
@@ -497,6 +498,11 @@ main(int argc, char **argv)
 
 			case 'Z':			/* Compression Level */
 				compressLevel = atoi(optarg);
+				if (compressLevel < 0 || compressLevel > 9)
+				{
+					write_msg(NULL, "compression level must be in range 0..9\n");
+					exit_nicely(1);
+				}
 				break;
 
 			case 0:
@@ -899,7 +905,8 @@ help(const char *progname)
 	printf(_("  --column-inserts             dump data as INSERT commands with column names\n"));
 	printf(_("  --disable-dollar-quoting     disable dollar quoting, use SQL standard quoting\n"));
 	printf(_("  --disable-triggers           disable triggers during data-only restore\n"));
-	printf(_("  --enable-row-security        enable row level security\n"));
+	printf(_("  --enable-row-security        enable row security (dump only content user has\n"
+			 "                               access to)\n"));
 	printf(_("  --exclude-table-data=TABLE   do NOT dump data for the named table(s)\n"));
 	printf(_("  --if-exists                  use IF EXISTS when dropping objects\n"));
 	printf(_("  --inserts                    dump data as INSERT commands, rather than COPY\n"));
@@ -910,7 +917,7 @@ help(const char *progname)
 	printf(_("  --quote-all-identifiers      quote all identifiers, even if not key words\n"));
 	printf(_("  --section=SECTION            dump named section (pre-data, data, or post-data)\n"));
 	printf(_("  --serializable-deferrable    wait until the dump can run without anomalies\n"));
-	printf(_("  --snapshot=SNAPSHOT          use given synchronous snapshot for the dump\n"));
+	printf(_("  --snapshot=SNAPSHOT          use given snapshot for the dump\n"));
 	printf(_("  --use-set-session-authorization\n"
 			 "                               use SET SESSION AUTHORIZATION commands instead of\n"
 			 "                               ALTER OWNER commands to set ownership\n"));
@@ -1350,11 +1357,6 @@ selectDumpableType(TypeInfo *tyinfo)
 	/* dump only types in dumpable namespaces */
 	if (!tyinfo->dobj.namespace->dobj.dump)
 		tyinfo->dobj.dump = false;
-
-	/* skip undefined placeholder types */
-	else if (!tyinfo->isDefined)
-		tyinfo->dobj.dump = false;
-
 	else
 		tyinfo->dobj.dump = true;
 }
@@ -1460,7 +1462,7 @@ dumpTableData_copy(Archive *fout, DumpOptions *dopt, void *dcontext)
 	const char *column_list;
 
 	if (g_verbose)
-		write_msg(NULL, "dumping contents of table \"%s\".\"%s\"\n",
+		write_msg(NULL, "dumping contents of table \"%s.%s\"\n",
 				  tbinfo->dobj.namespace->dobj.name, classname);
 
 	/*
@@ -1685,7 +1687,7 @@ dumpTableData_insert(Archive *fout, DumpOptions *dopt, void *dcontext)
 					/* append the list of column names if required */
 					if (dopt->column_inserts)
 					{
-						appendPQExpBufferStr(insertStmt, "(");
+						appendPQExpBufferChar(insertStmt, '(');
 						for (field = 0; field < nfields; field++)
 						{
 							if (field > 0)
@@ -2857,7 +2859,7 @@ getPolicies(Archive *fout, TableInfo tblinfo[], int numTables)
 			continue;
 
 		if (g_verbose)
-			write_msg(NULL, "reading row security enabled for table \"%s\".\"%s\"\n",
+			write_msg(NULL, "reading row security enabled for table \"%s.%s\"\n",
 					  tbinfo->dobj.namespace->dobj.name,
 					  tbinfo->dobj.name);
 
@@ -2888,7 +2890,7 @@ getPolicies(Archive *fout, TableInfo tblinfo[], int numTables)
 		}
 
 		if (g_verbose)
-			write_msg(NULL, "reading policies for table \"%s\".\"%s\"\n",
+			write_msg(NULL, "reading policies for table \"%s.%s\"\n",
 					  tbinfo->dobj.namespace->dobj.name,
 					  tbinfo->dobj.name);
 
@@ -3033,10 +3035,10 @@ dumpPolicy(Archive *fout, DumpOptions *dopt, PolicyInfo *polinfo)
 		appendPQExpBuffer(query, " TO %s", polinfo->polroles);
 
 	if (polinfo->polqual != NULL)
-		appendPQExpBuffer(query, " USING %s", polinfo->polqual);
+		appendPQExpBuffer(query, " USING (%s)", polinfo->polqual);
 
 	if (polinfo->polwithcheck != NULL)
-		appendPQExpBuffer(query, " WITH CHECK %s", polinfo->polwithcheck);
+		appendPQExpBuffer(query, " WITH CHECK (%s)", polinfo->polwithcheck);
 
 	appendPQExpBuffer(query, ";\n");
 
@@ -3538,7 +3540,7 @@ getTypes(Archive *fout, int *numTypes)
 	else if (fout->remoteVersion >= 80300)
 	{
 		appendPQExpBuffer(query, "SELECT tableoid, oid, typname, "
-						  "typnamespace, '{=U}' AS typacl, "
+						  "typnamespace, NULL AS typacl, "
 						  "(%s typowner) AS rolname, "
 						  "typinput::oid AS typinput, "
 						  "typoutput::oid AS typoutput, typelem, typrelid, "
@@ -3553,7 +3555,7 @@ getTypes(Archive *fout, int *numTypes)
 	else if (fout->remoteVersion >= 70300)
 	{
 		appendPQExpBuffer(query, "SELECT tableoid, oid, typname, "
-						  "typnamespace, '{=U}' AS typacl, "
+						  "typnamespace, NULL AS typacl, "
 						  "(%s typowner) AS rolname, "
 						  "typinput::oid AS typinput, "
 						  "typoutput::oid AS typoutput, typelem, typrelid, "
@@ -3567,7 +3569,7 @@ getTypes(Archive *fout, int *numTypes)
 	else if (fout->remoteVersion >= 70100)
 	{
 		appendPQExpBuffer(query, "SELECT tableoid, oid, typname, "
-						  "0::oid AS typnamespace, '{=U}' AS typacl, "
+						  "0::oid AS typnamespace, NULL AS typacl, "
 						  "(%s typowner) AS rolname, "
 						  "typinput::oid AS typinput, "
 						  "typoutput::oid AS typoutput, typelem, typrelid, "
@@ -3583,7 +3585,7 @@ getTypes(Archive *fout, int *numTypes)
 		appendPQExpBuffer(query, "SELECT "
 		 "(SELECT oid FROM pg_class WHERE relname = 'pg_type') AS tableoid, "
 						  "oid, typname, "
-						  "0::oid AS typnamespace, '{=U}' AS typacl, "
+						  "0::oid AS typnamespace, NULL AS typacl, "
 						  "(%s typowner) AS rolname, "
 						  "typinput::oid AS typinput, "
 						  "typoutput::oid AS typoutput, typelem, typrelid, "
@@ -3728,7 +3730,7 @@ getTypes(Archive *fout, int *numTypes)
 			}
 		}
 
-		if (strlen(tyinfo[i].rolname) == 0 && tyinfo[i].isDefined)
+		if (strlen(tyinfo[i].rolname) == 0)
 			write_msg(NULL, "WARNING: owner of data type \"%s\" appears to be invalid\n",
 					  tyinfo[i].dobj.name);
 	}
@@ -4274,7 +4276,7 @@ getAggregates(Archive *fout, DumpOptions *dopt, int *numAggs)
 				  "CASE WHEN aggbasetype = 0 THEN 0 ELSE 1 END AS pronargs, "
 						  "aggbasetype AS proargtypes, "
 						  "(%s aggowner) AS rolname, "
-						  "'{=X}' AS aggacl "
+						  "NULL AS aggacl "
 						  "FROM pg_aggregate "
 						  "where oid > '%u'::oid",
 						  username_subquery,
@@ -4289,7 +4291,7 @@ getAggregates(Archive *fout, DumpOptions *dopt, int *numAggs)
 				  "CASE WHEN aggbasetype = 0 THEN 0 ELSE 1 END AS pronargs, "
 						  "aggbasetype AS proargtypes, "
 						  "(%s aggowner) AS rolname, "
-						  "'{=X}' AS aggacl "
+						  "NULL AS aggacl "
 						  "FROM pg_aggregate "
 						  "where oid > '%u'::oid",
 						  username_subquery,
@@ -4433,7 +4435,7 @@ getFuncs(Archive *fout, DumpOptions *dopt, int *numFuncs)
 		appendPQExpBuffer(query,
 						  "SELECT tableoid, oid, proname, prolang, "
 						  "pronargs, proargtypes, prorettype, "
-						  "'{=X}' AS proacl, "
+						  "NULL AS proacl, "
 						  "0::oid AS pronamespace, "
 						  "(%s proowner) AS rolname "
 						  "FROM pg_proc "
@@ -4449,7 +4451,7 @@ getFuncs(Archive *fout, DumpOptions *dopt, int *numFuncs)
 						  " WHERE relname = 'pg_proc') AS tableoid, "
 						  "oid, proname, prolang, "
 						  "pronargs, proargtypes, prorettype, "
-						  "'{=X}' AS proacl, "
+						  "NULL AS proacl, "
 						  "0::oid AS pronamespace, "
 						  "(%s proowner) AS rolname "
 						  "FROM pg_proc "
@@ -4545,6 +4547,7 @@ getTables(Archive *fout, DumpOptions *dopt, int *numTables)
 	int			i_relhasindex;
 	int			i_relhasrules;
 	int			i_relrowsec;
+	int			i_relforcerowsec;
 	int			i_relhasoids;
 	int			i_relfrozenxid;
 	int			i_relminmxid;
@@ -4603,7 +4606,7 @@ getTables(Archive *fout, DumpOptions *dopt, int *numTables)
 						  "(%s c.relowner) AS rolname, "
 						  "c.relchecks, c.relhastriggers, "
 						  "c.relhasindex, c.relhasrules, c.relhasoids, "
-						  "c.relrowsecurity, "
+						  "c.relrowsecurity, c.relforcerowsecurity, "
 						  "c.relfrozenxid, c.relminmxid, tc.oid AS toid, "
 						  "tc.relfrozenxid AS tfrozenxid, "
 						  "tc.relminmxid AS tminmxid, "
@@ -4650,6 +4653,7 @@ getTables(Archive *fout, DumpOptions *dopt, int *numTables)
 						  "c.relchecks, c.relhastriggers, "
 						  "c.relhasindex, c.relhasrules, c.relhasoids, "
 						  "'f'::bool AS relrowsecurity, "
+						  "'f'::bool AS relforcerowsecurity, "
 						  "c.relfrozenxid, c.relminmxid, tc.oid AS toid, "
 						  "tc.relfrozenxid AS tfrozenxid, "
 						  "tc.relminmxid AS tminmxid, "
@@ -4696,6 +4700,7 @@ getTables(Archive *fout, DumpOptions *dopt, int *numTables)
 						  "c.relchecks, c.relhastriggers, "
 						  "c.relhasindex, c.relhasrules, c.relhasoids, "
 						  "'f'::bool AS relrowsecurity, "
+						  "'f'::bool AS relforcerowsecurity, "
 						  "c.relfrozenxid, c.relminmxid, tc.oid AS toid, "
 						  "tc.relfrozenxid AS tfrozenxid, "
 						  "tc.relminmxid AS tminmxid, "
@@ -4742,6 +4747,7 @@ getTables(Archive *fout, DumpOptions *dopt, int *numTables)
 						  "c.relchecks, c.relhastriggers, "
 						  "c.relhasindex, c.relhasrules, c.relhasoids, "
 						  "'f'::bool AS relrowsecurity, "
+						  "'f'::bool AS relforcerowsecurity, "
 						  "c.relfrozenxid, 0 AS relminmxid, tc.oid AS toid, "
 						  "tc.relfrozenxid AS tfrozenxid, "
 						  "0 AS tminmxid, "
@@ -4786,6 +4792,7 @@ getTables(Archive *fout, DumpOptions *dopt, int *numTables)
 						  "c.relchecks, c.relhastriggers, "
 						  "c.relhasindex, c.relhasrules, c.relhasoids, "
 						  "'f'::bool AS relrowsecurity, "
+						  "'f'::bool AS relforcerowsecurity, "
 						  "c.relfrozenxid, 0 AS relminmxid, tc.oid AS toid, "
 						  "tc.relfrozenxid AS tfrozenxid, "
 						  "0 AS tminmxid, "
@@ -4824,6 +4831,7 @@ getTables(Archive *fout, DumpOptions *dopt, int *numTables)
 						  "c.relchecks, c.relhastriggers, "
 						  "c.relhasindex, c.relhasrules, c.relhasoids, "
 						  "'f'::bool AS relrowsecurity, "
+						  "'f'::bool AS relforcerowsecurity, "
 						  "c.relfrozenxid, 0 AS relminmxid, tc.oid AS toid, "
 						  "tc.relfrozenxid AS tfrozenxid, "
 						  "0 AS tminmxid, "
@@ -4862,6 +4870,7 @@ getTables(Archive *fout, DumpOptions *dopt, int *numTables)
 					  "c.relchecks, (c.reltriggers <> 0) AS relhastriggers, "
 						  "c.relhasindex, c.relhasrules, c.relhasoids, "
 						  "'f'::bool AS relrowsecurity, "
+						  "'f'::bool AS relforcerowsecurity, "
 						  "c.relfrozenxid, 0 AS relminmxid, tc.oid AS toid, "
 						  "tc.relfrozenxid AS tfrozenxid, "
 						  "0 AS tminmxid, "
@@ -4900,6 +4909,7 @@ getTables(Archive *fout, DumpOptions *dopt, int *numTables)
 						  "relchecks, (reltriggers <> 0) AS relhastriggers, "
 						  "relhasindex, relhasrules, relhasoids, "
 						  "'f'::bool AS relrowsecurity, "
+						  "'f'::bool AS relforcerowsecurity, "
 						  "0 AS relfrozenxid, 0 AS relminmxid,"
 						  "0 AS toid, "
 						  "0 AS tfrozenxid, 0 AS tminmxid,"
@@ -4937,6 +4947,7 @@ getTables(Archive *fout, DumpOptions *dopt, int *numTables)
 						  "relchecks, (reltriggers <> 0) AS relhastriggers, "
 						  "relhasindex, relhasrules, relhasoids, "
 						  "'f'::bool AS relrowsecurity, "
+						  "'f'::bool AS relforcerowsecurity, "
 						  "0 AS relfrozenxid, 0 AS relminmxid,"
 						  "0 AS toid, "
 						  "0 AS tfrozenxid, 0 AS tminmxid,"
@@ -4970,6 +4981,7 @@ getTables(Archive *fout, DumpOptions *dopt, int *numTables)
 						  "relchecks, (reltriggers <> 0) AS relhastriggers, "
 						  "relhasindex, relhasrules, relhasoids, "
 						  "'f'::bool AS relrowsecurity, "
+						  "'f'::bool AS relforcerowsecurity, "
 						  "0 AS relfrozenxid, 0 AS relminmxid,"
 						  "0 AS toid, "
 						  "0 AS tfrozenxid, 0 AS tminmxid,"
@@ -4998,6 +5010,7 @@ getTables(Archive *fout, DumpOptions *dopt, int *numTables)
 						  "relhasindex, relhasrules, "
 						  "'t'::bool AS relhasoids, "
 						  "'f'::bool AS relrowsecurity, "
+						  "'f'::bool AS relforcerowsecurity, "
 						  "0 AS relfrozenxid, 0 AS relminmxid,"
 						  "0 AS toid, "
 						  "0 AS tfrozenxid, 0 AS tminmxid,"
@@ -5036,6 +5049,7 @@ getTables(Archive *fout, DumpOptions *dopt, int *numTables)
 						  "relhasindex, relhasrules, "
 						  "'t'::bool AS relhasoids, "
 						  "'f'::bool AS relrowsecurity, "
+						  "'f'::bool AS relforcerowsecurity, "
 						  "0 AS relfrozenxid, 0 AS relminmxid,"
 						  "0 AS toid, "
 						  "0 AS tfrozenxid, 0 AS tminmxid,"
@@ -5084,6 +5098,7 @@ getTables(Archive *fout, DumpOptions *dopt, int *numTables)
 	i_relhasindex = PQfnumber(res, "relhasindex");
 	i_relhasrules = PQfnumber(res, "relhasrules");
 	i_relrowsec = PQfnumber(res, "relrowsecurity");
+	i_relforcerowsec = PQfnumber(res, "relforcerowsecurity");
 	i_relhasoids = PQfnumber(res, "relhasoids");
 	i_relfrozenxid = PQfnumber(res, "relfrozenxid");
 	i_relminmxid = PQfnumber(res, "relminmxid");
@@ -5141,6 +5156,7 @@ getTables(Archive *fout, DumpOptions *dopt, int *numTables)
 		tblinfo[i].hasrules = (strcmp(PQgetvalue(res, i, i_relhasrules), "t") == 0);
 		tblinfo[i].hastriggers = (strcmp(PQgetvalue(res, i, i_relhastriggers), "t") == 0);
 		tblinfo[i].rowsec = (strcmp(PQgetvalue(res, i, i_relrowsec), "t") == 0);
+		tblinfo[i].forcerowsec = (strcmp(PQgetvalue(res, i, i_relforcerowsec), "t") == 0);
 		tblinfo[i].hasoids = (strcmp(PQgetvalue(res, i, i_relhasoids), "t") == 0);
 		tblinfo[i].relispopulated = (strcmp(PQgetvalue(res, i, i_relispopulated), "t") == 0);
 		tblinfo[i].relreplident = *(PQgetvalue(res, i, i_relreplident));
@@ -5376,7 +5392,7 @@ getIndexes(Archive *fout, TableInfo tblinfo[], int numTables)
 			continue;
 
 		if (g_verbose)
-			write_msg(NULL, "reading indexes for table \"%s\".\"%s\"\n",
+			write_msg(NULL, "reading indexes for table \"%s.%s\"\n",
 					  tbinfo->dobj.namespace->dobj.name,
 					  tbinfo->dobj.name);
 
@@ -5743,7 +5759,7 @@ getConstraints(Archive *fout, TableInfo tblinfo[], int numTables)
 			continue;
 
 		if (g_verbose)
-			write_msg(NULL, "reading foreign key constraints for table \"%s\".\"%s\"\n",
+			write_msg(NULL, "reading foreign key constraints for table \"%s.%s\"\n",
 					  tbinfo->dobj.namespace->dobj.name,
 					  tbinfo->dobj.name);
 
@@ -6082,7 +6098,7 @@ getTriggers(Archive *fout, TableInfo tblinfo[], int numTables)
 			continue;
 
 		if (g_verbose)
-			write_msg(NULL, "reading triggers for table \"%s\".\"%s\"\n",
+			write_msg(NULL, "reading triggers for table \"%s.%s\"\n",
 					  tbinfo->dobj.namespace->dobj.name,
 					  tbinfo->dobj.name);
 
@@ -6386,7 +6402,7 @@ getProcLangs(Archive *fout, int *numProcLangs)
 		/* pg_language has a laninline column */
 		appendPQExpBuffer(query, "SELECT tableoid, oid, "
 						  "lanname, lanpltrusted, lanplcallfoid, "
-						  "laninline, lanvalidator,  lanacl, "
+						  "laninline, lanvalidator, lanacl, "
 						  "(%s lanowner) AS lanowner "
 						  "FROM pg_language "
 						  "WHERE lanispl "
@@ -6398,7 +6414,7 @@ getProcLangs(Archive *fout, int *numProcLangs)
 		/* pg_language has a lanowner column */
 		appendPQExpBuffer(query, "SELECT tableoid, oid, "
 						  "lanname, lanpltrusted, lanplcallfoid, "
-						  "lanvalidator,  lanacl, "
+						  "0 AS laninline, lanvalidator, lanacl, "
 						  "(%s lanowner) AS lanowner "
 						  "FROM pg_language "
 						  "WHERE lanispl "
@@ -6408,7 +6424,9 @@ getProcLangs(Archive *fout, int *numProcLangs)
 	else if (fout->remoteVersion >= 80100)
 	{
 		/* Languages are owned by the bootstrap superuser, OID 10 */
-		appendPQExpBuffer(query, "SELECT tableoid, oid, *, "
+		appendPQExpBuffer(query, "SELECT tableoid, oid, "
+						  "lanname, lanpltrusted, lanplcallfoid, "
+						  "0 AS laninline, lanvalidator, lanacl, "
 						  "(%s '10') AS lanowner "
 						  "FROM pg_language "
 						  "WHERE lanispl "
@@ -6418,27 +6436,47 @@ getProcLangs(Archive *fout, int *numProcLangs)
 	else if (fout->remoteVersion >= 70400)
 	{
 		/* Languages are owned by the bootstrap superuser, sysid 1 */
-		appendPQExpBuffer(query, "SELECT tableoid, oid, *, "
+		appendPQExpBuffer(query, "SELECT tableoid, oid, "
+						  "lanname, lanpltrusted, lanplcallfoid, "
+						  "0 AS laninline, lanvalidator, lanacl, "
 						  "(%s '1') AS lanowner "
 						  "FROM pg_language "
 						  "WHERE lanispl "
 						  "ORDER BY oid",
 						  username_subquery);
 	}
-	else if (fout->remoteVersion >= 70100)
+	else if (fout->remoteVersion >= 70300)
 	{
 		/* No clear notion of an owner at all before 7.4 ... */
-		appendPQExpBufferStr(query, "SELECT tableoid, oid, * FROM pg_language "
-							 "WHERE lanispl "
-							 "ORDER BY oid");
+		appendPQExpBuffer(query, "SELECT tableoid, oid, "
+						  "lanname, lanpltrusted, lanplcallfoid, "
+						  "0 AS laninline, lanvalidator, lanacl, "
+						  "NULL AS lanowner "
+						  "FROM pg_language "
+						  "WHERE lanispl "
+						  "ORDER BY oid");
+	}
+	else if (fout->remoteVersion >= 70100)
+	{
+		appendPQExpBuffer(query, "SELECT tableoid, oid, "
+						  "lanname, lanpltrusted, lanplcallfoid, "
+						"0 AS laninline, 0 AS lanvalidator, NULL AS lanacl, "
+						  "NULL AS lanowner "
+						  "FROM pg_language "
+						  "WHERE lanispl "
+						  "ORDER BY oid");
 	}
 	else
 	{
-		appendPQExpBufferStr(query, "SELECT "
-							 "(SELECT oid FROM pg_class WHERE relname = 'pg_language') AS tableoid, "
-							 "oid, * FROM pg_language "
-							 "WHERE lanispl "
-							 "ORDER BY oid");
+		appendPQExpBuffer(query, "SELECT "
+						  "(SELECT oid FROM pg_class WHERE relname = 'pg_language') AS tableoid, "
+						  "oid, "
+						  "lanname, lanpltrusted, lanplcallfoid, "
+						"0 AS laninline, 0 AS lanvalidator, NULL AS lanacl, "
+						  "NULL AS lanowner "
+						  "FROM pg_language "
+						  "WHERE lanispl "
+						  "ORDER BY oid");
 	}
 
 	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
@@ -6454,7 +6492,6 @@ getProcLangs(Archive *fout, int *numProcLangs)
 	i_lanname = PQfnumber(res, "lanname");
 	i_lanpltrusted = PQfnumber(res, "lanpltrusted");
 	i_lanplcallfoid = PQfnumber(res, "lanplcallfoid");
-	/* these may fail and return -1: */
 	i_laninline = PQfnumber(res, "laninline");
 	i_lanvalidator = PQfnumber(res, "lanvalidator");
 	i_lanacl = PQfnumber(res, "lanacl");
@@ -6470,22 +6507,10 @@ getProcLangs(Archive *fout, int *numProcLangs)
 		planginfo[i].dobj.name = pg_strdup(PQgetvalue(res, i, i_lanname));
 		planginfo[i].lanpltrusted = *(PQgetvalue(res, i, i_lanpltrusted)) == 't';
 		planginfo[i].lanplcallfoid = atooid(PQgetvalue(res, i, i_lanplcallfoid));
-		if (i_laninline >= 0)
-			planginfo[i].laninline = atooid(PQgetvalue(res, i, i_laninline));
-		else
-			planginfo[i].laninline = InvalidOid;
-		if (i_lanvalidator >= 0)
-			planginfo[i].lanvalidator = atooid(PQgetvalue(res, i, i_lanvalidator));
-		else
-			planginfo[i].lanvalidator = InvalidOid;
-		if (i_lanacl >= 0)
-			planginfo[i].lanacl = pg_strdup(PQgetvalue(res, i, i_lanacl));
-		else
-			planginfo[i].lanacl = pg_strdup("{=U}");
-		if (i_lanowner >= 0)
-			planginfo[i].lanowner = pg_strdup(PQgetvalue(res, i, i_lanowner));
-		else
-			planginfo[i].lanowner = pg_strdup("");
+		planginfo[i].laninline = atooid(PQgetvalue(res, i, i_laninline));
+		planginfo[i].lanvalidator = atooid(PQgetvalue(res, i, i_lanvalidator));
+		planginfo[i].lanacl = pg_strdup(PQgetvalue(res, i, i_lanacl));
+		planginfo[i].lanowner = pg_strdup(PQgetvalue(res, i, i_lanowner));
 
 		if (fout->remoteVersion < 70300)
 		{
@@ -6730,6 +6755,7 @@ getTransforms(Archive *fout, int *numTransforms)
 			appendPQExpBuffer(&namebuf, "%s %s",
 							  typeInfo->dobj.name, lanname);
 		transforminfo[i].dobj.name = namebuf.data;
+		free(lanname);
 	}
 
 	PQclear(res);
@@ -6806,7 +6832,7 @@ getTableAttrs(Archive *fout, DumpOptions *dopt, TableInfo *tblinfo, int numTable
 		 * the output of an indexscan on pg_attribute_relid_attnum_index.
 		 */
 		if (g_verbose)
-			write_msg(NULL, "finding the columns and types of table \"%s\".\"%s\"\n",
+			write_msg(NULL, "finding the columns and types of table \"%s.%s\"\n",
 					  tbinfo->dobj.namespace->dobj.name,
 					  tbinfo->dobj.name);
 
@@ -7019,7 +7045,7 @@ getTableAttrs(Archive *fout, DumpOptions *dopt, TableInfo *tblinfo, int numTable
 			int			numDefaults;
 
 			if (g_verbose)
-				write_msg(NULL, "finding default expressions of table \"%s\".\"%s\"\n",
+				write_msg(NULL, "finding default expressions of table \"%s.%s\"\n",
 						  tbinfo->dobj.namespace->dobj.name,
 						  tbinfo->dobj.name);
 
@@ -7144,7 +7170,7 @@ getTableAttrs(Archive *fout, DumpOptions *dopt, TableInfo *tblinfo, int numTable
 			int			numConstrs;
 
 			if (g_verbose)
-				write_msg(NULL, "finding check constraints for table \"%s\".\"%s\"\n",
+				write_msg(NULL, "finding check constraints for table \"%s.%s\"\n",
 						  tbinfo->dobj.namespace->dobj.name,
 						  tbinfo->dobj.name);
 
@@ -8618,6 +8644,8 @@ dumpType(Archive *fout, DumpOptions *dopt, TypeInfo *tyinfo)
 		dumpEnumType(fout, dopt, tyinfo);
 	else if (tyinfo->typtype == TYPTYPE_RANGE)
 		dumpRangeType(fout, dopt, tyinfo);
+	else if (tyinfo->typtype == TYPTYPE_PSEUDO && !tyinfo->isDefined)
+		dumpUndefinedType(fout, dopt, tyinfo);
 	else
 		write_msg(NULL, "WARNING: typtype of data type \"%s\" appears to be invalid\n",
 				  tyinfo->dobj.name);
@@ -8882,6 +8910,73 @@ dumpRangeType(Archive *fout, DumpOptions *dopt, TypeInfo *tyinfo)
 	destroyPQExpBuffer(delq);
 	destroyPQExpBuffer(labelq);
 	destroyPQExpBuffer(query);
+}
+
+/*
+ * dumpUndefinedType
+ *	  writes out to fout the queries to recreate a !typisdefined type
+ *
+ * This is a shell type, but we use different terminology to distinguish
+ * this case from where we have to emit a shell type definition to break
+ * circular dependencies.  An undefined type shouldn't ever have anything
+ * depending on it.
+ */
+static void
+dumpUndefinedType(Archive *fout, DumpOptions *dopt, TypeInfo *tyinfo)
+{
+	PQExpBuffer q = createPQExpBuffer();
+	PQExpBuffer delq = createPQExpBuffer();
+	PQExpBuffer labelq = createPQExpBuffer();
+	char	   *qtypname;
+
+	qtypname = pg_strdup(fmtId(tyinfo->dobj.name));
+
+	/*
+	 * DROP must be fully qualified in case same name appears in pg_catalog.
+	 */
+	appendPQExpBuffer(delq, "DROP TYPE %s.",
+					  fmtId(tyinfo->dobj.namespace->dobj.name));
+	appendPQExpBuffer(delq, "%s;\n",
+					  qtypname);
+
+	if (dopt->binary_upgrade)
+		binary_upgrade_set_type_oids_by_type_oid(fout,
+												 q, tyinfo->dobj.catId.oid);
+
+	appendPQExpBuffer(q, "CREATE TYPE %s;\n",
+					  qtypname);
+
+	appendPQExpBuffer(labelq, "TYPE %s", qtypname);
+
+	if (dopt->binary_upgrade)
+		binary_upgrade_extension_member(q, &tyinfo->dobj, labelq->data);
+
+	ArchiveEntry(fout, tyinfo->dobj.catId, tyinfo->dobj.dumpId,
+				 tyinfo->dobj.name,
+				 tyinfo->dobj.namespace->dobj.name,
+				 NULL,
+				 tyinfo->rolname, false,
+				 "TYPE", SECTION_PRE_DATA,
+				 q->data, delq->data, NULL,
+				 NULL, 0,
+				 NULL, NULL);
+
+	/* Dump Type Comments and Security Labels */
+	dumpComment(fout, dopt, labelq->data,
+				tyinfo->dobj.namespace->dobj.name, tyinfo->rolname,
+				tyinfo->dobj.catId, 0, tyinfo->dobj.dumpId);
+	dumpSecLabel(fout, dopt, labelq->data,
+				 tyinfo->dobj.namespace->dobj.name, tyinfo->rolname,
+				 tyinfo->dobj.catId, 0, tyinfo->dobj.dumpId);
+
+	dumpACL(fout, dopt, tyinfo->dobj.catId, tyinfo->dobj.dumpId, "TYPE",
+			qtypname, NULL, tyinfo->dobj.name,
+			tyinfo->dobj.namespace->dobj.name,
+			tyinfo->rolname, tyinfo->typacl);
+
+	destroyPQExpBuffer(q);
+	destroyPQExpBuffer(delq);
+	destroyPQExpBuffer(labelq);
 }
 
 /*
@@ -11402,7 +11497,7 @@ dumpOpclass(Archive *fout, DumpOptions *dopt, OpclassInfo *opcinfo)
 		appendPQExpBufferStr(q, " FAMILY ");
 		if (strcmp(opcfamilynsp, opcinfo->dobj.namespace->dobj.name) != 0)
 			appendPQExpBuffer(q, "%s.", fmtId(opcfamilynsp));
-		appendPQExpBuffer(q, "%s", fmtId(opcfamilyname));
+		appendPQExpBufferStr(q, fmtId(opcfamilyname));
 	}
 	appendPQExpBufferStr(q, " AS\n    ");
 
@@ -13914,7 +14009,7 @@ dumpTableSchema(Archive *fout, DumpOptions *dopt, TableInfo *tbinfo)
 					if (actual_atts == 0)
 						appendPQExpBufferStr(q, " (");
 					else
-						appendPQExpBufferStr(q, ",");
+						appendPQExpBufferChar(q, ',');
 					appendPQExpBufferStr(q, "\n    ");
 					actual_atts++;
 
@@ -14377,6 +14472,10 @@ dumpTableSchema(Archive *fout, DumpOptions *dopt, TableInfo *tbinfo)
 		appendPQExpBuffer(q, "\nALTER TABLE ONLY %s SET WITH OIDS;\n",
 						  fmtId(tbinfo->dobj.name));
 
+	if (tbinfo->forcerowsec)
+		appendPQExpBuffer(q, "\nALTER TABLE ONLY %s FORCE ROW LEVEL SECURITY;\n",
+						  fmtId(tbinfo->dobj.name));
+
 	if (dopt->binary_upgrade)
 		binary_upgrade_extension_member(q, &tbinfo->dobj, labelq->data);
 
@@ -14741,8 +14840,8 @@ dumpConstraint(Archive *fout, DumpOptions *dopt, ConstraintInfo *coninfo)
 	{
 		/* CHECK constraint on a table */
 
-		/* Ignore if not to be dumped separately */
-		if (coninfo->separate)
+		/* Ignore if not to be dumped separately, or if it was inherited */
+		if (coninfo->separate && coninfo->conislocal)
 		{
 			/* not ONLY since we want it to propagate to children */
 			appendPQExpBuffer(q, "ALTER TABLE %s\n",
@@ -15414,13 +15513,12 @@ dumpEventTrigger(Archive *fout, DumpOptions *dopt, EventTriggerInfo *evtinfo)
 	appendPQExpBufferStr(query, fmtId(evtinfo->dobj.name));
 	appendPQExpBufferStr(query, " ON ");
 	appendPQExpBufferStr(query, fmtId(evtinfo->evtevent));
-	appendPQExpBufferStr(query, " ");
 
 	if (strcmp("", evtinfo->evttags) != 0)
 	{
 		appendPQExpBufferStr(query, "\n         WHEN TAG IN (");
 		appendPQExpBufferStr(query, evtinfo->evttags);
-		appendPQExpBufferStr(query, ") ");
+		appendPQExpBufferChar(query, ')');
 	}
 
 	appendPQExpBufferStr(query, "\n   EXECUTE PROCEDURE ");
@@ -15869,6 +15967,7 @@ getExtensionMembership(Archive *fout, DumpOptions *dopt, ExtensionInfo extinfo[]
 		addObjectDependency(&contable->dataObj->dobj,
 							reftable->dataObj->dobj.dumpId);
 	}
+	PQclear(res);
 	destroyPQExpBuffer(query);
 }
 

@@ -1053,7 +1053,7 @@
    </row>
    <row>
     <entry><token>CUBE</token></entry>
-    <entry></entry>
+    <entry>non-reserved</entry>
     <entry>reserved</entry>
     <entry>reserved</entry>
     <entry></entry>
@@ -2055,7 +2055,7 @@
    </row>
    <row>
     <entry><token>GROUPING</token></entry>
-    <entry></entry>
+    <entry>non-reserved (cannot be function or type)</entry>
     <entry>reserved</entry>
     <entry>reserved</entry>
     <entry></entry>
@@ -2196,7 +2196,7 @@
    </row>
    <row>
     <entry><token>IMPORT</token></entry>
-    <entry></entry>
+    <entry>non-reserved</entry>
     <entry>reserved</entry>
     <entry>reserved</entry>
     <entry></entry>
@@ -2496,20 +2496,6 @@
     <entry></entry>
    </row>
    <row>
-    <entry><token>LC_COLLATE</token></entry>
-    <entry>non-reserved</entry>
-    <entry></entry>
-    <entry></entry>
-    <entry></entry>
-   </row>
-   <row>
-    <entry><token>LC_CTYPE</token></entry>
-    <entry>non-reserved</entry>
-    <entry></entry>
-    <entry></entry>
-    <entry></entry>
-   </row>
-   <row>
     <entry><token>LEAD</token></entry>
     <entry></entry>
     <entry>reserved</entry>
@@ -2651,6 +2637,20 @@
    </row>
    <row>
     <entry><token>LOCK</token></entry>
+    <entry>non-reserved</entry>
+    <entry></entry>
+    <entry></entry>
+    <entry></entry>
+   </row>
+   <row>
+    <entry><token>LOCKED</token></entry>
+    <entry>non-reserved</entry>
+    <entry></entry>
+    <entry></entry>
+    <entry></entry>
+   </row>
+   <row>
+    <entry><token>LOGGED</token></entry>
     <entry>non-reserved</entry>
     <entry></entry>
     <entry></entry>
@@ -3949,7 +3949,7 @@
    </row>
    <row>
     <entry><token>ROLLUP</token></entry>
-    <entry></entry>
+    <entry>non-reserved</entry>
     <entry>reserved</entry>
     <entry>reserved</entry>
     <entry></entry>
@@ -4209,7 +4209,7 @@
    </row>
    <row>
     <entry><token>SETS</token></entry>
-    <entry></entry>
+    <entry>non-reserved</entry>
     <entry>non-reserved</entry>
     <entry>non-reserved</entry>
     <entry></entry>
@@ -4248,6 +4248,13 @@
     <entry>non-reserved</entry>
     <entry>non-reserved</entry>
     <entry>reserved</entry>
+   </row>
+   <row>
+    <entry><token>SKIP</token></entry>
+    <entry>non-reserved</entry>
+    <entry></entry>
+    <entry></entry>
+    <entry></entry>
    </row>
    <row>
     <entry><token>SMALLINT</token></entry>
@@ -4307,7 +4314,7 @@
    </row>
    <row>
     <entry><token>SQL</token></entry>
-    <entry></entry>
+    <entry>non-reserved</entry>
     <entry>reserved</entry>
     <entry>reserved</entry>
     <entry>reserved</entry>
@@ -4566,7 +4573,7 @@
    </row>
    <row>
     <entry><token>TABLESAMPLE</token></entry>
-    <entry></entry>
+    <entry>reserved (can be function or type)</entry>
     <entry>reserved</entry>
     <entry>reserved</entry>
     <entry></entry>
@@ -4713,7 +4720,7 @@
    </row>
    <row>
     <entry><token>TRANSFORM</token></entry>
-    <entry></entry>
+    <entry>non-reserved</entry>
     <entry>non-reserved</entry>
     <entry>non-reserved</entry>
     <entry></entry>

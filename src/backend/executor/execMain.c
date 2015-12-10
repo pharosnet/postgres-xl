@@ -1883,14 +1883,26 @@ ExecWithCheckOptions(WCOKind kind, ResultRelInfo *resultRelInfo,
 					break;
 				case WCO_RLS_INSERT_CHECK:
 				case WCO_RLS_UPDATE_CHECK:
-					ereport(ERROR,
-							(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+					if (wco->polname != NULL)
+						ereport(ERROR,
+								(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+							 errmsg("new row violates row level security policy \"%s\" for \"%s\"",
+									wco->polname, wco->relname)));
+					else
+						ereport(ERROR,
+								(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 							 errmsg("new row violates row level security policy for \"%s\"",
 									wco->relname)));
 					break;
 				case WCO_RLS_CONFLICT_CHECK:
-					ereport(ERROR,
-							(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+					if (wco->polname != NULL)
+						ereport(ERROR,
+								(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+							 errmsg("new row violates row level security policy \"%s\" (USING expression) for \"%s\"",
+									wco->polname, wco->relname)));
+					else
+						ereport(ERROR,
+								(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 							 errmsg("new row violates row level security policy (USING expression) for \"%s\"",
 									wco->relname)));
 					break;
@@ -1942,7 +1954,7 @@ ExecBuildSlotValueDescription(Oid reloid,
 	 * then don't return anything.  Otherwise, go through normal permission
 	 * checks.
 	 */
-	if (check_enable_rls(reloid, GetUserId(), true) == RLS_ENABLED)
+	if (check_enable_rls(reloid, InvalidOid, true) == RLS_ENABLED)
 		return NULL;
 
 	initStringInfo(&buf);

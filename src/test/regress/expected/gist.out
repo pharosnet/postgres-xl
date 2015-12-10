@@ -68,11 +68,11 @@ order by p <-> point(0.2, 0.2);
  Remote Subquery Scan on all (datanode_1,datanode_2)
    ->  Index Only Scan using gist_tbl_point_index on gist_tbl
          Index Cond: (p <@ '(0.5,0.5),(0,0)'::box)
-         Order By: (p <-> '(0.2,0.2)'::point)
+         Order By: (p <-> '(0.201,0.201)'::point)
 (4 rows)
 
 select p from gist_tbl where p <@ box(point(0,0), point(0.5, 0.5))
-order by p <-> point(0.2, 0.2);
+order by p <-> point(0.201, 0.201);
       p      
 -------------
  (0.2,0.2)
@@ -97,18 +97,18 @@ order by point(0.1, 0.1) <-> p;
  Remote Subquery Scan on all (datanode_1,datanode_2)
    ->  Index Only Scan using gist_tbl_point_index on gist_tbl
          Index Cond: (p <@ '(0.5,0.5),(0,0)'::box)
-         Order By: (p <-> '(0.1,0.1)'::point)
+         Order By: (p <-> '(0.101,0.101)'::point)
 (4 rows)
 
 select p from gist_tbl where p <@ box(point(0,0), point(0.5, 0.5))
-order by point(0.1, 0.1) <-> p;
+order by point(0.101, 0.101) <-> p;
       p      
 -------------
  (0.1,0.1)
  (0.15,0.15)
  (0.05,0.05)
- (0,0)
  (0.2,0.2)
+ (0,0)
  (0.25,0.25)
  (0.3,0.3)
  (0.35,0.35)

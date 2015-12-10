@@ -340,6 +340,10 @@ explain (costs off, nodes off) select * from nv_parent where d between '2009-08-
 alter table nv_child_2011 VALIDATE CONSTRAINT nv_child_2011_d_check;
 explain (costs off, nodes off) select * from nv_parent where d between '2009-08-01'::date and '2009-08-31'::date;
 
+-- add an inherited NOT VALID constraint
+alter table nv_parent add check (d between '2001-01-01'::date and '2099-12-31'::date) not valid;
+\d nv_child_2009
+-- we leave nv_parent and children around to help test pg_dump logic
 
 -- Foreign key adding test with mixed types
 
@@ -1271,7 +1275,8 @@ DROP TABLE check_fk_presence_1, check_fk_presence_2;
 --
 drop type lockmodes;
 create type lockmodes as enum (
- 'AccessShareLock'
+ 'SIReadLock'
+,'AccessShareLock'
 ,'RowShareLock'
 ,'RowExclusiveLock'
 ,'ShareUpdateExclusiveLock'
@@ -1593,6 +1598,42 @@ ALTER TABLE IF EXISTS tt8 SET SCHEMA alter2;
 
 DROP TABLE alter2.tt8;
 DROP SCHEMA alter2;
+
+
+-- Check that comments on constraints and indexes are not lost at ALTER TABLE.
+CREATE TABLE comment_test (
+  id int,
+  positive_col int CHECK (positive_col > 0),
+  indexed_col int,
+  CONSTRAINT comment_test_pk PRIMARY KEY (id));
+CREATE INDEX comment_test_index ON comment_test(indexed_col);
+
+COMMENT ON COLUMN comment_test.id IS 'Column ''id'' on comment_test';
+COMMENT ON INDEX comment_test_index IS 'Simple index on comment_test';
+COMMENT ON CONSTRAINT comment_test_positive_col_check ON comment_test IS 'CHECK constraint on comment_test.positive_col';
+COMMENT ON CONSTRAINT comment_test_pk ON comment_test IS 'PRIMARY KEY constraint of comment_test';
+COMMENT ON INDEX comment_test_pk IS 'Index backing the PRIMARY KEY of comment_test';
+
+SELECT col_description('comment_test'::regclass, 1) as comment;
+SELECT indexrelid::regclass::text as index, obj_description(indexrelid, 'pg_class') as comment FROM pg_index where indrelid = 'comment_test'::regclass ORDER BY 1, 2;
+SELECT conname as constraint, obj_description(oid, 'pg_constraint') as comment FROM pg_constraint where conrelid = 'comment_test'::regclass ORDER BY 1, 2;
+
+-- Change the datatype of all the columns. ALTER TABLE is optimized to not
+-- rebuild an index if the new data type is binary compatible with the old
+-- one. Check do a dummy ALTER TABLE that doesn't change the datatype
+-- first, to test that no-op codepath, and another one that does.
+ALTER TABLE comment_test ALTER COLUMN indexed_col SET DATA TYPE int;
+ALTER TABLE comment_test ALTER COLUMN indexed_col SET DATA TYPE text;
+ALTER TABLE comment_test ALTER COLUMN id SET DATA TYPE int;
+ALTER TABLE comment_test ALTER COLUMN id SET DATA TYPE text;
+ALTER TABLE comment_test ALTER COLUMN positive_col SET DATA TYPE int;
+ALTER TABLE comment_test ALTER COLUMN positive_col SET DATA TYPE bigint;
+
+-- Check that the comments are intact.
+SELECT col_description('comment_test'::regclass, 1) as comment;
+SELECT indexrelid::regclass::text as index, obj_description(indexrelid, 'pg_class') as comment FROM pg_index where indrelid = 'comment_test'::regclass ORDER BY 1, 2;
+SELECT conname as constraint, obj_description(oid, 'pg_constraint') as comment FROM pg_constraint where conrelid = 'comment_test'::regclass ORDER BY 1, 2;
+
 
 -- Check that we map relation oids to filenodes and back correctly.  Only
 -- display bad mappings so the test output doesn't change all the time.  A

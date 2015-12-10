@@ -1673,6 +1673,7 @@ transformSubLink(ParseState *pstate, SubLink *sublink)
 		case EXPR_KIND_FROM_SUBSELECT:
 		case EXPR_KIND_FROM_FUNCTION:
 		case EXPR_KIND_WHERE:
+		case EXPR_KIND_POLICY:
 		case EXPR_KIND_HAVING:
 		case EXPR_KIND_FILTER:
 		case EXPR_KIND_WINDOW_PARTITION:
@@ -3180,6 +3181,8 @@ ParseExprKindName(ParseExprKind exprKind)
 			return "function in FROM";
 		case EXPR_KIND_WHERE:
 			return "WHERE";
+		case EXPR_KIND_POLICY:
+			return "POLICY";
 		case EXPR_KIND_HAVING:
 			return "HAVING";
 		case EXPR_KIND_FILTER:

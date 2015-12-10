@@ -2260,7 +2260,12 @@ finalize_plan(PlannerInfo *root, Plan *plan, Bitmapset *valid_params,
 			break;
 
 		case T_SeqScan:
+			context.paramids = bms_add_members(context.paramids, scan_params);
+			break;
+
 		case T_SampleScan:
+			finalize_primnode((Node *) ((SampleScan *) plan)->tablesample,
+							  &context);
 			context.paramids = bms_add_members(context.paramids, scan_params);
 			break;
 
@@ -2428,7 +2433,7 @@ finalize_plan(PlannerInfo *root, Plan *plan, Bitmapset *valid_params,
 					bms_add_members(context.paramids, scan_params);
 
 				/* child nodes if any */
-				foreach (lc, cscan->custom_plans)
+				foreach(lc, cscan->custom_plans)
 				{
 					context.paramids =
 						bms_add_members(context.paramids,

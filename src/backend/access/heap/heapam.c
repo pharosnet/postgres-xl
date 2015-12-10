@@ -83,8 +83,11 @@ bool		synchronize_seqscans = true;
 static HeapScanDesc heap_beginscan_internal(Relation relation,
 						Snapshot snapshot,
 						int nkeys, ScanKey key,
-					  bool allow_strat, bool allow_sync, bool allow_pagemode,
-						bool is_bitmapscan, bool is_samplescan,
+						bool allow_strat,
+						bool allow_sync,
+						bool allow_pagemode,
+						bool is_bitmapscan,
+						bool is_samplescan,
 						bool temp_snap);
 static HeapTuple heap_prepare_insert(Relation relation, HeapTuple tup,
 					TransactionId xid, CommandId cid, int options);
@@ -210,7 +213,7 @@ static const int MultiXactStatusLock[MaxMultiXactStatus + 1] =
  * ----------------
  */
 static void
-initscan(HeapScanDesc scan, ScanKey key, bool is_rescan)
+initscan(HeapScanDesc scan, ScanKey key, bool keep_startblock)
 {
 	bool		allow_strat;
 	bool		allow_sync;
@@ -260,12 +263,12 @@ initscan(HeapScanDesc scan, ScanKey key, bool is_rescan)
 		scan->rs_strategy = NULL;
 	}
 
-	if (is_rescan)
+	if (keep_startblock)
 	{
 		/*
-		 * If rescan, keep the previous startblock setting so that rewinding a
-		 * cursor doesn't generate surprising results.  Reset the syncscan
-		 * setting, though.
+		 * When rescanning, we want to keep the previous startblock setting,
+		 * so that rewinding a cursor doesn't generate surprising results.
+		 * Reset the active syncscan setting, though.
 		 */
 		scan->rs_syncscan = (allow_sync && synchronize_seqscans);
 	}
@@ -280,7 +283,6 @@ initscan(HeapScanDesc scan, ScanKey key, bool is_rescan)
 		scan->rs_startblock = 0;
 	}
 
-	scan->rs_initblock = 0;
 	scan->rs_numblocks = InvalidBlockNumber;
 	scan->rs_inited = false;
 	scan->rs_ctup.t_data = NULL;
@@ -305,11 +307,22 @@ initscan(HeapScanDesc scan, ScanKey key, bool is_rescan)
 		pgstat_count_heap_scan(scan->rs_rd);
 }
 
+/*
+ * heap_setscanlimits - restrict range of a heapscan
+ *
+ * startBlk is the page to start at
+ * numBlks is number of pages to scan (InvalidBlockNumber means "all")
+ */
 void
 heap_setscanlimits(HeapScanDesc scan, BlockNumber startBlk, BlockNumber numBlks)
 {
+	Assert(!scan->rs_inited);	/* else too late to change */
+	Assert(!scan->rs_syncscan); /* else rs_startblock is significant */
+
+	/* Check startBlk is valid (but allow case of zero blocks...) */
+	Assert(startBlk == 0 || startBlk < scan->rs_nblocks);
+
 	scan->rs_startblock = startBlk;
-	scan->rs_initblock = startBlk;
 	scan->rs_numblocks = numBlks;
 }
 
@@ -480,7 +493,7 @@ heapgettup(HeapScanDesc scan,
 			/*
 			 * return null immediately if relation is empty
 			 */
-			if (scan->rs_nblocks == 0)
+			if (scan->rs_nblocks == 0 || scan->rs_numblocks == 0)
 			{
 				Assert(!BufferIsValid(scan->rs_cbuf));
 				tuple->t_data = NULL;
@@ -514,7 +527,7 @@ heapgettup(HeapScanDesc scan,
 			/*
 			 * return null immediately if relation is empty
 			 */
-			if (scan->rs_nblocks == 0)
+			if (scan->rs_nblocks == 0 || scan->rs_numblocks == 0)
 			{
 				Assert(!BufferIsValid(scan->rs_cbuf));
 				tuple->t_data = NULL;
@@ -654,7 +667,7 @@ heapgettup(HeapScanDesc scan,
 		if (backward)
 		{
 			finished = (page == scan->rs_startblock) ||
-				(scan->rs_numblocks != InvalidBlockNumber ? --scan->rs_numblocks <= 0 : false);
+				(scan->rs_numblocks != InvalidBlockNumber ? --scan->rs_numblocks == 0 : false);
 			if (page == 0)
 				page = scan->rs_nblocks;
 			page--;
@@ -665,7 +678,7 @@ heapgettup(HeapScanDesc scan,
 			if (page >= scan->rs_nblocks)
 				page = 0;
 			finished = (page == scan->rs_startblock) ||
-				(scan->rs_numblocks != InvalidBlockNumber ? --scan->rs_numblocks <= 0 : false);
+				(scan->rs_numblocks != InvalidBlockNumber ? --scan->rs_numblocks == 0 : false);
 
 			/*
 			 * Report our new scan position for synchronization purposes. We
@@ -757,7 +770,7 @@ heapgettup_pagemode(HeapScanDesc scan,
 			/*
 			 * return null immediately if relation is empty
 			 */
-			if (scan->rs_nblocks == 0)
+			if (scan->rs_nblocks == 0 || scan->rs_numblocks == 0)
 			{
 				Assert(!BufferIsValid(scan->rs_cbuf));
 				tuple->t_data = NULL;
@@ -788,7 +801,7 @@ heapgettup_pagemode(HeapScanDesc scan,
 			/*
 			 * return null immediately if relation is empty
 			 */
-			if (scan->rs_nblocks == 0)
+			if (scan->rs_nblocks == 0 || scan->rs_numblocks == 0)
 			{
 				Assert(!BufferIsValid(scan->rs_cbuf));
 				tuple->t_data = NULL;
@@ -917,7 +930,7 @@ heapgettup_pagemode(HeapScanDesc scan,
 		if (backward)
 		{
 			finished = (page == scan->rs_startblock) ||
-				(scan->rs_numblocks != InvalidBlockNumber ? --scan->rs_numblocks <= 0 : false);
+				(scan->rs_numblocks != InvalidBlockNumber ? --scan->rs_numblocks == 0 : false);
 			if (page == 0)
 				page = scan->rs_nblocks;
 			page--;
@@ -928,7 +941,7 @@ heapgettup_pagemode(HeapScanDesc scan,
 			if (page >= scan->rs_nblocks)
 				page = 0;
 			finished = (page == scan->rs_startblock) ||
-				(scan->rs_numblocks != InvalidBlockNumber ? --scan->rs_numblocks <= 0 : false);
+				(scan->rs_numblocks != InvalidBlockNumber ? --scan->rs_numblocks == 0 : false);
 
 			/*
 			 * Report our new scan position for synchronization purposes. We
@@ -1306,6 +1319,10 @@ heap_openrv_extended(const RangeVar *relation, LOCKMODE lockmode,
 /* ----------------
  *		heap_beginscan	- begin relation scan
  *
+ * heap_beginscan is the "standard" case.
+ *
+ * heap_beginscan_catalog differs in setting up its own temporary snapshot.
+ *
  * heap_beginscan_strat offers an extended API that lets the caller control
  * whether a nondefault buffer access strategy can be used, and whether
  * syncscan can be chosen (possibly resulting in the scan not starting from
@@ -1316,8 +1333,11 @@ heap_openrv_extended(const RangeVar *relation, LOCKMODE lockmode,
  * really quite unlike a standard seqscan, there is just enough commonality
  * to make it worth using the same data structure.
  *
- * heap_beginscan_samplingscan is alternate entry point for setting up a
- * HeapScanDesc for a TABLESAMPLE scan.
+ * heap_beginscan_sampling is an alternative entry point for setting up a
+ * HeapScanDesc for a TABLESAMPLE scan.  As with bitmap scans, it's worth
+ * using the same data structure although the behavior is rather different.
+ * In addition to the options offered by heap_beginscan_strat, this call
+ * also allows control of whether page-mode visibility checking is used.
  * ----------------
  */
 HeapScanDesc
@@ -1359,18 +1379,22 @@ heap_beginscan_bm(Relation relation, Snapshot snapshot,
 HeapScanDesc
 heap_beginscan_sampling(Relation relation, Snapshot snapshot,
 						int nkeys, ScanKey key,
-						bool allow_strat, bool allow_pagemode)
+					  bool allow_strat, bool allow_sync, bool allow_pagemode)
 {
 	return heap_beginscan_internal(relation, snapshot, nkeys, key,
-								   allow_strat, false, allow_pagemode,
+								   allow_strat, allow_sync, allow_pagemode,
 								   false, true, false);
 }
 
 static HeapScanDesc
 heap_beginscan_internal(Relation relation, Snapshot snapshot,
 						int nkeys, ScanKey key,
-					  bool allow_strat, bool allow_sync, bool allow_pagemode,
-					  bool is_bitmapscan, bool is_samplescan, bool temp_snap)
+						bool allow_strat,
+						bool allow_sync,
+						bool allow_pagemode,
+						bool is_bitmapscan,
+						bool is_samplescan,
+						bool temp_snap)
 {
 	HeapScanDesc scan;
 
@@ -1456,6 +1480,27 @@ heap_rescan(HeapScanDesc scan,
 	 * reinitialize scan descriptor
 	 */
 	initscan(scan, key, true);
+}
+
+/* ----------------
+ *		heap_rescan_set_params	- restart a relation scan after changing params
+ *
+ * This call allows changing the buffer strategy, syncscan, and pagemode
+ * options before starting a fresh scan.  Note that although the actual use
+ * of syncscan might change (effectively, enabling or disabling reporting),
+ * the previously selected startblock will be kept.
+ * ----------------
+ */
+void
+heap_rescan_set_params(HeapScanDesc scan, ScanKey key,
+					   bool allow_strat, bool allow_sync, bool allow_pagemode)
+{
+	/* adjust parameters */
+	scan->rs_allow_strat = allow_strat;
+	scan->rs_allow_sync = allow_sync;
+	scan->rs_pageatatime = allow_pagemode && IsMVCCSnapshot(scan->rs_snapshot);
+	/* ... and rescan */
+	heap_rescan(scan, key);
 }
 
 /* ----------------
@@ -2772,7 +2817,9 @@ l1:
 	if (result == HeapTupleInvisible)
 	{
 		UnlockReleaseBuffer(buffer);
-		elog(ERROR, "attempted to delete invisible tuple");
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("attempted to delete invisible tuple")));
 	}
 	else if (result == HeapTupleBeingUpdated && wait)
 	{
@@ -3314,7 +3361,9 @@ l2:
 	if (result == HeapTupleInvisible)
 	{
 		UnlockReleaseBuffer(buffer);
-		elog(ERROR, "attempted to update invisible tuple");
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("attempted to update invisible tuple")));
 	}
 	else if (result == HeapTupleBeingUpdated && wait)
 	{
@@ -5449,7 +5498,7 @@ l4:
  *
  * The initial tuple is assumed to be already locked.
  *
- * This function doesn't check visibility, it just inconditionally marks the
+ * This function doesn't check visibility, it just unconditionally marks the
  * tuple(s) as locked.  If any tuple in the updated chain is being deleted
  * concurrently (or updated with the key being modified), sleep until the
  * transaction doing it is finished.
@@ -6163,7 +6212,7 @@ heap_prepare_freeze_tuple(HeapTupleHeader tuple, TransactionId cutoff_xid,
 			/*
 			 * NB -- some of these transformations are only valid because we
 			 * know the return Xid is a tuple updater (i.e. not merely a
-			 * locker.) Also note that the only reason we don't explicitely
+			 * locker.) Also note that the only reason we don't explicitly
 			 * worry about HEAP_KEYS_UPDATED is because it lives in
 			 * t_infomask2 rather than t_infomask.
 			 */

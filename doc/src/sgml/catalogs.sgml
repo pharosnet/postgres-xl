@@ -279,11 +279,6 @@
      </row>
 
      <row>
-      <entry><link linkend="catalog-pg-tablesample-method"><structname>pg_tablesample_method</structname></link></entry>
-      <entry>table sampling methods</entry>
-     </row>
-
-     <row>
       <entry><link linkend="catalog-pg-tablespace"><structname>pg_tablespace</structname></link></entry>
       <entry>tablespaces within this database cluster</entry>
      </row>
@@ -1492,7 +1487,7 @@
       <entry><structfield>rolbypassrls</structfield></entry>
       <entry><type>bool</type></entry>
       <entry>
-       Role can bypass row level security policies, see
+       Role bypasses every row level security policy, see
        <xref linkend="ddl-rowsecurity"> for more information.
       </entry>
      </row>
@@ -2005,6 +2000,16 @@
       <entry></entry>
       <entry>
        True if table has row level security enabled; see
+       <link linkend="catalog-pg-policy"><structname>pg_policy</structname></link> catalog
+      </entry>
+     </row>
+
+     <row>
+      <entry><structfield>relforcerowsecurity</structfield></entry>
+      <entry><type>bool</type></entry>
+      <entry></entry>
+      <entry>
+       True if row level security (when enabled) will also apply to table owner; see
        <link linkend="catalog-pg-policy"><structname>pg_policy</structname></link> catalog
       </entry>
      </row>
@@ -5488,10 +5493,11 @@
       <entry><structfield>local_lsn</structfield></entry>
       <entry><type>pg_lsn</type></entry>
       <entry></entry>
-      <entry>This node's LSN that at
-      which <literal>remote_lsn</literal> has been replicated. Used to
-      flush commit records before persisting data to disk when using
-      asynchronous commits.</entry>
+      <entry>
+       This node's LSN at which <literal>remote_lsn</literal> has
+       been replicated. Used to flush commit records before persisting
+       data to disk when using asynchronous commits.
+      </entry>
      </row>
     </tbody>
    </tgroup>
@@ -5831,6 +5837,16 @@
     </varlistentry>
 
     <varlistentry>
+     <term><symbol>SHARED_DEPENDENCY_POLICY</> (<literal>r</>)</term>
+     <listitem>
+      <para>
+       The referenced object (which must be a role) is mentioned as the
+       target of a dependent policy object.
+      </para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
      <term><symbol>SHARED_DEPENDENCY_PIN</> (<literal>p</>)</term>
      <listitem>
       <para>
@@ -6158,121 +6174,6 @@
        these columns' type more specifically than <type>anyarray</>.
       </entry>
      </row>
-    </tbody>
-   </tgroup>
-  </table>
-
- </sect1>
-
-
- <sect1 id="catalog-pg-tablesample-method">
-  <title><structname>pg_tabesample_method</structname></title>
-
-  <indexterm zone="catalog-pg-tablesample-method">
-   <primary>pg_am</primary>
-  </indexterm>
-
-  <para>
-   The catalog <structname>pg_tablesample_method</structname> stores
-   information about table sampling methods which can be used in
-   <command>TABLESAMPLE</command> clause of a <command>SELECT</command>
-   statement.
-  </para>
-
-  <table>
-   <title><structname>pg_tablesample_method</> Columns</title>
-
-   <tgroup cols="4">
-    <thead>
-     <row>
-      <entry>Name</entry>
-      <entry>Type</entry>
-      <entry>References</entry>
-      <entry>Description</entry>
-     </row>
-    </thead>
-    <tbody>
-
-     <row>
-      <entry><structfield>oid</structfield></entry>
-      <entry><type>oid</type></entry>
-      <entry></entry>
-      <entry>Row identifier (hidden attribute; must be explicitly selected)</entry>
-     </row>
-
-     <row>
-      <entry><structfield>tsmname</structfield></entry>
-      <entry><type>name</type></entry>
-      <entry></entry>
-      <entry>Name of the sampling method</entry>
-     </row>
-
-     <row>
-      <entry><structfield>tsmseqscan</structfield></entry>
-      <entry><type>bool</type></entry>
-      <entry></entry>
-      <entry>If true, the sampling method scans the whole table sequentially.
-      </entry>
-     </row>
-
-     <row>
-      <entry><structfield>tsmpagemode</structfield></entry>
-      <entry><type>bool</type></entry>
-      <entry></entry>
-      <entry>If true, the sampling method always reads the pages completely.
-      </entry>
-     </row>
-
-     <row>
-      <entry><structfield>tsminit</structfield></entry>
-      <entry><type>regproc</type></entry>
-      <entry><literal><link linkend="catalog-pg-proc"><structname>pg_proc</structname></link>.oid</literal></entry>
-      <entry><quote>Initialize the sampling scan</quote> function</entry>
-     </row>
-
-     <row>
-      <entry><structfield>tsmnextblock</structfield></entry>
-      <entry><type>regproc</type></entry>
-      <entry><literal><link linkend="catalog-pg-proc"><structname>pg_proc</structname></link>.oid</literal></entry>
-      <entry><quote>Get next block number</quote> function</entry>
-     </row>
-
-     <row>
-      <entry><structfield>tsmnexttuple</structfield></entry>
-      <entry><type>regproc</type></entry>
-      <entry><literal><link linkend="catalog-pg-proc"><structname>pg_proc</structname></link>.oid</literal></entry>
-      <entry><quote>Get next tuple offset</quote> function</entry>
-     </row>
-
-     <row>
-      <entry><structfield>tsmexaminetuple</structfield></entry>
-      <entry><type>regproc</type></entry>
-      <entry><literal><link linkend="catalog-pg-proc"><structname>pg_proc</structname></link>.oid</literal></entry>
-      <entry>Function which examines the tuple contents and decides if to
-        return it, or zero if none</entry>
-     </row>
-
-     <row>
-      <entry><structfield>tsmend</structfield></entry>
-      <entry><type>regproc</type></entry>
-      <entry><literal><link linkend="catalog-pg-proc"><structname>pg_proc</structname></link>.oid</literal></entry>
-      <entry><quote>End the sampling scan</quote> function</entry>
-     </row>
-
-     <row>
-      <entry><structfield>tsmreset</structfield></entry>
-      <entry><type>regproc</type></entry>
-      <entry><literal><link linkend="catalog-pg-proc"><structname>pg_proc</structname></link>.oid</literal></entry>
-      <entry><quote>Restart the state of sampling scan</quote> function</entry>
-     </row>
-
-     <row>
-      <entry><structfield>tsmcost</structfield></entry>
-      <entry><type>regproc</type></entry>
-      <entry><literal><link linkend="catalog-pg-proc"><structname>pg_proc</structname></link>.oid</literal></entry>
-      <entry>Costing function</entry>
-     </row>
-
     </tbody>
    </tgroup>
   </table>
@@ -8299,7 +8200,7 @@
     <row>
      <entry><structfield>sourcefile</structfield></entry>
      <entry><structfield>text</structfield></entry>
-     <entry>Full pathname of the configuration file</entry>
+     <entry>Full path name of the configuration file</entry>
     </row>
     <row>
      <entry><structfield>sourceline</structfield></entry>
@@ -9749,7 +9650,7 @@ SELECT * FROM pg_locks pl LEFT JOIN pg_prepared_xacts ppx
       <entry><type>bool</type></entry>
       <entry></entry>
       <entry>
-       User can bypass row level security policies, see
+       User bypasses every row level security policy, see
        <xref linkend="ddl-rowsecurity"> for more information.
       </entry>
      </row>
@@ -10224,7 +10125,7 @@ SELECT * FROM pg_locks pl LEFT JOIN pg_prepared_xacts ppx
       <entry><structfield>usebypassrls</structfield></entry>
       <entry><type>bool</type></entry>
       <entry>
-       User can bypass row level security policies, see
+       User bypasses every row level security policy, see
        <xref linkend="ddl-rowsecurity"> for more information.
       </entry>
      </row>

@@ -305,7 +305,12 @@ typedef Scan SeqScan;
  *		table sample scan node
  * ----------------
  */
-typedef Scan SampleScan;
+typedef struct SampleScan
+{
+	Scan		scan;
+	/* use struct pointer to avoid including parsenodes.h here */
+	struct TableSampleClause *tablesample;
+} SampleScan;
 
 /* ----------------
  *		index scan node

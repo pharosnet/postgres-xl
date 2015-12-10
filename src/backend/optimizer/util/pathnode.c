@@ -1701,7 +1701,7 @@ create_seqscan_path(PlannerInfo *root, RelOptInfo *rel, Relids required_outer)
 
 /*
  * create_samplescan_path
- *	  Like seqscan but uses sampling function while scanning.
+ *	  Creates a path node for a sampled table scan.
  */
 Path *
 create_samplescan_path(PlannerInfo *root, RelOptInfo *rel, Relids required_outer)
@@ -1727,7 +1727,7 @@ create_samplescan_path(PlannerInfo *root, RelOptInfo *rel, Relids required_outer
 	}
 #endif
 
-	cost_samplescan(pathnode, root, rel);
+	cost_samplescan(pathnode, root, rel, pathnode->param_info);
 
 	return pathnode;
 }
@@ -2632,13 +2632,13 @@ create_worktablescan_path(PlannerInfo *root, RelOptInfo *rel,
 
 /*
  * create_foreignscan_path
- *	  Creates a path corresponding to a scan of a foreign table,
- *	  returning the pathnode.
+ *	  Creates a path corresponding to a scan of a foreign table or
+ *	  a foreign join, returning the pathnode.
  *
  * This function is never called from core Postgres; rather, it's expected
- * to be called by the GetForeignPaths function of a foreign data wrapper.
- * We make the FDW supply all fields of the path, since we do not have any
- * way to calculate them in core.
+ * to be called by the GetForeignPaths or GetForeignJoinPaths function of
+ * a foreign data wrapper.  We make the FDW supply all fields of the path,
+ * since we do not have any way to calculate them in core.
  */
 ForeignPath *
 create_foreignscan_path(PlannerInfo *root, RelOptInfo *rel,
@@ -3021,6 +3021,8 @@ reparameterize_path(PlannerInfo *root, Path *path,
 	{
 		case T_SeqScan:
 			return create_seqscan_path(root, rel, required_outer);
+		case T_SampleScan:
+			return (Path *) create_samplescan_path(root, rel, required_outer);
 		case T_IndexScan:
 		case T_IndexOnlyScan:
 			{
@@ -3058,8 +3060,6 @@ reparameterize_path(PlannerInfo *root, Path *path,
 			return create_subqueryscan_path(root, rel, path->pathkeys,
 											required_outer);
 #endif
-		case T_SampleScan:
-			return (Path *) create_samplescan_path(root, rel, required_outer);
 		default:
 			break;
 	}

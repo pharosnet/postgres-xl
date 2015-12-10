@@ -3101,10 +3101,10 @@ DESCR("view two-phase transactions");
 DATA(insert OID = 3819 (  pg_get_multixact_members PGNSP PGUID 12 1 1000 0 0 f f f f t t v 1 0 2249 "28" "{28,28,25}" "{i,o,o}" "{multixid,xid,mode}" _null_ _null_ pg_get_multixact_members _null_ _null_ _null_ ));
 DESCR("view members of a multixactid");
 
-DATA(insert OID = 3581 ( pg_xact_commit_timestamp PGNSP PGUID 12 1 0 0 0 f f f f t f s 1 0 1184 "28" _null_ _null_ _null_ _null_ _null_ pg_xact_commit_timestamp _null_ _null_ _null_ ));
+DATA(insert OID = 3581 ( pg_xact_commit_timestamp PGNSP PGUID 12 1 0 0 0 f f f f t f v 1 0 1184 "28" _null_ _null_ _null_ _null_ _null_ pg_xact_commit_timestamp _null_ _null_ _null_ ));
 DESCR("get commit timestamp of a transaction");
 
-DATA(insert OID = 3583 ( pg_last_committed_xact PGNSP PGUID 12 1 0 0 0 f f f f t f s 0 0 2249 "" "{28,1184}" "{o,o}" "{xid,timestamp}" _null_ _null_ pg_last_committed_xact _null_ _null_ _null_ ));
+DATA(insert OID = 3583 ( pg_last_committed_xact PGNSP PGUID 12 1 0 0 0 f f f f t f v 0 0 2249 "" "{28,1184}" "{o,o}" "{xid,timestamp}" _null_ _null_ pg_last_committed_xact _null_ _null_ _null_ ));
 DESCR("get transaction Id and commit timestamp of latest transaction commit");
 
 DATA(insert OID = 3537 (  pg_describe_object		PGNSP PGUID 12 1 0 0 0 f f f f t f s 3 0 25 "26 26 23" _null_ _null_ _null_ _null_ _null_ pg_describe_object _null_ _null_ _null_ ));
@@ -3204,7 +3204,7 @@ DESCR("rotate log file");
 
 DATA(insert OID = 2623 ( pg_stat_file		PGNSP PGUID 12 1 0 0 0 f f f f t f v 1 0 2249 "25" "{25,20,1184,1184,1184,1184,16}" "{i,o,o,o,o,o,o}" "{filename,size,access,modification,change,creation,isdir}" _null_ _null_ pg_stat_file_1arg _null_ _null_ _null_ ));
 DESCR("get information about file");
-DATA(insert OID = 3307 ( pg_stat_file		PGNSP PGUID 12 1 0 0 0 f f f f t f v 2 0 2249 "25 16" "{25,16,20,1184,1184,1184,1184,16}" "{i,i,o,o,o,o,o,o}" "{filename,if_not_exists,size,access,modification,change,creation,isdir}" _null_ _null_ pg_stat_file _null_ _null_ _null_ ));
+DATA(insert OID = 3307 ( pg_stat_file		PGNSP PGUID 12 1 0 0 0 f f f f t f v 2 0 2249 "25 16" "{25,16,20,1184,1184,1184,1184,16}" "{i,i,o,o,o,o,o,o}" "{filename,missing_ok,size,access,modification,change,creation,isdir}" _null_ _null_ pg_stat_file _null_ _null_ _null_ ));
 DESCR("get information about file");
 DATA(insert OID = 2624 ( pg_read_file		PGNSP PGUID 12 1 0 0 0 f f f f t f v 3 0 25 "25 20 20" _null_ _null_ _null_ _null_ _null_ pg_read_file_off_len _null_ _null_ _null_ ));
 DESCR("read text from a file");
@@ -3753,6 +3753,16 @@ DATA(insert OID = 3116 (  fdw_handler_in	PGNSP PGUID 12 1 0 0 0 f f f f f f i 1 
 DESCR("I/O");
 DATA(insert OID = 3117 (  fdw_handler_out	PGNSP PGUID 12 1 0 0 0 f f f f t f i 1 0 2275 "3115" _null_ _null_ _null_ _null_ _null_ fdw_handler_out _null_ _null_ _null_ ));
 DESCR("I/O");
+DATA(insert OID = 3311 (  tsm_handler_in	PGNSP PGUID 12 1 0 0 0 f f f f f f i 1 0 3310 "2275" _null_ _null_ _null_ _null_ _null_ tsm_handler_in _null_ _null_ _null_ ));
+DESCR("I/O");
+DATA(insert OID = 3312 (  tsm_handler_out	PGNSP PGUID 12 1 0 0 0 f f f f t f i 1 0 2275 "3310" _null_ _null_ _null_ _null_ _null_ tsm_handler_out _null_ _null_ _null_ ));
+DESCR("I/O");
+
+/* tablesample method handlers */
+DATA(insert OID = 3313 (  bernoulli			PGNSP PGUID 12 1 0 0 0 f f f f t f v 1 0 3310 "2281" _null_ _null_ _null_ _null_ _null_ tsm_bernoulli_handler _null_ _null_ _null_ ));
+DESCR("BERNOULLI tablesample method handler");
+DATA(insert OID = 3314 (  system			PGNSP PGUID 12 1 0 0 0 f f f f t f v 1 0 3310 "2281" _null_ _null_ _null_ _null_ _null_ tsm_system_handler _null_ _null_ _null_ ));
+DESCR("SYSTEM tablesample method handler");
 
 /* cryptographic */
 DATA(insert OID =  2311 (  md5	   PGNSP PGUID 12 1 0 0 0 f f f f t f i 1 0 25 "25" _null_ _null_ _null_ _null_ _null_ md5_text _null_ _null_ _null_ ));
@@ -5368,33 +5378,6 @@ DESCR("get an individual replication origin's replication progress");
 DATA(insert OID = 6014 ( pg_show_replication_origin_status PGNSP PGUID 12 1 100 0 0 f f f f f t v 0 0 2249 "" "{26,25,3220,3220}" "{o,o,o,o}" "{local_id, external_id, remote_lsn, local_lsn}" _null_ _null_ pg_show_replication_origin_status _null_ _null_ _null_ ));
 DESCR("get progress for all replication origins");
 
-/* tablesample */
-DATA(insert OID = 3335 (  tsm_system_init		PGNSP PGUID 12 1 0 0 0 f f f f t f v 3 0 2278 "2281 23 700" _null_ _null_ _null_ _null_ _null_ tsm_system_init _null_ _null_ _null_ ));
-DESCR("tsm_system_init(internal)");
-DATA(insert OID = 3336 (  tsm_system_nextblock	PGNSP PGUID 12 1 0 0 0 f f f f t f v 2 0 23 "2281 16" _null_ _null_ _null_ _null_ _null_ tsm_system_nextblock _null_ _null_ _null_ ));
-DESCR("tsm_system_nextblock(internal)");
-DATA(insert OID = 3337 (  tsm_system_nexttuple	PGNSP PGUID 12 1 0 0 0 f f f f t f v 4 0 21 "2281 23 21 16" _null_ _null_ _null_ _null_ _null_ tsm_system_nexttuple _null_ _null_ _null_ ));
-DESCR("tsm_system_nexttuple(internal)");
-DATA(insert OID = 3338 (  tsm_system_end		PGNSP PGUID 12 1 0 0 0 f f f f t f v 1 0 2278 "2281" _null_ _null_ _null_ _null_ _null_ tsm_system_end _null_ _null_ _null_ ));
-DESCR("tsm_system_end(internal)");
-DATA(insert OID = 3339 (  tsm_system_reset		PGNSP PGUID 12 1 0 0 0 f f f f t f v 1 0 2278 "2281" _null_ _null_ _null_ _null_ _null_ tsm_system_reset _null_ _null_ _null_ ));
-DESCR("tsm_system_reset(internal)");
-DATA(insert OID = 3340 (  tsm_system_cost		PGNSP PGUID 12 1 0 0 0 f f f f t f v 7 0 2278 "2281 2281 2281 2281 2281 2281 2281" _null_ _null_ _null_ _null_ _null_ tsm_system_cost _null_ _null_ _null_ ));
-DESCR("tsm_system_cost(internal)");
-
-DATA(insert OID = 3341 (  tsm_bernoulli_init		PGNSP PGUID 12 1 0 0 0 f f f f t f v 3 0 2278 "2281 23 700" _null_ _null_ _null_ _null_ _null_ tsm_bernoulli_init _null_ _null_ _null_ ));
-DESCR("tsm_bernoulli_init(internal)");
-DATA(insert OID = 3342 (  tsm_bernoulli_nextblock	PGNSP PGUID 12 1 0 0 0 f f f f t f v 2 0 23 "2281 16" _null_ _null_ _null_ _null_ _null_ tsm_bernoulli_nextblock _null_ _null_ _null_ ));
-DESCR("tsm_bernoulli_nextblock(internal)");
-DATA(insert OID = 3343 (  tsm_bernoulli_nexttuple	PGNSP PGUID 12 1 0 0 0 f f f f t f v 4 0 21 "2281 23 21 16" _null_ _null_ _null_ _null_ _null_ tsm_bernoulli_nexttuple _null_ _null_ _null_ ));
-DESCR("tsm_bernoulli_nexttuple(internal)");
-DATA(insert OID = 3344 (  tsm_bernoulli_end			PGNSP PGUID 12 1 0 0 0 f f f f t f v 1 0 2278 "2281" _null_ _null_ _null_ _null_ _null_ tsm_bernoulli_end _null_ _null_ _null_ ));
-DESCR("tsm_bernoulli_end(internal)");
-DATA(insert OID = 3345 (  tsm_bernoulli_reset		PGNSP PGUID 12 1 0 0 0 f f f f t f v 1 0 2278 "2281" _null_ _null_ _null_ _null_ _null_ tsm_bernoulli_reset _null_ _null_ _null_ ));
-DESCR("tsm_bernoulli_reset(internal)");
-DATA(insert OID = 3346 (  tsm_bernoulli_cost		PGNSP PGUID 12 1 0 0 0 f f f f t f v 7 0 2278 "2281 2281 2281 2281 2281 2281 2281" _null_ _null_ _null_ _null_ _null_ tsm_bernoulli_cost _null_ _null_ _null_ ));
-DESCR("tsm_bernoulli_cost(internal)");
-
 /*
  * Symbolic values for provolatile column: these indicate whether the result
  * of a function is dependent *only* on the values of its explicit arguments,
@@ -5406,6 +5389,12 @@ DESCR("tsm_bernoulli_cost(internal)");
 #define PROVOLATILE_IMMUTABLE	'i'		/* never changes for given input */
 #define PROVOLATILE_STABLE		's'		/* does not change within a scan */
 #define PROVOLATILE_VOLATILE	'v'		/* can change even within a scan */
+
+/* rls */
+DATA(insert OID = 3298 (  row_security_active	   PGNSP PGUID 12 1 0 0 0 f f f f t f s 1 0 16 "26" _null_ _null_ _null_ _null_ _null_	row_security_active _null_ _null_ _null_ ));
+DESCR("row security for current context active on table by table oid");
+DATA(insert OID = 3299 (  row_security_active	   PGNSP PGUID 12 1 0 0 0 f f f f t f s 1 0 16 "25" _null_ _null_ _null_ _null_ _null_	row_security_active_name _null_ _null_ _null_ ));
+DESCR("row security for current context active on table by table name");
 
 /*
  * Symbolic values for proargmodes column.  Note that these must agree with

@@ -1002,6 +1002,10 @@ pgxc_shippability_walker(Node *node, Shippability_context *sc_context)
 			pgxc_set_exprtype_shippability(exprType(node), sc_context);
 		}
 		break;
+	
+		case T_GroupingFunc:
+			pgxc_set_shippability_reason(sc_context, SS_NEED_SINGLENODE);
+			break;
 
 		case T_WindowClause:
 		{

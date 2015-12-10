@@ -436,8 +436,7 @@ usage(void)
 #endif
 		   "  -j, --jobs=NUM           number of threads (default: 1)\n"
 		   "  -l, --log                write transaction times to log file\n"
-	"  -L, --latency-limit=NUM  count transactions lasting more than NUM ms\n"
-		   "                           as late.\n"
+	"  -L, --latency-limit=NUM  count transactions lasting more than NUM ms as late\n"
 		   "  -M, --protocol=simple|extended|prepared\n"
 		   "                           protocol for submitting queries (default: simple)\n"
 		   "  -n, --no-vacuum          do not run VACUUM before tests\n"
@@ -713,7 +712,7 @@ doConnect(void)
 
 		if (!conn)
 		{
-			fprintf(stderr, "Connection to database \"%s\" failed\n",
+			fprintf(stderr, "connection to database \"%s\" failed\n",
 					dbName);
 			return NULL;
 		}
@@ -731,7 +730,7 @@ doConnect(void)
 	/* check to see that the backend connection was successfully made */
 	if (PQstatus(conn) == CONNECTION_BAD)
 	{
-		fprintf(stderr, "Connection to database \"%s\" failed:\n%s",
+		fprintf(stderr, "connection to database \"%s\" failed:\n%s",
 				dbName, PQerrorMessage(conn));
 		PQfinish(conn);
 		return NULL;
@@ -825,7 +824,8 @@ putVariable(CState *st, const char *context, char *name, char *value)
 		 */
 		if (!isLegalVariableName(name))
 		{
-			fprintf(stderr, "%s: invalid variable name '%s'\n", context, name);
+			fprintf(stderr, "%s: invalid variable name: \"%s\"\n",
+					context, name);
 			return false;
 		}
 
@@ -970,7 +970,7 @@ evaluateExpr(CState *st, PgBenchExpr *expr, int64 *retval)
 
 				if ((var = getVariable(st, expr->u.variable.varname)) == NULL)
 				{
-					fprintf(stderr, "undefined variable %s\n",
+					fprintf(stderr, "undefined variable \"%s\"\n",
 							expr->u.variable.varname);
 					return false;
 				}
@@ -1070,14 +1070,15 @@ runShellCommand(CState *st, char *variable, char **argv, int argc)
 		}
 		else if ((arg = getVariable(st, argv[i] + 1)) == NULL)
 		{
-			fprintf(stderr, "%s: undefined variable %s\n", argv[0], argv[i]);
+			fprintf(stderr, "%s: undefined variable \"%s\"\n",
+					argv[0], argv[i]);
 			return false;
 		}
 
 		arglen = strlen(arg);
 		if (len + arglen + (i > 0 ? 1 : 0) >= SHELL_COMMAND_SIZE - 1)
 		{
-			fprintf(stderr, "%s: too long shell command\n", argv[0]);
+			fprintf(stderr, "%s: shell command is too long\n", argv[0]);
 			return false;
 		}
 
@@ -1095,7 +1096,7 @@ runShellCommand(CState *st, char *variable, char **argv, int argc)
 		if (system(command))
 		{
 			if (!timer_exceeded)
-				fprintf(stderr, "%s: cannot launch shell command\n", argv[0]);
+				fprintf(stderr, "%s: could not launch shell command\n", argv[0]);
 			return false;
 		}
 		return true;
@@ -1104,19 +1105,19 @@ runShellCommand(CState *st, char *variable, char **argv, int argc)
 	/* Execute the command with pipe and read the standard output. */
 	if ((fp = popen(command, "r")) == NULL)
 	{
-		fprintf(stderr, "%s: cannot launch shell command\n", argv[0]);
+		fprintf(stderr, "%s: could not launch shell command\n", argv[0]);
 		return false;
 	}
 	if (fgets(res, sizeof(res), fp) == NULL)
 	{
 		if (!timer_exceeded)
-			fprintf(stderr, "%s: cannot read the result\n", argv[0]);
+			fprintf(stderr, "%s: could not read result of shell command\n", argv[0]);
 		(void) pclose(fp);
 		return false;
 	}
 	if (pclose(fp) < 0)
 	{
-		fprintf(stderr, "%s: cannot close shell command\n", argv[0]);
+		fprintf(stderr, "%s: could not close shell command\n", argv[0]);
 		return false;
 	}
 
@@ -1126,7 +1127,8 @@ runShellCommand(CState *st, char *variable, char **argv, int argc)
 		endptr++;
 	if (*res == '\0' || *endptr != '\0')
 	{
-		fprintf(stderr, "%s: must return an integer ('%s' returned)\n", argv[0], res);
+		fprintf(stderr, "%s: shell command must return an integer (not \"%s\")\n",
+				argv[0], res);
 		return false;
 	}
 	snprintf(res, sizeof(res), "%d", retval);
@@ -1134,7 +1136,7 @@ runShellCommand(CState *st, char *variable, char **argv, int argc)
 		return false;
 
 #ifdef DEBUG
-	printf("shell parameter name: %s, value: %s\n", argv[1], res);
+	printf("shell parameter name: \"%s\", value: \"%s\"\n", argv[1], res);
 #endif
 	return true;
 }
@@ -1197,11 +1199,12 @@ doCustom(TState *thread, CState *st, instr_time *conn_time, FILE *logfile, AggVa
 	 * first time it's needed, and reuse the same value throughout this
 	 * function after that. This also ensures that e.g. the calculated latency
 	 * reported in the log file and in the totals are the same. Zero means
-	 * "not set yet".
+	 * "not set yet". Reset "now" when we step to the next command with "goto
+	 * top", though.
 	 */
+top:
 	INSTR_TIME_SET_ZERO(now);
 
-top:
 	commands = sql_files[st->use_file];
 
 	/*
@@ -1290,7 +1293,7 @@ top:
 				fprintf(stderr, "client %d receiving\n", st->id);
 			if (!PQconsumeInput(st->con))
 			{					/* there's something wrong */
-				fprintf(stderr, "Client %d aborted in state %d. Probably the backend died while processing.\n", st->id, st->state);
+				fprintf(stderr, "client %d aborted in state %d; perhaps the backend died while processing\n", st->id, st->state);
 				return clientDone(st, false);
 			}
 			if (PQisBusy(st->con))
@@ -1359,7 +1362,7 @@ top:
 				case PGRES_TUPLES_OK:
 					break;		/* OK */
 				default:
-					fprintf(stderr, "Client %d aborted in state %d: %s",
+					fprintf(stderr, "client %d aborted in state %d: %s",
 							st->id, st->state, PQerrorMessage(st->con));
 					PQclear(res);
 					return clientDone(st, false);
@@ -1410,7 +1413,8 @@ top:
 		INSTR_TIME_SET_CURRENT(start);
 		if ((st->con = doConnect()) == NULL)
 		{
-			fprintf(stderr, "Client %d aborted in establishing connection.\n", st->id);
+			fprintf(stderr, "client %d aborted while establishing connection\n",
+					st->id);
 			return clientDone(st, false);
 		}
 		INSTR_TIME_SET_CURRENT(end);
@@ -1514,7 +1518,8 @@ top:
 		if (r == 0)
 		{
 			if (debug)
-				fprintf(stderr, "client %d cannot send %s\n", st->id, command->argv[0]);
+				fprintf(stderr, "client %d could not send %s\n",
+						st->id, command->argv[0]);
 			st->ecnt++;
 		}
 		else
@@ -1546,7 +1551,8 @@ top:
 			{
 				if ((var = getVariable(st, argv[2] + 1)) == NULL)
 				{
-					fprintf(stderr, "%s: undefined variable %s\n", argv[0], argv[2]);
+					fprintf(stderr, "%s: undefined variable \"%s\"\n",
+							argv[0], argv[2]);
 					st->ecnt++;
 					return true;
 				}
@@ -1555,20 +1561,12 @@ top:
 			else
 				min = strtoint64(argv[2]);
 
-#ifdef NOT_USED
-			if (min < 0)
-			{
-				fprintf(stderr, "%s: invalid minimum number %d\n", argv[0], min);
-				st->ecnt++;
-				return;
-			}
-#endif
-
 			if (*argv[3] == ':')
 			{
 				if ((var = getVariable(st, argv[3] + 1)) == NULL)
 				{
-					fprintf(stderr, "%s: undefined variable %s\n", argv[0], argv[3]);
+					fprintf(stderr, "%s: undefined variable \"%s\"\n",
+							argv[0], argv[3]);
 					st->ecnt++;
 					return true;
 				}
@@ -1579,7 +1577,8 @@ top:
 
 			if (max < min)
 			{
-				fprintf(stderr, "%s: maximum is less than minimum\n", argv[0]);
+				fprintf(stderr, "%s: \\setrandom maximum is less than minimum\n",
+						argv[0]);
 				st->ecnt++;
 				return true;
 			}
@@ -1594,7 +1593,8 @@ top:
 			 */
 			if (max - min < 0 || (max - min) + 1 < 0)
 			{
-				fprintf(stderr, "%s: range too large\n", argv[0]);
+				fprintf(stderr, "%s: \\setrandom range is too large\n",
+						argv[0]);
 				st->ecnt++;
 				return true;
 			}
@@ -1615,7 +1615,8 @@ top:
 				{
 					if ((var = getVariable(st, argv[5] + 1)) == NULL)
 					{
-						fprintf(stderr, "%s: invalid threshold number %s\n", argv[0], argv[5]);
+						fprintf(stderr, "%s: invalid threshold number: \"%s\"\n",
+								argv[0], argv[5]);
 						st->ecnt++;
 						return true;
 					}
@@ -1628,7 +1629,7 @@ top:
 				{
 					if (threshold < MIN_GAUSSIAN_THRESHOLD)
 					{
-						fprintf(stderr, "%s: gaussian threshold must be at least %f\n,", argv[5], MIN_GAUSSIAN_THRESHOLD);
+						fprintf(stderr, "gaussian threshold must be at least %f (not \"%s\")\n", MIN_GAUSSIAN_THRESHOLD, argv[5]);
 						st->ecnt++;
 						return true;
 					}
@@ -1641,7 +1642,7 @@ top:
 				{
 					if (threshold <= 0.0)
 					{
-						fprintf(stderr, "%s: exponential threshold must be strictly positive\n,", argv[5]);
+						fprintf(stderr, "exponential threshold must be greater than zero (not \"%s\")\n", argv[5]);
 						st->ecnt++;
 						return true;
 					}
@@ -1653,7 +1654,8 @@ top:
 			}
 			else	/* this means an error somewhere in the parsing phase... */
 			{
-				fprintf(stderr, "%s: unexpected arguments\n", argv[0]);
+				fprintf(stderr, "%s: invalid arguments for \\setrandom\n",
+						argv[0]);
 				st->ecnt++;
 				return true;
 			}
@@ -1697,7 +1699,8 @@ top:
 			{
 				if ((var = getVariable(st, argv[1] + 1)) == NULL)
 				{
-					fprintf(stderr, "%s: undefined variable %s\n", argv[0], argv[1]);
+					fprintf(stderr, "%s: undefined variable \"%s\"\n",
+							argv[0], argv[1]);
 					st->ecnt++;
 					return true;
 				}
@@ -2611,7 +2614,7 @@ process_file(char *filename)
 
 	if (num_files >= MAX_FILES)
 	{
-		fprintf(stderr, "Up to only %d SQL files are allowed\n", MAX_FILES);
+		fprintf(stderr, "at most %d SQL files are allowed\n", MAX_FILES);
 		exit(1);
 	}
 
@@ -2622,7 +2625,8 @@ process_file(char *filename)
 		fd = stdin;
 	else if ((fd = fopen(filename, "r")) == NULL)
 	{
-		fprintf(stderr, "%s: %s\n", filename, strerror(errno));
+		fprintf(stderr, "could not open file \"%s\": %s\n",
+				filename, strerror(errno));
 		pg_free(my_commands);
 		return false;
 	}
@@ -2733,7 +2737,7 @@ printResults(int ttype, int64 normal_xacts, int nclients,
 	time_include = INSTR_TIME_GET_DOUBLE(total_time);
 	tps_include = normal_xacts / time_include;
 	tps_exclude = normal_xacts / (time_include -
-						(INSTR_TIME_GET_DOUBLE(conn_total_time) / nthreads));
+						(INSTR_TIME_GET_DOUBLE(conn_total_time) / nclients));
 
 	if (ttype == 0)
 		s = "TPC-B (sort of)";
@@ -3011,7 +3015,8 @@ main(int argc, char **argv)
 				nclients = atoi(optarg);
 				if (nclients <= 0 || nclients > MAXCLIENTS)
 				{
-					fprintf(stderr, "invalid number of clients: %d\n", nclients);
+					fprintf(stderr, "invalid number of clients: \"%s\"\n",
+							optarg);
 					exit(1);
 				}
 #ifdef HAVE_GETRLIMIT
@@ -3024,10 +3029,11 @@ main(int argc, char **argv)
 					fprintf(stderr, "getrlimit failed: %s\n", strerror(errno));
 					exit(1);
 				}
-				if (rlim.rlim_cur <= (nclients + 2))
+				if (rlim.rlim_cur < nclients + 3)
 				{
-					fprintf(stderr, "You need at least %d open files but you are only allowed to use %ld.\n", nclients + 2, (long) rlim.rlim_cur);
-					fprintf(stderr, "Use limit/ulimit to increase the limit before using pgbench.\n");
+					fprintf(stderr, "need at least %d open files, but system limit is %ld\n",
+							nclients + 3, (long) rlim.rlim_cur);
+					fprintf(stderr, "Reduce number of clients, or use limit/ulimit to increase the system limit.\n");
 					exit(1);
 				}
 #endif   /* HAVE_GETRLIMIT */
@@ -3037,7 +3043,8 @@ main(int argc, char **argv)
 				nthreads = atoi(optarg);
 				if (nthreads <= 0)
 				{
-					fprintf(stderr, "invalid number of threads: %d\n", nthreads);
+					fprintf(stderr, "invalid number of threads: \"%s\"\n",
+							optarg);
 					exit(1);
 				}
 				break;
@@ -3054,7 +3061,7 @@ main(int argc, char **argv)
 				scale = atoi(optarg);
 				if (scale <= 0)
 				{
-					fprintf(stderr, "invalid scaling factor: %d\n", scale);
+					fprintf(stderr, "invalid scaling factor: \"%s\"\n", optarg);
 					exit(1);
 				}
 				break;
@@ -3062,13 +3069,14 @@ main(int argc, char **argv)
 				benchmarking_option_set = true;
 				if (duration > 0)
 				{
-					fprintf(stderr, "specify either a number of transactions (-t) or a duration (-T), not both.\n");
+					fprintf(stderr, "specify either a number of transactions (-t) or a duration (-T), not both\n");
 					exit(1);
 				}
 				nxacts = atoi(optarg);
 				if (nxacts <= 0)
 				{
-					fprintf(stderr, "invalid number of transactions: %d\n", nxacts);
+					fprintf(stderr, "invalid number of transactions: \"%s\"\n",
+							optarg);
 					exit(1);
 				}
 				break;
@@ -3076,13 +3084,13 @@ main(int argc, char **argv)
 				benchmarking_option_set = true;
 				if (nxacts > 0)
 				{
-					fprintf(stderr, "specify either a number of transactions (-t) or a duration (-T), not both.\n");
+					fprintf(stderr, "specify either a number of transactions (-t) or a duration (-T), not both\n");
 					exit(1);
 				}
 				duration = atoi(optarg);
 				if (duration <= 0)
 				{
-					fprintf(stderr, "invalid duration: %d\n", duration);
+					fprintf(stderr, "invalid duration: \"%s\"\n", optarg);
 					exit(1);
 				}
 				break;
@@ -3112,7 +3120,8 @@ main(int argc, char **argv)
 
 					if ((p = strchr(optarg, '=')) == NULL || p == optarg || *(p + 1) == '\0')
 					{
-						fprintf(stderr, "invalid variable definition: %s\n", optarg);
+						fprintf(stderr, "invalid variable definition: \"%s\"\n",
+								optarg);
 						exit(1);
 					}
 
@@ -3124,9 +3133,9 @@ main(int argc, char **argv)
 			case 'F':
 				initialization_option_set = true;
 				fillfactor = atoi(optarg);
-				if ((fillfactor < 10) || (fillfactor > 100))
+				if (fillfactor < 10 || fillfactor > 100)
 				{
-					fprintf(stderr, "invalid fillfactor: %d\n", fillfactor);
+					fprintf(stderr, "invalid fillfactor: \"%s\"\n", optarg);
 					exit(1);
 				}
 				break;
@@ -3134,7 +3143,7 @@ main(int argc, char **argv)
 				benchmarking_option_set = true;
 				if (num_files > 0)
 				{
-					fprintf(stderr, "query mode (-M) should be specified before transaction scripts (-f)\n");
+					fprintf(stderr, "query mode (-M) should be specified before any transaction scripts (-f)\n");
 					exit(1);
 				}
 				for (querymode = 0; querymode < NUM_QUERYMODE; querymode++)
@@ -3142,7 +3151,8 @@ main(int argc, char **argv)
 						break;
 				if (querymode >= NUM_QUERYMODE)
 				{
-					fprintf(stderr, "invalid query mode (-M): %s\n", optarg);
+					fprintf(stderr, "invalid query mode (-M): \"%s\"\n",
+							optarg);
 					exit(1);
 				}
 				break;
@@ -3151,8 +3161,7 @@ main(int argc, char **argv)
 				progress = atoi(optarg);
 				if (progress <= 0)
 				{
-					fprintf(stderr,
-						"thread progress delay (-P) must be positive (%s)\n",
+					fprintf(stderr, "invalid thread progress delay: \"%s\"\n",
 							optarg);
 					exit(1);
 				}
@@ -3166,7 +3175,7 @@ main(int argc, char **argv)
 
 					if (throttle_value <= 0.0)
 					{
-						fprintf(stderr, "invalid rate limit: %s\n", optarg);
+						fprintf(stderr, "invalid rate limit: \"%s\"\n", optarg);
 						exit(1);
 					}
 					/* Invert rate limit into a time offset */
@@ -3179,7 +3188,8 @@ main(int argc, char **argv)
 
 					if (limit_ms <= 0.0)
 					{
-						fprintf(stderr, "invalid latency limit: %s\n", optarg);
+						fprintf(stderr, "invalid latency limit: \"%s\"\n",
+								optarg);
 						exit(1);
 					}
 					benchmarking_option_set = true;
@@ -3204,20 +3214,21 @@ main(int argc, char **argv)
 				sample_rate = atof(optarg);
 				if (sample_rate <= 0.0 || sample_rate > 1.0)
 				{
-					fprintf(stderr, "invalid sampling rate: %f\n", sample_rate);
+					fprintf(stderr, "invalid sampling rate: \"%s\"\n", optarg);
 					exit(1);
 				}
 				break;
 			case 5:
 #ifdef WIN32
-				fprintf(stderr, "--aggregate-interval is not currently supported on Windows");
+				fprintf(stderr, "--aggregate-interval is not currently supported on Windows\n");
 				exit(1);
 #else
 				benchmarking_option_set = true;
 				agg_interval = atoi(optarg);
 				if (agg_interval <= 0)
 				{
-					fprintf(stderr, "invalid number of seconds for aggregation: %d\n", agg_interval);
+					fprintf(stderr, "invalid number of seconds for aggregation: \"%s\"\n",
+							optarg);
 					exit(1);
 				}
 #endif
@@ -3248,7 +3259,7 @@ main(int argc, char **argv)
 	{
 		if (benchmarking_option_set)
 		{
-			fprintf(stderr, "some options cannot be used in initialization (-i) mode\n");
+			fprintf(stderr, "some of the specified options cannot be used in initialization (-i) mode\n");
 			exit(1);
 		}
 
@@ -3259,7 +3270,7 @@ main(int argc, char **argv)
 	{
 		if (initialization_option_set)
 		{
-			fprintf(stderr, "some options cannot be used in benchmarking mode\n");
+			fprintf(stderr, "some of the specified options cannot be used in benchmarking mode\n");
 			exit(1);
 		}
 	}
@@ -3277,30 +3288,30 @@ main(int argc, char **argv)
 	/* --sampling-rate may be used only with -l */
 	if (sample_rate > 0.0 && !use_log)
 	{
-		fprintf(stderr, "log sampling rate is allowed only when logging transactions (-l) \n");
+		fprintf(stderr, "log sampling (--sampling-rate) is allowed only when logging transactions (-l)\n");
 		exit(1);
 	}
 
 	/* --sampling-rate may must not be used with --aggregate-interval */
 	if (sample_rate > 0.0 && agg_interval > 0)
 	{
-		fprintf(stderr, "log sampling (--sampling-rate) and aggregation (--aggregate-interval) can't be used at the same time\n");
+		fprintf(stderr, "log sampling (--sampling-rate) and aggregation (--aggregate-interval) cannot be used at the same time\n");
 		exit(1);
 	}
 
-	if (agg_interval > 0 && (!use_log))
+	if (agg_interval > 0 && !use_log)
 	{
 		fprintf(stderr, "log aggregation is allowed only when actually logging transactions\n");
 		exit(1);
 	}
 
-	if ((duration > 0) && (agg_interval > duration))
+	if (duration > 0 && agg_interval > duration)
 	{
-		fprintf(stderr, "number of seconds for aggregation (%d) must not be higher that test duration (%d)\n", agg_interval, duration);
+		fprintf(stderr, "number of seconds for aggregation (%d) must not be higher than test duration (%d)\n", agg_interval, duration);
 		exit(1);
 	}
 
-	if ((duration > 0) && (agg_interval > 0) && (duration % agg_interval != 0))
+	if (duration > 0 && agg_interval > 0 && duration % agg_interval != 0)
 	{
 		fprintf(stderr, "duration (%d) must be a multiple of aggregation interval (%d)\n", duration, agg_interval);
 		exit(1);
@@ -3366,7 +3377,7 @@ main(int argc, char **argv)
 
 	if (PQstatus(con) == CONNECTION_BAD)
 	{
-		fprintf(stderr, "Connection to database '%s' failed.\n", dbName);
+		fprintf(stderr, "connection to database \"%s\" failed\n", dbName);
 		fprintf(stderr, "%s", PQerrorMessage(con));
 		exit(1);
 	}
@@ -3386,7 +3397,8 @@ main(int argc, char **argv)
 		scale = atoi(PQgetvalue(res, 0, 0));
 		if (scale < 0)
 		{
-			fprintf(stderr, "count(*) from pgbench_branches invalid (%d)\n", scale);
+			fprintf(stderr, "invalid count(*) from pgbench_branches: \"%s\"\n",
+					PQgetvalue(res, 0, 0));
 			exit(1);
 		}
 		PQclear(res);
@@ -3394,7 +3406,7 @@ main(int argc, char **argv)
 		/* warn if we override user-given -s switch */
 		if (scale_given)
 			fprintf(stderr,
-			"Scale option ignored, using pgbench_branches table count = %d\n",
+					"scale option ignored, using count from pgbench_branches table (%d)\n",
 					scale);
 	}
 
@@ -3543,7 +3555,7 @@ main(int argc, char **argv)
 
 			if (err != 0 || thread->thread == INVALID_THREAD)
 			{
-				fprintf(stderr, "cannot create thread: %s\n", strerror(err));
+				fprintf(stderr, "could not create thread: %s\n", strerror(err));
 				exit(1);
 			}
 		}
@@ -3655,7 +3667,8 @@ threadRun(void *arg)
 
 		if (logfile == NULL)
 		{
-			fprintf(stderr, "Couldn't open logfile \"%s\": %s", logpath, strerror(errno));
+			fprintf(stderr, "could not open logfile \"%s\": %s\n",
+					logpath, strerror(errno));
 			goto done;
 		}
 	}
@@ -3689,7 +3702,8 @@ threadRun(void *arg)
 
 		if (st->ecnt > prev_ecnt && commands[st->state]->type == META_COMMAND)
 		{
-			fprintf(stderr, "Client %d aborted in state %d. Execution meta-command failed.\n", i, st->state);
+			fprintf(stderr, "client %d aborted in state %d; execution of meta-command failed\n",
+					i, st->state);
 			remains--;			/* I've aborted */
 			PQfinish(st->con);
 			st->con = NULL;
@@ -3765,6 +3779,33 @@ threadRun(void *arg)
 				maxsock = sock;
 		}
 
+		/* also wake up to print the next progress report on time */
+		if (progress && min_usec > 0
+#if !defined(PTHREAD_FORK_EMULATION)
+			&& thread->tid == 0
+#endif   /* !PTHREAD_FORK_EMULATION */
+			)
+		{
+			/* get current time if needed */
+			if (now_usec == 0)
+			{
+				instr_time	now;
+
+				INSTR_TIME_SET_CURRENT(now);
+				now_usec = INSTR_TIME_GET_MICROSEC(now);
+			}
+
+			if (now_usec >= next_report)
+				min_usec = 0;
+			else if ((next_report - now_usec) < min_usec)
+				min_usec = next_report - now_usec;
+		}
+
+		/*
+		 * Sleep until we receive data from the server, or a nap-time
+		 * specified in the script ends, or it's time to print a progress
+		 * report.
+		 */
 		if (min_usec > 0 && maxsock != -1)
 		{
 			int			nsocks; /* return from select(2) */
@@ -3784,7 +3825,7 @@ threadRun(void *arg)
 				if (errno == EINTR)
 					continue;
 				/* must be something wrong */
-				fprintf(stderr, "select failed: %s\n", strerror(errno));
+				fprintf(stderr, "select() failed: %s\n", strerror(errno));
 				goto done;
 			}
 		}
@@ -3805,7 +3846,8 @@ threadRun(void *arg)
 
 			if (st->ecnt > prev_ecnt && commands[st->state]->type == META_COMMAND)
 			{
-				fprintf(stderr, "Client %d aborted in state %d. Execution of meta-command failed.\n", i, st->state);
+				fprintf(stderr, "client %d aborted in state %d; execution of meta-command failed\n",
+						i, st->state);
 				remains--;		/* I've aborted */
 				PQfinish(st->con);
 				st->con = NULL;
@@ -3870,7 +3912,15 @@ threadRun(void *arg)
 				last_lags = lags;
 				last_report = now;
 				last_skipped = thread->throttle_latency_skipped;
-				next_report += (int64) progress *1000000;
+
+				/*
+				 * Ensure that the next report is in the future, in case
+				 * pgbench/postgres got stuck somewhere.
+				 */
+				do
+				{
+					next_report += (int64) progress *1000000;
+				} while (now >= next_report);
 			}
 		}
 #else
@@ -3934,7 +3984,15 @@ threadRun(void *arg)
 				last_lags = lags;
 				last_report = now;
 				last_skipped = thread->throttle_latency_skipped;
-				next_report += (int64) progress *1000000;
+
+				/*
+				 * Ensure that the next report is in the future, in case
+				 * pgbench/postgres got stuck somewhere.
+				 */
+				do
+				{
+					next_report += (int64) progress *1000000;
+				} while (now >= next_report);
 			}
 		}
 #endif   /* PTHREAD_FORK_EMULATION */
@@ -4088,7 +4146,7 @@ setalarm(int seconds)
 							   win32_timer_callback, NULL, seconds * 1000, 0,
 							   WT_EXECUTEINTIMERTHREAD | WT_EXECUTEONLYONCE))
 	{
-		fprintf(stderr, "Failed to set timer\n");
+		fprintf(stderr, "failed to set timer\n");
 		exit(1);
 	}
 }

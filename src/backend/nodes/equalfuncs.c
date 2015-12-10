@@ -764,9 +764,9 @@ _equalOnConflictExpr(const OnConflictExpr *a, const OnConflictExpr *b)
 	COMPARE_SCALAR_FIELD(action);
 	COMPARE_NODE_FIELD(arbiterElems);
 	COMPARE_NODE_FIELD(arbiterWhere);
+	COMPARE_SCALAR_FIELD(constraint);
 	COMPARE_NODE_FIELD(onConflictSet);
 	COMPARE_NODE_FIELD(onConflictWhere);
-	COMPARE_SCALAR_FIELD(constraint);
 	COMPARE_SCALAR_FIELD(exclRelIndex);
 	COMPARE_NODE_FIELD(exclRelTlist);
 
@@ -911,7 +911,6 @@ _equalQuery(const Query *a, const Query *b)
 	COMPARE_NODE_FIELD(rtable);
 	COMPARE_NODE_FIELD(jointree);
 	COMPARE_NODE_FIELD(targetList);
-	COMPARE_NODE_FIELD(withCheckOptions);
 	COMPARE_NODE_FIELD(onConflict);
 	COMPARE_NODE_FIELD(returningList);
 	COMPARE_NODE_FIELD(groupClause);
@@ -925,6 +924,7 @@ _equalQuery(const Query *a, const Query *b)
 	COMPARE_NODE_FIELD(rowMarks);
 	COMPARE_NODE_FIELD(setOperations);
 	COMPARE_NODE_FIELD(constraintDeps);
+	COMPARE_NODE_FIELD(withCheckOptions);
 
 	return true;
 }
@@ -1872,8 +1872,8 @@ _equalCreateEventTrigStmt(const CreateEventTrigStmt *a, const CreateEventTrigStm
 {
 	COMPARE_STRING_FIELD(trigname);
 	COMPARE_STRING_FIELD(eventname);
-	COMPARE_NODE_FIELD(funcname);
 	COMPARE_NODE_FIELD(whenclause);
+	COMPARE_NODE_FIELD(funcname);
 
 	return true;
 }
@@ -2078,7 +2078,7 @@ _equalCreatePolicyStmt(const CreatePolicyStmt *a, const CreatePolicyStmt *b)
 {
 	COMPARE_STRING_FIELD(policy_name);
 	COMPARE_NODE_FIELD(table);
-	COMPARE_SCALAR_FIELD(cmd);
+	COMPARE_STRING_FIELD(cmd_name);
 	COMPARE_NODE_FIELD(roles);
 	COMPARE_NODE_FIELD(qual);
 	COMPARE_NODE_FIELD(with_check);
@@ -2295,6 +2295,18 @@ _equalRangeFunction(const RangeFunction *a, const RangeFunction *b)
 }
 
 static bool
+_equalRangeTableSample(const RangeTableSample *a, const RangeTableSample *b)
+{
+	COMPARE_NODE_FIELD(relation);
+	COMPARE_NODE_FIELD(method);
+	COMPARE_NODE_FIELD(args);
+	COMPARE_NODE_FIELD(repeatable);
+	COMPARE_LOCATION_FIELD(location);
+
+	return true;
+}
+
+static bool
 _equalIndexElem(const IndexElem *a, const IndexElem *b)
 {
 	COMPARE_STRING_FIELD(name);
@@ -2433,10 +2445,21 @@ _equalRangeTblFunction(const RangeTblFunction *a, const RangeTblFunction *b)
 }
 
 static bool
+_equalTableSampleClause(const TableSampleClause *a, const TableSampleClause *b)
+{
+	COMPARE_SCALAR_FIELD(tsmhandler);
+	COMPARE_NODE_FIELD(args);
+	COMPARE_NODE_FIELD(repeatable);
+
+	return true;
+}
+
+static bool
 _equalWithCheckOption(const WithCheckOption *a, const WithCheckOption *b)
 {
 	COMPARE_SCALAR_FIELD(kind);
 	COMPARE_STRING_FIELD(relname);
+	COMPARE_STRING_FIELD(polname);
 	COMPARE_NODE_FIELD(qual);
 	COMPARE_SCALAR_FIELD(cascaded);
 
@@ -2538,36 +2561,6 @@ _equalCommonTableExpr(const CommonTableExpr *a, const CommonTableExpr *b)
 	COMPARE_NODE_FIELD(ctecoltypes);
 	COMPARE_NODE_FIELD(ctecoltypmods);
 	COMPARE_NODE_FIELD(ctecolcollations);
-
-	return true;
-}
-
-static bool
-_equalRangeTableSample(const RangeTableSample *a, const RangeTableSample *b)
-{
-	COMPARE_NODE_FIELD(relation);
-	COMPARE_STRING_FIELD(method);
-	COMPARE_NODE_FIELD(repeatable);
-	COMPARE_NODE_FIELD(args);
-
-	return true;
-}
-
-static bool
-_equalTableSampleClause(const TableSampleClause *a, const TableSampleClause *b)
-{
-	COMPARE_SCALAR_FIELD(tsmid);
-	COMPARE_SCALAR_FIELD(tsmseqscan);
-	COMPARE_SCALAR_FIELD(tsmpagemode);
-	COMPARE_SCALAR_FIELD(tsminit);
-	COMPARE_SCALAR_FIELD(tsmnextblock);
-	COMPARE_SCALAR_FIELD(tsmnexttuple);
-	COMPARE_SCALAR_FIELD(tsmexaminetuple);
-	COMPARE_SCALAR_FIELD(tsmend);
-	COMPARE_SCALAR_FIELD(tsmreset);
-	COMPARE_SCALAR_FIELD(tsmcost);
-	COMPARE_NODE_FIELD(repeatable);
-	COMPARE_NODE_FIELD(args);
 
 	return true;
 }
@@ -3384,6 +3377,9 @@ equal(const void *a, const void *b)
 		case T_RangeFunction:
 			retval = _equalRangeFunction(a, b);
 			break;
+		case T_RangeTableSample:
+			retval = _equalRangeTableSample(a, b);
+			break;
 		case T_TypeName:
 			retval = _equalTypeName(a, b);
 			break;
@@ -3407,6 +3403,9 @@ equal(const void *a, const void *b)
 			break;
 		case T_RangeTblFunction:
 			retval = _equalRangeTblFunction(a, b);
+			break;
+		case T_TableSampleClause:
+			retval = _equalTableSampleClause(a, b);
 			break;
 		case T_WithCheckOption:
 			retval = _equalWithCheckOption(a, b);
@@ -3434,12 +3433,6 @@ equal(const void *a, const void *b)
 			break;
 		case T_CommonTableExpr:
 			retval = _equalCommonTableExpr(a, b);
-			break;
-		case T_RangeTableSample:
-			retval = _equalRangeTableSample(a, b);
-			break;
-		case T_TableSampleClause:
-			retval = _equalTableSampleClause(a, b);
 			break;
 		case T_FuncWithArgs:
 			retval = _equalFuncWithArgs(a, b);

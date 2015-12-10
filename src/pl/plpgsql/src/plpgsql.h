@@ -22,7 +22,6 @@
 #include "commands/event_trigger.h"
 #include "commands/trigger.h"
 #include "executor/spi.h"
-#include "utils/hsearch.h"
 
 /**********************************************************************
  * Definitions
@@ -756,9 +755,6 @@ typedef struct PLpgSQL_function
 	PLpgSQL_datum **datums;
 	PLpgSQL_stmt_block *action;
 
-	/* table for performing casts needed in this function */
-	HTAB	   *cast_hash;
-
 	/* these fields change when the function is used */
 	struct PLpgSQL_execstate *cur_estate;
 	unsigned long use_count;
@@ -799,6 +795,10 @@ typedef struct PLpgSQL_execstate
 
 	/* EState to use for "simple" expression evaluation */
 	EState	   *simple_eval_estate;
+
+	/* Lookup table to use for executing type casts */
+	HTAB	   *cast_hash;
+	MemoryContext cast_hash_context;
 
 	/* temporary state for results from evaluation of query or expr */
 	SPITupleTable *eval_tuptable;

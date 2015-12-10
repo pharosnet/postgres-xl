@@ -192,7 +192,6 @@ extern Oid	get_operid(const char *oprname, Oid oprleft, Oid oprright, Oid oprnsp
 #endif
 extern char *get_namespace_name_or_temp(Oid nspid);
 extern Oid	get_range_subtype(Oid rangeOid);
-extern char *get_tablesample_method_name(Oid tsmid);
 
 #ifdef XCP
 extern Oid	get_tablesample_method_id(const char *methodname);

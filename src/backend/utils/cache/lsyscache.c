@@ -37,7 +37,6 @@
 #include "catalog/pg_range.h"
 #include "catalog/pg_statistic.h"
 #include "catalog/pg_transform.h"
-#include "catalog/pg_tablesample_method.h"
 #include "catalog/pg_type.h"
 #ifdef PGXC
 #include "catalog/pgxc_class.h"
@@ -3500,52 +3499,3 @@ get_range_subtype(Oid rangeOid)
 	else
 		return InvalidOid;
 }
-
-/*				---------- PG_TABLESAMPLE_METHOD CACHE ----------			 */
-
-/*
- * get_tablesample_method_name - given a tablesample method OID,
- * look up the name or NULL if not found
- */
-char *
-get_tablesample_method_name(Oid tsmid)
-{
-	HeapTuple	tuple;
-
-	tuple = SearchSysCache1(TABLESAMPLEMETHODOID, ObjectIdGetDatum(tsmid));
-	if (HeapTupleIsValid(tuple))
-	{
-		Form_pg_tablesample_method tup =
-		(Form_pg_tablesample_method) GETSTRUCT(tuple);
-		char	   *result;
-
-		result = pstrdup(NameStr(tup->tsmname));
-		ReleaseSysCache(tuple);
-		return result;
-	}
-	else
-		return NULL;
-}
-
-#ifdef XCP
-Oid
-get_tablesample_method_id(const char *methodname)
-{
-	Oid tsoid;
-	HeapTuple	tuple;
-
-	/* Load the tablesample method */
-	tuple = SearchSysCache1(TABLESAMPLEMETHODNAME, PointerGetDatum(methodname));
-	if (!HeapTupleIsValid(tuple))
-		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_OBJECT),
-				 errmsg("tablesample method \"%s\" does not exist",
-					 methodname)));
-
-	tsoid = HeapTupleGetOid(tuple);
-	ReleaseSysCache(tuple);
-
-	return tsoid;
-}
-#endif
-

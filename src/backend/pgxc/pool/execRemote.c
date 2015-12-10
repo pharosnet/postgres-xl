@@ -4792,6 +4792,7 @@ determine_param_types(Plan *plan,  struct find_params_context *context)
 			break;
 
 		case T_SeqScan:
+		case T_SampleScan:
 			break;
 
 		case T_IndexScan:

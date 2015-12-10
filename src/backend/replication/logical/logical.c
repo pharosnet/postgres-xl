@@ -28,9 +28,6 @@
 
 #include "postgres.h"
 
-#include <unistd.h>
-#include <sys/stat.h>
-
 #include "miscadmin.h"
 
 #include "access/xact.h"
@@ -406,11 +403,12 @@ CreateDecodingContext(XLogRecPtr start_lsn,
 		 * decoding. Clients have to be able to do that to support synchronous
 		 * replication.
 		 */
-		start_lsn = slot->data.confirmed_flush;
 		elog(DEBUG1, "cannot stream from %X/%X, minimum is %X/%X, forwarding",
 			 (uint32) (start_lsn >> 32), (uint32) start_lsn,
 			 (uint32) (slot->data.confirmed_flush >> 32),
 			 (uint32) slot->data.confirmed_flush);
+
+		start_lsn = slot->data.confirmed_flush;
 	}
 
 	ctx = StartupDecodingContext(output_plugin_options,

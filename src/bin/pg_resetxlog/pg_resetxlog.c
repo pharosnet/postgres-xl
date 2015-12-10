@@ -56,8 +56,6 @@
 #include "common/restricted_token.h"
 #include "storage/large_object.h"
 #include "pg_getopt.h"
-#include "replication/logical.h"
-#include "replication/origin.h"
 
 
 static ControlFileData ControlFile;		/* pg_control values */
@@ -261,7 +259,7 @@ main(int argc, char *argv[])
 				break;
 
 			case 'l':
-				if (strspn(optarg, "01234567890ABCDEFabcdef") != 24)
+				if (strspn(optarg, "01234567890ABCDEFabcdef") != XLOG_FNAME_LEN)
 				{
 					fprintf(stderr, _("%s: invalid argument for option %s\n"), progname, "-l");
 					fprintf(stderr, _("Try \"%s --help\" for more information.\n"), progname);
@@ -667,9 +665,9 @@ PrintControlValues(bool guessed)
 		   ControlFile.checkPointCopy.oldestMulti);
 	printf(_("Latest checkpoint's oldestMulti's DB: %u\n"),
 		   ControlFile.checkPointCopy.oldestMultiDB);
-	printf(_("Latest checkpoint's oldest CommitTs:  %u\n"),
+	printf(_("Latest checkpoint's oldestCommitTs:   %u\n"),
 		   ControlFile.checkPointCopy.oldestCommitTs);
-	printf(_("Latest checkpoint's newest CommitTs:  %u\n"),
+	printf(_("Latest checkpoint's newestCommitTs:   %u\n"),
 		   ControlFile.checkPointCopy.newestCommitTs);
 	printf(_("Maximum data alignment:               %u\n"),
 		   ControlFile.maxAlign);
@@ -906,7 +904,8 @@ FindEndOfXLOG(void)
 
 	while (errno = 0, (xlde = readdir(xldir)) != NULL)
 	{
-		if (IsXLogFileName(xlde->d_name))
+		if (IsXLogFileName(xlde->d_name) ||
+			IsPartialXLogFileName(xlde->d_name))
 		{
 			unsigned int tli,
 						log,
@@ -976,8 +975,8 @@ KillExistingXLOG(void)
 
 	while (errno = 0, (xlde = readdir(xldir)) != NULL)
 	{
-		if (strlen(xlde->d_name) == 24 &&
-			strspn(xlde->d_name, "0123456789ABCDEF") == 24)
+		if (IsXLogFileName(xlde->d_name) ||
+			IsPartialXLogFileName(xlde->d_name))
 		{
 			snprintf(path, MAXPGPATH, "%s/%s", XLOGDIR, xlde->d_name);
 			if (unlink(path) < 0)
@@ -1027,9 +1026,11 @@ KillExistingArchiveStatus(void)
 
 	while (errno = 0, (xlde = readdir(xldir)) != NULL)
 	{
-		if (strspn(xlde->d_name, "0123456789ABCDEF") == 24 &&
-			(strcmp(xlde->d_name + 24, ".ready") == 0 ||
-			 strcmp(xlde->d_name + 24, ".done") == 0))
+		if (strspn(xlde->d_name, "0123456789ABCDEF") == XLOG_FNAME_LEN &&
+			(strcmp(xlde->d_name + XLOG_FNAME_LEN, ".ready") == 0 ||
+			 strcmp(xlde->d_name + XLOG_FNAME_LEN, ".done") == 0 ||
+			 strcmp(xlde->d_name + XLOG_FNAME_LEN, ".partial.ready") == 0 ||
+			 strcmp(xlde->d_name + XLOG_FNAME_LEN, ".partial.done") == 0))
 		{
 			snprintf(path, MAXPGPATH, "%s/%s", ARCHSTATDIR, xlde->d_name);
 			if (unlink(path) < 0)
@@ -1164,10 +1165,11 @@ static void
 usage(void)
 {
 	printf(_("%s resets the PostgreSQL transaction log.\n\n"), progname);
-	printf(_("Usage:\n  %s [OPTION]... {[-D] DATADIR}\n\n"), progname);
+	printf(_("Usage:\n  %s [OPTION]... DATADIR\n\n"), progname);
 	printf(_("Options:\n"));
 	printf(_("  -c XID,XID       set oldest and newest transactions bearing commit timestamp\n"));
 	printf(_("                   (zero in either value means no change)\n"));
+	printf(_(" [-D] DATADIR      data directory\n"));
 	printf(_("  -e XIDEPOCH      set next transaction ID epoch\n"));
 	printf(_("  -f               force update to be done\n"));
 	printf(_("  -l XLOGFILE      force minimum WAL starting location for new transaction log\n"));

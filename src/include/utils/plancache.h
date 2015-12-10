@@ -117,9 +117,8 @@ typedef struct CachedPlanSource
 #ifdef PGXC
 	char	   *stmt_name;		/* If set, this is a copy of prepared stmt name */
 #endif
-	bool		hasRowSecurity;			/* planned with row security? */
-	int			row_security_env;		/* row security setting when planned */
-	bool		rowSecurityDisabled;	/* is row security disabled? */
+	bool		hasRowSecurity; /* planned with row security? */
+	bool		row_security_env;		/* row security setting when planned */
 } CachedPlanSource;
 
 /*

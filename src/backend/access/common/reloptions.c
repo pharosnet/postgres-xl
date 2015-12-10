@@ -185,7 +185,7 @@ static relopt_int intRelOpts[] =
 			"Age at which to autovacuum a table to prevent transaction ID wraparound",
 			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST
 		},
-		-1, 100000000, 2000000000
+		-1, 100000, 2000000000
 	},
 	{
 		{
@@ -193,7 +193,7 @@ static relopt_int intRelOpts[] =
 			"Multixact age at which to autovacuum a table to prevent multixact wraparound",
 			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST
 		},
-		-1, 100000000, 2000000000
+		-1, 10000, 2000000000
 	},
 	{
 		{
@@ -484,7 +484,7 @@ allocate_reloption(bits32 kinds, int type, char *name, char *desc)
 			size = sizeof(relopt_string);
 			break;
 		default:
-			elog(ERROR, "unsupported option type");
+			elog(ERROR, "unsupported reloption type %d", type);
 			return NULL;		/* keep compiler quiet */
 	}
 
@@ -1016,7 +1016,8 @@ parse_one_reloption(relopt_value *option, char *text_str, int text_len,
 				parsed = parse_bool(value, &option->values.bool_val);
 				if (validate && !parsed)
 					ereport(ERROR,
-					   (errmsg("invalid value for boolean option \"%s\": %s",
+							(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						errmsg("invalid value for boolean option \"%s\": %s",
 							   option->gen->name, value)));
 			}
 			break;
@@ -1027,12 +1028,14 @@ parse_one_reloption(relopt_value *option, char *text_str, int text_len,
 				parsed = parse_int(value, &option->values.int_val, 0, NULL);
 				if (validate && !parsed)
 					ereport(ERROR,
-					   (errmsg("invalid value for integer option \"%s\": %s",
+							(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						errmsg("invalid value for integer option \"%s\": %s",
 							   option->gen->name, value)));
 				if (validate && (option->values.int_val < optint->min ||
 								 option->values.int_val > optint->max))
 					ereport(ERROR,
-						  (errmsg("value %s out of bounds for option \"%s\"",
+							(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						   errmsg("value %s out of bounds for option \"%s\"",
 								  value, option->gen->name),
 					 errdetail("Valid values are between \"%d\" and \"%d\".",
 							   optint->min, optint->max)));
@@ -1045,12 +1048,14 @@ parse_one_reloption(relopt_value *option, char *text_str, int text_len,
 				parsed = parse_real(value, &option->values.real_val);
 				if (validate && !parsed)
 					ereport(ERROR,
-							(errmsg("invalid value for floating point option \"%s\": %s",
+							(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+							 errmsg("invalid value for floating point option \"%s\": %s",
 									option->gen->name, value)));
 				if (validate && (option->values.real_val < optreal->min ||
 								 option->values.real_val > optreal->max))
 					ereport(ERROR,
-						  (errmsg("value %s out of bounds for option \"%s\"",
+							(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						   errmsg("value %s out of bounds for option \"%s\"",
 								  value, option->gen->name),
 					 errdetail("Valid values are between \"%f\" and \"%f\".",
 							   optreal->min, optreal->max)));
@@ -1168,7 +1173,7 @@ fillRelOptions(void *rdopts, Size basesize,
 						}
 						break;
 					default:
-						elog(ERROR, "unrecognized reloption type %c",
+						elog(ERROR, "unsupported reloption type %d",
 							 options[i].gen->type);
 						break;
 				}

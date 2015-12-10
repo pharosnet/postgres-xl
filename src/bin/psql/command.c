@@ -1641,7 +1641,8 @@ do_connect(char *dbname, char *user, char *host, char *port)
 	 * positional syntax.
 	 */
 	keep_password =
-		((strcmp(user, PQuser(o_conn)) == 0) &&
+		(o_conn &&
+		 (strcmp(user, PQuser(o_conn)) == 0) &&
 		 (!host || strcmp(host, PQhost(o_conn)) == 0) &&
 		 (strcmp(port, PQport(o_conn)) == 0) &&
 		 !has_connection_string);
@@ -1768,7 +1769,8 @@ do_connect(char *dbname, char *user, char *host, char *port)
 	/* Tell the user about the new connection */
 	if (!pset.quiet)
 	{
-		if (param_is_newly_set(PQhost(o_conn), PQhost(pset.db)) ||
+		if (!o_conn ||
+			param_is_newly_set(PQhost(o_conn), PQhost(pset.db)) ||
 			param_is_newly_set(PQport(o_conn), PQport(pset.db)))
 		{
 			char	   *host = PQhost(pset.db);
@@ -2376,7 +2378,7 @@ do_pset(const char *param, const char *value, printQueryOpt *popt, bool quiet)
 			popt->topt.format = PRINT_TROFF_MS;
 		else
 		{
-			psql_error("\\pset: allowed formats are unaligned, aligned, wrapped, html, asciidoc, latex, troff-ms\n");
+			psql_error("\\pset: allowed formats are unaligned, aligned, wrapped, html, asciidoc, latex, latex-longtable, troff-ms\n");
 			return false;
 		}
 

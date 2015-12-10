@@ -1168,20 +1168,9 @@ EventTriggerSupportsObjectClass(ObjectClass objclass)
 		case OCLASS_EXTENSION:
 #ifdef PGXC
 		case OCLASS_PGXC_CLASS:
-		case OCLASS_PGXC_NODE:
-		case OCLASS_PGXC_GROUP:
 #endif
 		case OCLASS_POLICY:
 			return true;
-
-		case MAX_OCLASS:
-
-			/*
-			 * This shouldn't ever happen, but we keep the case to avoid a
-			 * compiler warning without a "default" clause in the switch.
-			 */
-			Assert(false);
-			break;
 	}
 
 	return true;

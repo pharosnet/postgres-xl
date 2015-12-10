@@ -55,13 +55,13 @@ typedef struct LWLock
 	slock_t		mutex;			/* Protects LWLock and queue of PGPROCs */
 	uint16		tranche;		/* tranche ID */
 
-	pg_atomic_uint32 state;		/* state of exlusive/nonexclusive lockers */
+	pg_atomic_uint32 state;		/* state of exclusive/nonexclusive lockers */
 #ifdef LOCK_DEBUG
 	pg_atomic_uint32 nwaiters;	/* number of waiters */
 #endif
 	dlist_head	waiters;		/* list of waiting PGPROCs */
 #ifdef LOCK_DEBUG
-	struct PGPROC *owner;		/* last exlusive owner of the lock */
+	struct PGPROC *owner;		/* last exclusive owner of the lock */
 #endif
 } LWLock;
 
@@ -145,16 +145,18 @@ extern PGDLLIMPORT LWLockPadded *MainLWLockArray;
 #define CommitTsControlLock			(&MainLWLockArray[42].lock)
 #define CommitTsLock				(&MainLWLockArray[43].lock)
 #define ReplicationOriginLock		(&MainLWLockArray[44].lock)
+#define MultiXactTruncationLock		(&MainLWLockArray[45].lock)
 #else
 #define CommitTsControlLock			(&MainLWLockArray[38].lock)
 #define CommitTsLock				(&MainLWLockArray[39].lock)
 #define ReplicationOriginLock		(&MainLWLockArray[40].lock)
+#define MultiXactTruncationLock		(&MainLWLockArray[41].lock)
 #endif
 
 #ifdef PGXC
-#define NUM_INDIVIDUAL_LWLOCKS		45
+#define NUM_INDIVIDUAL_LWLOCKS		46
 #else
-#define NUM_INDIVIDUAL_LWLOCKS		41
+#define NUM_INDIVIDUAL_LWLOCKS		42
 #endif
 
 /*
@@ -201,10 +203,10 @@ extern bool LWLockAcquire(LWLock *lock, LWLockMode mode);
 extern bool LWLockConditionalAcquire(LWLock *lock, LWLockMode mode);
 extern bool LWLockAcquireOrWait(LWLock *lock, LWLockMode mode);
 extern void LWLockRelease(LWLock *lock);
+extern void LWLockReleaseClearVar(LWLock *lock, uint64 *valptr, uint64 val);
 extern void LWLockReleaseAll(void);
 extern bool LWLockHeldByMe(LWLock *lock);
 
-extern bool LWLockAcquireWithVar(LWLock *lock, uint64 *valptr, uint64 val);
 extern bool LWLockWaitForVar(LWLock *lock, uint64 *valptr, uint64 oldval, uint64 *newval);
 extern void LWLockUpdateVar(LWLock *lock, uint64 *valptr, uint64 value);
 

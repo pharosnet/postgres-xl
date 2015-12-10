@@ -2543,8 +2543,8 @@ pgstat_fetch_global(void)
 
 static PgBackendStatus *BackendStatusArray = NULL;
 static PgBackendStatus *MyBEEntry = NULL;
-static char *BackendClientHostnameBuffer = NULL;
 static char *BackendAppnameBuffer = NULL;
+static char *BackendClientHostnameBuffer = NULL;
 static char *BackendActivityBuffer = NULL;
 static Size BackendActivityBufferSize = 0;
 #ifdef USE_SSL
@@ -2560,13 +2560,22 @@ BackendStatusShmemSize(void)
 {
 	Size		size;
 
+	/* BackendStatusArray: */
 	size = mul_size(sizeof(PgBackendStatus), MaxBackends);
+	/* BackendAppnameBuffer: */
 	size = add_size(size,
 					mul_size(NAMEDATALEN, MaxBackends));
+	/* BackendClientHostnameBuffer: */
+	size = add_size(size,
+					mul_size(NAMEDATALEN, MaxBackends));
+	/* BackendActivityBuffer: */
 	size = add_size(size,
 					mul_size(pgstat_track_activity_query_size, MaxBackends));
+#ifdef USE_SSL
+	/* BackendSslStatusBuffer: */
 	size = add_size(size,
-					mul_size(NAMEDATALEN, MaxBackends));
+					mul_size(sizeof(PgBackendSSLStatus), MaxBackends));
+#endif
 	return size;
 }
 
@@ -2631,26 +2640,6 @@ CreateSharedBackendStatus(void)
 		}
 	}
 
-#ifdef USE_SSL
-	/* Create or attach to the shared SSL status buffer */
-	size = mul_size(sizeof(PgBackendSSLStatus), MaxBackends);
-	BackendSslStatusBuffer = (PgBackendSSLStatus *)
-		ShmemInitStruct("Backend SSL Status Buffer", size, &found);
-
-	if (!found)
-	{
-		MemSet(BackendSslStatusBuffer, 0, size);
-
-		/* Initialize st_sslstatus pointers. */
-		buffer = (char *) BackendSslStatusBuffer;
-		for (i = 0; i < MaxBackends; i++)
-		{
-			BackendStatusArray[i].st_sslstatus = (PgBackendSSLStatus *) buffer;
-			buffer += sizeof(PgBackendSSLStatus);
-		}
-	}
-#endif
-
 	/* Create or attach to the shared activity buffer */
 	BackendActivityBufferSize = mul_size(pgstat_track_activity_query_size,
 										 MaxBackends);
@@ -2671,6 +2660,28 @@ CreateSharedBackendStatus(void)
 			buffer += pgstat_track_activity_query_size;
 		}
 	}
+
+#ifdef USE_SSL
+	/* Create or attach to the shared SSL status buffer */
+	size = mul_size(sizeof(PgBackendSSLStatus), MaxBackends);
+	BackendSslStatusBuffer = (PgBackendSSLStatus *)
+		ShmemInitStruct("Backend SSL Status Buffer", size, &found);
+
+	if (!found)
+	{
+		PgBackendSSLStatus *ptr;
+
+		MemSet(BackendSslStatusBuffer, 0, size);
+
+		/* Initialize st_sslstatus pointers. */
+		ptr = BackendSslStatusBuffer;
+		for (i = 0; i < MaxBackends; i++)
+		{
+			BackendStatusArray[i].st_sslstatus = ptr;
+			ptr++;
+		}
+	}
+#endif
 }
 
 
@@ -2997,11 +3008,11 @@ pgstat_read_current_status(void)
 	volatile PgBackendStatus *beentry;
 	LocalPgBackendStatus *localtable;
 	LocalPgBackendStatus *localentry;
+	char	   *localappname,
+			   *localactivity;
 #ifdef USE_SSL
 	PgBackendSSLStatus *localsslstatus;
 #endif
-	char	   *localappname,
-			   *localactivity;
 	int			i;
 
 	Assert(!pgStatRunningInCollector);
@@ -3016,15 +3027,15 @@ pgstat_read_current_status(void)
 	localappname = (char *)
 		MemoryContextAlloc(pgStatLocalContext,
 						   NAMEDATALEN * MaxBackends);
+	localactivity = (char *)
+		MemoryContextAlloc(pgStatLocalContext,
+						   pgstat_track_activity_query_size * MaxBackends);
 #ifdef USE_SSL
 	localsslstatus = (PgBackendSSLStatus *)
 		MemoryContextAlloc(pgStatLocalContext,
 						   sizeof(PgBackendSSLStatus) * MaxBackends);
 #endif
 
-	localactivity = (char *)
-		MemoryContextAlloc(pgStatLocalContext,
-						   pgstat_track_activity_query_size * MaxBackends);
 	localNumBackends = 0;
 
 	beentry = BackendStatusArray;
@@ -3089,7 +3100,7 @@ pgstat_read_current_status(void)
 			localappname += NAMEDATALEN;
 			localactivity += pgstat_track_activity_query_size;
 #ifdef USE_SSL
-			localsslstatus += sizeof(PgBackendSSLStatus);
+			localsslstatus++;
 #endif
 			localNumBackends++;
 		}

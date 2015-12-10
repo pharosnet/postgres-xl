@@ -43,20 +43,6 @@ sub copy_files
 	}
 }
 
-# Perform chmod on a set of files, taking into account wildcards
-sub chmod_files
-{
-	my $mode = shift;
-	my $file_expr = shift;
-
-	my @all_files = glob $file_expr;
-	foreach my $file_entry (@all_files)
-	{
-		chmod $mode, $file_entry
-		  or die "Could not run chmod with mode $mode on $file_entry";
-	}
-}
-
 sub configure_test_server_for_ssl
 {
 	my $tempdir = $_[0];
@@ -82,7 +68,7 @@ sub configure_test_server_for_ssl
 # Copy all server certificates and keys, and client root cert, to the data dir
 	copy_files("ssl/server-*.crt", "$tempdir/pgdata");
 	copy_files("ssl/server-*.key", "$tempdir/pgdata");
-	chmod_files(0600, "$tempdir/pgdata/server-*.key");
+	chmod(0600, glob "$tempdir/pgdata/server-*.key") or die $!;
 	copy_files("ssl/root+client_ca.crt", "$tempdir/pgdata");
 	copy_files("ssl/root+client.crl",    "$tempdir/pgdata");
 
@@ -125,8 +111,6 @@ sub switch_server_cert
    # restart_test_server() because that overrides listen_addresses to only all
    # Unix domain socket connections.
 
-	system_or_bail 'pg_ctl', 'stop',  '-s', '-D', "$tempdir/pgdata", '-w';
-	system_or_bail 'pg_ctl', 'start', '-s', '-D', "$tempdir/pgdata", '-w',
-	  '-l',
-	  "$tempdir/logfile";
+	system_or_bail 'pg_ctl', 'stop', '-D', "$tempdir/pgdata";
+	system_or_bail 'pg_ctl', 'start', '-D', "$tempdir/pgdata", '-w';
 }

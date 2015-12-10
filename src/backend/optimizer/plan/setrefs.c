@@ -404,10 +404,10 @@ flatten_rtes_walker(Node *node, PlannerGlobal *glob)
  *
  * In the flat rangetable, we zero out substructure pointers that are not
  * needed by the executor; this reduces the storage space and copying cost
- * for cached plans.  We keep only the alias and eref Alias fields, which are
- * needed by EXPLAIN, and the selectedCols, insertedCols and updatedCols
- * bitmaps, which are needed for executor-startup permissions checking and for
- * trigger event checking.
+ * for cached plans.  We keep only the ctename, alias and eref Alias fields,
+ * which are needed by EXPLAIN, and the selectedCols, insertedCols and
+ * updatedCols bitmaps, which are needed for executor-startup permissions
+ * checking and for trigger event checking.
  */
 static void
 add_rte_to_flat_rtable(PlannerGlobal *glob, RangeTblEntry *rte)
@@ -419,6 +419,7 @@ add_rte_to_flat_rtable(PlannerGlobal *glob, RangeTblEntry *rte)
 	memcpy(newrte, rte, sizeof(RangeTblEntry));
 
 	/* zap unneeded sub-structure */
+	newrte->tablesample = NULL;
 	newrte->subquery = NULL;
 	newrte->joinaliasvars = NIL;
 	newrte->functions = NIL;
@@ -427,6 +428,7 @@ add_rte_to_flat_rtable(PlannerGlobal *glob, RangeTblEntry *rte)
 	newrte->ctecoltypes = NIL;
 	newrte->ctecoltypmods = NIL;
 	newrte->ctecolcollations = NIL;
+	newrte->securityQuals = NIL;
 
 	glob->finalrtable = lappend(glob->finalrtable, newrte);
 
@@ -486,11 +488,13 @@ set_plan_refs(PlannerInfo *root, Plan *plan, int rtoffset)
 			{
 				SampleScan *splan = (SampleScan *) plan;
 
-				splan->scanrelid += rtoffset;
-				splan->plan.targetlist =
-					fix_scan_list(root, splan->plan.targetlist, rtoffset);
-				splan->plan.qual =
-					fix_scan_list(root, splan->plan.qual, rtoffset);
+				splan->scan.scanrelid += rtoffset;
+				splan->scan.plan.targetlist =
+					fix_scan_list(root, splan->scan.plan.targetlist, rtoffset);
+				splan->scan.plan.qual =
+					fix_scan_list(root, splan->scan.plan.qual, rtoffset);
+				splan->tablesample = (TableSampleClause *)
+					fix_scan_expr(root, (Node *) splan->tablesample, rtoffset);
 			}
 			break;
 		case T_IndexScan:
@@ -836,6 +840,8 @@ set_plan_refs(PlannerInfo *root, Plan *plan, int rtoffset)
 									  NULL, itlist,
 									  linitial_int(splan->resultRelations),
 									  rtoffset);
+
+					pfree(itlist);
 
 					splan->exclRelTlist =
 						fix_scan_list(root, splan->exclRelTlist, rtoffset);
@@ -1323,7 +1329,7 @@ set_customscan_references(PlannerInfo *root,
 	}
 
 	/* Adjust child plan-nodes recursively, if needed */
-	foreach (lc, cscan->custom_plans)
+	foreach(lc, cscan->custom_plans)
 	{
 		lfirst(lc) = set_plan_refs(root, (Plan *) lfirst(lc), rtoffset);
 	}
@@ -1363,7 +1369,7 @@ copyVar(Var *var)
  * This is code that is common to all variants of expression-fixing.
  * We must look up operator opcode info for OpExpr and related nodes,
  * add OIDs from regclass Const nodes into root->glob->relationOids, and
- * add catalog TIDs for user-defined functions into root->glob->invalItems.
+ * add PlanInvalItems for user-defined functions into root->glob->invalItems.
  * We also fill in column index lists for GROUPING() expressions.
  *
  * We assume it's okay to update opcode info in-place.  So this could possibly
@@ -2090,16 +2096,21 @@ search_indexed_tlist_for_sortgroupref(Node *node,
  *	   relation target lists.  Also perform opcode lookup and add
  *	   regclass OIDs to root->glob->relationOids.
  *
- * This is used in two different scenarios: a normal join clause, where all
- * the Vars in the clause *must* be replaced by OUTER_VAR or INNER_VAR
- * references; and a RETURNING clause, which may contain both Vars of the
- * target relation and Vars of other relations.  In the latter case we want
- * to replace the other-relation Vars by OUTER_VAR references, while leaving
- * target Vars alone.
- *
- * For a normal join, acceptable_rel should be zero so that any failure to
- * match a Var will be reported as an error.  For the RETURNING case, pass
- * inner_itlist = NULL and acceptable_rel = the ID of the target relation.
+ * This is used in three different scenarios:
+ * 1) a normal join clause, where all the Vars in the clause *must* be
+ *	  replaced by OUTER_VAR or INNER_VAR references.  In this case
+ *	  acceptable_rel should be zero so that any failure to match a Var will be
+ *	  reported as an error.
+ * 2) RETURNING clauses, which may contain both Vars of the target relation
+ *	  and Vars of other relations. In this case we want to replace the
+ *	  other-relation Vars by OUTER_VAR references, while leaving target Vars
+ *	  alone. Thus inner_itlist = NULL and acceptable_rel = the ID of the
+ *	  target relation should be passed.
+ * 3) ON CONFLICT UPDATE SET/WHERE clauses.  Here references to EXCLUDED are
+ *	  to be replaced with INNER_VAR references, while leaving target Vars (the
+ *	  to-be-updated relation) alone. Correspondingly inner_itlist is to be
+ *	  EXCLUDED elements, outer_itlist = NULL and acceptable_rel the target
+ *	  relation.
  *
  * 'clauses' is the targetlist or list of join clauses
  * 'outer_itlist' is the indexed target list of the outer join relation,
@@ -2142,7 +2153,7 @@ fix_join_expr_mutator(Node *node, fix_join_expr_context *context)
 	{
 		Var		   *var = (Var *) node;
 
-		/* First look for the var in the input tlists */
+		/* Look for the var in the input tlists, first in the outer */
 		if (context->outer_itlist)
 		{
 			newvar = search_indexed_tlist_for_var(var,
@@ -2153,7 +2164,7 @@ fix_join_expr_mutator(Node *node, fix_join_expr_context *context)
 				return (Node *) newvar;
 		}
 
-		/* Then in the outer */
+		/* then in the inner. */
 		if (context->inner_itlist)
 		{
 			newvar = search_indexed_tlist_for_var(var,

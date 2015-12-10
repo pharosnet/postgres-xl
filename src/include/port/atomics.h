@@ -18,7 +18,7 @@
  * new platform. If no such generic implementation is available spinlocks (or
  * even OS provided semaphores) will be used to implement the API.
  *
- * Implement the _u64 variantes if and only if your platform can use them
+ * Implement the _u64 variants if and only if your platform can use them
  * efficiently (and obviously correctly).
  *
  * Use higher level functionality (lwlocks, spinlocks, heavyweight locks)
@@ -46,7 +46,7 @@
  *
  * These files can provide the full set of atomics or can do pretty much
  * nothing if all the compilers commonly used on these platforms provide
- * useable generics.
+ * usable generics.
  *
  * Don't add an inline assembly of the actual atomic operations if all the
  * common implementations of your platform provide intrinsics. Intrinsics are
@@ -81,8 +81,15 @@
  * * pg_atomic_compare_exchange_u32(), pg_atomic_fetch_add_u32()
  * using compiler intrinsics are a good idea.
  */
+/*
+ * Given a gcc-compatible xlc compiler, prefer the xlc implementation.  The
+ * ppc64le "IBM XL C/C++ for Linux, V13.1.2" implements both interfaces, but
+ * __sync_lock_test_and_set() of one-byte types elicits SIGSEGV.
+ */
+#if defined(__IBMC__) || defined(__IBMCPP__)
+#include "port/atomics/generic-xlc.h"
 /* gcc or compatible, including clang and icc */
-#if defined(__GNUC__) || defined(__INTEL_COMPILER)
+#elif defined(__GNUC__) || defined(__INTEL_COMPILER)
 #include "port/atomics/generic-gcc.h"
 #elif defined(WIN32_ONLY_COMPILER)
 #include "port/atomics/generic-msvc.h"
@@ -90,8 +97,6 @@
 #include "port/atomics/generic-acc.h"
 #elif defined(__SUNPRO_C) && !defined(__GNUC__)
 #include "port/atomics/generic-sunpro.h"
-#elif (defined(__IBMC__) || defined(__IBMCPP__)) && !defined(__GNUC__)
-#include "port/atomics/generic-xlc.h"
 #else
 /*
  * Unsupported compiler, we'll likely use slower fallbacks... At least
@@ -275,10 +280,12 @@ pg_atomic_init_u32(volatile pg_atomic_uint32 *ptr, uint32 val)
 }
 
 /*
- * pg_atomic_write_u32 - unlocked write to atomic variable.
+ * pg_atomic_read_u32 - unlocked read from atomic variable.
  *
- * The write is guaranteed to succeed as a whole, i.e. it's not possible to
- * observe a partial write for any reader.
+ * The read is guaranteed to return a value as it has been written by this or
+ * another process at some point in the past. There's however no cache
+ * coherency interaction guaranteeing the value hasn't since been written to
+ * again.
  *
  * No barrier semantics.
  */
@@ -290,12 +297,10 @@ pg_atomic_read_u32(volatile pg_atomic_uint32 *ptr)
 }
 
 /*
- * pg_atomic_read_u32 - unlocked read from atomic variable.
+ * pg_atomic_write_u32 - unlocked write to atomic variable.
  *
- * The read is guaranteed to return a value as it has been written by this or
- * another process at some point in the past. There's however no cache
- * coherency interaction guaranteeing the value hasn't since been written to
- * again.
+ * The write is guaranteed to succeed as a whole, i.e. it's not possible to
+ * observe a partial write for any reader.
  *
  * No barrier semantics.
  */

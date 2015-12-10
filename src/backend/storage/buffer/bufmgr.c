@@ -1278,7 +1278,7 @@ retry:
 		UnlockBufHdr(buf);
 		LWLockRelease(oldPartitionLock);
 		/* safety check: should definitely not be our *own* pin */
-		if (GetPrivateRefCount(buf->buf_id) > 0)
+		if (GetPrivateRefCount(BufferDescriptorGetBuffer(buf)) > 0)
 			elog(ERROR, "buffer is pinned in InvalidateBuffer");
 		WaitIO(buf);
 		goto retry;
@@ -1431,16 +1431,16 @@ ReleaseAndReadBuffer(Buffer buffer,
 static bool
 PinBuffer(volatile BufferDesc *buf, BufferAccessStrategy strategy)
 {
-	int			b = buf->buf_id;
+	Buffer		b = BufferDescriptorGetBuffer(buf);
 	bool		result;
 	PrivateRefCountEntry *ref;
 
-	ref = GetPrivateRefCountEntry(b + 1, true);
+	ref = GetPrivateRefCountEntry(b, true);
 
 	if (ref == NULL)
 	{
 		ReservePrivateRefCountEntry();
-		ref = NewPrivateRefCountEntry(b + 1);
+		ref = NewPrivateRefCountEntry(b);
 
 		LockBufHdr(buf);
 		buf->refcount++;
@@ -1465,8 +1465,7 @@ PinBuffer(volatile BufferDesc *buf, BufferAccessStrategy strategy)
 
 	ref->refcount++;
 	Assert(ref->refcount > 0);
-	ResourceOwnerRememberBuffer(CurrentResourceOwner,
-								BufferDescriptorGetBuffer(buf));
+	ResourceOwnerRememberBuffer(CurrentResourceOwner, b);
 	return result;
 }
 
@@ -1494,23 +1493,24 @@ PinBuffer(volatile BufferDesc *buf, BufferAccessStrategy strategy)
 static void
 PinBuffer_Locked(volatile BufferDesc *buf)
 {
-	int			b = buf->buf_id;
+	Buffer		b;
 	PrivateRefCountEntry *ref;
 
 	/*
 	 * As explained, We don't expect any preexisting pins. That allows us to
 	 * manipulate the PrivateRefCount after releasing the spinlock
 	 */
-	Assert(GetPrivateRefCountEntry(b + 1, false) == NULL);
+	Assert(GetPrivateRefCountEntry(BufferDescriptorGetBuffer(buf), false) == NULL);
 
 	buf->refcount++;
 	UnlockBufHdr(buf);
 
-	ref = NewPrivateRefCountEntry(b + 1);
+	b = BufferDescriptorGetBuffer(buf);
+
+	ref = NewPrivateRefCountEntry(b);
 	ref->refcount++;
 
-	ResourceOwnerRememberBuffer(CurrentResourceOwner,
-								BufferDescriptorGetBuffer(buf));
+	ResourceOwnerRememberBuffer(CurrentResourceOwner, b);
 }
 
 /*
@@ -1525,14 +1525,14 @@ static void
 UnpinBuffer(volatile BufferDesc *buf, bool fixOwner)
 {
 	PrivateRefCountEntry *ref;
+	Buffer		b = BufferDescriptorGetBuffer(buf);
 
 	/* not moving as we're likely deleting it soon anyway */
-	ref = GetPrivateRefCountEntry(buf->buf_id + 1, false);
+	ref = GetPrivateRefCountEntry(b, false);
 	Assert(ref != NULL);
 
 	if (fixOwner)
-		ResourceOwnerForgetBuffer(CurrentResourceOwner,
-								  BufferDescriptorGetBuffer(buf));
+		ResourceOwnerForgetBuffer(CurrentResourceOwner, b);
 
 	Assert(ref->refcount > 0);
 	ref->refcount--;
@@ -2744,6 +2744,7 @@ PrintBufferDescs(void)
 	for (i = 0; i < NBuffers; ++i)
 	{
 		volatile BufferDesc *buf = GetBufferDescriptor(i);
+		Buffer		b = BufferDescriptorGetBuffer(buf);
 
 		/* theoretically we should lock the bufhdr here */
 		elog(LOG,
@@ -2752,7 +2753,7 @@ PrintBufferDescs(void)
 			 i, buf->freeNext,
 		  relpathbackend(buf->tag.rnode, InvalidBackendId, buf->tag.forkNum),
 			 buf->tag.blockNum, buf->flags,
-			 buf->refcount, GetPrivateRefCount(i));
+			 buf->refcount, GetPrivateRefCount(b));
 	}
 }
 #endif
@@ -2766,8 +2767,9 @@ PrintPinnedBufs(void)
 	for (i = 0; i < NBuffers; ++i)
 	{
 		volatile BufferDesc *buf = GetBufferDescriptor(i);
+		Buffer		b = BufferDescriptorGetBuffer(buf);
 
-		if (GetPrivateRefCount(i + 1) > 0)
+		if (GetPrivateRefCount(b) > 0)
 		{
 			/* theoretically we should lock the bufhdr here */
 			elog(LOG,
@@ -2776,7 +2778,7 @@ PrintPinnedBufs(void)
 				 i, buf->freeNext,
 				 relpathperm(buf->tag.rnode, buf->tag.forkNum),
 				 buf->tag.blockNum, buf->flags,
-				 buf->refcount, GetPrivateRefCount(i + 1));
+				 buf->refcount, GetPrivateRefCount(b));
 		}
 	}
 }

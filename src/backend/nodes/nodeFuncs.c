@@ -1486,6 +1486,9 @@ exprLocation(const Node *expr)
 		case T_WindowDef:
 			loc = ((const WindowDef *) expr)->location;
 			break;
+		case T_RangeTableSample:
+			loc = ((const RangeTableSample *) expr)->location;
+			break;
 		case T_TypeName:
 			loc = ((const TypeName *) expr)->location;
 			break;
@@ -1995,6 +1998,17 @@ expression_tree_walker(Node *node,
 			return walker(((PlaceHolderInfo *) node)->ph_var, context);
 		case T_RangeTblFunction:
 			return walker(((RangeTblFunction *) node)->funcexpr, context);
+		case T_TableSampleClause:
+			{
+				TableSampleClause *tsc = (TableSampleClause *) node;
+
+				if (expression_tree_walker((Node *) tsc->args,
+										   walker, context))
+					return true;
+				if (walker((Node *) tsc->repeatable, context))
+					return true;
+			}
+			break;
 		default:
 			elog(ERROR, "unrecognized node type: %d",
 				 (int) nodeTag(node));
@@ -2082,13 +2096,8 @@ range_table_walker(List *rtable,
 		switch (rte->rtekind)
 		{
 			case RTE_RELATION:
-				if (rte->tablesample)
-				{
-					if (walker(rte->tablesample->args, context))
-						return true;
-					if (walker(rte->tablesample->repeatable, context))
-						return true;
-				}
+				if (walker(rte->tablesample, context))
+					return true;
 				break;
 			case RTE_CTE:
 				/* nothing to do */
@@ -2787,6 +2796,17 @@ expression_tree_mutator(Node *node,
 				return (Node *) newnode;
 			}
 			break;
+		case T_TableSampleClause:
+			{
+				TableSampleClause *tsc = (TableSampleClause *) node;
+				TableSampleClause *newnode;
+
+				FLATCOPY(newnode, tsc, TableSampleClause);
+				MUTATE(newnode->args, tsc->args, List *);
+				MUTATE(newnode->repeatable, tsc->repeatable, Expr *);
+				return (Node *) newnode;
+			}
+			break;
 		default:
 			elog(ERROR, "unrecognized node type: %d",
 				 (int) nodeTag(node));
@@ -2873,24 +2893,18 @@ range_table_mutator(List *rtable,
 		switch (rte->rtekind)
 		{
 			case RTE_RELATION:
-				if (rte->tablesample)
-				{
-					CHECKFLATCOPY(newrte->tablesample, rte->tablesample,
-								  TableSampleClause);
-					MUTATE(newrte->tablesample->args,
-						   newrte->tablesample->args,
-						   List *);
-					MUTATE(newrte->tablesample->repeatable,
-						   newrte->tablesample->repeatable,
-						   Node *);
-				}
-				break;
-			case RTE_CTE:
-#ifdef PGXC
-			case RTE_REMOTE_DUMMY:
-#endif /* PGXC */
+				MUTATE(newrte->tablesample, rte->tablesample,
+					   TableSampleClause *);
 				/* we don't bother to copy eref, aliases, etc; OK? */
 				break;
+			case RTE_CTE:
+				/* nothing to do */
+				break;
+#ifdef PGXC
+			case RTE_REMOTE_DUMMY:
+				/* nothing to do */
+				break;
+#endif /* PGXC */
 			case RTE_SUBQUERY:
 				if (!(flags & QTW_IGNORE_RT_SUBQUERIES))
 				{
@@ -3324,6 +3338,19 @@ raw_expression_tree_walker(Node *node,
 					return true;
 			}
 			break;
+		case T_RangeTableSample:
+			{
+				RangeTableSample *rts = (RangeTableSample *) node;
+
+				if (walker(rts->relation, context))
+					return true;
+				/* method name is deemed uninteresting */
+				if (walker(rts->args, context))
+					return true;
+				if (walker(rts->repeatable, context))
+					return true;
+			}
+			break;
 		case T_TypeName:
 			{
 				TypeName   *tn = (TypeName *) node;
@@ -3388,18 +3415,6 @@ raw_expression_tree_walker(Node *node,
 			break;
 		case T_CommonTableExpr:
 			return walker(((CommonTableExpr *) node)->ctequery, context);
-		case T_RangeTableSample:
-			{
-				RangeTableSample *rts = (RangeTableSample *) node;
-
-				if (walker(rts->relation, context))
-					return true;
-				if (walker(rts->repeatable, context))
-					return true;
-				if (walker(rts->args, context))
-					return true;
-			}
-			break;
 		default:
 			elog(ERROR, "unrecognized node type: %d",
 				 (int) nodeTag(node));

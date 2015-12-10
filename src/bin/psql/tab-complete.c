@@ -754,9 +754,24 @@ static const SchemaQuery Query_for_list_of_matviews = {
 "  WHERE substring(pg_catalog.quote_ident(evtname),1,%d)='%s'"
 
 #define Query_for_list_of_tablesample_methods \
-" SELECT pg_catalog.quote_ident(tsmname) "\
-"   FROM pg_catalog.pg_tablesample_method "\
-"  WHERE substring(pg_catalog.quote_ident(tsmname),1,%d)='%s'"
+" SELECT pg_catalog.quote_ident(proname) "\
+"   FROM pg_catalog.pg_proc "\
+"  WHERE prorettype = 'pg_catalog.tsm_handler'::pg_catalog.regtype AND "\
+"        proargtypes[0] = 'pg_catalog.internal'::pg_catalog.regtype AND "\
+"        substring(pg_catalog.quote_ident(proname),1,%d)='%s'"
+
+#define Query_for_list_of_policies \
+" SELECT pg_catalog.quote_ident(polname) "\
+"   FROM pg_catalog.pg_policy "\
+"  WHERE substring(pg_catalog.quote_ident(polname),1,%d)='%s'"
+
+#define Query_for_list_of_tables_for_policy \
+"SELECT pg_catalog.quote_ident(relname) "\
+"  FROM pg_catalog.pg_class"\
+" WHERE (%d = pg_catalog.length('%s'))"\
+"   AND oid IN "\
+"       (SELECT polrelid FROM pg_catalog.pg_policy "\
+"         WHERE pg_catalog.quote_ident(polname)='%s')"
 
 /*
  * This is a list of all "things" in Pgsql, which can show up after CREATE or
@@ -945,14 +960,16 @@ psql_completion(const char *text, int start, int end)
 
 	static const char *const backslash_commands[] = {
 		"\\a", "\\connect", "\\conninfo", "\\C", "\\cd", "\\copy", "\\copyright",
-		"\\d", "\\da", "\\db", "\\dc", "\\dC", "\\dd", "\\dD", "\\des", "\\det", "\\deu", "\\dew", "\\df",
+		"\\d", "\\da", "\\db", "\\dc", "\\dC", "\\dd", "\\ddp", "\\dD",
+		"\\des", "\\det", "\\deu", "\\dew", "\\dE", "\\df",
 		"\\dF", "\\dFd", "\\dFp", "\\dFt", "\\dg", "\\di", "\\dl", "\\dL",
-		"\\dn", "\\do", "\\dp", "\\drds", "\\ds", "\\dS", "\\dt", "\\dT", "\\dv", "\\du", "\\dx",
+		"\\dm", "\\dn", "\\do", "\\dO", "\\dp", "\\drds", "\\ds", "\\dS",
+		"\\dt", "\\dT", "\\dv", "\\du", "\\dx", "\\dy",
 		"\\e", "\\echo", "\\ef", "\\encoding",
 		"\\f", "\\g", "\\gset", "\\h", "\\help", "\\H", "\\i", "\\ir", "\\l",
 		"\\lo_import", "\\lo_export", "\\lo_list", "\\lo_unlink",
 		"\\o", "\\p", "\\password", "\\prompt", "\\pset", "\\q", "\\qecho", "\\r",
-		"\\set", "\\sf", "\\t", "\\T",
+		"\\s", "\\set", "\\setenv", "\\sf", "\\t", "\\T",
 		"\\timing", "\\unset", "\\x", "\\w", "\\watch", "\\z", "\\!", NULL
 	};
 
@@ -2742,6 +2759,7 @@ psql_completion(const char *text, int start, int end)
 		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_views, NULL);
 	/* complete CREATE TRIGGER ... EXECUTE with PROCEDURE */
 	else if (pg_strcasecmp(prev_wd, "EXECUTE") == 0 &&
+			 !(pg_strcasecmp(prev2_wd, "GRANT") == 0 && prev3_wd[0] == '\0') &&
 			 prev2_wd[0] != '\0')
 		COMPLETE_WITH_CONST("PROCEDURE");
 
@@ -3081,15 +3099,26 @@ psql_completion(const char *text, int start, int end)
 		COMPLETE_WITH_QUERY(Query_for_list_of_event_triggers);
 	}
 
+	/* DROP POLICY <name>  */
+	else if (pg_strcasecmp(prev2_wd, "DROP") == 0 &&
+			 pg_strcasecmp(prev_wd, "POLICY") == 0)
+	{
+		COMPLETE_WITH_QUERY(Query_for_list_of_policies);
+	}
 	/* DROP POLICY <name> ON */
 	else if (pg_strcasecmp(prev3_wd, "DROP") == 0 &&
 			 pg_strcasecmp(prev2_wd, "POLICY") == 0)
+	{
 		COMPLETE_WITH_CONST("ON");
+	}
 	/* DROP POLICY <name> ON <table> */
 	else if (pg_strcasecmp(prev4_wd, "DROP") == 0 &&
 			 pg_strcasecmp(prev3_wd, "POLICY") == 0 &&
 			 pg_strcasecmp(prev_wd, "ON") == 0)
-		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_tables, NULL);
+	{
+		completion_info_charp = prev2_wd;
+		COMPLETE_WITH_QUERY(Query_for_list_of_tables_for_policy);
+	}
 
 	/* DROP RULE */
 	else if (pg_strcasecmp(prev3_wd, "DROP") == 0 &&
@@ -3992,6 +4021,10 @@ psql_completion(const char *text, int start, int end)
 		COMPLETE_WITH_QUERY(Query_for_list_of_extensions);
 	else if (strncmp(prev_wd, "\\dm", strlen("\\dm")) == 0)
 		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_matviews, NULL);
+	else if (strncmp(prev_wd, "\\dE", strlen("\\dE")) == 0)
+		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_foreign_tables, NULL);
+	else if (strncmp(prev_wd, "\\dy", strlen("\\dy")) == 0)
+		COMPLETE_WITH_QUERY(Query_for_list_of_event_triggers);
 
 	/* must be at end of \d list */
 	else if (strncmp(prev_wd, "\\d", strlen("\\d")) == 0)
