@@ -71,13 +71,14 @@
 #include "pgxc/poolmgr.h"
 #include "pgxc/nodemgr.h"
 #include "pgxc/xc_maintenance_mode.h"
+#include "storage/procarray.h"
 #endif
 #ifdef XCP
 #include "commands/sequence.h"
+#include "parser/parse_utilcmd.h"
 #include "pgxc/nodemgr.h"
 #include "pgxc/squeue.h"
 #include "utils/snapmgr.h"
-#include "parser/parse_utilcmd.h"
 #endif
 #include "postmaster/autovacuum.h"
 #include "postmaster/bgworker.h"
@@ -444,6 +445,18 @@ static const struct config_enum_entry row_security_options[] = {
 	{"0", ROW_SECURITY_OFF, true},
 	{NULL, 0, false}
 };
+
+#ifdef XCP
+/*
+ * Set global-snapshot source. 'gtm' is default, but user can choose
+ * 'coordinator' for performance improvement at the cost of reduced consistency
+ */
+static const struct config_enum_entry global_snapshot_source_options[] = {
+	{"gtm", GLOBAL_SNAPSHOT_SOURCE_GTM, true},
+	{"coordinator", GLOBAL_SNAPSHOT_SOURCE_COORDINATOR, true},
+	{NULL, 0, false}
+};
+#endif
 
 /*
  * Options for enum values stored in other modules
@@ -4050,6 +4063,20 @@ static struct config_enum ConfigureNamesEnum[] =
 		ROW_SECURITY_ON, row_security_options,
 		NULL, NULL, NULL
 	},
+
+#ifdef XCP
+	{
+		{"global_snapshot_source", PGC_USERSET, DEVELOPER_OPTIONS,
+			gettext_noop("Set preferred source of a snapshot."),
+			gettext_noop("When set to 'coordinator', a snapshot is taken at "
+					"the coordinator at the risk of reduced consistency. "
+					"Default is 'gtm'")
+		},
+		&GlobalSnapshotSource,
+		GLOBAL_SNAPSHOT_SOURCE_GTM, global_snapshot_source_options,
+		NULL, NULL, NULL
+	},
+#endif
 
 	/* End-of-list marker */
 	{

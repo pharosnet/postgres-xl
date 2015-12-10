@@ -24,6 +24,15 @@
 #include "utils/relcache.h"
 #include "utils/snapshot.h"
 
+#ifdef XCP
+extern int GlobalSnapshotSource;
+
+typedef enum GlobalSnapshotSourceType
+{
+	GLOBAL_SNAPSHOT_SOURCE_GTM,
+	GLOBAL_SNAPSHOT_SOURCE_COORDINATOR
+} GlobalSnapshotSourceType;
+#endif
 
 extern Size ProcArrayShmemSize(void);
 extern void CreateSharedProcArray(void);

@@ -79,6 +79,7 @@
 #include "pgxc/pgxc.h"
 #include "access/gtm.h"
 #include "storage/ipc.h"
+#include "utils/guc.h"
 /* PGXC_DATANODE */
 #include "postmaster/autovacuum.h"
 #endif
@@ -218,6 +219,10 @@ static int KnownAssignedXidsGetAndSetXmin(TransactionId *xarray,
 static TransactionId KnownAssignedXidsGetOldestXmin(void);
 static void KnownAssignedXidsDisplay(int trace_level);
 static void KnownAssignedXidsReset(void);
+
+#ifdef XCP
+int	GlobalSnapshotSource;
+#endif
 
 /*
  * Report shared-memory space needed by CreateSharedProcArray.
@@ -1508,22 +1513,35 @@ GetSnapshotData(Snapshot snapshot)
 
 #ifdef PGXC  /* PGXC_DATANODE */
 	/*
-	 * Obtain a global snapshot for a Postgres-XC session
-	 * if possible.
-	 */
-	if (GetPGXCSnapshotData(snapshot))
-		return snapshot;
-	/*
-	 * We only make one exception for using local snapshot and that's the
-	 * initdb time. When IsPostmasterEnvironment is true, snapshots must either
-	 * be pushed down from the coordinator or directly obtained from the
-	 * GTM.
-	 *
-	 * !!TODO We don't seem to fully support Hot Standby. So why should we even
-	 * exempt RecoveryInProgress()?
-	 */
-	if (IsPostmasterEnvironment && !useLocalXid)
-		elog(ERROR, "Was unable to obtain a snapshot from GTM.");
+	 * If the user has chosen to work with a coordinator-local snapshot, just
+	 * compute snapshot locally. This can have adverse effects on the global
+	 * consistency, in a multi-coordinator environment, but also in a
+	 * single-coordinator setup because our recent changes to transaction
+	 * management now allows datanodes to start global snapshots or more
+	 * precisely attach current transaction to a global transaction. But users
+	 * may still want to use this model for performance of their XL cluster, at
+	 * the cost of reduced global consistency
+	 */ 
+	if (GlobalSnapshotSource == GLOBAL_SNAPSHOT_SOURCE_GTM)
+	{
+		/*
+		 * Obtain a global snapshot for a Postgres-XC session
+		 * if possible.
+		 */
+		if (GetPGXCSnapshotData(snapshot))
+			return snapshot;
+		/*
+		 * We only make one exception for using local snapshot and that's the
+		 * initdb time. When IsPostmasterEnvironment is true, snapshots must
+		 * either be pushed down from the coordinator or directly obtained from
+		 * the GTM.
+		 *
+		 * !!TODO We don't seem to fully support Hot Standby. So why should we
+		 * even exempt RecoveryInProgress()?
+		 */
+		if (IsPostmasterEnvironment && !useLocalXid)
+			elog(ERROR, "Was unable to obtain a snapshot from GTM.");
+	}
 #endif
 
 	/*
@@ -3254,8 +3272,6 @@ GetSnapshotFromGlobalSnapshot(Snapshot snapshot)
 				globalSnapshot.snapshot_source == SNAPSHOT_DIRECT)
 				&& TransactionIdIsValid(globalSnapshot.gxmin))
 	{
-		int index;
-		ProcArrayStruct *arrayP = procArray;
 		TransactionId global_xmin;
 
 		snapshot->xmin = globalSnapshot.gxmin;
@@ -4360,7 +4376,6 @@ ProcArrayCheckXminConsistency(TransactionId global_xmin)
 	for (index = 0; index < arrayP->numProcs; index++)
 	{
 		int			pgprocno = arrayP->pgprocnos[index];
-		volatile PGPROC *proc = &allProcs[pgprocno];
 		volatile PGXACT *pgxact = &allPgXact[pgprocno];
 		TransactionId xid;
 
