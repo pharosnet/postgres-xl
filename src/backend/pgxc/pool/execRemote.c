@@ -3884,7 +3884,15 @@ PreAbort_Remote(void)
 
 	pgxc_node_remote_abort();
 
-	if (!temp_object_included && !PersistentConnections)
+	/*
+	 * Drop the connections to ensure aborts are handled properly.
+	 *
+	 * XXX We should really be consulting PersistentConnections parameter and
+	 * keep the connections if its set. But as a short term measure, to address
+	 * certain issues for aborted transactions, we drop the connections.
+	 * Revisit and fix the issue
+	 */
+	if (!temp_object_included)
 	{
 		/* Clean up remote sessions */
 		pgxc_node_remote_cleanup_all();
