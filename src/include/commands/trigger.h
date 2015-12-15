@@ -100,6 +100,10 @@ typedef struct TriggerData
 #define SESSION_REPLICATION_ROLE_LOCAL		2
 extern PGDLLIMPORT int SessionReplicationRole;
 
+#ifdef XCP
+extern bool enable_datanode_row_triggers;
+#endif
+
 /*
  * States at which a trigger can be fired. These are the
  * possible values for pg_trigger.tgenabled.

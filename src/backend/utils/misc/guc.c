@@ -64,6 +64,7 @@
 #include "pgstat.h"
 #ifdef PGXC
 #include "commands/tablecmds.h"
+#include "commands/trigger.h"
 #include "nodes/nodes.h"
 #include "pgxc/execRemote.h"
 #include "pgxc/locator.h"
@@ -958,6 +959,15 @@ static struct config_bool ConfigureNamesBool[] =
 			NULL
 		},
 		&gtm_backup_barrier,
+		false,
+		NULL, NULL, NULL
+	},
+	{
+		{"enable_datanode_row_triggers", PGC_POSTMASTER, DEVELOPER_OPTIONS,
+			gettext_noop("Enables datanode-only ROW triggers"),
+			NULL
+		},
+		&enable_datanode_row_triggers,
 		false,
 		NULL, NULL, NULL
 	},

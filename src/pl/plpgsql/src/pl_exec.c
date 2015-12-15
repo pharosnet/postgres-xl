@@ -3537,7 +3537,7 @@ exec_stmt_execsql(PLpgSQL_execstate *estate,
 					/* PGXCTODO: Support a better parameter interface for XC with DMLs */
 					if
 #ifdef XCP
-					   (IS_PGXC_DATANODE &&
+					   (IS_PGXC_DATANODE && !enable_datanode_row_triggers &&
 #endif
 						(q->commandType == CMD_INSERT ||
 						 q->commandType == CMD_UPDATE ||

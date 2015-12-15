@@ -106,6 +106,9 @@ static void AfterTriggerSaveEvent(EState *estate, ResultRelInfo *relinfo,
 					  List *recheckIndexes, Bitmapset *modifiedCols);
 static void AfterTriggerEnlargeQueryState(void);
 
+#ifdef XCP
+bool enable_datanode_row_triggers;
+#endif
 
 /*
  * Create a trigger.  Returns the address of the created trigger.

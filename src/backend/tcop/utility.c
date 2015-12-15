@@ -2273,11 +2273,30 @@ ProcessUtilitySlow(Node *parsetree,
 
 			case T_CreateTrigStmt:
 #ifdef PGXC
-				/* Postgres-XC does not support yet triggers */
-				ereport(ERROR,
-						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-						 errmsg("Postgres-XL does not support TRIGGER yet"),
-						 errdetail("The feature is not currently supported")));
+				if (!enable_datanode_row_triggers)
+				{
+					/* Postgres-XC does not support yet triggers */
+					ereport(ERROR,
+							(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+							 errmsg("Postgres-XL does not support TRIGGER yet"),
+							 errdetail("The feature is not currently supported")));
+				}
+				else
+				{
+					if (!((CreateTrigStmt *) parsetree)->row)
+						ereport(ERROR,
+								(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+								 errmsg("STATEMENT triggers not supported"),
+								 errhint("Though enable_datanode_row_triggers "
+									 "is ON, Postgres-XL only supports ROW "
+									 "triggers")));
+					else
+						elog(WARNING, "Developer option "
+								"enable_datanode_row_triggers is ON. "
+								"Triggers will be executed on the datanodes "
+								"and must not require access to other nodes. "
+								"Use with caution");
+				}
 
 				if (IS_PGXC_LOCAL_COORDINATOR)
 					ExecUtilityStmtOnNodes(queryString, NULL, sentToRemote, false, EXEC_ON_ALL_NODES, false);
