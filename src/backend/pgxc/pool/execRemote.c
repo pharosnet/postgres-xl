@@ -2304,7 +2304,7 @@ prepare_err:
 			conn->ck_resp_rollback = false;
 			/* sanity checks */
 			Assert(conn->sock != NO_SOCKET);
-			Assert(conn->state = DN_CONNECTION_STATE_IDLE);
+			Assert(conn->state == DN_CONNECTION_STATE_IDLE);
 			/* Send down abort prepared command */
 			if (pgxc_node_send_gxid(conn, auxXid))
 			{
