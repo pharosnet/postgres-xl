@@ -1060,6 +1060,7 @@ exec_simple_query(const char *query_string)
 	bool		was_logged = false;
 	bool		isTopLevel;
 	char		msec_str[32];
+	bool		multiCommands = false;
 
 	/*
 	 * Report query to various monitoring facilities.
@@ -1133,6 +1134,14 @@ exec_simple_query(const char *query_string)
 								"in multi-statement queries not allowed")));
 		}
 	}
+
+	/*
+	 * XXX We may receive multi-command string and the coordinator is not
+	 * equipped to handle multiple command-complete messages. So just send a
+	 * single command-complete until we fix the coordinator side of things
+	 */
+	if (!IS_PGXC_LOCAL_COORDINATOR && list_length(parsetree_list) > 1)
+		multiCommands = true;
 #endif
 
 	/* Log immediately if dictated by log_statement */
@@ -1375,9 +1384,12 @@ exec_simple_query(const char *query_string)
 		 * command the client sent, regardless of rewriting. (But a command
 		 * aborted by error will not send an EndCommand report at all.)
 		 */
-		EndCommand(completionTag, dest);
+		if (!multiCommands)
+			EndCommand(completionTag, dest);
 	}							/* end loop over parsetrees */
 
+	if (multiCommands)
+		EndCommand("MultiCommand", dest);
 	/*
 	 * Close down transaction statement, if one is open.
 	 */
