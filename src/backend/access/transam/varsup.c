@@ -254,12 +254,17 @@ GetNewTransactionId(bool isSubXact)
 			}
 		}
 		else
-			ereport(ERROR,
-					(errcode(ERRCODE_SYSTEM_ERROR),
-			       	errmsg("GTM generated global XID not available"),
-			        errhint("Check if GTM/GTM-proxy is running @ %s:%d and "
-						"reachable from this host. Your firewall could also "
-						"block access to a host/port", GtmHost, GtmPort)));
+		{
+			char global_session[NAMEDATALEN + 13 + 13];
+
+			/*
+			 * This is the auto-commit, single datanode transaction. Just use
+			 * the local node-name and backend id in global session which
+			 * should give us a globally unique identifier
+			 */
+			sprintf(global_session, "%s_%d", PGXCNodeName, MyProcPid);
+			xid = (TransactionId) BeginTranGTM(timestamp, global_session);
+		}
 	}
 	else
 		xid = ShmemVariableCache->nextXid;
