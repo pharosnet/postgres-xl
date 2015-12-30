@@ -176,7 +176,7 @@ static void DisplayXidCache(void);
 
 #ifdef PGXC  /* PGXC_DATANODE */
 
-static bool GetPGXCSnapshotData(Snapshot snapshot);
+static bool GetPGXCSnapshotData(Snapshot snapshot, bool latest);
 
 typedef struct
 {
@@ -1495,7 +1495,7 @@ GetMaxSnapshotSubxidCount(void)
  * not statically allocated (see xip allocation below).
  */
 Snapshot
-GetSnapshotData(Snapshot snapshot)
+GetSnapshotData(Snapshot snapshot, bool latest)
 {
 	ProcArrayStruct *arrayP = procArray;
 	TransactionId xmin;
@@ -1528,7 +1528,7 @@ GetSnapshotData(Snapshot snapshot)
 		 * Obtain a global snapshot for a Postgres-XC session
 		 * if possible.
 		 */
-		if (GetPGXCSnapshotData(snapshot))
+		if (GetPGXCSnapshotData(snapshot, latest))
 			return snapshot;
 		/*
 		 * We only make one exception for using local snapshot and that's the
@@ -3151,7 +3151,7 @@ UnsetGlobalSnapshotData(void)
  * Entry of snapshot obtention for Postgres-XC node
  */
 static bool
-GetPGXCSnapshotData(Snapshot snapshot)
+GetPGXCSnapshotData(Snapshot snapshot, bool latest)
 {
 	/*
 	 * If this node is in recovery phase,
@@ -3171,7 +3171,8 @@ GetPGXCSnapshotData(Snapshot snapshot)
 	 */
 
 	if ((IsConnFromCoord() || IsConnFromDatanode())
-			&& !IsInitProcessingMode() && !GetForceXidFromGTM())
+			&& !IsInitProcessingMode() && !GetForceXidFromGTM() &&
+			!latest)
 	{
 		if (globalSnapshot.snapshot_source == SNAPSHOT_COORDINATOR)
 			GetSnapshotFromGlobalSnapshot(snapshot);

@@ -1695,7 +1695,7 @@ GetSerializableTransactionSnapshotInt(Snapshot snapshot,
 
 	/* Get the snapshot, or check that it's safe to use */
 	if (!TransactionIdIsValid(sourcexid))
-		snapshot = GetSnapshotData(snapshot);
+		snapshot = GetSnapshotData(snapshot, false);
 	else if (!ProcArrayInstallImportedXmin(snapshot->xmin, sourcexid))
 	{
 		ReleasePredXact(sxact);

@@ -228,7 +228,7 @@ GetTransactionSnapshot(void)
 			if (IsolationIsSerializable())
 				CurrentSnapshot = GetSerializableTransactionSnapshot(&CurrentSnapshotData);
 			else
-				CurrentSnapshot = GetSnapshotData(&CurrentSnapshotData);
+				CurrentSnapshot = GetSnapshotData(&CurrentSnapshotData, false);
 			/* Make a saved copy */
 			CurrentSnapshot = CopySnapshot(CurrentSnapshot);
 			FirstXactSnapshot = CurrentSnapshot;
@@ -237,7 +237,7 @@ GetTransactionSnapshot(void)
 			pairingheap_add(&RegisteredSnapshots, &FirstXactSnapshot->ph_node);
 		}
 		else
-			CurrentSnapshot = GetSnapshotData(&CurrentSnapshotData);
+			CurrentSnapshot = GetSnapshotData(&CurrentSnapshotData, false);
 
 		/* Don't allow catalog snapshot to be older than xact snapshot. */
 		CatalogSnapshotStale = true;
@@ -278,7 +278,7 @@ GetTransactionSnapshot(void)
 	/* Don't allow catalog snapshot to be older than xact snapshot. */
 	CatalogSnapshotStale = true;
 
-	CurrentSnapshot = GetSnapshotData(&CurrentSnapshotData);
+	CurrentSnapshot = GetSnapshotData(&CurrentSnapshotData, false);
 
 	return CurrentSnapshot;
 }
@@ -309,7 +309,7 @@ GetLatestSnapshot(void)
 	if (!FirstSnapshotSet)
 		return GetTransactionSnapshot();
 
-	SecondarySnapshot = GetSnapshotData(&SecondarySnapshotData);
+	SecondarySnapshot = GetSnapshotData(&SecondarySnapshotData, true);
 
 	return SecondarySnapshot;
 }
@@ -358,7 +358,7 @@ GetNonHistoricCatalogSnapshot(Oid relid)
 	if (CatalogSnapshotStale)
 	{
 		/* Get new snapshot. */
-		CatalogSnapshot = GetSnapshotData(&CatalogSnapshotData);
+		CatalogSnapshot = GetSnapshotData(&CatalogSnapshotData, true);
 
 		/*
 		 * Mark new snapshost as valid.  We must do this last, in case an
@@ -426,7 +426,7 @@ SetTransactionSnapshot(Snapshot sourcesnap, TransactionId sourcexid,
 	 * two variables in exported snapshot files, but it seems better to have
 	 * snapshot importers compute reasonably up-to-date values for them.)
 	 */
-	CurrentSnapshot = GetSnapshotData(&CurrentSnapshotData);
+	CurrentSnapshot = GetSnapshotData(&CurrentSnapshotData, false);
 
 	/*
 	 * Now copy appropriate fields from the source snapshot.
