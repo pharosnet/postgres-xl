@@ -6745,7 +6745,7 @@ SetTopTransactionId(GlobalTransactionId xid)
 	TransactionState s = CurrentTransactionState;
 	Assert(!GlobalTransactionIdIsValid(s->transactionId) ||
 			GlobalTransactionIdEquals(s->transactionId, xid));
-	s->transactionId = xid;
+	XactTopTransactionId = s->transactionId = xid;
 	elog(DEBUG2, "Assigning XID received from the remote node - %d", xid);
 }
 #endif
