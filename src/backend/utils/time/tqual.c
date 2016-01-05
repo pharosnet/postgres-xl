@@ -595,6 +595,17 @@ HeapTupleSatisfiesUpdate(HeapTuple htup, CommandId curcid,
 
 	/* by here, the inserting transaction has committed */
 
+	/*
+	 * If the committed xmin is a relatively recent transaction, we want to
+	 * make sure that the GTM sees its commit before it sees our
+	 * commit since our execution assumes that xmin is committed and hence that
+	 * ordering must be followed. There is a small race condition which may
+	 * violate this ordering and hence we record such dependencies and ensure
+	 * ordering at the commit time
+	 */
+	if (TransactionIdPrecedesOrEquals(RecentXmin, HeapTupleHeaderGetRawXmin(tuple)))
+		TransactionRecordXidWait(HeapTupleHeaderGetRawXmin(tuple));
+
 	if (tuple->t_infomask & HEAP_XMAX_INVALID)	/* xid invalid or aborted */
 		return HeapTupleMayBeUpdated;
 
