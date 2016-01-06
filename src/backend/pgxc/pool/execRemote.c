@@ -1510,6 +1510,10 @@ FetchTuple(ResponseCombiner *combiner)
 		{
 			/* Do nothing. It must have been handled in handle_response() */
 		}
+		else if (res == RESPONSE_WAITXIDS)
+		{
+			/* Do nothing. It must have been handled in handle_response() */
+		}
 		else
 		{
 			// Can not get here?
