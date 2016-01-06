@@ -2852,7 +2852,7 @@ static struct config_int ConfigureNamesInt[] =
 			NULL,
 		},
 		&SequenceRangeVal,
-		1, 1, INT_MAX,
+		1000, 1, INT_MAX,
 		NULL, NULL, NULL
 	},
 
