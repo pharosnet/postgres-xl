@@ -2545,6 +2545,21 @@ CommitTransaction(void)
 	}
 #endif
 
+	/*
+	 * End the transaction on the GTM before releasing the locks. This would
+	 * ensure that any other backend which might be waiting for our locks,
+	 * would see end of the global transaction before acquiring the locks.
+	 *
+	 * XXX Earlier we used to do this at the very end of this function. But
+	 * that leads to various issues (such as "tuple concurrently updated"
+	 * errors in concurrent ANALYZE). It seems like a good idea to end the
+	 * global transaction before releasing the locks from correctness
+	 * perspective. But we are now doing network calls while holding
+	 * interrupts. That can lead to some unpleasant hangs. So lets be wary
+	 * about this possibility
+	 */
+	AtEOXact_GlobalTxn(true);
+
 	ResourceOwnerRelease(TopTransactionResourceOwner,
 						 RESOURCE_RELEASE_LOCKS,
 						 true, true);
@@ -2624,14 +2639,9 @@ CommitTransaction(void)
 
 	RESUME_INTERRUPTS();
 
-	/*
-	 * XXX We now close the main and auxilliary transaction (if any) on the
-	 * GTM. We do this after resuming interrupts to ensure that we don't end
-	 * blocking forever on the communication channel. But we need to see if
-	 * this is safe in all cases (TODO)
-	 */
-	AtEOXact_GlobalTxn(true);
+#ifdef PGXC
 	AtEOXact_Remote();
+#endif
 }
 
 /*
@@ -3262,6 +3272,12 @@ AbortTransaction(void)
 		AtEOXact_RelationCache(false);
 		AtEOXact_Inval(false);
 		AtEOXact_MultiXact();
+
+		/* See comments in CommitTransaction */
+#ifdef XCP
+		AtEOXact_GlobalTxn(false);
+#endif
+
 		ResourceOwnerRelease(TopTransactionResourceOwner,
 							 RESOURCE_RELEASE_LOCKS,
 							 false, true);
@@ -3292,7 +3308,6 @@ AbortTransaction(void)
 	RESUME_INTERRUPTS();
 
 #ifdef PGXC
-	AtEOXact_GlobalTxn(false);
 	AtEOXact_Remote();
 #endif
 
