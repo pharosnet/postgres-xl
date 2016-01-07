@@ -450,7 +450,7 @@ insert into  xl_PLine values ('PL.030', '-367', '', 'PS.first.tb6');
 FETCH FIRST xl_ins_cursor;
        slotname       |     phonenumber      | comment |       backlink       
 ----------------------+----------------------+---------+----------------------
- PL.029               | -367                 |         | PS.first.tb6        
+ PL.030               | -367                 |         | PS.first.tb6        
 (1 row)
 
 select xl_nodename_from_id(xc_node_id), * from xl_Pline where slotname in ('PL.030', 'PL.029') order by slotname;
@@ -471,7 +471,7 @@ delete from xl_Pline where slotname in ('PL.029');
 FETCH FIRST xl_ins_cursor;
        slotname       |     phonenumber      |   comment    |       backlink       
 ----------------------+----------------------+--------------+----------------------
- PL.029               | -367                 |         | PS.first.tb6         
+ PL.028               | -501                 | Fax entrance | PS.base.ta2         
 (1 row)
 
 insert into  xl_PLine values ('PL.029', '-367', '', 'PS.first.tb6');
@@ -798,14 +798,20 @@ ERROR:  EVENT TRIGGER not yet supported in Postgres-XL
 drop function xl_event_trigger_for_drops();
 drop EVENT TRIGGER xl_event_trigger_for_drops;
 ERROR:  event trigger "xl_event_trigger_for_drops" does not exist
---Recursive queries are not supported
+--Recursive queries work now to some extent
+--when replicated tables are used or when query can be fully 
+--shipped to a single node
 WITH RECURSIVE t(n) AS (
     VALUES (1)
   UNION ALL
     SELECT n+1 FROM t WHERE n < 100
 )
 SELECT sum(n) FROM t;
-ERROR:  WITH RECURSIVE currently not supported on distributed tables.
+ sum  
+------
+ 5050
+(1 row)
+
 --FDWs are not supported
 CREATE FOREIGN DATA WRAPPER xl_foo; -- ERROR
 ERROR:  Postgres-XL does not support FOREIGN DATA WRAPPER yet
@@ -862,7 +868,6 @@ drop function xl_room_au();
 drop function xl_trap_zero_divide(int);
 --GROUPING SETs are not supported
 --xl_items_sold gets distributed by default on HASH(brand)
--- below test looks to be working fine for data spanning multiple nodes.
 -- However existing groupingsets.sql test is failing for Postgres-XL (Low priority)
 create table xl_items_sold (
 	brand char(20),
@@ -883,17 +888,6 @@ select xl_nodename_from_id(xc_node_id), * from xl_items_sold;
 (4 rows)
 
 SELECT brand, size_sold, sum(sales) FROM xl_items_sold GROUP BY GROUPING SETS ((brand), (size_sold), ());
-        brand         | size_sold | sum 
-----------------------+-----------+-----
- Foo                  |           |  30
-                      |           |  30
-                      | L         |  10
-                      | M         |  20
- Bar                  |           |  20
-                      |           |  20
-                      | L         |   5
-                      | M         |  15
-(8 rows)
-
+ERROR:  GROUPING SETS, ROLLUP or CUBE is not yet supported
 drop table xl_items_sold;
 drop function xl_nodename_from_id(integer);

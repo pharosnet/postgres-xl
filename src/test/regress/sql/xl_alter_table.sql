@@ -172,7 +172,7 @@ ALTER TABLE xl_at3m DELETE NODE (datanode_2);
 
 ALTER TABLE xl_at3m ADD NODE (datanode_2);
 
-ALTER TABLE xl_at3m DROP COLUMN product_identifier;--fail - distribution column cannot be dropped.
+ALTER TABLE xl_at3m DROP COLUMN product_identifier;--bug - distribution column can be dropped.
 
 ALTER TABLE xl_at3m DISTRIBUTE BY REPLICATION;
 

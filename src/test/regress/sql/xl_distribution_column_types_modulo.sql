@@ -1,6 +1,6 @@
 -- Current Supported types for MODULO distribution column types - INT2, integer, INT4, BOOL, ABSTIME, RELTIME,DATE  
 
--- However INT8 type should also be supported.So letting the test fail for now. 
+-- However INT8 type should also be supported, currently it is not. 
 
 --INT8, 
 

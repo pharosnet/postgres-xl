@@ -1,5 +1,5 @@
 -- Current Supported types for MODULO distribution column types - INT2, integer, INT4, BOOL, ABSTIME, RELTIME,DATE  
--- However INT8 type should also be supported.So letting the test fail for now. 
+-- However INT8 type should also be supported, currently it is not. 
 --INT8, 
 CREATE TABLE xl_dcm (
     product_no integer,
@@ -7,7 +7,7 @@ CREATE TABLE xl_dcm (
     name text,
     price numeric
 ) DISTRIBUTE BY MODULO (product_id);
-
+ERROR:  Column product_id is not modulo distributable data type
 --integer
 CREATE TABLE xl_dcm (
     product_no integer,

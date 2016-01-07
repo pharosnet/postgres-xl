@@ -426,7 +426,9 @@ CREATE EVENT TRIGGER xl_event_trigger_for_drops
 drop function xl_event_trigger_for_drops();
 drop EVENT TRIGGER xl_event_trigger_for_drops;
 
---Recursive queries are not supported
+--Recursive queries work now to some extent
+--when replicated tables are used or when query can be fully 
+--shipped to a single node
 WITH RECURSIVE t(n) AS (
     VALUES (1)
   UNION ALL
@@ -473,7 +475,6 @@ drop function xl_trap_zero_divide(int);
 
 --GROUPING SETs are not supported
 --xl_items_sold gets distributed by default on HASH(brand)
--- below test looks to be working fine for data spanning multiple nodes.
 -- However existing groupingsets.sql test is failing for Postgres-XL (Low priority)
 create table xl_items_sold (
 	brand char(20),

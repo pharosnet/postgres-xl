@@ -7,15 +7,8 @@ CREATE TABLE xl_pp (a bigint, b int) DISTRIBUTE BY HASH(a);
 INSERT INTO xl_pp SELECT generate_series(1,100), 20;
 
 EXPLAIN VERBOSE SELECT * FROM xl_pp WHERE a = 100;
---This goes to all nodes (incorrect behavior)
 
 EXPLAIN VERBOSE SELECT * FROM xl_pp WHERE a = 100::bigint;
---goes to just one node where 100 is mapped to
-
---Looks like we test for datatypes for distribution column and constant literals and want them to be of the same type for pushdown to work
---Doesn't look like a necessary restriction.
---100 by default gets typecast-ed to INT
--- Same behavior for SELECT, DELETE and UPDATE right now - (bug) - hence test is failing. 
 
 EXPLAIN VERBOSE INSERT INTO xl_pp (a, b) VALUES (200, 1) ;
 
@@ -42,17 +35,8 @@ CREATE TABLE xl_ppm (a INT2, b int) DISTRIBUTE BY MODULO(a);
 INSERT INTO xl_ppm SELECT generate_series(1,100), 20;
 
 EXPLAIN VERBOSE SELECT * FROM xl_ppm WHERE a = 100;
---This goes to all nodes (incorrect behavior)
 
 EXPLAIN VERBOSE SELECT * FROM xl_ppm WHERE a = 100::INT2;
---goes to just one node where 100 is mapped to
-
---Looks like we test for datatypes for distribution column and constant literals and want them to be of the same type for pushdown to work
---Doesn't look like a necessary restriction.
---100 by default gets typecast-ed to INT
--- Same behavior for SELECT, DELETE and UPDATE right now - (bug) - hence test is failing. 
-
-EXPLAIN VERBOSE INSERT INTO xl_ppm (a, b) VALUES (200, 1) ;
 
 EXPLAIN VERBOSE INSERT INTO xl_ppm (a, b) VALUES (201::INT2, 1) ;
 

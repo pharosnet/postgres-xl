@@ -3,84 +3,67 @@
 CREATE TABLE xl_pp (a bigint, b int) DISTRIBUTE BY HASH(a);
 INSERT INTO xl_pp SELECT generate_series(1,100), 20;
 EXPLAIN VERBOSE SELECT * FROM xl_pp WHERE a = 100;
-                                       QUERY PLAN                                       
-----------------------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode_2)  (cost=0.00..35.50 rows=10 width=12)
-   Output: a, b
-   ->  Seq Scan on public.xl_pp  (cost=0.00..35.50 rows=10 width=12)
-         Output: a, b
-         Filter: (xl_pp.a = 100)
-(5 rows)
+                                 QUERY PLAN                                 
+----------------------------------------------------------------------------
+ Data Node Scan on "__REMOTE_FQS_QUERY__"  (cost=0.00..0.00 rows=0 width=0)
+   Output: xl_pp.a, xl_pp.b
+   Node/s: datanode_2
+   Remote query: SELECT a, b FROM xl_pp WHERE (a = 100)
+(4 rows)
 
---This goes to all nodes (incorrect behavior)
 EXPLAIN VERBOSE SELECT * FROM xl_pp WHERE a = 100::bigint;
-                                  QUERY PLAN                                  
-------------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode_2)  (cost=0.00..35.50 rows=10 width=12)
-   Output: a, b
-   ->  Seq Scan on public.xl_pp  (cost=0.00..35.50 rows=10 width=12)
-         Output: a, b
-         Filter: (xl_pp.a = '100'::bigint)
-(5 rows)
+                                 QUERY PLAN                                 
+----------------------------------------------------------------------------
+ Data Node Scan on "__REMOTE_FQS_QUERY__"  (cost=0.00..0.00 rows=0 width=0)
+   Output: xl_pp.a, xl_pp.b
+   Node/s: datanode_2
+   Remote query: SELECT a, b FROM xl_pp WHERE (a = (100)::bigint)
+(4 rows)
 
---goes to just one node where 100 is mapped to
---Looks like we test for datatypes for distribution column and constant literals and want them to be of the same type for pushdown to work
---Doesn't look like a necessary restriction.
---100 by default gets typecast-ed to INT
--- Same behavior for SELECT, DELETE and UPDATE right now - (bug) - hence test is failing. 
 EXPLAIN VERBOSE INSERT INTO xl_pp (a, b) VALUES (200, 1) ;
-                                    QUERY PLAN                                    
-----------------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode_1)  (cost=0.00..0.01 rows=1 width=0)
-   ->  Insert on public.xl_pp  (cost=0.00..0.01 rows=1 width=0)
-         ->  Remote Subquery Scan on local node  (cost=0.00..0.01 rows=1 width=0)
-               Output: '200'::bigint, 1
-               Distribute results by H: '200'::bigint
-               ->  Result  (cost=0.00..0.01 rows=1 width=0)
-                     Output: '200'::bigint, 1
-(7 rows)
+                                 QUERY PLAN                                 
+----------------------------------------------------------------------------
+ Data Node Scan on "__REMOTE_FQS_QUERY__"  (cost=0.00..0.00 rows=0 width=0)
+   Output: 200, 1
+   Node expr: 200
+   Remote query: INSERT INTO xl_pp (a, b) VALUES (200, 1)
+(4 rows)
 
 EXPLAIN VERBOSE INSERT INTO xl_pp (a, b) VALUES (201::bigint, 1) ;
-                                    QUERY PLAN                                    
-----------------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode_1)  (cost=0.00..0.01 rows=1 width=0)
-   ->  Insert on public.xl_pp  (cost=0.00..0.01 rows=1 width=0)
-         ->  Remote Subquery Scan on local node  (cost=0.00..0.01 rows=1 width=0)
-               Output: '201'::bigint, 1
-               Distribute results by H: '201'::bigint
-               ->  Result  (cost=0.00..0.01 rows=1 width=0)
-                     Output: '201'::bigint, 1
-(7 rows)
+                                 QUERY PLAN                                 
+----------------------------------------------------------------------------
+ Data Node Scan on "__REMOTE_FQS_QUERY__"  (cost=0.00..0.00 rows=0 width=0)
+   Output: (201)::bigint, 1
+   Node expr: (201)::bigint
+   Remote query: INSERT INTO xl_pp (a, b) VALUES ((201)::bigint, 1)
+(4 rows)
 
 EXPLAIN VERBOSE UPDATE xl_pp SET b=2 where a=200;
-                                       QUERY PLAN                                       
-----------------------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode_1)  (cost=0.00..35.50 rows=10 width=18)
-   ->  Update on public.xl_pp  (cost=0.00..35.50 rows=10 width=18)
-         ->  Seq Scan on public.xl_pp  (cost=0.00..35.50 rows=10 width=18)
-               Output: a, 2, a, xc_node_id, ctid
-               Filter: (xl_pp.a = 200)
-(5 rows)
+                                 QUERY PLAN                                 
+----------------------------------------------------------------------------
+ Data Node Scan on "__REMOTE_FQS_QUERY__"  (cost=0.00..0.00 rows=0 width=0)
+   Output: 2, xl_pp.a, xl_pp.xc_node_id, xl_pp.ctid
+   Node/s: datanode_1
+   Remote query: UPDATE xl_pp SET b = 2 WHERE (a = 200)
+(4 rows)
 
 EXPLAIN VERBOSE UPDATE xl_pp SET b=2 where a=200::bigint;
-                                  QUERY PLAN                                  
-------------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode_1)  (cost=0.00..35.50 rows=10 width=18)
-   ->  Update on public.xl_pp  (cost=0.00..35.50 rows=10 width=18)
-         ->  Seq Scan on public.xl_pp  (cost=0.00..35.50 rows=10 width=18)
-               Output: a, 2, a, xc_node_id, ctid
-               Filter: (xl_pp.a = '200'::bigint)
-(5 rows)
+                                 QUERY PLAN                                 
+----------------------------------------------------------------------------
+ Data Node Scan on "__REMOTE_FQS_QUERY__"  (cost=0.00..0.00 rows=0 width=0)
+   Output: 2, xl_pp.a, xl_pp.xc_node_id, xl_pp.ctid
+   Node/s: datanode_1
+   Remote query: UPDATE xl_pp SET b = 2 WHERE (a = (200)::bigint)
+(4 rows)
 
 EXPLAIN VERBOSE DELETE FROM xl_pp where a=200;
-                                       QUERY PLAN                                       
-----------------------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode_1)  (cost=0.00..35.50 rows=10 width=18)
-   ->  Delete on public.xl_pp  (cost=0.00..35.50 rows=10 width=18)
-         ->  Seq Scan on public.xl_pp  (cost=0.00..35.50 rows=10 width=18)
-               Output: a, xc_node_id, ctid, a
-               Filter: (xl_pp.a = 200)
-(5 rows)
+                                 QUERY PLAN                                 
+----------------------------------------------------------------------------
+ Data Node Scan on "__REMOTE_FQS_QUERY__"  (cost=0.00..0.00 rows=0 width=0)
+   Output: xl_pp.a, xl_pp.xc_node_id, xl_pp.ctid
+   Node/s: datanode_1
+   Remote query: DELETE FROM xl_pp WHERE (a = 200)
+(4 rows)
 
 SELECT * from xl_pp where a=200;
  a | b 
@@ -93,107 +76,79 @@ SELECT * from xl_pp where a=200::bigint;
 (0 rows)
 
 EXPLAIN VERBOSE DELETE FROM xl_pp where a=200;
-                                       QUERY PLAN                                       
-----------------------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode_1)  (cost=0.00..35.50 rows=10 width=18)
-   ->  Delete on public.xl_pp  (cost=0.00..35.50 rows=10 width=18)
-         ->  Seq Scan on public.xl_pp  (cost=0.00..35.50 rows=10 width=18)
-               Output: a, xc_node_id, ctid, a
-               Filter: (xl_pp.a = 200)
-(5 rows)
+                                 QUERY PLAN                                 
+----------------------------------------------------------------------------
+ Data Node Scan on "__REMOTE_FQS_QUERY__"  (cost=0.00..0.00 rows=0 width=0)
+   Output: xl_pp.a, xl_pp.xc_node_id, xl_pp.ctid
+   Node/s: datanode_1
+   Remote query: DELETE FROM xl_pp WHERE (a = 200)
+(4 rows)
 
 EXPLAIN VERBOSE DELETE FROM xl_pp where a=200::bigint;
-                                  QUERY PLAN                                  
-------------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode_1)  (cost=0.00..35.50 rows=10 width=18)
-   ->  Delete on public.xl_pp  (cost=0.00..35.50 rows=10 width=18)
-         ->  Seq Scan on public.xl_pp  (cost=0.00..35.50 rows=10 width=18)
-               Output: a, xc_node_id, ctid, a
-               Filter: (xl_pp.a = '200'::bigint)
-(5 rows)
+                                 QUERY PLAN                                 
+----------------------------------------------------------------------------
+ Data Node Scan on "__REMOTE_FQS_QUERY__"  (cost=0.00..0.00 rows=0 width=0)
+   Output: xl_pp.a, xl_pp.xc_node_id, xl_pp.ctid
+   Node/s: datanode_1
+   Remote query: DELETE FROM xl_pp WHERE (a = (200)::bigint)
+(4 rows)
 
 --Testing with MODULO distribution
 CREATE TABLE xl_ppm (a INT2, b int) DISTRIBUTE BY MODULO(a);
 INSERT INTO xl_ppm SELECT generate_series(1,100), 20;
 EXPLAIN VERBOSE SELECT * FROM xl_ppm WHERE a = 100;
-                                      QUERY PLAN                                       
----------------------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode_1)  (cost=0.00..40.00 rows=12 width=6)
-   Output: a, b
-   ->  Seq Scan on public.xl_ppm  (cost=0.00..40.00 rows=12 width=6)
-         Output: a, b
-         Filter: (xl_ppm.a = 100)
-(5 rows)
+                                 QUERY PLAN                                 
+----------------------------------------------------------------------------
+ Data Node Scan on "__REMOTE_FQS_QUERY__"  (cost=0.00..0.00 rows=0 width=0)
+   Output: xl_ppm.a, xl_ppm.b
+   Node/s: datanode_1
+   Remote query: SELECT a, b FROM xl_ppm WHERE (a = 100)
+(4 rows)
 
---This goes to all nodes (incorrect behavior)
 EXPLAIN VERBOSE SELECT * FROM xl_ppm WHERE a = 100::INT2;
-                                 QUERY PLAN                                  
------------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode_1)  (cost=0.00..40.00 rows=12 width=6)
-   Output: a, b
-   ->  Seq Scan on public.xl_ppm  (cost=0.00..40.00 rows=12 width=6)
-         Output: a, b
-         Filter: (xl_ppm.a = '100'::smallint)
-(5 rows)
-
---goes to just one node where 100 is mapped to
---Looks like we test for datatypes for distribution column and constant literals and want them to be of the same type for pushdown to work
---Doesn't look like a necessary restriction.
---100 by default gets typecast-ed to INT
--- Same behavior for SELECT, DELETE and UPDATE right now - (bug) - hence test is failing. 
-EXPLAIN VERBOSE INSERT INTO xl_ppm (a, b) VALUES (200, 1) ;
-                                    QUERY PLAN                                    
-----------------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode_1)  (cost=0.00..0.01 rows=1 width=0)
-   ->  Insert on public.xl_ppm  (cost=0.00..0.01 rows=1 width=0)
-         ->  Remote Subquery Scan on local node  (cost=0.00..0.01 rows=1 width=0)
-               Output: '200'::smallint, 1
-               Distribute results by M: '200'::smallint
-               ->  Result  (cost=0.00..0.01 rows=1 width=0)
-                     Output: '200'::smallint, 1
-(7 rows)
+                                 QUERY PLAN                                 
+----------------------------------------------------------------------------
+ Data Node Scan on "__REMOTE_FQS_QUERY__"  (cost=0.00..0.00 rows=0 width=0)
+   Output: xl_ppm.a, xl_ppm.b
+   Node/s: datanode_1
+   Remote query: SELECT a, b FROM xl_ppm WHERE (a = (100)::smallint)
+(4 rows)
 
 EXPLAIN VERBOSE INSERT INTO xl_ppm (a, b) VALUES (201::INT2, 1) ;
-                                    QUERY PLAN                                    
-----------------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode_2)  (cost=0.00..0.01 rows=1 width=0)
-   ->  Insert on public.xl_ppm  (cost=0.00..0.01 rows=1 width=0)
-         ->  Remote Subquery Scan on local node  (cost=0.00..0.01 rows=1 width=0)
-               Output: '201'::smallint, 1
-               Distribute results by M: '201'::smallint
-               ->  Result  (cost=0.00..0.01 rows=1 width=0)
-                     Output: '201'::smallint, 1
-(7 rows)
+                                 QUERY PLAN                                 
+----------------------------------------------------------------------------
+ Data Node Scan on "__REMOTE_FQS_QUERY__"  (cost=0.00..0.00 rows=0 width=0)
+   Output: (201)::smallint, 1
+   Node expr: (201)::smallint
+   Remote query: INSERT INTO xl_ppm (a, b) VALUES ((201)::smallint, 1)
+(4 rows)
 
 EXPLAIN VERBOSE UPDATE xl_ppm SET b=2 where a=200;
-                                       QUERY PLAN                                       
-----------------------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode_1)  (cost=0.00..40.00 rows=12 width=12)
-   ->  Update on public.xl_ppm  (cost=0.00..40.00 rows=12 width=12)
-         ->  Seq Scan on public.xl_ppm  (cost=0.00..40.00 rows=12 width=12)
-               Output: a, 2, a, xc_node_id, ctid
-               Filter: (xl_ppm.a = 200)
-(5 rows)
+                                 QUERY PLAN                                 
+----------------------------------------------------------------------------
+ Data Node Scan on "__REMOTE_FQS_QUERY__"  (cost=0.00..0.00 rows=0 width=0)
+   Output: 2, xl_ppm.a, xl_ppm.xc_node_id, xl_ppm.ctid
+   Node/s: datanode_1
+   Remote query: UPDATE xl_ppm SET b = 2 WHERE (a = 200)
+(4 rows)
 
 EXPLAIN VERBOSE UPDATE xl_ppm SET b=2 where a=200::INT2;
-                                  QUERY PLAN                                  
-------------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode_1)  (cost=0.00..40.00 rows=12 width=12)
-   ->  Update on public.xl_ppm  (cost=0.00..40.00 rows=12 width=12)
-         ->  Seq Scan on public.xl_ppm  (cost=0.00..40.00 rows=12 width=12)
-               Output: a, 2, a, xc_node_id, ctid
-               Filter: (xl_ppm.a = '200'::smallint)
-(5 rows)
+                                 QUERY PLAN                                 
+----------------------------------------------------------------------------
+ Data Node Scan on "__REMOTE_FQS_QUERY__"  (cost=0.00..0.00 rows=0 width=0)
+   Output: 2, xl_ppm.a, xl_ppm.xc_node_id, xl_ppm.ctid
+   Node/s: datanode_1
+   Remote query: UPDATE xl_ppm SET b = 2 WHERE (a = (200)::smallint)
+(4 rows)
 
 EXPLAIN VERBOSE DELETE FROM xl_ppm where a=200;
-                                       QUERY PLAN                                       
-----------------------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode_1)  (cost=0.00..40.00 rows=12 width=12)
-   ->  Delete on public.xl_ppm  (cost=0.00..40.00 rows=12 width=12)
-         ->  Seq Scan on public.xl_ppm  (cost=0.00..40.00 rows=12 width=12)
-               Output: a, xc_node_id, ctid, a
-               Filter: (xl_ppm.a = 200)
-(5 rows)
+                                 QUERY PLAN                                 
+----------------------------------------------------------------------------
+ Data Node Scan on "__REMOTE_FQS_QUERY__"  (cost=0.00..0.00 rows=0 width=0)
+   Output: xl_ppm.a, xl_ppm.xc_node_id, xl_ppm.ctid
+   Node/s: datanode_1
+   Remote query: DELETE FROM xl_ppm WHERE (a = 200)
+(4 rows)
 
 SELECT * from xl_ppm where a=200;
  a | b 
@@ -206,24 +161,22 @@ SELECT * from xl_ppm where a=200::INT2;
 (0 rows)
 
 EXPLAIN VERBOSE DELETE FROM xl_ppm where a=200;
-                                       QUERY PLAN                                       
-----------------------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode_1)  (cost=0.00..40.00 rows=12 width=12)
-   ->  Delete on public.xl_ppm  (cost=0.00..40.00 rows=12 width=12)
-         ->  Seq Scan on public.xl_ppm  (cost=0.00..40.00 rows=12 width=12)
-               Output: a, xc_node_id, ctid, a
-               Filter: (xl_ppm.a = 200)
-(5 rows)
+                                 QUERY PLAN                                 
+----------------------------------------------------------------------------
+ Data Node Scan on "__REMOTE_FQS_QUERY__"  (cost=0.00..0.00 rows=0 width=0)
+   Output: xl_ppm.a, xl_ppm.xc_node_id, xl_ppm.ctid
+   Node/s: datanode_1
+   Remote query: DELETE FROM xl_ppm WHERE (a = 200)
+(4 rows)
 
 EXPLAIN VERBOSE DELETE FROM xl_ppm where a=200::INT2;
-                                  QUERY PLAN                                  
-------------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode_1)  (cost=0.00..40.00 rows=12 width=12)
-   ->  Delete on public.xl_ppm  (cost=0.00..40.00 rows=12 width=12)
-         ->  Seq Scan on public.xl_ppm  (cost=0.00..40.00 rows=12 width=12)
-               Output: a, xc_node_id, ctid, a
-               Filter: (xl_ppm.a = '200'::smallint)
-(5 rows)
+                                 QUERY PLAN                                 
+----------------------------------------------------------------------------
+ Data Node Scan on "__REMOTE_FQS_QUERY__"  (cost=0.00..0.00 rows=0 width=0)
+   Output: xl_ppm.a, xl_ppm.xc_node_id, xl_ppm.ctid
+   Node/s: datanode_1
+   Remote query: DELETE FROM xl_ppm WHERE (a = (200)::smallint)
+(4 rows)
 
 DROP TABLE xl_pp;
 DROP TABLE xl_ppm;
