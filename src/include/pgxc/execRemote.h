@@ -286,6 +286,7 @@ extern bool	PreAbort_Remote(void);
 extern void AtEOXact_Remote(void);
 extern bool IsTwoPhaseCommitRequired(bool localWrite);
 extern bool FinishRemotePreparedTransaction(char *prepareGID, bool commit);
+extern char *GetImplicit2PCGID(const char *implicit2PC_head, bool localWrite);
 
 extern void pgxc_all_success_nodes(ExecNodes **d_nodes, ExecNodes **c_nodes, char **failednodes_msg);
 extern void AtEOXact_DBCleanup(bool isCommit);

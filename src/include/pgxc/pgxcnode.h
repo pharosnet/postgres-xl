@@ -62,6 +62,7 @@ typedef enum
 struct pgxc_node_handle
 {
 	Oid			nodeoid;
+	int			nodeid;
 
 	/* fd of the connection */
 	int		sock;

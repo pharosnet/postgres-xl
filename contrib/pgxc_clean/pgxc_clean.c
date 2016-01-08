@@ -467,6 +467,7 @@ recover2PC(PGconn *conn, txn_info *txn)
 	switch (txn_stat)
 	{
 		case TXN_STATUS_FAILED:
+		case TXN_STATUS_UNKNOWN:
 			if (verbose_opt)
 				fprintf(outf, "        Recovery not needed.\n");
 			return;
@@ -480,6 +481,9 @@ recover2PC(PGconn *conn, txn_info *txn)
 		case TXN_STATUS_ABORTED:
 			do_abort(conn, txn);
 			return;
+		case TXN_STATUS_INPROGRESS:
+			fprintf(stderr, "        Can't recover a running transaction.\n");
+			exit(1);
 		default:
 			fprintf(stderr, "        Unknown TXN status, pgxc_clean error.\n");
 			exit(1);
@@ -642,18 +646,27 @@ getTxnStatus(PGconn *conn, GlobalTransactionId gxid, int node_idx)
 	char *res_s;
 
 	static const char *STMT_FORM = "EXECUTE DIRECT ON (%s) 'SELECT pgxc_is_committed(''%d''::xid);'";
+	static const char *STMT_FORM_RUNNING = "EXECUTE DIRECT ON (%s) 'SELECT pgxc_is_inprogress(''%d''::xid);'";
 
 	node_name = pgxc_clean_node_info[node_idx].node_name;
 	sprintf(stmt, STMT_FORM, node_name, gxid);
 
 	res = PQexec(conn, stmt);
-	if (res == NULL || PQresultStatus(res) != PGRES_TUPLES_OK)
+	if (res == NULL || PQresultStatus(res) != PGRES_TUPLES_OK ||
+			PQgetisnull(res, 0, 0))
 	{
-		fprintf(stderr, "Could not obtain transaction status for node %s, gxid %d\n", node_name, gxid);
-		exit(1);
-	}
-	if (PQgetisnull(res, 0, 0))
+		PQclear(res);
+		sprintf(stmt, STMT_FORM_RUNNING, node_name, gxid);
+		res = PQexec(conn, stmt);
+		if (res == NULL || PQresultStatus(res) != PGRES_TUPLES_OK)
+			return TXN_STATUS_UNKNOWN;
+		if (PQgetisnull(res, 0, 0))
+			return TXN_STATUS_UNKNOWN;
+		res_s = PQgetvalue(res, 0, 0);
+		if (strcmp(res_s, "t") == 0)
+			return TXN_STATUS_INPROGRESS;
 		return TXN_STATUS_UNKNOWN;
+	}
 	res_s = PQgetvalue(res, 0, 0);
 	if (strcmp(res_s, "t") == 0)
 		return TXN_STATUS_COMMITTED;
@@ -801,7 +814,8 @@ getNodeList(PGconn *conn)
 	PGresult *res;
 
 	/* SQL Statement */
-	static const char *STMT_GET_NODE_INFO = "SELECT NODE_NAME, NODE_TYPE, NODE_PORT, NODE_HOST FROM PGXC_NODE;";
+	static const char *STMT_GET_NODE_INFO = "SELECT NODE_NAME, NODE_TYPE, "
+				 "NODE_PORT, NODE_HOST, NODE_ID FROM PGXC_NODE;";
 
 	res = PQexec(conn, STMT_GET_NODE_INFO);
 	if (res == NULL || PQresultStatus(res) != PGRES_TUPLES_OK)
@@ -825,6 +839,7 @@ getNodeList(PGconn *conn)
 		NODE_TYPE node_type;
 		int  port;
 		char *host;
+		int	 nodeid;
 
 		node_name = strdup(PQgetvalue(res, ii, 0));
 		node_type_c = strdup(PQgetvalue(res, ii, 1));
@@ -845,7 +860,8 @@ getNodeList(PGconn *conn)
 		}
 		port = atoi(PQgetvalue(res, ii, 2));
 		host = strdup(PQgetvalue(res, ii, 3));
-		set_node_info(node_name, port, host, node_type, ii);
+		nodeid = atoi(PQgetvalue(res, ii, 4));
+		set_node_info(node_name, port, host, node_type, nodeid, ii);
 
 		if (node_name)
 			free(node_name);

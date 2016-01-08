@@ -22,6 +22,7 @@ typedef enum TXN_STATUS
 	TXN_STATUS_PREPARED,
 	TXN_STATUS_COMMITTED,
 	TXN_STATUS_ABORTED,
+	TXN_STATUS_INPROGRESS,
 	TXN_STATUS_FAILED		/* Error detected while interacting with the node */
 } TXN_STATUS;
 
@@ -38,6 +39,7 @@ typedef struct node_info
 	int		port;
 	char	*host;
 	NODE_TYPE type;
+	int		nodeid;
 } node_info;
 
 extern node_info *pgxc_clean_node_info;
@@ -49,6 +51,13 @@ typedef struct txn_info
 	TransactionId	gxid;
 	char			*xid;		/* xid used in prepare */
 	char			*owner;
+	char			*origcoord;	/* Original coordinator who initiated the txn */
+	bool			isorigcoord_part;	/* Is original coordinator a
+										   participant? */
+	int				num_dnparts;		/* Number of participant datanodes */
+	int				num_coordparts;		/* Number of participant coordinators */
+	int				*dnparts;	/* Whether a node was participant in the txn */
+	int				*coordparts;
 	TXN_STATUS		*txn_stat;	/* Array for each nodes */
 	char			*msg;		/* Notice message for this txn. */
 } txn_info;
@@ -73,8 +82,11 @@ extern int set_txn_status(TransactionId gxid, char *node_name, TXN_STATUS status
 extern database_info *find_database_info(char *database_name);
 extern database_info *add_database_info(char *database_name);
 extern node_info *find_node_info(char *node_name);
+extern node_info *find_node_info_by_nodeid(int nodeid);
 extern int find_node_index(char *node_name);
-extern int set_node_info(char *node_name, int port, char *host, NODE_TYPE type, int index);
+extern int find_node_index_by_nodeid(int nodeid);
+extern int set_node_info(char *node_name, int port, char *host, NODE_TYPE type,
+		int nodeid, int index);
 extern TXN_STATUS check_txn_global_status(txn_info *txn);
 extern TXN_STATUS check_txn_global_status_gxid(TransactionId gxid);
 extern bool check2PCExists(void);

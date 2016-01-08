@@ -211,11 +211,13 @@ InitMultinodeExecutor(bool is_force)
 	{
 		init_pgxc_handle(&dn_handles[count]);
 		dn_handles[count].nodeoid = dnOids[count];
+		dn_handles[count].nodeid = get_pgxc_node_id(dnOids[count]);
 	}
 	for (count = 0; count < NumCoords; count++)
 	{
 		init_pgxc_handle(&co_handles[count]);
 		co_handles[count].nodeoid = coOids[count];
+		co_handles[count].nodeid = get_pgxc_node_id(coOids[count]);
 	}
 
 	datanode_count = 0;

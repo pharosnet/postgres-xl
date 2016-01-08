@@ -18,6 +18,10 @@
 
 #define PGXC_NODENAME_LENGTH	64
 
+/* Compile time max limits on number of coordinators and datanodes */
+#define MAX_COORDINATORS		64
+#define MAX_DATANODES			256
+
 /* GUC parameters, limit for number of nodes */
 extern int 	MaxDataNodes;
 extern int 	MaxCoords;

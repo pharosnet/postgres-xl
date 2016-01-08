@@ -44,6 +44,7 @@ static XidStatus TransactionLogFetch(TransactionId transactionId);
 #ifdef PGXC
 /* It is not really necessary to make it appear in header file */
 Datum pgxc_is_committed(PG_FUNCTION_ARGS);
+Datum pgxc_is_inprogress(PG_FUNCTION_ARGS);
 #endif
 
 /* ----------------------------------------------------------------
@@ -119,6 +120,25 @@ pgxc_is_committed(PG_FUNCTION_ARGS)
 		PG_RETURN_BOOL(false);
 	else
 		PG_RETURN_NULL();
+}
+
+/*
+ * For given Transaction ID, check if transaction is committed or aborted
+ */
+Datum
+pgxc_is_inprogress(PG_FUNCTION_ARGS)
+{
+	TransactionId	tid = (TransactionId) PG_GETARG_UINT32(0);
+	XidStatus   xidstatus;
+
+	xidstatus = TransactionLogFetch(tid);
+
+	if (xidstatus == TRANSACTION_STATUS_COMMITTED)
+		PG_RETURN_BOOL(false);
+	else if (xidstatus == TRANSACTION_STATUS_ABORTED)
+		PG_RETURN_BOOL(false);
+	else
+		PG_RETURN_BOOL(TransactionIdIsInProgress(tid));
 }
 #endif
 

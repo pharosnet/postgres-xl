@@ -3,6 +3,9 @@
 static int check_xid_is_implicit(char *xid);
 static txn_info *find_txn(TransactionId gxid);
 static txn_info *make_txn_info(char *dbname, TransactionId gxid, char *xid, char *owner);
+static void find_txn_participant_nodes(txn_info *txn);
+
+#define XIDPREFIX "_$XC$"
 
 database_info *find_database_info(char *database_name)
 {
@@ -47,7 +50,8 @@ database_info *add_database_info(char *database_name)
 	}
 }
 
-int set_node_info(char *node_name, int port, char *host, NODE_TYPE type, int index)
+int set_node_info(char *node_name, int port, char *host, NODE_TYPE type,
+		int nodeid, int index)
 {
 	node_info *cur_node_info;
 
@@ -66,6 +70,7 @@ int set_node_info(char *node_name, int port, char *host, NODE_TYPE type, int ind
 	if (cur_node_info->host == NULL)
 		return -1;
 	cur_node_info->type = type;
+	cur_node_info->nodeid = nodeid;
 	return 0;
 }
 
@@ -82,6 +87,17 @@ node_info *find_node_info(char *node_name)
 	return(NULL);
 }
 
+node_info *find_node_info_by_nodeid(int nodeid)
+{
+	int i;
+	for (i = 0; i < pgxc_clean_node_count; i++)
+	{
+		if (pgxc_clean_node_info[i].nodeid == nodeid)
+			return &pgxc_clean_node_info[i];
+	}
+	return(NULL);
+}
+
 int find_node_index(char *node_name)
 {
 	int i;
@@ -90,6 +106,17 @@ int find_node_index(char *node_name)
 		if (pgxc_clean_node_info[i].node_name == NULL)
 			continue;
 		if (strcmp(pgxc_clean_node_info[i].node_name, node_name) == 0)
+			return i;
+	}
+	return  -1;
+}
+
+int find_node_index_by_nodeid(int nodeid)
+{
+	int i;
+	for (i = 0; i < pgxc_clean_node_count; i++)
+	{
+		if (pgxc_clean_node_info[i].nodeid == nodeid)
 			return i;
 	}
 	return  -1;
@@ -236,6 +263,92 @@ TXN_STATUS check_txn_global_status_gxid(TransactionId gxid)
 	return(check_txn_global_status(find_txn(gxid)));
 }
 
+static void find_txn_participant_nodes(txn_info *txn)
+{
+	int ii;
+	char *xid;
+	char *val;
+
+	if (txn == NULL)
+		return;
+
+	if ((txn->xid == NULL || *txn->xid == '\0'))
+		return;
+
+	xid = strdup(txn->xid);
+
+#define SEP	":"
+	val = strtok(xid, SEP);
+	if (strncmp(val, XIDPREFIX, strlen(XIDPREFIX)) != 0)
+	{
+		fprintf(stderr, "Invalid format for implicit XID (%s).\n", txn->xid);
+		exit(1);
+	}
+
+	/* Get originating coordinator name */
+	val = strtok(NULL, SEP);
+	if (val == NULL)
+	{
+		fprintf(stderr, "Invalid format for implicit XID (%s).\n", txn->xid);
+		exit(1);
+	}
+	txn->origcoord = strdup(val);
+
+	/* Get if the originating coordinator was involved in the txn */
+	val = strtok(NULL, SEP);
+	if (val == NULL)
+	{
+		fprintf(stderr, "Invalid format for implicit XID (%s).\n", txn->xid);
+		exit(1);
+	}
+	txn->isorigcoord_part = atoi(val);
+
+	/* Get participating datanode count */
+	val = strtok(NULL, SEP);
+	if (val == NULL)
+	{
+		fprintf(stderr, "Invalid format for implicit XID (%s).\n", txn->xid);
+		exit(1);
+	}
+	txn->num_dnparts = atoi(val);
+
+	/* Get participating coordinator count */
+	val = strtok(NULL, SEP);
+	if (val == NULL)
+	{
+		fprintf(stderr, "Invalid format for implicit XID (%s).\n", txn->xid);
+		exit(1);
+	}
+	txn->num_coordparts = atoi(val);
+
+	txn->dnparts = (int *) malloc(sizeof (int) * txn->num_dnparts);
+	txn->coordparts = (int *) malloc(sizeof (int) * txn->num_coordparts);
+
+	for (ii = 0; ii < txn->num_dnparts; ii++)
+	{
+		val = strtok(NULL, SEP);
+		if (val == NULL)
+		{
+			fprintf(stderr, "Invalid format for implicit XID (%s).\n", txn->xid);
+			exit(1);
+		}
+		txn->dnparts[ii] = atoi(val);
+	}
+
+	for (ii = 0; ii < txn->num_coordparts; ii++)
+	{
+		val = strtok(NULL, SEP);
+		if (val == NULL)
+		{
+			fprintf(stderr, "Invalid format for implicit XID (%s).\n", txn->xid);
+			exit(1);
+		}
+		txn->coordparts[ii] = atoi(val);
+	}
+
+	return;
+}
+
 TXN_STATUS check_txn_global_status(txn_info *txn)
 {
 #define TXN_PREPARED 	0x0001
@@ -244,22 +357,59 @@ TXN_STATUS check_txn_global_status(txn_info *txn)
 
 	int ii;
 	int check_flag = 0;
+	int nodeindx;
 
 	if (txn == NULL)
 		return TXN_STATUS_INITIAL;
-	for (ii = 0; ii < pgxc_clean_node_count; ii++)
+
+	find_txn_participant_nodes(txn);
+
+	for (ii = 0; ii < txn->num_dnparts; ii++)
 	{
-		if (txn->txn_stat[ii] == TXN_STATUS_INITIAL || txn->txn_stat[ii] == TXN_STATUS_UNKNOWN)
-			continue;
-		else if (txn->txn_stat[ii] == TXN_STATUS_PREPARED)
+		nodeindx = find_node_index_by_nodeid(txn->dnparts[ii]);
+		if (nodeindx == -1)
+		{
+			fprintf(stderr, "Participant datanode %d not reachable. Can't "
+					"resolve the transaction %s", txn->dnparts[ii], txn->xid);
+				return TXN_STATUS_FAILED;
+		}
+
+		if (txn->txn_stat[nodeindx] == TXN_STATUS_INITIAL ||
+				txn->txn_stat[nodeindx] == TXN_STATUS_UNKNOWN)
+			check_flag |= TXN_ABORTED;
+		else if (txn->txn_stat[nodeindx] == TXN_STATUS_PREPARED)
 			check_flag |= TXN_PREPARED;
-		else if (txn->txn_stat[ii] == TXN_STATUS_COMMITTED)
+		else if (txn->txn_stat[nodeindx] == TXN_STATUS_COMMITTED)
 			check_flag |= TXN_COMMITTED;
-		else if (txn->txn_stat[ii] == TXN_STATUS_ABORTED)
+		else if (txn->txn_stat[nodeindx] == TXN_STATUS_ABORTED)
 			check_flag |= TXN_ABORTED;
 		else
 			return TXN_STATUS_FAILED;
 	}
+
+	for (ii = 0; ii < txn->num_coordparts; ii++)
+	{
+		nodeindx = find_node_index_by_nodeid(txn->coordparts[ii]);
+		if (nodeindx == -1)
+		{
+			fprintf(stderr, "Participant datanode %d not reachable. Can't "
+					"resolve the transaction %s", txn->coordparts[ii], txn->xid);
+				return TXN_STATUS_FAILED;
+		}
+
+		if (txn->txn_stat[nodeindx] == TXN_STATUS_INITIAL ||
+				txn->txn_stat[nodeindx] == TXN_STATUS_UNKNOWN)
+			check_flag |= TXN_ABORTED;
+		else if (txn->txn_stat[nodeindx] == TXN_STATUS_PREPARED)
+			check_flag |= TXN_PREPARED;
+		else if (txn->txn_stat[nodeindx] == TXN_STATUS_COMMITTED)
+			check_flag |= TXN_COMMITTED;
+		else if (txn->txn_stat[nodeindx] == TXN_STATUS_ABORTED)
+			check_flag |= TXN_ABORTED;
+		else
+			return TXN_STATUS_FAILED;
+	}
+
 	if ((check_flag & TXN_PREPARED) == 0)
 		/* Should be at least one "prepared statement" in nodes */
 		return TXN_STATUS_FAILED;
@@ -287,8 +437,6 @@ TXN_STATUS check_txn_global_status(txn_info *txn)
  */
 static int check_xid_is_implicit(char *xid)
 {
-#define XIDPREFIX "_$XC$"
-
 	if (strncmp(xid, XIDPREFIX, strlen(XIDPREFIX)) != 0)
 		return 0;
 	for(xid += strlen(XIDPREFIX); *xid; xid++)

@@ -106,6 +106,8 @@ static PGXCNodeAllHandles *get_exec_connections(RemoteQueryState *planstate,
 static bool pgxc_start_command_on_connection(PGXCNodeHandle *connection,
 					RemoteQueryState *remotestate, Snapshot snapshot);
 
+static void pgxc_node_remote_count(int *dnCount, int dnNodeIds[],
+		int *coordCount, int coordNodeIds[]);
 static char *pgxc_node_remote_prepare(char *prepareGID, bool localNode);
 static bool pgxc_node_remote_finish(char *prepareGID, bool commit,
 						char *nodestring, GlobalTransactionId gxid,
@@ -1996,6 +1998,54 @@ pgxc_node_remote_cleanup_all(void)
 	pfree_pgxc_all_handles(handles);
 }
 
+/*
+ * Count how many coordinators and datanodes are involved in this transaction
+ * so that we can save that information in the GID
+ */
+static void
+pgxc_node_remote_count(int *dnCount, int dnNodeIds[],
+		int *coordCount, int coordNodeIds[])
+{
+	int i;
+	PGXCNodeAllHandles *handles = get_current_handles();
+
+	*dnCount = *coordCount = 0;
+	for (i = 0; i < handles->dn_conn_count; i++)
+	{
+		PGXCNodeHandle *conn = handles->datanode_handles[i];
+		/*
+		 * Skip empty slots
+		 */
+		if (conn->sock == NO_SOCKET)
+			continue;
+		else if (conn->transaction_status == 'T')
+		{
+			if (!conn->read_only)
+			{
+				dnNodeIds[*dnCount] = conn->nodeid;
+				*dnCount = *dnCount + 1;
+			}
+		}
+	}
+
+	for (i = 0; i < handles->co_conn_count; i++)
+	{
+		PGXCNodeHandle *conn = handles->coord_handles[i];
+		/*
+		 * Skip empty slots
+		 */
+		if (conn->sock == NO_SOCKET)
+			continue;
+		else if (conn->transaction_status == 'T')
+		{
+			if (!conn->read_only)
+			{
+				coordNodeIds[*coordCount] = conn->nodeid;
+				*coordCount = *coordCount + 1;
+			}
+		}
+	}
+}
 
 /*
  * Prepare nodes which ran write operations during the transaction.
@@ -6201,4 +6251,42 @@ void AtEOXact_DBCleanup(bool isCommit)
 		pfree(dbcleanup_info.fparams);
 		dbcleanup_info.fparams = NULL;
 	}
+}
+
+char *
+GetImplicit2PCGID(const char *implicit2PC_head, bool localWrite)
+{
+	int dnCount = 0, coordCount = 0;
+	int dnNodeIds[MaxDataNodes];
+	int coordNodeIds[MaxCoords];
+	MemoryContext oldContext = CurrentMemoryContext;
+	StringInfoData str;
+	int i;
+
+	oldContext = MemoryContextSwitchTo(TopTransactionContext);
+	initStringInfo(&str);
+	/*
+	 * Check how many coordinators and datanodes are involved in this
+	 * transaction
+	 */
+	pgxc_node_remote_count(&dnCount, dnNodeIds, &coordCount, coordNodeIds);
+	appendStringInfo(&str, "%s%u:%s:%c:%d:%d",
+			implicit2PC_head,
+			GetTopTransactionId(),
+			PGXCNodeName,
+			localWrite ? 'T' : 'F',
+			dnCount,
+			coordCount + (localWrite ? 1 : 0));
+
+	for (i = 0; i < dnCount; i++)
+		appendStringInfo(&str, ":%d", dnNodeIds[i]);
+	for (i = 0; i < coordCount; i++)
+		appendStringInfo(&str, ":%d", coordNodeIds[i]);
+
+	if (localWrite)
+		appendStringInfo(&str, ":%d", PGXCNodeIdentifier);
+
+	MemoryContextSwitchTo(oldContext);
+
+	return str.data;
 }
