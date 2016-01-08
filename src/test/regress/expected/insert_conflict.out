@@ -23,10 +23,8 @@ explain (costs off) insert into insertconflicttest values(0, 'Crowberry') on con
    ->  Insert on insertconflicttest
          Conflict Resolution: NOTHING
          Conflict Arbiter Indexes: op_index_key, collation_index_key, both_index_key
-         ->  Remote Subquery Scan on local node
-               Distribute results by H: 0
-               ->  Result
-(7 rows)
+         ->  Result
+(5 rows)
 
 explain (costs off) insert into insertconflicttest values(0, 'Crowberry') on conflict (fruit, key, fruit, key) do nothing;
                                      QUERY PLAN                                      
@@ -35,10 +33,8 @@ explain (costs off) insert into insertconflicttest values(0, 'Crowberry') on con
    ->  Insert on insertconflicttest
          Conflict Resolution: NOTHING
          Conflict Arbiter Indexes: op_index_key, collation_index_key, both_index_key
-         ->  Remote Subquery Scan on local node
-               Distribute results by H: 0
-               ->  Result
-(7 rows)
+         ->  Result
+(5 rows)
 
 explain (costs off) insert into insertconflicttest values(0, 'Crowberry') on conflict (lower(fruit), key, lower(fruit), key) do nothing;
                       QUERY PLAN                       
@@ -47,10 +43,8 @@ explain (costs off) insert into insertconflicttest values(0, 'Crowberry') on con
    ->  Insert on insertconflicttest
          Conflict Resolution: NOTHING
          Conflict Arbiter Indexes: both_index_expr_key
-         ->  Remote Subquery Scan on local node
-               Distribute results by H: 0
-               ->  Result
-(7 rows)
+         ->  Result
+(5 rows)
 
 explain (costs off) insert into insertconflicttest values(0, 'Crowberry') on conflict (key, fruit) do update set fruit = excluded.fruit
   where exists (select 1 from insertconflicttest ii where ii.key = excluded.key);
@@ -61,14 +55,12 @@ explain (costs off) insert into insertconflicttest values(0, 'Crowberry') on con
          Conflict Resolution: UPDATE
          Conflict Arbiter Indexes: op_index_key, collation_index_key, both_index_key
          Conflict Filter: (SubPlan 1)
-         ->  Remote Subquery Scan on local node
-               Distribute results by H: 0
-               ->  Result
+         ->  Result
          SubPlan 1
            ->  Remote Subquery Scan on all (datanode_1,datanode_2)
                  ->  Index Only Scan using both_index_expr_key on insertconflicttest ii
                        Index Cond: (key = excluded.key)
-(12 rows)
+(10 rows)
 
 -- Neither collation nor operator class specifications are required --
 -- supplying them merely *limits* matches to indexes with matching opclasses
@@ -80,10 +72,8 @@ explain (costs off) insert into insertconflicttest values(0, 'Crowberry') on con
    ->  Insert on insertconflicttest
          Conflict Resolution: NOTHING
          Conflict Arbiter Indexes: op_index_key, both_index_key
-         ->  Remote Subquery Scan on local node
-               Distribute results by H: 0
-               ->  Result
-(7 rows)
+         ->  Result
+(5 rows)
 
 -- Okay, arbitrates using both index where text_pattern_ops opclass does and
 -- does not appear.
@@ -94,10 +84,8 @@ explain (costs off) insert into insertconflicttest values(0, 'Crowberry') on con
    ->  Insert on insertconflicttest
          Conflict Resolution: NOTHING
          Conflict Arbiter Indexes: collation_index_key, both_index_key
-         ->  Remote Subquery Scan on local node
-               Distribute results by H: 0
-               ->  Result
-(7 rows)
+         ->  Result
+(5 rows)
 
 -- Okay, but only accepts the single index where both opclass and collation are
 -- specified
@@ -108,10 +96,8 @@ explain (costs off) insert into insertconflicttest values(0, 'Crowberry') on con
    ->  Insert on insertconflicttest
          Conflict Resolution: NOTHING
          Conflict Arbiter Indexes: both_index_key
-         ->  Remote Subquery Scan on local node
-               Distribute results by H: 0
-               ->  Result
-(7 rows)
+         ->  Result
+(5 rows)
 
 -- Okay, but only accepts the single index where both opclass and collation are
 -- specified (plus expression variant)
@@ -122,10 +108,8 @@ explain (costs off) insert into insertconflicttest values(0, 'Crowberry') on con
    ->  Insert on insertconflicttest
          Conflict Resolution: NOTHING
          Conflict Arbiter Indexes: both_index_expr_key
-         ->  Remote Subquery Scan on local node
-               Distribute results by H: 0
-               ->  Result
-(7 rows)
+         ->  Result
+(5 rows)
 
 -- Attribute appears twice, while not all attributes/expressions on attributes
 -- appearing within index definition match in terms of both opclass and
@@ -148,10 +132,8 @@ explain (costs off) insert into insertconflicttest values(0, 'Crowberry') on con
    ->  Insert on insertconflicttest
          Conflict Resolution: NOTHING
          Conflict Arbiter Indexes: op_index_key, both_index_key
-         ->  Remote Subquery Scan on local node
-               Distribute results by H: 0
-               ->  Result
-(7 rows)
+         ->  Result
+(5 rows)
 
 explain (costs off) insert into insertconflicttest values(0, 'Crowberry') on conflict (lower(fruit) collate "C" text_pattern_ops, key, key) do nothing;
                       QUERY PLAN                       
@@ -160,10 +142,8 @@ explain (costs off) insert into insertconflicttest values(0, 'Crowberry') on con
    ->  Insert on insertconflicttest
          Conflict Resolution: NOTHING
          Conflict Arbiter Indexes: both_index_expr_key
-         ->  Remote Subquery Scan on local node
-               Distribute results by H: 0
-               ->  Result
-(7 rows)
+         ->  Result
+(5 rows)
 
 drop index op_index_key;
 drop index collation_index_key;
@@ -173,20 +153,15 @@ drop index both_index_expr_key;
 -- Make sure that cross matching of attribute opclass/collation does not occur
 --
 create unique index cross_match on insertconflicttest(lower(fruit) collate "C", upper(fruit) text_pattern_ops);
+ERROR:  Unique index of partitioned table must contain the hash/modulo distribution column.
 -- fails:
 explain (costs off) insert into insertconflicttest values(0, 'Crowberry') on conflict (lower(fruit) text_pattern_ops, upper(fruit) collate "C") do nothing;
 ERROR:  there is no unique or exclusion constraint matching the ON CONFLICT specification
 -- works:
 explain (costs off) insert into insertconflicttest values(0, 'Crowberry') on conflict (lower(fruit) collate "C", upper(fruit) text_pattern_ops) do nothing;
-               QUERY PLAN                
------------------------------------------
- Insert on insertconflicttest
-   Conflict Resolution: NOTHING
-   Conflict Arbiter Indexes: cross_match
-   ->  Result
-(4 rows)
-
+ERROR:  there is no unique or exclusion constraint matching the ON CONFLICT specification
 drop index cross_match;
+ERROR:  index "cross_match" does not exist
 --
 -- Single key tests
 --
@@ -195,16 +170,14 @@ create unique index key_index on insertconflicttest(key);
 -- Explain tests
 --
 explain (costs off) insert into insertconflicttest values (0, 'Bilberry') on conflict (key) do update set fruit = excluded.fruit;
-                   QUERY PLAN                   
-------------------------------------------------
+                 QUERY PLAN                  
+---------------------------------------------
  Remote Subquery Scan on all (datanode_2)
    ->  Insert on insertconflicttest
          Conflict Resolution: UPDATE
          Conflict Arbiter Indexes: key_index
-         ->  Remote Subquery Scan on local node
-               Distribute results by H: 0
-               ->  Result
-(7 rows)
+         ->  Result
+(5 rows)
 
 -- Should display qual actually attributable to internal sequential scan:
 explain (costs off) insert into insertconflicttest values (0, 'Bilberry') on conflict (key) do update set fruit = excluded.fruit where insertconflicttest.fruit != 'Cawesh';
@@ -215,10 +188,8 @@ explain (costs off) insert into insertconflicttest values (0, 'Bilberry') on con
          Conflict Resolution: UPDATE
          Conflict Arbiter Indexes: key_index
          Conflict Filter: (insertconflicttest.fruit <> 'Cawesh'::text)
-         ->  Remote Subquery Scan on local node
-               Distribute results by H: 0
-               ->  Result
-(8 rows)
+         ->  Result
+(6 rows)
 
 -- With EXCLUDED.* expression in scan node:
 explain (costs off) insert into insertconflicttest values(0, 'Crowberry') on conflict (key) do update set fruit = excluded.fruit where excluded.fruit != 'Elderberry';
@@ -229,10 +200,8 @@ explain (costs off) insert into insertconflicttest values(0, 'Crowberry') on con
          Conflict Resolution: UPDATE
          Conflict Arbiter Indexes: key_index
          Conflict Filter: (excluded.fruit <> 'Elderberry'::text)
-         ->  Remote Subquery Scan on local node
-               Distribute results by H: 0
-               ->  Result
-(8 rows)
+         ->  Result
+(6 rows)
 
 -- Does the same, but JSON format shows "Conflict Arbiter Index" as JSON array:
 explain (costs off, format json) insert into insertconflicttest values (0, 'Bilberry') on conflict (key) do update set fruit = excluded.fruit where insertconflicttest.fruit != 'Lime' returning *;
@@ -256,16 +225,8 @@ explain (costs off, format json) insert into insertconflicttest values (0, 'Bilb
            "Conflict Filter": "(insertconflicttest.fruit <> 'Lime'::text)",+
            "Plans": [                                                      +
              {                                                             +
-               "Node Type": "Remote Subquery Scan",                        +
-               "Parent Relationship": "Member",                            +
-               "Replicated": "yes",                                        +
-               "Node List": [],                                            +
-               "Plans": [                                                  +
-                 {                                                         +
-                   "Node Type": "Result",                                  +
-                   "Parent Relationship": "Outer"                          +
-                 }                                                         +
-               ]                                                           +
+               "Node Type": "Result",                                      +
+               "Parent Relationship": "Member"                             +
              }                                                             +
            ]                                                               +
          }                                                                 +
@@ -366,15 +327,19 @@ drop index expr_part_comp_key_index;
 -- Expression index tests
 --
 create unique index expr_key_index on insertconflicttest(lower(fruit));
+ERROR:  Unique index of partitioned table must contain the hash/modulo distribution column.
 -- inference succeeds:
 insert into insertconflicttest values (20, 'Quince') on conflict (lower(fruit)) do update set fruit = excluded.fruit;
+ERROR:  there is no unique or exclusion constraint matching the ON CONFLICT specification
 insert into insertconflicttest values (21, 'Pomegranate') on conflict (lower(fruit), lower(fruit)) do update set fruit = excluded.fruit;
+ERROR:  there is no unique or exclusion constraint matching the ON CONFLICT specification
 -- inference fails:
 insert into insertconflicttest values (22, 'Apricot') on conflict (upper(fruit)) do update set fruit = excluded.fruit;
 ERROR:  there is no unique or exclusion constraint matching the ON CONFLICT specification
 insert into insertconflicttest values (23, 'Blackberry') on conflict (fruit) do update set fruit = excluded.fruit;
 ERROR:  there is no unique or exclusion constraint matching the ON CONFLICT specification
 drop index expr_key_index;
+ERROR:  index "expr_key_index" does not exist
 --
 -- Expression index tests (with regular column)
 --
@@ -391,10 +356,8 @@ explain (costs off) insert into insertconflicttest values (26, 'Fig') on conflic
    ->  Insert on insertconflicttest
          Conflict Resolution: UPDATE
          Conflict Arbiter Indexes: expr_comp_key_index
-         ->  Remote Subquery Scan on local node
-               Distribute results by H: 26
-               ->  Result
-(7 rows)
+         ->  Result
+(5 rows)
 
 -- inference fails:
 insert into insertconflicttest values (27, 'Prune') on conflict (key, upper(fruit)) do update set fruit = excluded.fruit;
@@ -410,18 +373,19 @@ drop index tricky_expr_comp_key_index;
 --
 create unique index key_index on insertconflicttest(key);
 create unique index fruit_index on insertconflicttest(fruit);
+ERROR:  Unique index of partitioned table must contain the hash/modulo distribution column.
 -- succeeds, since UPDATE happens to update "fruit" to existing value:
 insert into insertconflicttest values (26, 'Fig') on conflict (key) do update set fruit = excluded.fruit;
 -- fails, since UPDATE is to row with key value 26, and we're updating "fruit"
 -- to a value that happens to exist in another row ('peach'):
 insert into insertconflicttest values (26, 'Peach') on conflict (key) do update set fruit = excluded.fruit;
-ERROR:  duplicate key value violates unique constraint "fruit_index"
-DETAIL:  Key (fruit)=(Peach) already exists.
 -- succeeds, since "key" isn't repeated/referenced in UPDATE, and "fruit"
 -- arbitrates that statement updates existing "Fig" row:
 insert into insertconflicttest values (25, 'Fig') on conflict (fruit) do update set fruit = excluded.fruit;
+ERROR:  there is no unique or exclusion constraint matching the ON CONFLICT specification
 drop index key_index;
 drop index fruit_index;
+ERROR:  index "fruit_index" does not exist
 --
 -- Test partial unique index inference
 --
@@ -474,23 +438,25 @@ insert into insertconflicttest as i values (23, 'Avocado') on conflict (key) do 
 
 -- deparse whole row var in WHERE and SET clauses:
 explain (costs off) insert into insertconflicttest as i values (23, 'Avocado') on conflict (key) do update set fruit = excluded.fruit where excluded.* is null;
-               QUERY PLAN                
------------------------------------------
- Insert on insertconflicttest i
-   Conflict Resolution: UPDATE
-   Conflict Arbiter Indexes: plain
-   Conflict Filter: (excluded.* IS NULL)
-   ->  Result
-(5 rows)
+                  QUERY PLAN                   
+-----------------------------------------------
+ Remote Subquery Scan on all (datanode_1)
+   ->  Insert on insertconflicttest i
+         Conflict Resolution: UPDATE
+         Conflict Arbiter Indexes: plain
+         Conflict Filter: (excluded.* IS NULL)
+         ->  Result
+(6 rows)
 
 explain (costs off) insert into insertconflicttest as i values (23, 'Avocado') on conflict (key) do update set fruit = excluded.*::text;
-            QUERY PLAN             
------------------------------------
- Insert on insertconflicttest i
-   Conflict Resolution: UPDATE
-   Conflict Arbiter Indexes: plain
-   ->  Result
-(4 rows)
+                QUERY PLAN                
+------------------------------------------
+ Remote Subquery Scan on all (datanode_1)
+   ->  Insert on insertconflicttest i
+         Conflict Resolution: UPDATE
+         Conflict Arbiter Indexes: plain
+         ->  Result
+(5 rows)
 
 drop index plain;
 -- Cleanup
@@ -539,8 +505,8 @@ insert into capitals values ('Madison', 1.913E+5, 845, 'WI');
 select * from capitals;
     name    | population | altitude | state 
 ------------+------------+----------+-------
- Sacramento |     369400 |       30 | CA
  Madison    |     191300 |      845 | WI
+ Sacramento |     369400 |       30 | CA
 (2 rows)
 
 -- Succeeds:
@@ -559,11 +525,11 @@ insert into cities values ('Las Vegas', 5.83E+5, 2001) on conflict (name) do upd
 select tableoid::regclass, * from cities;
  tableoid |     name      | population | altitude 
 ----------+---------------+------------+----------
- cities   | San Francisco |     724000 |       63
- cities   | Mariposa      |       1200 |     1953
- cities   | Las Vegas     |     583000 |     2001
- capitals | Madison       |     191300 |      845
- capitals | Sacramento    |  466400000 |       30
+ 58082    | San Francisco |     724000 |       63
+ 58082    | Mariposa      |       1200 |     1953
+ 58082    | Las Vegas     |     583000 |     2001
+ 58490    | Madison       |     191300 |      845
+ 58088    | Sacramento    |  466400000 |       30
 (5 rows)
 
 insert into capitals values ('Las Vegas', 5.83E+5, 2222, 'NV') on conflict (name) do update set population = excluded.population;
@@ -581,12 +547,12 @@ select * from capitals;
 select tableoid::regclass, * from cities;
  tableoid |     name      | population | altitude 
 ----------+---------------+------------+----------
- cities   | San Francisco |     724000 |       63
- cities   | Mariposa      |       1200 |     1953
- cities   | Las Vegas     |     583000 |     2001
- capitals | Madison       |     191300 |      845
- capitals | Sacramento    |  466400000 |       30
- capitals | Las Vegas     |     583000 |     2222
+ 58082    | San Francisco |     724000 |       63
+ 58082    | Mariposa      |       1200 |     1953
+ 58082    | Las Vegas     |     583000 |     2001
+ 58490    | Madison       |     191300 |      845
+ 58088    | Sacramento    |  466400000 |       30
+ 58088    | Las Vegas     |     583000 |     2222
 (6 rows)
 
 -- This only affects "cities" version of "Las Vegas":
@@ -594,12 +560,12 @@ insert into cities values ('Las Vegas', 5.86E+5, 2223) on conflict (name) do upd
 select tableoid::regclass, * from cities;
  tableoid |     name      | population | altitude 
 ----------+---------------+------------+----------
- cities   | San Francisco |     724000 |       63
- cities   | Mariposa      |       1200 |     1953
- cities   | Las Vegas     |     586000 |     2223
- capitals | Madison       |     191300 |      845
- capitals | Sacramento    |  466400000 |       30
- capitals | Las Vegas     |     583000 |     2222
+ 58082    | San Francisco |     724000 |       63
+ 58082    | Mariposa      |       1200 |     1953
+ 58082    | Las Vegas     |     586000 |     2223
+ 58490    | Madison       |     191300 |      845
+ 58088    | Sacramento    |  466400000 |       30
+ 58088    | Las Vegas     |     583000 |     2222
 (6 rows)
 
 -- clean up
