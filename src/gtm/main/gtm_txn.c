@@ -1409,6 +1409,8 @@ GTM_BkupBeginTransactionGetGXIDMulti(GlobalTransactionId *gxid,
 				(EINVAL,
 				 errmsg("Failed to start %d new transactions", txn_count)));
 
+	elog(DEBUG2, "GTM_BkupBeginTransactionGetGXIDMulti - count %d", count);
+
 	//XCPTODO check oldContext = MemoryContextSwitchTo(TopMemoryContext);
 	GTM_RWLockAcquire(&GTMTransactions.gt_TransArrayLock, GTM_LOCKMODE_WRITE);
 
@@ -1416,8 +1418,11 @@ GTM_BkupBeginTransactionGetGXIDMulti(GlobalTransactionId *gxid,
 	{
 		gtm_txninfo = GTM_HandleToTransactionInfo(txn[ii]);
 		gtm_txninfo->gti_gxid = gxid[ii];
+		if (global_sessionid[ii])
+			strncpy(gtm_txninfo->gti_global_session_id, global_sessionid[ii],
+					GTM_MAX_SESSION_ID_LEN);
 
-		elog(DEBUG1, "GTM_BkupBeginTransactionGetGXIDMulti: xid(%u), handle(%u)",
+		elog(DEBUG2, "GTM_BkupBeginTransactionGetGXIDMulti: xid(%u), handle(%u)",
 				gxid[ii], txn[ii]);
 
 		/*
@@ -1675,6 +1680,7 @@ retry:
 										   txn_gxid,
 										   txn_isolation_level,
 										   txn_read_only,
+										   txn_global_sessionid,
 										   txn_client_id,
 										   txn_connid);
 

@@ -231,6 +231,7 @@ int
 bkup_begin_transaction_multi(GTM_Conn *conn, int txn_count,
 							 GlobalTransactionId *gxid, GTM_IsolationLevel *isolevel,
 							 bool *read_only,
+							 char *txn_global_sessionid[], 
 							 uint32 *client_id,
 							 GTMProxy_ConnID *txn_connid);
 int

@@ -3358,8 +3358,9 @@ GetSnapshotFromGlobalSnapshot(Snapshot snapshot)
 			global_xmin = FirstNormalTransactionId;
 
 		if (TransactionIdPrecedes(globalSnapshot.gxmin, global_xmin))
-			elog(ERROR, "Snapshot too old - RecentGlobalXmin has already "
-					"advanced past the snapshot xmin");
+			elog(ERROR, "Snapshot too old - RecentGlobalXmin (%d) has already "
+					"advanced past the snapshot xmin (%d)",
+					global_xmin, globalSnapshot.gxmin);
 
 		memcpy(snapshot->xip, globalSnapshot.gxip,
 				globalSnapshot.gxcnt * sizeof(TransactionId));

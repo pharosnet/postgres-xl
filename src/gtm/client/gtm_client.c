@@ -1980,7 +1980,9 @@ send_failed:
 int
 bkup_begin_transaction_multi(GTM_Conn *conn, int txn_count,
 							 GlobalTransactionId *gxid, GTM_IsolationLevel *isolevel,
-							 bool *read_only, uint32 *client_id,
+							 bool *read_only,
+							 char *txn_global_sessionid[], 
+							 uint32 *client_id,
 							 GTMProxy_ConnID *txn_connid)
 {
 	int ii;
@@ -1993,11 +1995,13 @@ bkup_begin_transaction_multi(GTM_Conn *conn, int txn_count,
 	    gtmpqPutInt(txn_count, sizeof(int), conn))
 		goto send_failed;
 
-	for (ii = 0; ii < txn_count; ii++, gxid++)
+	for (ii = 0; ii < txn_count; ii++)
 	{
 		if (gtmpqPutInt(gxid[ii], sizeof(GlobalTransactionId), conn) ||
 			gtmpqPutInt(isolevel[ii], sizeof(GTM_IsolationLevel), conn) ||
 			gtmpqPutc(read_only[ii], conn) ||
+			gtmpqPutInt(strlen(txn_global_sessionid[ii]) + 1, sizeof(uint32), conn) ||
+			gtmpqPutnchar(txn_global_sessionid[ii], strlen(txn_global_sessionid[ii]) + 1, conn) ||
 			gtmpqPutInt(client_id[ii], sizeof (uint32), conn) ||
 			gtmpqPutInt(txn_connid[ii], sizeof(GTMProxy_ConnID), conn))
 			goto send_failed;
