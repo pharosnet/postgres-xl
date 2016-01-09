@@ -42,8 +42,10 @@
 #include "utils/xml.h"
 #ifdef PGXC
 #include "catalog/pgxc_node.h"
+#include "nodes/makefuncs.h"
 #include "pgxc/pgxcnode.h"
 #include "pgxc/planner.h"
+#include "pgxc/execRemote.h"
 #endif
 
 /* Hook for plugins to get control in ExplainOneQuery() */
@@ -995,7 +997,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			break;
 #ifdef PGXC
 		case T_RemoteQuery:
-			pname = "Data Node Scan";
+			pname = "Remote Fast Query Execution";
 			break;
 #endif
 		case T_ForeignScan:
@@ -1156,7 +1158,6 @@ ExplainNode(PlanState *planstate, List *ancestors,
 		case T_RemoteQuery:
 			/* Emit node execution list */
 			ExplainExecNodes(((RemoteQuery *)plan)->exec_nodes, es);
-			ExplainScanTarget((Scan *) plan, es);
 			break;
 #endif
 #ifdef XCP
@@ -3411,6 +3412,103 @@ ExplainRemoteQuery(RemoteQuery *plan, PlanState *planstate, List *ancestors, Exp
 	/* Remote query statement */
 	if (es->verbose)
 		ExplainPropertyText("Remote query", plan->sql_statement, es);
+
+	if (!es->analyze)
+	{
+		RemoteQuery *step = makeNode(RemoteQuery);
+		StringInfoData explainQuery;
+		StringInfoData explainResult;
+		EState *estate;
+		RemoteQueryState *node;
+		Var *dummy;
+		MemoryContext oldcontext;
+		TupleTableSlot *result;
+		bool firstline = true;
+
+		initStringInfo(&explainQuery);
+		initStringInfo(&explainResult);
+
+		if (es->format == EXPLAIN_FORMAT_TEXT)
+		{
+			if (es->indent)
+			{
+				appendStringInfoSpaces(es->str, es->indent * 2);
+				appendStringInfoString(es->str, "->  ");
+				es->indent += 2;
+			}
+		}
+
+		appendStringInfo(&explainQuery, "EXPLAIN (");
+		switch (es->format)
+		{
+			case EXPLAIN_FORMAT_TEXT:
+				appendStringInfo(&explainQuery, "FORMAT TEXT");
+				break;
+			case EXPLAIN_FORMAT_YAML:
+				appendStringInfo(&explainQuery, "FORMAT YAML");
+				break;
+			case EXPLAIN_FORMAT_JSON:
+				appendStringInfo(&explainQuery, "FORMAT JSON");
+				break;
+			case EXPLAIN_FORMAT_XML:
+				appendStringInfo(&explainQuery, "FORMAT XML");
+				break;
+		}
+		appendStringInfo(&explainQuery, ", VERBOSE %s", es->verbose ? "ON" : "OFF");
+		appendStringInfo(&explainQuery, ", COSTS %s", es->costs ? "ON" : "OFF");
+		appendStringInfo(&explainQuery, ", TIMING %s", es->timing ? "ON" : "OFF");
+		appendStringInfo(&explainQuery, ", BUFFERS %s", es->buffers ? "ON" : "OFF");
+		appendStringInfo(&explainQuery, ") %s", plan->sql_statement);
+
+		step->sql_statement = explainQuery.data;
+		step->combine_type = COMBINE_TYPE_NONE;
+		step->exec_nodes = copyObject(plan->exec_nodes);
+		step->exec_nodes->primarynodelist = NIL;
+
+		if (plan->exec_nodes && plan->exec_nodes->nodeList)
+			step->exec_nodes->nodeList =
+				list_make1_int(linitial_int(plan->exec_nodes->nodeList));
+
+		step->force_autocommit = true;
+		step->exec_type = EXEC_ON_DATANODES;
+
+		dummy = makeVar(1, 1, TEXTOID, -1, InvalidOid, 0);
+		plan->scan.plan.targetlist = lappend(plan->scan.plan.targetlist,
+				makeTargetEntry((Expr *) dummy, 1, "QUERY PLAN", false));
+
+		/* Execute query on the data nodes */
+		estate = CreateExecutorState();
+
+		oldcontext = MemoryContextSwitchTo(estate->es_query_cxt);
+
+		estate->es_snapshot = GetActiveSnapshot();
+
+		node = ExecInitRemoteQuery(step, estate, 0);
+		MemoryContextSwitchTo(oldcontext);
+		result = ExecRemoteQuery(node);
+		while (result != NULL && !TupIsNull(result))
+		{
+			Datum 	value;
+			bool	isnull;
+			value = slot_getattr(result, 1, &isnull);
+			if (!isnull)
+			{
+				if (!firstline)
+					appendStringInfoSpaces(&explainResult, 2 * es->indent);
+				appendStringInfo(&explainResult, "%s\n", TextDatumGetCString(value));
+				firstline = false;
+			}
+
+			/* fetch next */
+			result = ExecRemoteQuery(node);
+		}
+		ExecEndRemoteQuery(node);
+
+		if (es->format == EXPLAIN_FORMAT_TEXT)
+			appendStringInfo(es->str, "%s", explainResult.data);
+		else
+			ExplainPropertyText("Remote plan", explainResult.data, es);
+	}
 }
 #endif
 
