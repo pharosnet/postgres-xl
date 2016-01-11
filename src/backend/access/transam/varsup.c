@@ -241,6 +241,7 @@ GetNewTransactionId(bool isSubXact)
 			xid = (TransactionId) BeginTranGTM(timestamp, global_session);
 			if (TransactionIdIsValid(xid))
 			{
+				elog(DEBUG2, "Received new XID from GTM: %s:%d", global_session, xid);
 				/*
 				 * Let the coordinator know about GXID assigned to this
 				 * transaction
@@ -264,6 +265,19 @@ GetNewTransactionId(bool isSubXact)
 			 */
 			sprintf(global_session, "%s_%d", PGXCNodeName, MyProcPid);
 			xid = (TransactionId) BeginTranGTM(timestamp, global_session);
+			if (TransactionIdIsValid(xid))
+			{
+				/*
+				 * Let the coordinator know about GXID assigned to this
+				 * transaction
+				 */
+				if (whereToSendOutput == DestRemote &&
+						!IS_PGXC_LOCAL_COORDINATOR)
+				{
+					pq_putmessage('x', (const char *) &xid, sizeof (GlobalTransactionId));
+					IsXidFromGTM = false;
+				}
+			}
 		}
 	}
 	else

@@ -4064,6 +4064,13 @@ IsTwoPhaseCommitRequired(bool localWrite)
 		return false;
 	}
 
+	/*
+	 * If no XID assigned, no need to run 2PC since neither coordinator nor any
+	 * remote nodes did write operation
+	 */
+	if (!TransactionIdIsValid(GetTopTransactionIdIfAny()))
+		return false;
+
 	handles = get_current_handles();
 	for (i = 0; i < handles->dn_conn_count; i++)
 	{
