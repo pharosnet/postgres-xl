@@ -152,6 +152,8 @@ drop index both_index_expr_key;
 --
 -- Make sure that cross matching of attribute opclass/collation does not occur
 --
+-- In XL, table is distributed by HASH( key ) by default.
+-- unique index contains fruit and not key, so this fails.
 create unique index cross_match on insertconflicttest(lower(fruit) collate "C", upper(fruit) text_pattern_ops);
 ERROR:  Unique index of partitioned table must contain the hash/modulo distribution column.
 -- fails:
@@ -522,14 +524,16 @@ select * from capitals;
 (2 rows)
 
 insert into cities values ('Las Vegas', 5.83E+5, 2001) on conflict (name) do update set population = excluded.population, altitude = excluded.altitude;
-select tableoid::regclass, * from cities;
- tableoid |     name      | population | altitude 
-----------+---------------+------------+----------
- 58082    | San Francisco |     724000 |       63
- 58082    | Mariposa      |       1200 |     1953
- 58082    | Las Vegas     |     583000 |     2001
- 58490    | Madison       |     191300 |      845
- 58088    | Sacramento    |  466400000 |       30
+-- tableoid::regclass is not mapped to relation name in XL
+-- bug #4
+select * from cities;
+     name      | population | altitude 
+---------------+------------+----------
+ San Francisco |     724000 |       63
+ Mariposa      |       1200 |     1953
+ Las Vegas     |     583000 |     2001
+ Madison       |     191300 |      845
+ Sacramento    |  466400000 |       30
 (5 rows)
 
 insert into capitals values ('Las Vegas', 5.83E+5, 2222, 'NV') on conflict (name) do update set population = excluded.population;
@@ -544,28 +548,28 @@ select * from capitals;
 
 -- Cities contains two instances of "Las Vegas", since unique constraints don't
 -- work across inheritance:
-select tableoid::regclass, * from cities;
- tableoid |     name      | population | altitude 
-----------+---------------+------------+----------
- 58082    | San Francisco |     724000 |       63
- 58082    | Mariposa      |       1200 |     1953
- 58082    | Las Vegas     |     583000 |     2001
- 58490    | Madison       |     191300 |      845
- 58088    | Sacramento    |  466400000 |       30
- 58088    | Las Vegas     |     583000 |     2222
+select * from cities;
+     name      | population | altitude 
+---------------+------------+----------
+ San Francisco |     724000 |       63
+ Mariposa      |       1200 |     1953
+ Las Vegas     |     583000 |     2001
+ Madison       |     191300 |      845
+ Sacramento    |  466400000 |       30
+ Las Vegas     |     583000 |     2222
 (6 rows)
 
 -- This only affects "cities" version of "Las Vegas":
 insert into cities values ('Las Vegas', 5.86E+5, 2223) on conflict (name) do update set population = excluded.population, altitude = excluded.altitude;
-select tableoid::regclass, * from cities;
- tableoid |     name      | population | altitude 
-----------+---------------+------------+----------
- 58082    | San Francisco |     724000 |       63
- 58082    | Mariposa      |       1200 |     1953
- 58082    | Las Vegas     |     586000 |     2223
- 58490    | Madison       |     191300 |      845
- 58088    | Sacramento    |  466400000 |       30
- 58088    | Las Vegas     |     583000 |     2222
+select * from cities;
+     name      | population | altitude 
+---------------+------------+----------
+ San Francisco |     724000 |       63
+ Mariposa      |       1200 |     1953
+ Las Vegas     |     586000 |     2223
+ Madison       |     191300 |      845
+ Sacramento    |  466400000 |       30
+ Las Vegas     |     583000 |     2222
 (6 rows)
 
 -- clean up
