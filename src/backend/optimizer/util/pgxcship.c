@@ -871,6 +871,11 @@ pgxc_shippability_walker(Node *node, Shippability_context *sc_context)
 
 			if (query->hasRecursive)
 				pgxc_set_shippability_reason(sc_context, SS_UNSUPPORTED_EXPR);
+
+			/* Queries with FOR UPDATE/SHARE can't be shipped */
+			if (query->hasForUpdate || query->rowMarks)
+				pgxc_set_shippability_reason(sc_context, SS_UNSUPPORTED_EXPR);
+
 			/*
 			 * If the query needs Coordinator for evaluation or the query can be
 			 * completed on Coordinator itself, we don't ship it to the Datanode
