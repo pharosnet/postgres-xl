@@ -105,6 +105,7 @@
 #include "catalog/catalog.h"
 #include "miscadmin.h"
 #ifdef XCP
+#include "catalog/pgxc_class.h"
 #include "pgxc/pgxc.h"
 #endif
 #include "storage/sinval.h"
@@ -1183,6 +1184,19 @@ CacheInvalidateHeapTuple(Relation relation,
 		relationId = indextup->indexrelid;
 		databaseId = MyDatabaseId;
 	}
+#ifdef XCP
+	else if (tupleRelId == PgxcClassRelationId)
+	{
+		Form_pgxc_class pgxcclasstup = (Form_pgxc_class) GETSTRUCT(tuple);
+
+		/*
+		 * When distribution key or strategy for a relation is changed, we must
+		 * also send out a relcache inval for the relation.
+		 */
+		relationId = pgxcclasstup->pcrelid;
+		databaseId = MyDatabaseId;
+	}
+#endif
 	else
 		return;
 
