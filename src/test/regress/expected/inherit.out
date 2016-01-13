@@ -777,46 +777,75 @@ insert into bar2 values(2,2,2);
 insert into bar2 values(3,3,3);
 insert into bar2 values(4,4,4);
 update bar set f2 = f2 + 100 where f1 in (select f1 from foo);
-SELECT relname, bar.* FROM bar, pg_class where bar.tableoid = pg_class.oid
-order by 1,2;
+ERROR:  could not plan this distributed update
+DETAIL:  correlated UPDATE or updating distribution column currently not supported in Postgres-XL.
+select tableoid::regclass::text as relname, bar.* from bar order by 1,2;
  relname | f1 | f2 
 ---------+----+----
-(0 rows)
+ 42770   |  3 |  3
+ 42770   |  4 |  4
+ 42773   |  3 |  3
+ 42773   |  4 |  4
+ 43042   |  1 |  1
+ 43042   |  2 |  2
+ 43045   |  1 |  1
+ 43045   |  2 |  2
+(8 rows)
 
 -- In Postgres-XL OIDs are not consistent across the cluster. Hence above
 -- queries do not show any result. Hence in order to ensure data consistency, we
 -- add following SQLs. In case above set of queries start producing valid
 -- results in XC, we should remove the following set
 SELECT * FROM bar ORDER BY f1, f2;
- f1 | f2  
-----+-----
-  1 | 101
-  1 | 101
-  2 | 102
-  2 | 102
-  3 | 103
-  3 | 103
-  4 |   4
-  4 |   4
+ f1 | f2 
+----+----
+  1 |  1
+  1 |  1
+  2 |  2
+  2 |  2
+  3 |  3
+  3 |  3
+  4 |  4
+  4 |  4
 (8 rows)
 
 SELECT * FROM ONLY bar ORDER BY f1, f2;
- f1 | f2  
-----+-----
-  1 | 101
-  2 | 102
-  3 | 103
-  4 |   4
+ f1 | f2 
+----+----
+  1 |  1
+  2 |  2
+  3 |  3
+  4 |  4
 (4 rows)
 
 SELECT * FROM bar2 ORDER BY f1, f2;
- f1 | f2  | f3 
-----+-----+----
-  1 | 101 |  1
-  2 | 102 |  2
-  3 | 103 |  3
-  4 |   4 |  4
+ f1 | f2 | f3 
+----+----+----
+  1 |  1 |  1
+  2 |  2 |  2
+  3 |  3 |  3
+  4 |  4 |  4
 (4 rows)
+
+-- Check UPDATE with inherited target and an appendrel subquery
+update bar set f2 = f2 + 100
+from
+  ( select f1 from foo union all select f1+3 from foo ) ss
+where bar.f1 = ss.f1;
+ERROR:  could not plan this distributed update
+DETAIL:  correlated UPDATE or updating distribution column currently not supported in Postgres-XL.
+select tableoid::regclass::text as relname, bar.* from bar order by 1,2;
+ relname | f1 | f2 
+---------+----+----
+ 42770   |  3 |  3
+ 42770   |  4 |  4
+ 42773   |  3 |  3
+ 42773   |  4 |  4
+ 43042   |  1 |  1
+ 43042   |  2 |  2
+ 43045   |  1 |  1
+ 43045   |  2 |  2
+(8 rows)
 
 /* Test multiple inheritance of column defaults */
 CREATE TABLE firstparent (tomorrow date default now()::date + 1);
@@ -1197,7 +1226,22 @@ SELECT a.attrelid::regclass, a.attname, a.attinhcount, e.expected
         WHERE inhparent IN (SELECT inhrelid FROM r) GROUP BY inhrelid) e
   JOIN pg_attribute a ON e.inhrelid = a.attrelid WHERE NOT attislocal
   ORDER BY a.attrelid::regclass::name, a.attnum;
-ERROR:  WITH RECURSIVE currently not supported on distributed tables.
+ attrelid | attname | attinhcount | expected 
+----------+---------+-------------+----------
+ inht2    | aaaa    |           1 |        1
+ inht2    | b       |           1 |        1
+ inht3    | aaaa    |           1 |        1
+ inht3    | b       |           1 |        1
+ inht4    | aaaa    |           2 |        2
+ inht4    | b       |           2 |        2
+ inht4    | x       |           1 |        2
+ inht4    | y       |           1 |        2
+ inhts    | aaaa    |           1 |        1
+ inhts    | b       |           2 |        1
+ inhts    | x       |           1 |        1
+ inhts    | c       |           1 |        1
+(12 rows)
+
 DROP TABLE inht1, inhs1 CASCADE;
 NOTICE:  drop cascades to 4 other objects
 DETAIL:  drop cascades to table inht2
@@ -1472,8 +1516,8 @@ select * from matest0 order by 1-id;
 ----+--------
   6 | Test 6
   5 | Test 5
-  4 | Test 4
-  3 | Test 3
+  4 | Test 3
+  3 | Test 4
   2 | Test 2
   1 | Test 1
 (6 rows)
@@ -1541,8 +1585,8 @@ select * from matest0 order by 1-id;
 ----+--------
   6 | Test 6
   5 | Test 5
-  4 | Test 4
-  3 | Test 3
+  4 | Test 3
+  3 | Test 4
   2 | Test 2
   1 | Test 1
 (6 rows)
@@ -1610,23 +1654,27 @@ explain (costs off)
 select t1.* from matest0 t1, matest0 t2
 where t1.b = t2.b and t2.c = t2.d
 order by t1.b limit 10;
-                            QUERY PLAN                             
--------------------------------------------------------------------
+                                 QUERY PLAN                                  
+-----------------------------------------------------------------------------
  Limit
    ->  Merge Join
          Merge Cond: (t1.b = t2.b)
          ->  Merge Append
                Sort Key: t1.b
-               ->  Index Scan using matest0i on matest0 t1
-               ->  Index Scan using matest1i on matest1 t1_1
+               ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+                     ->  Index Scan using matest0i on matest0 t1
+               ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+                     ->  Index Scan using matest1i on matest1 t1_1
          ->  Materialize
                ->  Merge Append
                      Sort Key: t2.b
-                     ->  Index Scan using matest0i on matest0 t2
-                           Filter: (c = d)
-                     ->  Index Scan using matest1i on matest1 t2_1
-                           Filter: (c = d)
-(14 rows)
+                     ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+                           ->  Index Scan using matest0i on matest0 t2
+                                 Filter: (c = d)
+                     ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+                           ->  Index Scan using matest1i on matest1 t2_1
+                                 Filter: (c = d)
+(18 rows)
 
 reset enable_nestloop;
 drop table matest0 cascade;

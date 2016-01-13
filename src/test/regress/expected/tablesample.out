@@ -5,12 +5,11 @@ INSERT INTO test_tablesample
 SELECT t.id FROM test_tablesample AS t TABLESAMPLE SYSTEM (50) REPEATABLE (0);
  id 
 ----
-  3
-  4
-  5
   6
   8
-(6 rows)
+  9
+  7
+(4 rows)
 
 SELECT id FROM test_tablesample TABLESAMPLE SYSTEM (100.0/11) REPEATABLE (0);
  id 
@@ -20,28 +19,23 @@ SELECT id FROM test_tablesample TABLESAMPLE SYSTEM (100.0/11) REPEATABLE (0);
 SELECT id FROM test_tablesample TABLESAMPLE SYSTEM (50) REPEATABLE (0);
  id 
 ----
-  3
-  4
-  5
   6
   8
-(6 rows)
+  9
+  7
+(4 rows)
 
 SELECT id FROM test_tablesample TABLESAMPLE BERNOULLI (50) REPEATABLE (0);
  id 
 ----
-  4
-  5
-  6
-  7
   8
-(5 rows)
+  9
+(2 rows)
 
 SELECT id FROM test_tablesample TABLESAMPLE BERNOULLI (5.5) REPEATABLE (0);
  id 
 ----
-  7
-(1 row)
+(0 rows)
 
 -- 100% should give repeatable count results (ie, all rows) in any case
 SELECT count(*) FROM test_tablesample TABLESAMPLE SYSTEM (100);
@@ -91,71 +85,49 @@ DECLARE tablesample_cur CURSOR FOR
 FETCH FIRST FROM tablesample_cur;
  id 
 ----
-  3
+  6
 (1 row)
 
 FETCH NEXT FROM tablesample_cur;
  id 
 ----
-  4
+  8
 (1 row)
 
 FETCH NEXT FROM tablesample_cur;
  id 
 ----
-  5
+  9
 (1 row)
 
 SELECT id FROM test_tablesample TABLESAMPLE SYSTEM (50) REPEATABLE (0);
  id 
 ----
-  3
-  4
-  5
   6
-  7
   8
-(6 rows)
-
-FETCH NEXT FROM tablesample_cur;
- id 
-----
-  6
-(1 row)
-
-FETCH NEXT FROM tablesample_cur;
- id 
-----
-  8
-(1 row)
-
-FETCH NEXT FROM tablesample_cur;
- id 
-----
   9
+  7
+(4 rows)
+
+FETCH NEXT FROM tablesample_cur;
+ id 
+----
+  7
 (1 row)
+
+FETCH NEXT FROM tablesample_cur;
+ id 
+----
+(0 rows)
+
+FETCH NEXT FROM tablesample_cur;
+ id 
+----
+(0 rows)
 
 FETCH FIRST FROM tablesample_cur;
  id 
 ----
-  3
-(1 row)
-
-FETCH NEXT FROM tablesample_cur;
- id 
-----
-  4
-(1 row)
-
-FETCH NEXT FROM tablesample_cur;
- id 
-----
-  5
-(1 row)
-
-FETCH NEXT FROM tablesample_cur;
- id 
-----
   6
 (1 row)
 
@@ -170,41 +142,64 @@ FETCH NEXT FROM tablesample_cur;
 ----
   9
 (1 row)
+
+FETCH NEXT FROM tablesample_cur;
+ id 
+----
+  7
+(1 row)
+
+FETCH NEXT FROM tablesample_cur;
+ id 
+----
+(0 rows)
+
+FETCH NEXT FROM tablesample_cur;
+ id 
+----
+(0 rows)
 
 CLOSE tablesample_cur;
 END;
 EXPLAIN (COSTS OFF)
   SELECT id FROM test_tablesample TABLESAMPLE SYSTEM (50) REPEATABLE (2);
-                             QUERY PLAN                             
---------------------------------------------------------------------
- Sample Scan on test_tablesample
-   Sampling: system ('50'::real) REPEATABLE ('2'::double precision)
-(2 rows)
+                                QUERY PLAN                                
+--------------------------------------------------------------------------
+ Remote Fast Query Execution
+   Node/s: datanode_1, datanode_2
+   ->  Sample Scan on test_tablesample
+         Sampling: system ('50'::real) REPEATABLE ('2'::double precision)
+(4 rows)
 
 EXPLAIN (COSTS OFF)
   SELECT * FROM test_tablesample_v1;
-                             QUERY PLAN                             
---------------------------------------------------------------------
- Sample Scan on test_tablesample
-   Sampling: system ('20'::real) REPEATABLE ('2'::double precision)
-(2 rows)
+                                QUERY PLAN                                
+--------------------------------------------------------------------------
+ Remote Subquery Scan on all (datanode_1,datanode_2)
+   ->  Sample Scan on test_tablesample
+         Sampling: system ('20'::real) REPEATABLE ('2'::double precision)
+(3 rows)
 
 -- check inheritance behavior
 explain (costs off)
   select count(*) from person tablesample bernoulli (100);
-                   QUERY PLAN                    
--------------------------------------------------
+                           QUERY PLAN                            
+-----------------------------------------------------------------
  Aggregate
    ->  Append
-         ->  Sample Scan on person
-               Sampling: bernoulli ('100'::real)
-         ->  Sample Scan on emp
-               Sampling: bernoulli ('100'::real)
-         ->  Sample Scan on student
-               Sampling: bernoulli ('100'::real)
-         ->  Sample Scan on stud_emp
-               Sampling: bernoulli ('100'::real)
-(10 rows)
+         ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+               ->  Sample Scan on person
+                     Sampling: bernoulli ('100'::real)
+         ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+               ->  Sample Scan on emp
+                     Sampling: bernoulli ('100'::real)
+         ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+               ->  Sample Scan on student
+                     Sampling: bernoulli ('100'::real)
+         ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+               ->  Sample Scan on stud_emp
+                     Sampling: bernoulli ('100'::real)
+(14 rows)
 
 select count(*) from person tablesample bernoulli (100);
  count 
@@ -232,7 +227,7 @@ select * from
  pct | count 
 -----+-------
    0 |     0
- 100 | 10000
+ 100 |     0
 (2 rows)
 
 select * from
@@ -241,7 +236,7 @@ select * from
  pct | count 
 -----+-------
    0 |     0
- 100 | 10000
+ 100 |     0
 (2 rows)
 
 explain (costs off)
@@ -249,15 +244,17 @@ select pct, count(unique1) from
   (values (0),(100)) v(pct),
   lateral (select * from tenk1 tablesample bernoulli (pct)) ss
   group by pct;
-                       QUERY PLAN                       
---------------------------------------------------------
+                              QUERY PLAN                               
+-----------------------------------------------------------------------
  HashAggregate
    Group Key: "*VALUES*".column1
    ->  Nested Loop
          ->  Values Scan on "*VALUES*"
-         ->  Sample Scan on tenk1
-               Sampling: bernoulli ("*VALUES*".column1)
-(6 rows)
+         ->  Materialize
+               ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+                     ->  Sample Scan on tenk1
+                           Sampling: bernoulli ("*VALUES*".column1)
+(8 rows)
 
 select pct, count(unique1) from
   (values (0),(100)) v(pct),
@@ -265,8 +262,7 @@ select pct, count(unique1) from
   group by pct;
  pct | count 
 -----+-------
- 100 | 10000
-(1 row)
+(0 rows)
 
 select pct, count(unique1) from
   (values (0),(100)) v(pct),
@@ -274,8 +270,7 @@ select pct, count(unique1) from
   group by pct;
  pct | count 
 -----+-------
- 100 | 10000
-(1 row)
+(0 rows)
 
 -- errors
 SELECT id FROM test_tablesample TABLESAMPLE FOOBAR (1);

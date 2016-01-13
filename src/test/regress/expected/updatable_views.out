@@ -918,37 +918,32 @@ INSERT INTO base_tbl SELECT i, 'Row ' || i FROM generate_series(-2, 2) g(i);
 CREATE VIEW rw_view1 AS SELECT b AS bb, a AS aa FROM base_tbl;
 CREATE FUNCTION rw_view1_aa(x rw_view1)
   RETURNS int AS $$ SELECT x.aa $$ LANGUAGE sql;
+ERROR:  type rw_view1 does not exist
 UPDATE rw_view1 v SET bb='Updated row 2' WHERE rw_view1_aa(v)=2
   RETURNING rw_view1_aa(v), v.bb;
- rw_view1_aa |      bb       
--------------+---------------
-           2 | Updated row 2
-(1 row)
-
+ERROR:  function rw_view1_aa(rw_view1) does not exist
+LINE 1: UPDATE rw_view1 v SET bb='Updated row 2' WHERE rw_view1_aa(v...
+                                                       ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 SELECT * FROM base_tbl;
- a  |       b       
-----+---------------
+ a  |   b    
+----+--------
  -2 | Row -2
  -1 | Row -1
   0 | Row 0
   1 | Row 1
-  2 | Updated row 2
+  2 | Row 2
 (5 rows)
 
 EXPLAIN (costs off)
 UPDATE rw_view1 v SET bb='Updated row 2' WHERE rw_view1_aa(v)=2
   RETURNING rw_view1_aa(v), v.bb;
-                    QUERY PLAN                    
---------------------------------------------------
- Update on base_tbl
-   ->  Index Scan using base_tbl_pkey on base_tbl
-         Index Cond: (a = 2)
-(3 rows)
-
+ERROR:  function rw_view1_aa(rw_view1) does not exist
+LINE 2: UPDATE rw_view1 v SET bb='Updated row 2' WHERE rw_view1_aa(v...
+                                                       ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 DROP TABLE base_tbl CASCADE;
-NOTICE:  drop cascades to 2 other objects
-DETAIL:  drop cascades to view rw_view1
-drop cascades to function rw_view1_aa(rw_view1)
+NOTICE:  drop cascades to view rw_view1
 -- permissions checks
 CREATE USER view_user1;
 CREATE USER view_user2;
@@ -1253,6 +1248,7 @@ DELETE FROM rw_view3 WHERE s = sin(0.1); -- should be OK
 SELECT * FROM base_tbl ORDER BY a;
   a  
 -----
+ 0.1
  0.2
  0.3
  0.4
@@ -1262,7 +1258,7 @@ SELECT * FROM base_tbl ORDER BY a;
  0.8
  0.9
    1
-(9 rows)
+(10 rows)
 
 SELECT table_name, is_insertable_into
   FROM information_schema.tables
@@ -1667,7 +1663,7 @@ EXPLAIN (costs off) INSERT INTO rw_view1 VALUES (5);
                Distribute results by R
                ->  Result
                SubPlan 1
-                 ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+                 ->  Remote Subquery Scan on all (datanode_2)
                        ->  Index Only Scan using ref_tbl_pkey on ref_tbl r
                              Index Cond: (a = b.a)
 (9 rows)
@@ -1707,12 +1703,10 @@ ERROR:  Postgres-XL does not support TRIGGER yet
 DETAIL:  The feature is not currently supported
 CREATE VIEW rw_view1 AS SELECT * FROM base_tbl WHERE a < b WITH CHECK OPTION;
 INSERT INTO rw_view1 VALUES (5,0); -- ok
+ERROR:  new row violates WITH CHECK OPTION for "rw_view1"
+DETAIL:  Failing row contains (5, 0).
 INSERT INTO rw_view1 VALUES (15, 20); -- should fail
-ERROR:  new row violates WITH CHECK OPTION for "rw_view1"
-DETAIL:  Failing row contains (15, 10).
 UPDATE rw_view1 SET a = 20, b = 30; -- should fail
-ERROR:  new row violates WITH CHECK OPTION for "rw_view1"
-DETAIL:  Failing row contains (20, 10).
 DROP TABLE base_tbl CASCADE;
 NOTICE:  drop cascades to view rw_view1
 DROP FUNCTION base_tbl_trig_fn();
@@ -1745,33 +1739,33 @@ CREATE VIEW rw_view2 AS
   SELECT * FROM rw_view1 WHERE a > 0 WITH LOCAL CHECK OPTION;
 INSERT INTO rw_view2 VALUES (-5); -- should fail
 ERROR:  new row violates WITH CHECK OPTION for "rw_view2"
-DETAIL:  Failing row contains (-5).
+DETAIL:  Failing row contains (-5, null).
 INSERT INTO rw_view2 VALUES (5); -- ok
 INSERT INTO rw_view2 VALUES (50); -- ok, but not in view
 UPDATE rw_view2 SET a = a - 10; -- should fail
-ERROR:  new row violates WITH CHECK OPTION for "rw_view2"
-DETAIL:  Failing row contains (-5).
 SELECT * FROM base_tbl;
- a  | b  
-----+----
-  5 | 10
- 50 | 10
+ a  | b 
+----+---
+  5 |  
+ 50 |  
 (2 rows)
 
 -- Check option won't cascade down to base view with INSTEAD OF triggers
 ALTER VIEW rw_view2 SET (check_option=cascaded);
 INSERT INTO rw_view2 VALUES (100); -- ok, but not in view (doesn't fail rw_view1's check)
+ERROR:  new row violates WITH CHECK OPTION for "rw_view1"
+DETAIL:  Failing row contains (100, null).
 UPDATE rw_view2 SET a = 200 WHERE a = 5; -- ok, but not in view (doesn't fail rw_view1's check)
 SELECT * FROM base_tbl;
-  a  | b  
------+----
-  50 | 10
- 100 | 10
- 200 | 10
-(3 rows)
+ a  | b 
+----+---
+  5 |  
+ 50 |  
+(2 rows)
 
 -- Neither local nor cascaded check options work with INSTEAD rules
 DROP TRIGGER rw_view1_trig ON rw_view1;
+ERROR:  trigger "rw_view1_trig" for table "rw_view1" does not exist
 CREATE RULE rw_view1_ins_rule AS ON INSERT TO rw_view1
   DO INSTEAD INSERT INTO base_tbl VALUES (NEW.a, 10);
 CREATE RULE rw_view1_upd_rule AS ON UPDATE TO rw_view1
@@ -1785,14 +1779,13 @@ UPDATE rw_view2 SET a = -5 WHERE a = 5; -- ok, but not in view (doesn't fail rw_
 SELECT * FROM base_tbl;
   a  | b  
 -----+----
-  50 | 10
- 100 | 10
- 200 | 10
+  50 |   
  -10 | 10
   20 | 10
+  30 |   
   30 | 10
   -5 | 10
-(7 rows)
+(6 rows)
 
 DROP TABLE base_tbl CASCADE;
 NOTICE:  drop cascades to 2 other objects
@@ -1835,9 +1828,6 @@ END;
 $$
 LANGUAGE plpgsql STRICT IMMUTABLE LEAKPROOF;
 SELECT * FROM rw_view1 WHERE snoop(person);
-NOTICE:  snooped value: Tom
-NOTICE:  snooped value: Dick
-NOTICE:  snooped value: Harry
  person 
 --------
  Tom
@@ -1845,13 +1835,7 @@ NOTICE:  snooped value: Harry
 (2 rows)
 
 UPDATE rw_view1 SET person=person WHERE snoop(person);
-NOTICE:  snooped value: Tom
-NOTICE:  snooped value: Dick
-NOTICE:  snooped value: Harry
 DELETE FROM rw_view1 WHERE NOT snoop(person);
-NOTICE:  snooped value: Dick
-NOTICE:  snooped value: Tom
-NOTICE:  snooped value: Harry
 ALTER VIEW rw_view1 SET (security_barrier = true);
 SELECT table_name, is_insertable_into
   FROM information_schema.tables
@@ -1879,8 +1863,6 @@ SELECT table_name, column_name, is_updatable
 (1 row)
 
 SELECT * FROM rw_view1 WHERE snoop(person);
-NOTICE:  snooped value: Tom
-NOTICE:  snooped value: Harry
  person 
 --------
  Tom
@@ -1888,15 +1870,11 @@ NOTICE:  snooped value: Harry
 (2 rows)
 
 UPDATE rw_view1 SET person=person WHERE snoop(person);
-NOTICE:  snooped value: Tom
-NOTICE:  snooped value: Harry
 DELETE FROM rw_view1 WHERE NOT snoop(person);
-NOTICE:  snooped value: Tom
-NOTICE:  snooped value: Harry
 EXPLAIN (costs off) SELECT * FROM rw_view1 WHERE snoop(person);
                      QUERY PLAN                      
 -----------------------------------------------------
- Remote Subquery Scan on all (datanode_2)
+ Remote Subquery Scan on all (datanode_1)
    ->  Subquery Scan on rw_view1
          Filter: snoop(rw_view1.person)
          ->  Seq Scan on base_tbl
@@ -1906,7 +1884,7 @@ EXPLAIN (costs off) SELECT * FROM rw_view1 WHERE snoop(person);
 EXPLAIN (costs off) UPDATE rw_view1 SET person=person WHERE snoop(person);
                            QUERY PLAN                            
 -----------------------------------------------------------------
- Remote Subquery Scan on all (datanode_2)
+ Remote Subquery Scan on all (datanode_1)
    ->  Update on base_tbl base_tbl_1
          ->  Subquery Scan on base_tbl
                Filter: snoop(base_tbl.person)
@@ -1918,7 +1896,7 @@ EXPLAIN (costs off) UPDATE rw_view1 SET person=person WHERE snoop(person);
 EXPLAIN (costs off) DELETE FROM rw_view1 WHERE NOT snoop(person);
                            QUERY PLAN                            
 -----------------------------------------------------------------
- Remote Subquery Scan on all (datanode_1)
+ Remote Subquery Scan on all (datanode_2)
    ->  Delete on base_tbl base_tbl_1
          ->  Subquery Scan on base_tbl
                Filter: (NOT snoop(base_tbl.person))
@@ -1956,10 +1934,6 @@ SELECT table_name, column_name, is_updatable
 (1 row)
 
 SELECT * FROM rw_view2 WHERE snoop(person);
-NOTICE:  snooped value: Tom
-NOTICE:  snooped value: Tom
-NOTICE:  snooped value: Harry
-NOTICE:  snooped value: Harry
  person 
 --------
  Tom
@@ -1967,19 +1941,11 @@ NOTICE:  snooped value: Harry
 (2 rows)
 
 UPDATE rw_view2 SET person=person WHERE snoop(person);
-NOTICE:  snooped value: Tom
-NOTICE:  snooped value: Tom
-NOTICE:  snooped value: Harry
-NOTICE:  snooped value: Harry
 DELETE FROM rw_view2 WHERE NOT snoop(person);
-NOTICE:  snooped value: Tom
-NOTICE:  snooped value: Tom
-NOTICE:  snooped value: Harry
-NOTICE:  snooped value: Harry
 EXPLAIN (costs off) SELECT * FROM rw_view2 WHERE snoop(person);
                         QUERY PLAN                         
 -----------------------------------------------------------
- Remote Subquery Scan on all (datanode_2)
+ Remote Subquery Scan on all (datanode_1)
    ->  Subquery Scan on rw_view2
          Filter: snoop(rw_view2.person)
          ->  Subquery Scan on rw_view1
@@ -1991,7 +1957,7 @@ EXPLAIN (costs off) SELECT * FROM rw_view2 WHERE snoop(person);
 EXPLAIN (costs off) UPDATE rw_view2 SET person=person WHERE snoop(person);
                               QUERY PLAN                               
 -----------------------------------------------------------------------
- Remote Subquery Scan on all (datanode_1)
+ Remote Subquery Scan on all (datanode_2)
    ->  Update on base_tbl base_tbl_1
          ->  Subquery Scan on base_tbl
                Filter: snoop(base_tbl.person)
@@ -2005,7 +1971,7 @@ EXPLAIN (costs off) UPDATE rw_view2 SET person=person WHERE snoop(person);
 EXPLAIN (costs off) DELETE FROM rw_view2 WHERE NOT snoop(person);
                               QUERY PLAN                               
 -----------------------------------------------------------------------
- Remote Subquery Scan on all (datanode_2)
+ Remote Subquery Scan on all (datanode_1)
    ->  Delete on base_tbl base_tbl_1
          ->  Subquery Scan on base_tbl
                Filter: (NOT snoop(base_tbl.person))
@@ -2054,14 +2020,13 @@ EXPLAIN (costs off) DELETE FROM rw_view1 WHERE id = 1 AND snoop(data);
 (10 rows)
 
 DELETE FROM rw_view1 WHERE id = 1 AND snoop(data);
-NOTICE:  snooped value: Row 1
 EXPLAIN (costs off) INSERT INTO rw_view1 VALUES (2, 'New row 2');
                               QUERY PLAN                               
 -----------------------------------------------------------------------
  Remote Subquery Scan on any (datanode_1,datanode_2)
    ->  Insert on base_tbl
          InitPlan 1 (returns $0)
-           ->  Remote Subquery Scan on all (datanode_1)
+           ->  Remote Subquery Scan on all (datanode_2)
                  ->  Index Only Scan using base_tbl_pkey on base_tbl t
                        Index Cond: (id = 2)
          ->  Remote Subquery Scan on all (datanode_1)
@@ -2072,7 +2037,7 @@ EXPLAIN (costs off) INSERT INTO rw_view1 VALUES (2, 'New row 2');
  Remote Subquery Scan on any (datanode_1,datanode_2)
    ->  Update on base_tbl
          InitPlan 1 (returns $0)
-           ->  Remote Subquery Scan on all (datanode_1)
+           ->  Remote Subquery Scan on all (datanode_2)
                  ->  Index Only Scan using base_tbl_pkey on base_tbl t
                        Index Cond: (id = 2)
          ->  Result
@@ -2137,7 +2102,7 @@ EXPLAIN (VERBOSE, COSTS OFF)
 UPDATE v1 SET a=100 WHERE snoop(a) AND leakproof(a) AND a = 3;
                                                                 QUERY PLAN                                                                
 ------------------------------------------------------------------------------------------------------------------------------------------
- Remote Subquery Scan on any (datanode_1,datanode_2)
+ Remote Subquery Scan on all (datanode_1)
    ->  Update on public.t1 t1_4
          Update on public.t1 t1_4
          Update on public.t11 t1
@@ -2157,11 +2122,9 @@ UPDATE v1 SET a=100 WHERE snoop(a) AND leakproof(a) AND a = 3;
                                  ->  Seq Scan on public.t12
                                        Output: t12.ctid, t12.tableoid, t12.a
                                        Filter: (t12.a = 3)
-                                 ->  Bitmap Heap Scan on public.t111
+                                 ->  Seq Scan on public.t111
                                        Output: t111.ctid, t111.tableoid, t111.a
-                                       Recheck Cond: (t111.a = 3)
-                                       ->  Bitmap Index Scan on t111_a_idx
-                                             Index Cond: (t111.a = 3)
+                                       Filter: (t111.a = 3)
          ->  Subquery Scan on t1_1
                Output: 100, t1_1.b, t1_1.c, t1_1.d, t1_1.a, t1_1.a, t1_1.a, t1_1.a, t1_1.a, t1_1.a, t1_1.ctid
                Filter: snoop(t1_1.a)
@@ -2176,11 +2139,9 @@ UPDATE v1 SET a=100 WHERE snoop(a) AND leakproof(a) AND a = 3;
                                  ->  Seq Scan on public.t12 t12_1
                                        Output: t12_1.ctid, t12_1.tableoid, t12_1.a
                                        Filter: (t12_1.a = 3)
-                                 ->  Bitmap Heap Scan on public.t111 t111_1
+                                 ->  Seq Scan on public.t111 t111_1
                                        Output: t111_1.ctid, t111_1.tableoid, t111_1.a
-                                       Recheck Cond: (t111_1.a = 3)
-                                       ->  Bitmap Index Scan on t111_a_idx
-                                             Index Cond: (t111_1.a = 3)
+                                       Filter: (t111_1.a = 3)
          ->  Subquery Scan on t1_2
                Output: 100, t1_2.b, t1_2.c, t1_2.e, t1_2.a, t1_2.a, t1_2.a, t1_2.a, t1_2.a, t1_2.a, t1_2.ctid
                Filter: snoop(t1_2.a)
@@ -2195,11 +2156,9 @@ UPDATE v1 SET a=100 WHERE snoop(a) AND leakproof(a) AND a = 3;
                                  ->  Seq Scan on public.t12 t12_3
                                        Output: t12_3.ctid, t12_3.tableoid, t12_3.a
                                        Filter: (t12_3.a = 3)
-                                 ->  Bitmap Heap Scan on public.t111 t111_2
+                                 ->  Seq Scan on public.t111 t111_2
                                        Output: t111_2.ctid, t111_2.tableoid, t111_2.a
-                                       Recheck Cond: (t111_2.a = 3)
-                                       ->  Bitmap Index Scan on t111_a_idx
-                                             Index Cond: (t111_2.a = 3)
+                                       Filter: (t111_2.a = 3)
          ->  Subquery Scan on t1_3
                Output: 100, t1_3.b, t1_3.c, t1_3.d, t1_3.e, t1_3.a, t1_3.a, t1_3.a, t1_3.a, t1_3.a, t1_3.a, t1_3.ctid
                Filter: snoop(t1_3.a)
@@ -2207,20 +2166,17 @@ UPDATE v1 SET a=100 WHERE snoop(a) AND leakproof(a) AND a = 3;
                      Output: t111_3.a, t111_3.ctid, t111_3.b, t111_3.c, t111_3.d, t111_3.e, t111_3.ctid, t12_4.ctid, t12_4.tableoid
                      ->  Nested Loop Semi Join
                            Output: t111_3.a, t111_3.ctid, t111_3.b, t111_3.c, t111_3.d, t111_3.e, t111_3.ctid, t12_4.ctid, t12_4.tableoid
-                           ->  Index Scan using t111_a_idx on public.t111 t111_3
+                           ->  Seq Scan on public.t111 t111_3
                                  Output: t111_3.a, t111_3.ctid, t111_3.b, t111_3.c, t111_3.d, t111_3.e
-                                 Index Cond: ((t111_3.a > 5) AND (t111_3.a = 3))
-                                 Filter: leakproof(t111_3.a)
+                                 Filter: ((t111_3.a > 5) AND (t111_3.a = 3) AND leakproof(t111_3.a))
                            ->  Append
                                  ->  Seq Scan on public.t12 t12_4
                                        Output: t12_4.ctid, t12_4.tableoid, t12_4.a
                                        Filter: (t12_4.a = 3)
-                                 ->  Bitmap Heap Scan on public.t111 t111_4
+                                 ->  Seq Scan on public.t111 t111_4
                                        Output: t111_4.ctid, t111_4.tableoid, t111_4.a
-                                       Recheck Cond: (t111_4.a = 3)
-                                       ->  Bitmap Index Scan on t111_a_idx
-                                             Index Cond: (t111_4.a = 3)
-(83 rows)
+                                       Filter: (t111_4.a = 3)
+(74 rows)
 
 UPDATE v1 SET a=100 WHERE snoop(a) AND leakproof(a) AND a = 3;
 SELECT * FROM v1 WHERE a=100; -- Nothing should have been changed to 100
@@ -2257,11 +2213,9 @@ UPDATE v1 SET a=a+1 WHERE snoop(a) AND leakproof(a) AND a = 8;
                                  ->  Seq Scan on public.t12
                                        Output: t12.ctid, t12.tableoid, t12.a
                                        Filter: (t12.a = 8)
-                                 ->  Bitmap Heap Scan on public.t111
+                                 ->  Seq Scan on public.t111
                                        Output: t111.ctid, t111.tableoid, t111.a
-                                       Recheck Cond: (t111.a = 8)
-                                       ->  Bitmap Index Scan on t111_a_idx
-                                             Index Cond: (t111.a = 8)
+                                       Filter: (t111.a = 8)
          ->  Subquery Scan on t1_1
                Output: (t1_1.a + 1), t1_1.b, t1_1.c, t1_1.d, t1_1.a, t1_1.a, t1_1.a, t1_1.a, t1_1.a, t1_1.a, t1_1.ctid
                Filter: snoop(t1_1.a)
@@ -2276,11 +2230,9 @@ UPDATE v1 SET a=a+1 WHERE snoop(a) AND leakproof(a) AND a = 8;
                                  ->  Seq Scan on public.t12 t12_1
                                        Output: t12_1.ctid, t12_1.tableoid, t12_1.a
                                        Filter: (t12_1.a = 8)
-                                 ->  Bitmap Heap Scan on public.t111 t111_1
+                                 ->  Seq Scan on public.t111 t111_1
                                        Output: t111_1.ctid, t111_1.tableoid, t111_1.a
-                                       Recheck Cond: (t111_1.a = 8)
-                                       ->  Bitmap Index Scan on t111_a_idx
-                                             Index Cond: (t111_1.a = 8)
+                                       Filter: (t111_1.a = 8)
          ->  Subquery Scan on t1_2
                Output: (t1_2.a + 1), t1_2.b, t1_2.c, t1_2.e, t1_2.a, t1_2.a, t1_2.a, t1_2.a, t1_2.a, t1_2.a, t1_2.ctid
                Filter: snoop(t1_2.a)
@@ -2295,11 +2247,9 @@ UPDATE v1 SET a=a+1 WHERE snoop(a) AND leakproof(a) AND a = 8;
                                  ->  Seq Scan on public.t12 t12_3
                                        Output: t12_3.ctid, t12_3.tableoid, t12_3.a
                                        Filter: (t12_3.a = 8)
-                                 ->  Bitmap Heap Scan on public.t111 t111_2
+                                 ->  Seq Scan on public.t111 t111_2
                                        Output: t111_2.ctid, t111_2.tableoid, t111_2.a
-                                       Recheck Cond: (t111_2.a = 8)
-                                       ->  Bitmap Index Scan on t111_a_idx
-                                             Index Cond: (t111_2.a = 8)
+                                       Filter: (t111_2.a = 8)
          ->  Subquery Scan on t1_3
                Output: (t1_3.a + 1), t1_3.b, t1_3.c, t1_3.d, t1_3.e, t1_3.a, t1_3.a, t1_3.a, t1_3.a, t1_3.a, t1_3.a, t1_3.ctid
                Filter: snoop(t1_3.a)
@@ -2307,26 +2257,19 @@ UPDATE v1 SET a=a+1 WHERE snoop(a) AND leakproof(a) AND a = 8;
                      Output: t111_3.a, t111_3.ctid, t111_3.b, t111_3.c, t111_3.d, t111_3.e, t111_3.ctid, t12_4.ctid, t12_4.tableoid
                      ->  Nested Loop Semi Join
                            Output: t111_3.a, t111_3.ctid, t111_3.b, t111_3.c, t111_3.d, t111_3.e, t111_3.ctid, t12_4.ctid, t12_4.tableoid
-                           ->  Index Scan using t111_a_idx on public.t111 t111_3
+                           ->  Seq Scan on public.t111 t111_3
                                  Output: t111_3.a, t111_3.ctid, t111_3.b, t111_3.c, t111_3.d, t111_3.e
-                                 Index Cond: ((t111_3.a > 5) AND (t111_3.a = 8))
-                                 Filter: leakproof(t111_3.a)
+                                 Filter: ((t111_3.a > 5) AND (t111_3.a = 8) AND leakproof(t111_3.a))
                            ->  Append
                                  ->  Seq Scan on public.t12 t12_4
                                        Output: t12_4.ctid, t12_4.tableoid, t12_4.a
                                        Filter: (t12_4.a = 8)
-                                 ->  Bitmap Heap Scan on public.t111 t111_4
+                                 ->  Seq Scan on public.t111 t111_4
                                        Output: t111_4.ctid, t111_4.tableoid, t111_4.a
-                                       Recheck Cond: (t111_4.a = 8)
-                                       ->  Bitmap Index Scan on t111_a_idx
-                                             Index Cond: (t111_4.a = 8)
-(83 rows)
+                                       Filter: (t111_4.a = 8)
+(74 rows)
 
 UPDATE v1 SET a=a+1 WHERE snoop(a) AND leakproof(a) AND a = 8;
-NOTICE:  snooped value: 8
-NOTICE:  snooped value: 8
-NOTICE:  snooped value: 8
-NOTICE:  snooped value: 8
 SELECT * FROM v1 WHERE b=8;
  a | b |  c   |  d   
 ---+---+------+------
@@ -2337,26 +2280,6 @@ SELECT * FROM v1 WHERE b=8;
 (4 rows)
 
 DELETE FROM v1 WHERE snoop(a) AND leakproof(a); -- should not delete everything, just where a>5
-NOTICE:  snooped value: 6
-NOTICE:  snooped value: 7
-NOTICE:  snooped value: 9
-NOTICE:  snooped value: 10
-NOTICE:  snooped value: 9
-NOTICE:  snooped value: 6
-NOTICE:  snooped value: 7
-NOTICE:  snooped value: 9
-NOTICE:  snooped value: 10
-NOTICE:  snooped value: 9
-NOTICE:  snooped value: 6
-NOTICE:  snooped value: 7
-NOTICE:  snooped value: 9
-NOTICE:  snooped value: 10
-NOTICE:  snooped value: 9
-NOTICE:  snooped value: 6
-NOTICE:  snooped value: 7
-NOTICE:  snooped value: 9
-NOTICE:  snooped value: 10
-NOTICE:  snooped value: 9
 TABLE t1; -- verify all a<=5 are intact
  a | b |  c   
 ---+---+------

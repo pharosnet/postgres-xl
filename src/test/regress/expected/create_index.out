@@ -541,7 +541,7 @@ EXPLAIN (COSTS OFF, NODES OFF)
 SELECT count(*) FROM point_tbl WHERE f1 <@ box '(0,0,100,100)';
                         QUERY PLAN                        
 ----------------------------------------------------------
- Remote Subquery Scan on all
+ Remote Fast Query Execution
    ->  Aggregate
          ->  Index Only Scan using gpointind on point_tbl
                Index Cond: (f1 <@ '(100,100),(0,0)'::box)
@@ -557,7 +557,7 @@ EXPLAIN (COSTS OFF, NODES OFF)
 SELECT count(*) FROM point_tbl WHERE box '(0,0,100,100)' @> f1;
                         QUERY PLAN                        
 ----------------------------------------------------------
- Remote Subquery Scan on all
+ Remote Fast Query Execution
    ->  Aggregate
          ->  Index Only Scan using gpointind on point_tbl
                Index Cond: (f1 <@ '(100,100),(0,0)'::box)
@@ -573,7 +573,7 @@ EXPLAIN (COSTS OFF, NODES OFF)
 SELECT count(*) FROM point_tbl WHERE f1 <@ polygon '(0,0),(0,100),(100,100),(50,50),(100,0),(0,0)';
                                           QUERY PLAN                                          
 ----------------------------------------------------------------------------------------------
- Remote Subquery Scan on all
+ Remote Fast Query Execution
    ->  Aggregate
          ->  Index Only Scan using gpointind on point_tbl
                Index Cond: (f1 <@ '((0,0),(0,100),(100,100),(50,50),(100,0),(0,0))'::polygon)
@@ -589,7 +589,7 @@ EXPLAIN (COSTS OFF, NODES OFF)
 SELECT count(*) FROM point_tbl WHERE f1 <@ circle '<(50,50),50>';
                         QUERY PLAN                        
 ----------------------------------------------------------
- Remote Subquery Scan on all
+ Remote Fast Query Execution
    ->  Aggregate
          ->  Index Only Scan using gpointind on point_tbl
                Index Cond: (f1 <@ '<(50,50),50>'::circle)
@@ -605,7 +605,7 @@ EXPLAIN (COSTS OFF, NODES OFF)
 SELECT count(*) FROM point_tbl p WHERE p.f1 << '(0.0, 0.0)';
                          QUERY PLAN                         
 ------------------------------------------------------------
- Remote Subquery Scan on all
+ Remote Fast Query Execution
    ->  Aggregate
          ->  Index Only Scan using gpointind on point_tbl p
                Index Cond: (f1 << '(0,0)'::point)
@@ -621,7 +621,7 @@ EXPLAIN (COSTS OFF, NODES OFF)
 SELECT count(*) FROM point_tbl p WHERE p.f1 >> '(0.0, 0.0)';
                          QUERY PLAN                         
 ------------------------------------------------------------
- Remote Subquery Scan on all
+ Remote Fast Query Execution
    ->  Aggregate
          ->  Index Only Scan using gpointind on point_tbl p
                Index Cond: (f1 >> '(0,0)'::point)
@@ -637,7 +637,7 @@ EXPLAIN (COSTS OFF, NODES OFF)
 SELECT count(*) FROM point_tbl p WHERE p.f1 <^ '(0.0, 0.0)';
                          QUERY PLAN                         
 ------------------------------------------------------------
- Remote Subquery Scan on all
+ Remote Fast Query Execution
    ->  Aggregate
          ->  Index Only Scan using gpointind on point_tbl p
                Index Cond: (f1 <^ '(0,0)'::point)
@@ -653,7 +653,7 @@ EXPLAIN (COSTS OFF, NODES OFF)
 SELECT count(*) FROM point_tbl p WHERE p.f1 >^ '(0.0, 0.0)';
                          QUERY PLAN                         
 ------------------------------------------------------------
- Remote Subquery Scan on all
+ Remote Fast Query Execution
    ->  Aggregate
          ->  Index Only Scan using gpointind on point_tbl p
                Index Cond: (f1 >^ '(0,0)'::point)
@@ -669,7 +669,7 @@ EXPLAIN (COSTS OFF, NODES OFF)
 SELECT count(*) FROM point_tbl p WHERE p.f1 ~= '(-5, -12)';
                          QUERY PLAN                         
 ------------------------------------------------------------
- Remote Subquery Scan on all
+ Remote Fast Query Execution
    ->  Aggregate
          ->  Index Only Scan using gpointind on point_tbl p
                Index Cond: (f1 ~= '(-5,-12)'::point)
@@ -685,7 +685,7 @@ EXPLAIN (COSTS OFF, NODES OFF)
 SELECT * FROM point_tbl ORDER BY f1 <-> '0,1';
                      QUERY PLAN                     
 ----------------------------------------------------
- Remote Subquery Scan on all
+ Remote Fast Query Execution
    ->  Index Only Scan using gpointind on point_tbl
          Order By: (f1 <-> '(0,1)'::point)
 (3 rows)
@@ -706,7 +706,7 @@ EXPLAIN (COSTS OFF, NODES OFF)
 SELECT * FROM point_tbl WHERE f1 IS NULL;
                      QUERY PLAN                     
 ----------------------------------------------------
- Remote Subquery Scan on all
+ Remote Fast Query Execution
    ->  Index Only Scan using gpointind on point_tbl
          Index Cond: (f1 IS NULL)
 (3 rows)
@@ -721,7 +721,7 @@ EXPLAIN (COSTS OFF, NODES OFF)
 SELECT * FROM point_tbl WHERE f1 IS NOT NULL ORDER BY f1 <-> '0,1';
                      QUERY PLAN                     
 ----------------------------------------------------
- Remote Subquery Scan on all
+ Remote Fast Query Execution
    ->  Index Only Scan using gpointind on point_tbl
          Index Cond: (f1 IS NOT NULL)
          Order By: (f1 <-> '(0,1)'::point)
@@ -742,7 +742,7 @@ EXPLAIN (COSTS OFF, NODES OFF)
 SELECT * FROM point_tbl WHERE f1 <@ '(-10,-10),(10,10)':: box ORDER BY f1 <-> '0,1';
                       QUERY PLAN                      
 ------------------------------------------------------
- Remote Subquery Scan on all
+ Remote Fast Query Execution
    ->  Index Only Scan using gpointind on point_tbl
          Index Cond: (f1 <@ '(10,10),(-10,-10)'::box)
          Order By: (f1 <-> '(0,1)'::point)
@@ -1047,14 +1047,13 @@ SELECT count(*) FROM kd_point_tbl WHERE p ~= '(4585, 365)';
 
 EXPLAIN (NODES OFF, COSTS OFF)
 SELECT count(*) FROM radix_text_tbl WHERE t = 'P0123456789abcdef';
-                               QUERY PLAN                               
-------------------------------------------------------------------------
- Aggregate
-   ->  Remote Subquery Scan on all
-         ->  Aggregate
-               ->  Index Only Scan using sp_radix_ind on radix_text_tbl
-                     Index Cond: (t = 'P0123456789abcdef'::text)
-(5 rows)
+                            QUERY PLAN                            
+------------------------------------------------------------------
+ Remote Fast Query Execution
+   ->  Aggregate
+         ->  Index Only Scan using sp_radix_ind on radix_text_tbl
+               Index Cond: (t = 'P0123456789abcdef'::text)
+(4 rows)
 
 SELECT count(*) FROM radix_text_tbl WHERE t = 'P0123456789abcdef';
  count 
@@ -1064,14 +1063,13 @@ SELECT count(*) FROM radix_text_tbl WHERE t = 'P0123456789abcdef';
 
 EXPLAIN (NODES OFF, COSTS OFF)
 SELECT count(*) FROM radix_text_tbl WHERE t = 'P0123456789abcde';
-                               QUERY PLAN                               
-------------------------------------------------------------------------
- Aggregate
-   ->  Remote Subquery Scan on all
-         ->  Aggregate
-               ->  Index Only Scan using sp_radix_ind on radix_text_tbl
-                     Index Cond: (t = 'P0123456789abcde'::text)
-(5 rows)
+                            QUERY PLAN                            
+------------------------------------------------------------------
+ Remote Fast Query Execution
+   ->  Aggregate
+         ->  Index Only Scan using sp_radix_ind on radix_text_tbl
+               Index Cond: (t = 'P0123456789abcde'::text)
+(4 rows)
 
 SELECT count(*) FROM radix_text_tbl WHERE t = 'P0123456789abcde';
  count 
@@ -1081,14 +1079,13 @@ SELECT count(*) FROM radix_text_tbl WHERE t = 'P0123456789abcde';
 
 EXPLAIN (NODES OFF, COSTS OFF)
 SELECT count(*) FROM radix_text_tbl WHERE t = 'P0123456789abcdefF';
-                               QUERY PLAN                               
-------------------------------------------------------------------------
- Aggregate
-   ->  Remote Subquery Scan on all
-         ->  Aggregate
-               ->  Index Only Scan using sp_radix_ind on radix_text_tbl
-                     Index Cond: (t = 'P0123456789abcdefF'::text)
-(5 rows)
+                            QUERY PLAN                            
+------------------------------------------------------------------
+ Remote Fast Query Execution
+   ->  Aggregate
+         ->  Index Only Scan using sp_radix_ind on radix_text_tbl
+               Index Cond: (t = 'P0123456789abcdefF'::text)
+(4 rows)
 
 SELECT count(*) FROM radix_text_tbl WHERE t = 'P0123456789abcdefF';
  count 
@@ -1166,14 +1163,13 @@ SELECT count(*) FROM radix_text_tbl WHERE t ~<=~ 'Aztec                         
 
 EXPLAIN (NODES OFF, COSTS OFF)
 SELECT count(*) FROM radix_text_tbl WHERE t =    'Aztec                         Ct  ';
-                                    QUERY PLAN                                    
-----------------------------------------------------------------------------------
- Aggregate
-   ->  Remote Subquery Scan on all
-         ->  Aggregate
-               ->  Index Only Scan using sp_radix_ind on radix_text_tbl
-                     Index Cond: (t = 'Aztec                         Ct  '::text)
-(5 rows)
+                                 QUERY PLAN                                 
+----------------------------------------------------------------------------
+ Remote Fast Query Execution
+   ->  Aggregate
+         ->  Index Only Scan using sp_radix_ind on radix_text_tbl
+               Index Cond: (t = 'Aztec                         Ct  '::text)
+(4 rows)
 
 SELECT count(*) FROM radix_text_tbl WHERE t =    'Aztec                         Ct  ';
  count 
@@ -1183,14 +1179,13 @@ SELECT count(*) FROM radix_text_tbl WHERE t =    'Aztec                         
 
 EXPLAIN (NODES OFF, COSTS OFF)
 SELECT count(*) FROM radix_text_tbl WHERE t =    'Worth                         St  ';
-                                    QUERY PLAN                                    
-----------------------------------------------------------------------------------
- Aggregate
-   ->  Remote Subquery Scan on all
-         ->  Aggregate
-               ->  Index Only Scan using sp_radix_ind on radix_text_tbl
-                     Index Cond: (t = 'Worth                         St  '::text)
-(5 rows)
+                                 QUERY PLAN                                 
+----------------------------------------------------------------------------
+ Remote Fast Query Execution
+   ->  Aggregate
+         ->  Index Only Scan using sp_radix_ind on radix_text_tbl
+               Index Cond: (t = 'Worth                         St  '::text)
+(4 rows)
 
 SELECT count(*) FROM radix_text_tbl WHERE t =    'Worth                         St  ';
  count 
@@ -1242,6 +1237,7 @@ SELECT count(*) FROM radix_text_tbl WHERE t >    'Worth                         
                ->  Index Only Scan using sp_radix_ind on radix_text_tbl
                      Index Cond: (t > 'Worth                         St  '::text)
 (5 rows)
+
 SELECT count(*) FROM radix_text_tbl WHERE t >    'Worth                         St  ';
  count 
 -------
@@ -1325,7 +1321,7 @@ EXPLAIN (COSTS OFF, NODES OFF)
 SELECT * FROM point_tbl WHERE f1 <@ '(-10,-10),(10,10)':: box ORDER BY f1 <-> '0,1';
                             QUERY PLAN                            
 ------------------------------------------------------------------
- Remote Subquery Scan on all
+ Remote Fast Query Execution
    ->  Sort
          Sort Key: ((f1 <-> '(0,1)'::point))
          ->  Bitmap Heap Scan on point_tbl
@@ -1666,16 +1662,15 @@ SELECT count(*) FROM kd_point_tbl WHERE p ~= '(4585, 365)';
 
 EXPLAIN (NODES OFF, COSTS OFF)
 SELECT count(*) FROM radix_text_tbl WHERE t = 'P0123456789abcdef';
-                              QUERY PLAN                               
------------------------------------------------------------------------
- Aggregate
-   ->  Remote Subquery Scan on all
-         ->  Aggregate
-               ->  Bitmap Heap Scan on radix_text_tbl
-                     Recheck Cond: (t = 'P0123456789abcdef'::text)
-                     ->  Bitmap Index Scan on sp_radix_ind
-                           Index Cond: (t = 'P0123456789abcdef'::text)
-(7 rows)
+                           QUERY PLAN                            
+-----------------------------------------------------------------
+ Remote Fast Query Execution
+   ->  Aggregate
+         ->  Bitmap Heap Scan on radix_text_tbl
+               Recheck Cond: (t = 'P0123456789abcdef'::text)
+               ->  Bitmap Index Scan on sp_radix_ind
+                     Index Cond: (t = 'P0123456789abcdef'::text)
+(6 rows)
 
 SELECT count(*) FROM radix_text_tbl WHERE t = 'P0123456789abcdef';
  count 
@@ -1685,16 +1680,15 @@ SELECT count(*) FROM radix_text_tbl WHERE t = 'P0123456789abcdef';
 
 EXPLAIN (NODES OFF, COSTS OFF)
 SELECT count(*) FROM radix_text_tbl WHERE t = 'P0123456789abcde';
-                              QUERY PLAN                              
-----------------------------------------------------------------------
- Aggregate
-   ->  Remote Subquery Scan on all
-         ->  Aggregate
-               ->  Bitmap Heap Scan on radix_text_tbl
-                     Recheck Cond: (t = 'P0123456789abcde'::text)
-                     ->  Bitmap Index Scan on sp_radix_ind
-                           Index Cond: (t = 'P0123456789abcde'::text)
-(7 rows)
+                           QUERY PLAN                           
+----------------------------------------------------------------
+ Remote Fast Query Execution
+   ->  Aggregate
+         ->  Bitmap Heap Scan on radix_text_tbl
+               Recheck Cond: (t = 'P0123456789abcde'::text)
+               ->  Bitmap Index Scan on sp_radix_ind
+                     Index Cond: (t = 'P0123456789abcde'::text)
+(6 rows)
 
 SELECT count(*) FROM radix_text_tbl WHERE t = 'P0123456789abcde';
  count 
@@ -1704,16 +1698,15 @@ SELECT count(*) FROM radix_text_tbl WHERE t = 'P0123456789abcde';
 
 EXPLAIN (NODES OFF, COSTS OFF)
 SELECT count(*) FROM radix_text_tbl WHERE t = 'P0123456789abcdefF';
-                               QUERY PLAN                               
-------------------------------------------------------------------------
- Aggregate
-   ->  Remote Subquery Scan on all
-         ->  Aggregate
-               ->  Bitmap Heap Scan on radix_text_tbl
-                     Recheck Cond: (t = 'P0123456789abcdefF'::text)
-                     ->  Bitmap Index Scan on sp_radix_ind
-                           Index Cond: (t = 'P0123456789abcdefF'::text)
-(7 rows)
+                            QUERY PLAN                            
+------------------------------------------------------------------
+ Remote Fast Query Execution
+   ->  Aggregate
+         ->  Bitmap Heap Scan on radix_text_tbl
+               Recheck Cond: (t = 'P0123456789abcdefF'::text)
+               ->  Bitmap Index Scan on sp_radix_ind
+                     Index Cond: (t = 'P0123456789abcdefF'::text)
+(6 rows)
 
 SELECT count(*) FROM radix_text_tbl WHERE t = 'P0123456789abcdefF';
  count 
@@ -1799,16 +1792,15 @@ SELECT count(*) FROM radix_text_tbl WHERE t ~<=~ 'Aztec                         
 
 EXPLAIN (NODES OFF, COSTS OFF)
 SELECT count(*) FROM radix_text_tbl WHERE t =    'Aztec                         Ct  ';
-                                       QUERY PLAN                                       
-----------------------------------------------------------------------------------------
- Aggregate
-   ->  Remote Subquery Scan on all
-         ->  Aggregate
-               ->  Bitmap Heap Scan on radix_text_tbl
-                     Recheck Cond: (t = 'Aztec                         Ct  '::text)
-                     ->  Bitmap Index Scan on sp_radix_ind
-                           Index Cond: (t = 'Aztec                         Ct  '::text)
-(7 rows)
+                                    QUERY PLAN                                    
+----------------------------------------------------------------------------------
+ Remote Fast Query Execution
+   ->  Aggregate
+         ->  Bitmap Heap Scan on radix_text_tbl
+               Recheck Cond: (t = 'Aztec                         Ct  '::text)
+               ->  Bitmap Index Scan on sp_radix_ind
+                     Index Cond: (t = 'Aztec                         Ct  '::text)
+(6 rows)
 
 SELECT count(*) FROM radix_text_tbl WHERE t =    'Aztec                         Ct  ';
  count 
@@ -1818,16 +1810,15 @@ SELECT count(*) FROM radix_text_tbl WHERE t =    'Aztec                         
 
 EXPLAIN (NODES OFF, COSTS OFF)
 SELECT count(*) FROM radix_text_tbl WHERE t =    'Worth                         St  ';
-                                       QUERY PLAN                                       
-----------------------------------------------------------------------------------------
- Aggregate
-   ->  Remote Subquery Scan on all
-         ->  Aggregate
-               ->  Bitmap Heap Scan on radix_text_tbl
-                     Recheck Cond: (t = 'Worth                         St  '::text)
-                     ->  Bitmap Index Scan on sp_radix_ind
-                           Index Cond: (t = 'Worth                         St  '::text)
-(7 rows)
+                                    QUERY PLAN                                    
+----------------------------------------------------------------------------------
+ Remote Fast Query Execution
+   ->  Aggregate
+         ->  Bitmap Heap Scan on radix_text_tbl
+               Recheck Cond: (t = 'Worth                         St  '::text)
+               ->  Bitmap Index Scan on sp_radix_ind
+                     Index Cond: (t = 'Worth                         St  '::text)
+(6 rows)
 
 SELECT count(*) FROM radix_text_tbl WHERE t =    'Worth                         St  ';
  count 
@@ -1904,6 +1895,7 @@ SELECT count(*) FROM radix_text_tbl WHERE t ~>~  'Worth                         
                      ->  Bitmap Index Scan on sp_radix_ind
                            Index Cond: (t ~>~ 'Worth                         St  '::text)
 (7 rows)
+
 SELECT count(*) FROM radix_text_tbl WHERE t ~>~  'Worth                         St  ';
  count 
 -------
@@ -2871,15 +2863,19 @@ DROP TABLE onek_with_null;
 EXPLAIN (NODES OFF, COSTS OFF)
 SELECT * FROM tenk1
   WHERE thousand = 42 AND (tenthous = 1 OR tenthous = 3 OR tenthous = 42);
-                              QUERY PLAN                               
------------------------------------------------------------------------
- Remote Subquery Scan on all
+                                                                  QUERY PLAN                                                                   
+-----------------------------------------------------------------------------------------------------------------------------------------------
+ Remote Fast Query Execution
    ->  Bitmap Heap Scan on tenk1
-         Recheck Cond: (thousand = 42)
-         Filter: ((tenthous = 1) OR (tenthous = 3) OR (tenthous = 42))
-         ->  Bitmap Index Scan on tenk1_thous_tenthous
-               Index Cond: (thousand = 42)
-(6 rows)
+         Recheck Cond: (((thousand = 42) AND (tenthous = 1)) OR ((thousand = 42) AND (tenthous = 3)) OR ((thousand = 42) AND (tenthous = 42)))
+         ->  BitmapOr
+               ->  Bitmap Index Scan on tenk1_thous_tenthous
+                     Index Cond: ((thousand = 42) AND (tenthous = 1))
+               ->  Bitmap Index Scan on tenk1_thous_tenthous
+                     Index Cond: ((thousand = 42) AND (tenthous = 3))
+               ->  Bitmap Index Scan on tenk1_thous_tenthous
+                     Index Cond: ((thousand = 42) AND (tenthous = 42))
+(10 rows)
 
 SELECT * FROM tenk1
   WHERE thousand = 42 AND (tenthous = 1 OR tenthous = 3 OR tenthous = 42);
@@ -2971,16 +2967,14 @@ explain (costs off)
 SELECT thousand, tenthous FROM tenk1
 WHERE thousand < 2 AND tenthous IN (1001,3000)
 ORDER BY thousand;
-                                            QUERY PLAN                                            
---------------------------------------------------------------------------------------------------
+                                         QUERY PLAN                                         
+--------------------------------------------------------------------------------------------
  Remote Subquery Scan on all (datanode_1,datanode_2)
    ->  Sort
          Sort Key: thousand
-         ->  Bitmap Heap Scan on tenk1
-               Recheck Cond: ((thousand < 2) AND (tenthous = ANY ('{1001,3000}'::integer[])))
-               ->  Bitmap Index Scan on tenk1_thous_tenthous
-                     Index Cond: ((thousand < 2) AND (tenthous = ANY ('{1001,3000}'::integer[])))
-(7 rows)
+         ->  Index Only Scan using tenk1_thous_tenthous on tenk1
+               Index Cond: ((thousand < 2) AND (tenthous = ANY ('{1001,3000}'::integer[])))
+(5 rows)
 
 SELECT thousand, tenthous FROM tenk1
 WHERE thousand < 2 AND tenthous IN (1001,3000)
@@ -2996,16 +2990,14 @@ explain (costs off)
 SELECT thousand, tenthous FROM tenk1
 WHERE thousand < 2 AND tenthous IN (1001,3000)
 ORDER BY thousand;
-                                            QUERY PLAN                                            
---------------------------------------------------------------------------------------------------
+                                         QUERY PLAN                                         
+--------------------------------------------------------------------------------------------
  Remote Subquery Scan on all (datanode_1,datanode_2)
    ->  Sort
          Sort Key: thousand
-         ->  Bitmap Heap Scan on tenk1
-               Recheck Cond: ((thousand < 2) AND (tenthous = ANY ('{1001,3000}'::integer[])))
-               ->  Bitmap Index Scan on tenk1_thous_tenthous
-                     Index Cond: ((thousand < 2) AND (tenthous = ANY ('{1001,3000}'::integer[])))
-(7 rows)
+         ->  Index Scan using tenk1_thous_tenthous on tenk1
+               Index Cond: ((thousand < 2) AND (tenthous = ANY ('{1001,3000}'::integer[])))
+(5 rows)
 
 SELECT thousand, tenthous FROM tenk1
 WHERE thousand < 2 AND tenthous IN (1001,3000)
@@ -3024,10 +3016,11 @@ explain (costs off)
   select * from tenk1 where (thousand, tenthous) in ((1,1001), (null,null));
                          QUERY PLAN                         
 ------------------------------------------------------------
- Remote Subquery Scan on all (datanode_1,datanode_2)
+ Remote Fast Query Execution
+   Node/s: datanode_1, datanode_2
    ->  Index Scan using tenk1_thous_tenthous on tenk1
          Index Cond: ((thousand = 1) AND (tenthous = 1001))
-(3 rows)
+(4 rows)
 
 --
 -- REINDEX (VERBOSE)
@@ -3075,21 +3068,9 @@ SELECT  b.relname,
         ELSE 'relfilenode has changed' END
   FROM reindex_before b JOIN pg_class a ON b.oid = a.oid
   ORDER BY 1;
-       relname        | relkind |           case           
-----------------------+---------+--------------------------
- matview              | m       | relfilenode is unchanged
- matview_col1_idx     | i       | relfilenode has changed
- pg_toast_TABLE       | t       | relfilenode is unchanged
- pg_toast_TABLE_index | i       | relfilenode has changed
- table1               | r       | relfilenode is unchanged
- table1_col1_seq      | S       | relfilenode is unchanged
- table1_pkey          | i       | relfilenode has changed
- table2               | r       | relfilenode is unchanged
- table2_col1_seq      | S       | relfilenode is unchanged
- table2_col2_idx      | i       | relfilenode has changed
- table2_pkey          | i       | relfilenode has changed
- view                 | v       | relfilenode is unchanged
-(12 rows)
+ relname | relkind | case 
+---------+---------+------
+(0 rows)
 
 REINDEX SCHEMA schema_to_reindex;
 BEGIN;

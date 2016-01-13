@@ -69,6 +69,7 @@ INSERT INTO xl_funct5(a,b,c) VALUES (3,4,20);-- c should be 20
 SELECT * from xl_funct5;
 
 --nextval check
+SET sequence_range = 1;
 CREATE SEQUENCE xl_INSERT_SEQ;
 
 CREATE TABLE xl_funct (

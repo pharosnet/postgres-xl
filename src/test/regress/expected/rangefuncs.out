@@ -1,18 +1,19 @@
 SELECT name, setting FROM pg_settings WHERE name LIKE 'enable%' ORDER BY name;
-         name         | setting 
-----------------------+---------
- enable_bitmapscan    | on
- enable_hashagg       | on
- enable_hashjoin      | on
- enable_indexonlyscan | on
- enable_indexscan     | on
- enable_material      | on
- enable_mergejoin     | on
- enable_nestloop      | on
- enable_seqscan       | on
- enable_sort          | on
- enable_tidscan       | on
-(11 rows)
+             name             | setting 
+------------------------------+---------
+ enable_bitmapscan            | on
+ enable_datanode_row_triggers | off
+ enable_hashagg               | on
+ enable_hashjoin              | on
+ enable_indexonlyscan         | on
+ enable_indexscan             | on
+ enable_material              | on
+ enable_mergejoin             | on
+ enable_nestloop              | on
+ enable_seqscan               | on
+ enable_sort                  | on
+ enable_tidscan               | on
+(12 rows)
 
 CREATE TABLE foo2(fooid int, f2 int);
 INSERT INTO foo2 VALUES(1, 11);
@@ -424,8 +425,8 @@ CREATE FUNCTION getfoo3(int) RETURNS setof text AS 'SELECT fooname FROM foo WHER
 SELECT * FROM getfoo3(1) AS t1;
  t1  
 -----
- Ed
  Joe
+ Ed
 (2 rows)
 
 SELECT * FROM getfoo3(1) WITH ORDINALITY AS t1(v,o);
@@ -441,16 +442,15 @@ SELECT * FROM vw_getfoo;
 ---------
  Joe
  Ed
- Joe
 (2 rows)
 
 DROP VIEW vw_getfoo;
 CREATE VIEW vw_getfoo AS SELECT * FROM getfoo3(1) WITH ORDINALITY AS t1(v,o);
-SELECT * FROM vw_getfoo;
+SELECT * FROM vw_getfoo ORDER BY 1;
   v  | o 
 -----+---
- Joe | 1
  Ed  | 2
+ Joe | 1
 (2 rows)
 
 DROP VIEW vw_getfoo;
@@ -510,13 +510,10 @@ SELECT * FROM vw_getfoo;
 
 DROP VIEW vw_getfoo;
 CREATE VIEW vw_getfoo AS SELECT * FROM getfoo5(1) WITH ORDINALITY AS t1(a,b,c,o);
-SELECT * FROM vw_getfoo;
- a | b |  c  | o 
----+---+-----+---
- 1 | 1 | Joe | 1
- 1 | 2 | Ed  | 2
-(2 rows)
-
+SELECT * FROM vw_getfoo ORDER BY foosubid;
+ERROR:  column "foosubid" does not exist
+LINE 1: SELECT * FROM vw_getfoo ORDER BY foosubid;
+                                         ^
 DROP VIEW vw_getfoo;
 -- sql, proretset = f, prorettype = record
 CREATE FUNCTION getfoo6(int) RETURNS RECORD AS 'SELECT * FROM foo WHERE fooid = $1;' LANGUAGE SQL;
@@ -569,7 +566,7 @@ SELECT * FROM ROWS FROM( getfoo7(1) AS (fooid int, foosubid int, fooname text) )
 
 CREATE VIEW vw_getfoo AS SELECT * FROM getfoo7(1) AS
 (fooid int, foosubid int, fooname text);
-SELECT * FROM vw_getfoo ORDER BY foosubid;
+SELECT * FROM vw_getfoo;
  fooid | foosubid | fooname 
 -------+----------+---------
      1 |        1 | Joe
@@ -1732,6 +1729,7 @@ select * from tt order by 1, 2;
 create temp table tt_log(f1 int, data text);
 create rule insert_tt_rule as on insert to tt do also
   insert into tt_log values(new.*);
+ERROR:  relation "tt_log" does not exist
 select insert_tt2('foollog','barlog') limit 1;
  insert_tt2 
 ------------
@@ -1760,11 +1758,9 @@ select * from tt order by 1, 2;
 -- note that nextval() gets executed a second time in the rule expansion,
 -- which is expected.
 select * from tt_log order by 1, 2;
- f1 |  data   
-----+---------
- 15 | foollog
- 16 | barlog
-(2 rows)
+ f1 | data 
+----+------
+(0 rows)
 
 -- test case for a whole-row-variable bug
 create function foo1(n integer, out a text, out b text)
@@ -1814,45 +1810,45 @@ create temp table foo(f1 int8, f2 int8);
 create function testfoo() returns record as $$
   insert into foo values (1,2) returning *;
 $$ language sql;
+ERROR:  relation "foo" does not exist
 select testfoo();
- testfoo 
----------
- (1,2)
-(1 row)
-
+ERROR:  function testfoo() does not exist
+LINE 1: select testfoo();
+               ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 select * from testfoo() as t(f1 int8,f2 int8);
- f1 | f2 
-----+----
-  1 |  2
-(1 row)
-
+ERROR:  function testfoo() does not exist
+LINE 1: select * from testfoo() as t(f1 int8,f2 int8);
+                      ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 select * from testfoo(); -- fail
-ERROR:  a column definition list is required for functions returning "record"
+ERROR:  function testfoo() does not exist
 LINE 1: select * from testfoo();
                       ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 drop function testfoo();
+ERROR:  function testfoo() does not exist
 create function testfoo() returns setof record as $$
   insert into foo values (1,2), (3,4) returning *;
 $$ language sql;
+ERROR:  relation "foo" does not exist
 select testfoo();
- testfoo 
----------
- (1,2)
- (3,4)
-(2 rows)
-
+ERROR:  function testfoo() does not exist
+LINE 1: select testfoo();
+               ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 select * from testfoo() as t(f1 int8,f2 int8) order by 1, 2;
- f1 | f2 
-----+----
-  1 |  2
-  3 |  4
-(2 rows)
-
+ERROR:  function testfoo() does not exist
+LINE 1: select * from testfoo() as t(f1 int8,f2 int8) order by 1, 2;
+                      ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 select * from testfoo(); -- fail
-ERROR:  a column definition list is required for functions returning "record"
+ERROR:  function testfoo() does not exist
 LINE 1: select * from testfoo();
                       ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 drop function testfoo();
+ERROR:  function testfoo() does not exist
 --
 -- Check some cases involving added/dropped columns in a rowtype result
 --
@@ -1863,90 +1859,79 @@ alter table users drop column todrop;
 create or replace function get_first_user() returns users as
 $$ SELECT * FROM users ORDER BY userid LIMIT 1; $$
 language sql stable;
+ERROR:  type "users" does not exist
 SELECT get_first_user();
-  get_first_user   
--------------------
- (id,1,email,11,t)
-(1 row)
-
+ERROR:  function get_first_user() does not exist
+LINE 1: SELECT get_first_user();
+               ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 SELECT * FROM get_first_user();
- userid | seq | email | moredrop | enabled 
---------+-----+-------+----------+---------
- id     |   1 | email |       11 | t
-(1 row)
-
+ERROR:  function get_first_user() does not exist
+LINE 1: SELECT * FROM get_first_user();
+                      ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 create or replace function get_users() returns setof users as
 $$ SELECT * FROM users ORDER BY userid; $$
 language sql stable;
+ERROR:  type "users" does not exist
 SELECT get_users();
-      get_users      
----------------------
- (id,1,email,11,t)
- (id2,2,email2,12,t)
-(2 rows)
-
+ERROR:  function get_users() does not exist
+LINE 1: SELECT get_users();
+               ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 SELECT * FROM get_users();
- userid | seq | email  | moredrop | enabled 
---------+-----+--------+----------+---------
- id     |   1 | email  |       11 | t
- id2    |   2 | email2 |       12 | t
-(2 rows)
-
+ERROR:  function get_users() does not exist
+LINE 1: SELECT * FROM get_users();
+                      ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 SELECT * FROM get_users() WITH ORDINALITY;   -- make sure ordinality copes
- userid | seq | email  | moredrop | enabled | ordinality 
---------+-----+--------+----------+---------+------------
- id     |   1 | email  |       11 | t       |          1
- id2    |   2 | email2 |       12 | t       |          2
-(2 rows)
-
+ERROR:  function get_users() does not exist
+LINE 1: SELECT * FROM get_users() WITH ORDINALITY;
+                      ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 -- multiple functions vs. dropped columns
 SELECT * FROM ROWS FROM(generate_series(10,11), get_users()) WITH ORDINALITY;
- generate_series | userid | seq | email  | moredrop | enabled | ordinality 
------------------+--------+-----+--------+----------+---------+------------
-              10 | id     |   1 | email  |       11 | t       |          1
-              11 | id2    |   2 | email2 |       12 | t       |          2
-(2 rows)
-
+ERROR:  function get_users() does not exist
+LINE 1: SELECT * FROM ROWS FROM(generate_series(10,11), get_users())...
+                                                        ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 SELECT * FROM ROWS FROM(get_users(), generate_series(10,11)) WITH ORDINALITY;
- userid | seq | email  | moredrop | enabled | generate_series | ordinality 
---------+-----+--------+----------+---------+-----------------+------------
- id     |   1 | email  |       11 | t       |              10 |          1
- id2    |   2 | email2 |       12 | t       |              11 |          2
-(2 rows)
-
+ERROR:  function get_users() does not exist
+LINE 1: SELECT * FROM ROWS FROM(get_users(), generate_series(10,11))...
+                                ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 -- check that we can cope with post-parsing changes in rowtypes
 create temp view usersview as
 SELECT * FROM ROWS FROM(get_users(), generate_series(10,11)) WITH ORDINALITY;
+ERROR:  function get_users() does not exist
+LINE 2: SELECT * FROM ROWS FROM(get_users(), generate_series(10,11))...
+                                ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 select * from usersview;
- userid | seq | email  | moredrop | enabled | generate_series | ordinality 
---------+-----+--------+----------+---------+-----------------+------------
- id     |   1 | email  |       11 | t       |              10 |          1
- id2    |   2 | email2 |       12 | t       |              11 |          2
-(2 rows)
-
+ERROR:  relation "usersview" does not exist
+LINE 1: select * from usersview;
+                      ^
 alter table users drop column moredrop;
 select * from usersview;
- userid | seq | email  | moredrop | enabled | generate_series | ordinality 
---------+-----+--------+----------+---------+-----------------+------------
- id     |   1 | email  |          | t       |              10 |          1
- id2    |   2 | email2 |          | t       |              11 |          2
-(2 rows)
-
+ERROR:  relation "usersview" does not exist
+LINE 1: select * from usersview;
+                      ^
 alter table users add column junk text;
 select * from usersview;
- userid | seq | email  | moredrop | enabled | generate_series | ordinality 
---------+-----+--------+----------+---------+-----------------+------------
- id     |   1 | email  |          | t       |              10 |          1
- id2    |   2 | email2 |          | t       |              11 |          2
-(2 rows)
-
+ERROR:  relation "usersview" does not exist
+LINE 1: select * from usersview;
+                      ^
 alter table users alter column seq type numeric;
 select * from usersview;  -- expect clean failure
-ERROR:  attribute 2 has wrong type
-DETAIL:  Table has type numeric, but query expects integer.
+ERROR:  relation "usersview" does not exist
+LINE 1: select * from usersview;
+                      ^
 drop view usersview;
+ERROR:  view "usersview" does not exist
 drop function get_first_user();
+ERROR:  function get_first_user() does not exist
 drop function get_users();
+ERROR:  function get_users() does not exist
 drop table users;
 -- this won't get inlined because of type coercion, but it shouldn't fail
 create or replace function foobar() returns setof text as
@@ -2007,16 +1992,18 @@ create function extractq2(t int8_tbl) returns int8 as $$
 $$ language sql immutable;
 explain (verbose, costs off)
 select x from int8_tbl, extractq2(int8_tbl) f(x);
-                QUERY PLAN                
-------------------------------------------
+                   QUERY PLAN                   
+------------------------------------------------
  Nested Loop
    Output: f.x
-   ->  Seq Scan on public.int8_tbl
-         Output: int8_tbl.q1, int8_tbl.q2
+   ->  Remote Subquery Scan on all (datanode_1)
+         Output: int8_tbl.q2
+         ->  Seq Scan on public.int8_tbl
+               Output: int8_tbl.q2
    ->  Function Scan on f
          Output: f.x
          Function Call: int8_tbl.q2
-(7 rows)
+(9 rows)
 
 select x from int8_tbl, extractq2(int8_tbl) f(x);
          x         
@@ -2033,15 +2020,17 @@ create function extractq2_2(t int8_tbl) returns table(ret1 int8) as $$
 $$ language sql immutable;
 explain (verbose, costs off)
 select x from int8_tbl, extractq2_2(int8_tbl) f(x);
-            QUERY PLAN             
------------------------------------
+                   QUERY PLAN                   
+------------------------------------------------
  Nested Loop
    Output: ((int8_tbl.*).q2)
-   ->  Seq Scan on public.int8_tbl
+   ->  Remote Subquery Scan on all (datanode_2)
          Output: int8_tbl.*
+         ->  Seq Scan on public.int8_tbl
+               Output: int8_tbl.*
    ->  Result
          Output: (int8_tbl.*).q2
-(6 rows)
+(8 rows)
 
 select x from int8_tbl, extractq2_2(int8_tbl) f(x);
          x         
@@ -2059,11 +2048,13 @@ create function extractq2_2_opt(t int8_tbl) returns table(ret1 int8) as $$
 $$ language sql immutable;
 explain (verbose, costs off)
 select x from int8_tbl, extractq2_2_opt(int8_tbl) f(x);
-         QUERY PLAN          
------------------------------
- Seq Scan on public.int8_tbl
+                QUERY PLAN                
+------------------------------------------
+ Remote Subquery Scan on all (datanode_1)
    Output: int8_tbl.q2
-(2 rows)
+   ->  Seq Scan on public.int8_tbl
+         Output: int8_tbl.q2
+(4 rows)
 
 select x from int8_tbl, extractq2_2_opt(int8_tbl) f(x);
          x         

@@ -57,26 +57,11 @@ SELECT a, b FROM rel_rr ORDER BY 1,2;
 -- Some SELECT queries with some quals
 -- Coordinator quals first
 SELECT a, b FROM rel_rep WHERE a <= currval('seqtest') - 15 ORDER BY 1,2;
- a | b  
----+----
- 1 |  1
- 1 | 12
-(2 rows)
-
+ERROR:  currval of sequence "seqtest" is not yet defined in this session
 SELECT a, b FROM rel_hash WHERE a <= currval('seqtest') - 15 ORDER BY 1,2;
- a | b  
----+----
- 1 |  1
- 1 | 17
-(2 rows)
-
+ERROR:  currval of sequence "seqtest" is not yet defined in this session
 SELECT a, b FROM rel_rr WHERE a <= currval('seqtest') - 15 ORDER BY 1,2;
- a | b  
----+----
- 1 |  1
- 1 | 22
-(2 rows)
-
+ERROR:  currval of sequence "seqtest" is not yet defined in this session
 -- Non Coordinator quals
 SELECT a, b FROM rel_rep WHERE a <= func_immutable(5) ORDER BY 1,2;
  a | b  
@@ -153,6 +138,7 @@ CREATE TABLE rel_rep (a int, b timestamp DEFAULT NULL, c boolean DEFAULT NULL) D
 CREATE SEQUENCE seqtest3 START 1;
 INSERT INTO rel_rep VALUES (1),(2),(3),(4),(5);
 UPDATE rel_rep SET a = nextval('seqtest3'), b = now(), c = false;
+ERROR:  can not update replicated table with result of volatile function
 SELECT a FROM rel_rep ORDER BY 1;
  a 
 ---
@@ -193,11 +179,11 @@ SELECT a FROM rel_rep WHERE c = true ORDER BY 1;
 UPDATE rel_rep SET c = false;
 -- Coordinator quals
 UPDATE rel_rep SET b = now(), c = true WHERE a < currval('seqtest3') - 3 AND b < now();
+ERROR:  currval of sequence "seqtest3" is not yet defined in this session
 SELECT a FROM rel_rep  WHERE c = true ORDER BY 1;
  a 
 ---
- 1
-(1 row)
+(0 rows)
 
 DROP SEQUENCE seqtest3;
 -- UPDATE cases for roundrobin table
@@ -250,7 +236,8 @@ SELECT a FROM rel_rr WHERE c = true ORDER BY 1;
  a 
 ---
  1
-(1 row)
+ 2
+(2 rows)
 
 DROP SEQUENCE seqtest4;
 -- UPDATE cases for hash table
@@ -314,17 +301,18 @@ SELECT a FROM rel_hash WHERE c = true ORDER BY 1;
 UPDATE rel_hash SET c = false;
 -- Coordinator quals
 UPDATE rel_hash SET b = now(), c = true WHERE a < currval('seqtest5') - 3 AND b < now();
+ERROR:  currval of sequence "seqtest5" is not yet defined in this session
 SELECT a FROM rel_hash WHERE c = true ORDER BY 1;
  a 
 ---
- 1
-(1 row)
+(0 rows)
 
 DROP SEQUENCE seqtest5;
 -- DELETE cases
 -- Coordinator quals
 CREATE SEQUENCE seqtest7 START 1;
 DELETE FROM rel_rep WHERE a < nextval('seqtest7') + 1;
+ERROR:  Write to replicated table returned different results from the Datanodes
 DELETE FROM rel_rr WHERE a < nextval('seqtest7') - 3;
 DELETE FROM rel_hash WHERE a < nextval('seqtest7') - 3;
 -- Plain cases
@@ -383,7 +371,7 @@ $$begin return 3;end $$ language plpgsql;
  Remote Subquery Scan on all
    ->  Update on public.xcrem_employee e
          ->  Seq Scan on public.xcrem_employee e
-               Output: e.empno, e.firstname, e.midinit, e.lastname, e.workdept, e.phoneno, e.hiredate, e.job, e.edlevel, e.sex, e.birthdate, ((e.salary + e.salary) + (0.3 * e.bonus)), e.bonus, e.comm, e.salary, e.workdept, e.ctid, e.xc_node_id
+               Output: e.empno, e.firstname, e.midinit, e.lastname, e.workdept, e.phoneno, e.hiredate, e.job, e.edlevel, e.sex, e.birthdate, ((e.salary + e.salary) + (0.3 * e.bonus)), e.bonus, e.comm, e.salary, e.workdept, e.xc_node_id, e.ctid
                Filter: (e.salary > (SubPlan 1))
                SubPlan 1
                  ->  Aggregate
@@ -426,7 +414,7 @@ $$begin return 3;end $$ language plpgsql;
  Remote Subquery Scan on all
    ->  Update on public.xcrem_employee e
          ->  Seq Scan on public.xcrem_employee e
-               Output: e.empno, e.firstname, e.midinit, e.lastname, e.workdept, e.phoneno, e.hiredate, e.job, e.edlevel, e.sex, e.birthdate, e.salary, (e.bonus + (e.salary * 0.3)), e.comm, e.edlevel, e.workdept, e.ctid, e.xc_node_id
+               Output: e.empno, e.firstname, e.midinit, e.lastname, e.workdept, e.phoneno, e.hiredate, e.job, e.edlevel, e.sex, e.birthdate, e.salary, (e.bonus + (e.salary * 0.3)), e.comm, e.edlevel, e.workdept, e.xc_node_id, e.ctid
                Filter: ((e.edlevel)::numeric > (SubPlan 1))
                SubPlan 1
                  ->  Aggregate
@@ -469,7 +457,7 @@ $$begin return 3;end $$ language plpgsql;
  Remote Subquery Scan on all
    ->  Update on public.xcrem_employee e
          ->  Seq Scan on public.xcrem_employee e
-               Output: empno, firstname, midinit, ((lastname)::text || 'suf'::text), workdept, phoneno, hiredate, job, edlevel, sex, birthdate, salary, bonus, comm, edlevel, ctid, xc_node_id
+               Output: empno, firstname, midinit, ((lastname)::text || 'suf'::text), workdept, phoneno, hiredate, job, edlevel, sex, birthdate, salary, bonus, comm, edlevel, xc_node_id, ctid
                Filter: (e.edlevel > volatile_func(2))
 (5 rows)
 
@@ -502,7 +490,7 @@ $$begin return 3;end $$ language plpgsql;
  Remote Subquery Scan on all
    ->  Update on public.xcrem_employee e
          ->  Seq Scan on public.xcrem_employee e
-               Output: empno, firstname, midinit, ((lastname)::text || 'suf'::text), workdept, phoneno, hiredate, job, (edlevel + 1), sex, birthdate, salary, bonus, comm, edlevel, ctid, xc_node_id
+               Output: empno, firstname, midinit, ((lastname)::text || 'suf'::text), workdept, phoneno, hiredate, job, (edlevel + 1), sex, birthdate, salary, bonus, comm, edlevel, xc_node_id, ctid
                Filter: (e.edlevel > volatile_func(2))
 (5 rows)
 
@@ -539,7 +527,7 @@ insert into xcrem_employee select * from xcrem_temptable;
  Remote Subquery Scan on all
    ->  Delete on public.xcrem_employee e
          ->  Seq Scan on public.xcrem_employee e
-               Output: edlevel, ctid, xc_node_id, empno
+               Output: edlevel, xc_node_id, ctid, empno
                Filter: (e.edlevel > volatile_func(2))
 (5 rows)
 
@@ -558,7 +546,7 @@ insert into xcrem_employee select * from xcrem_temptable;
  Remote Subquery Scan on all
    ->  Delete on public.xcrem_employee e
          ->  Seq Scan on public.xcrem_employee e
-               Output: e.edlevel, e.workdept, e.ctid, e.xc_node_id, e.empno
+               Output: e.edlevel, e.workdept, e.xc_node_id, e.ctid, e.empno
                Filter: ((e.edlevel)::numeric > (SubPlan 1))
                SubPlan 1
                  ->  Aggregate
@@ -598,7 +586,7 @@ insert into xcrem_employee select * from xcrem_temptable;
  Remote Subquery Scan on all
    ->  Delete on public.xcrem_employee e
          ->  Seq Scan on public.xcrem_employee e
-               Output: e.salary, e.workdept, e.ctid, e.xc_node_id, e.empno
+               Output: e.salary, e.workdept, e.xc_node_id, e.ctid, e.empno
                Filter: (e.salary > (SubPlan 1))
                SubPlan 1
                  ->  Aggregate

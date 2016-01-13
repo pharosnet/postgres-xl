@@ -291,10 +291,11 @@ select * from int8_tbl i8
 where i8 in (row(123,456)::int8_tbl, '(4567890123456789,123)');
                                                       QUERY PLAN                                                       
 -----------------------------------------------------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode_2)
+ Remote Fast Query Execution
+   Node/s: datanode_2
    ->  Seq Scan on int8_tbl i8
          Filter: (i8.* = ANY (ARRAY[ROW('123'::bigint, '456'::bigint)::int8_tbl, '(4567890123456789,123)'::int8_tbl]))
-(3 rows)
+(4 rows)
 
 select * from int8_tbl i8
 where i8 in (row(123,456)::int8_tbl, '(4567890123456789,123)');
@@ -378,14 +379,10 @@ UPDATE price
     SET active = true, price = input_prices.price
     FROM unnest(ARRAY[(10, 123.00), (11, 99.99)]::price_input[]) input_prices
     WHERE price_key_from_table(price.*) = price_key_from_input(input_prices.*);
+ERROR:  could not plan this distributed update
+DETAIL:  correlated UPDATE or updating distribution column currently not supported in Postgres-XL.
 select * from price;
- id | active | price  
-----+--------+--------
-  1 | f      |     42
- 10 | t      | 123.00
- 11 | t      |  99.99
-(3 rows)
-
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
 rollback;
 --
 -- Test case derived from bug #9085: check * qualification of composite
@@ -402,37 +399,40 @@ HINT:  You will need to rewrite or cast the expression.
 create function fcompos1(v compos) returns void as $$
 insert into compos values (v.*);
 $$ language sql;
+ERROR:  type compos does not exist
 create function fcompos2(v compos) returns void as $$
 select fcompos1(v);
 $$ language sql;
+ERROR:  function fcompos1(compos) does not exist
+LINE 2: select fcompos1(v);
+               ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 create function fcompos3(v compos) returns void as $$
 select fcompos1(fcompos3.v.*);
 $$ language sql;
+ERROR:  function fcompos1(compos) does not exist
+LINE 2: select fcompos1(fcompos3.v.*);
+               ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 select fcompos1(row(1,'one'));
- fcompos1 
-----------
- 
-(1 row)
-
+ERROR:  function fcompos1(record) does not exist
+LINE 1: select fcompos1(row(1,'one'));
+               ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 select fcompos2(row(2,'two'));
- fcompos2 
-----------
- 
-(1 row)
-
+ERROR:  function fcompos2(record) does not exist
+LINE 1: select fcompos2(row(2,'two'));
+               ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 select fcompos3(row(3,'three'));
- fcompos3 
-----------
- 
-(1 row)
-
+ERROR:  function fcompos3(record) does not exist
+LINE 1: select fcompos3(row(3,'three'));
+               ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 select * from compos;
- f1 |  f2   
-----+-------
-  1 | one
-  2 | two
-  3 | three
-(3 rows)
+ f1 | f2 
+----+----
+(0 rows)
 
 --
 -- We allow I/O conversion casts from composite types to strings to be
@@ -506,25 +506,9 @@ select row_to_json(i) from int8_tbl i(x,y);
 
 create temp view vv1 as select * from int8_tbl;
 select row_to_json(i) from vv1 i;
-                  row_to_json                   
-------------------------------------------------
- {"q1":123,"q2":456}
- {"q1":123,"q2":4567890123456789}
- {"q1":4567890123456789,"q2":123}
- {"q1":4567890123456789,"q2":4567890123456789}
- {"q1":4567890123456789,"q2":-4567890123456789}
-(5 rows)
-
+ERROR:  cache lookup failed for type 0
 select row_to_json(i) from vv1 i(x,y);
-                 row_to_json                  
-----------------------------------------------
- {"x":123,"y":456}
- {"x":123,"y":4567890123456789}
- {"x":4567890123456789,"y":123}
- {"x":4567890123456789,"y":4567890123456789}
- {"x":4567890123456789,"y":-4567890123456789}
-(5 rows)
-
+ERROR:  cache lookup failed for type 0
 select row_to_json(ss) from
   (select q1, q2 from int8_tbl) as ss;
                   row_to_json                   

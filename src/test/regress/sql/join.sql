@@ -1242,9 +1242,11 @@ select d.* from d left join (select id from a union select id from b) s
   on d.a = s.id;
 
 -- check join removal with a cross-type comparison operator
-explain (costs off)
-select i8.* from int8_tbl i8 left join (select f1 from int4_tbl group by f1) i4
-  on i8.q1 = i4.f1;
+-- commenting out queries on replicated tables
+-- as they can go either on datanode_1 or datanode_2
+--explain (costs off)
+--select i8.* from int8_tbl i8 left join (select f1 from int4_tbl group by f1) i4
+  --on i8.q1 = i4.f1;
 
 rollback;
 
@@ -1401,9 +1403,9 @@ explain (costs off)
   from int4_tbl x cross join lateral (select unique2 from tenk1 where f1 = unique1) ss;
 select unique2, x.*
 from int4_tbl x left join lateral (select unique1, unique2 from tenk1 where f1 = unique1) ss on true;
-explain (costs off)
-  select unique2, x.*
-  from int4_tbl x left join lateral (select unique1, unique2 from tenk1 where f1 = unique1) ss on true;
+--explain (costs off)
+  --select unique2, x.*
+  --from int4_tbl x left join lateral (select unique1, unique2 from tenk1 where f1 = unique1) ss on true;
 
 -- check scoping of lateral versus parent references
 -- the first of these should return int8_tbl.q2, the second int8_tbl.q1
@@ -1501,10 +1503,10 @@ select * from
 select * from
   int8_tbl a left join
   lateral (select *, a.q2 as x from int8_tbl b) ss on a.q2 = ss.q1;
-explain (verbose, costs off)
-select * from
-  int8_tbl a left join
-  lateral (select *, coalesce(a.q2, 42) as x from int8_tbl b) ss on a.q2 = ss.q1;
+--explain (verbose, costs off)
+--select * from
+  --int8_tbl a left join
+  --lateral (select *, coalesce(a.q2, 42) as x from int8_tbl b) ss on a.q2 = ss.q1;
 select * from
   int8_tbl a left join
   lateral (select *, coalesce(a.q2, 42) as x from int8_tbl b) ss on a.q2 = ss.q1;
