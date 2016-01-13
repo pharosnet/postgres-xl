@@ -96,6 +96,8 @@ static int locate_static(Locator *self, Datum value, bool isnull,
 			  bool *hasprimary);
 static int locate_roundrobin(Locator *self, Datum value, bool isnull,
 			  bool *hasprimary);
+static int locate_modulo_random(Locator *self, Datum value, bool isnull,
+			  bool *hasprimary);
 static int locate_hash_insert(Locator *self, Datum value, bool isnull,
 			  bool *hasprimary);
 static int locate_hash_select(Locator *self, Datum value, bool isnull,
@@ -1020,7 +1022,8 @@ createLocator(char locatorType, RelationAccessType accessType,
 			}
 			else
 			{
-				locator->locatefunc = locate_roundrobin;
+				/* SELECT, use random node.. */
+				locator->locatefunc = locate_modulo_random;
 				locator->nodeMap = nodeMap;
 				switch (locator->listType)
 				{
@@ -1261,6 +1264,46 @@ locate_roundrobin(Locator *self, Datum value, bool isnull,
 	return 1;
 }
 
+/*
+ * Each time return one node, in a random manner
+ * This is similar to locate_modulo_select, but that
+ * function does not use a random modulo..
+ */
+static int
+locate_modulo_random(Locator *self, Datum value, bool isnull,
+				  bool *hasprimary)
+{
+	int offset;
+
+	if (hasprimary)
+		*hasprimary = false;
+
+	Assert(self->nodeCount > 0);
+	offset = compute_modulo(abs(rand()), self->nodeCount);
+	switch (self->listType)
+	{
+		case LOCATOR_LIST_NONE:
+			((int *) self->results)[0] = offset;
+			break;
+		case LOCATOR_LIST_INT:
+			((int *) self->results)[0] =
+					((int *) self->nodeMap)[offset];
+			break;
+		case LOCATOR_LIST_OID:
+			((Oid *) self->results)[0] =
+					((Oid *) self->nodeMap)[offset];
+			break;
+		case LOCATOR_LIST_POINTER:
+			((void **) self->results)[0] =
+					((void **) self->nodeMap)[offset];
+			break;
+		case LOCATOR_LIST_LIST:
+			/* Should never happen */
+			Assert(false);
+			break;
+	}
+	return 1;
+}
 
 /*
  * Calculate hash from supplied value and use modulo by nodeCount as an index
