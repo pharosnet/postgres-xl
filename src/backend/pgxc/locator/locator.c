@@ -1646,10 +1646,9 @@ GetRelationNodes(RelationLocInfo *rel_loc_info, Datum valueForDistCol,
  * is made to see if that's correct.
  */
 ExecNodes *
-GetRelationNodesByQuals(Oid reloid, Index varno, Node *quals,
-						RelationAccessType relaccess)
+GetRelationNodesByQuals(Oid reloid, RelationLocInfo *rel_loc_info,
+			Index varno, Node *quals, RelationAccessType relaccess)
 {
-	RelationLocInfo *rel_loc_info = GetRelationLocInfo(reloid);
 	Expr			*distcol_expr = NULL;
 	ExecNodes		*exec_nodes;
 	Datum			distcol_value;

@@ -169,6 +169,7 @@ extern ExecNodes *GetRelationNodes(RelationLocInfo *rel_loc_info,
 								   bool isValueNull,
 								   RelationAccessType accessType);
 extern ExecNodes *GetRelationNodesByQuals(Oid reloid,
+										  RelationLocInfo *rel_loc_info,
 										  Index varno,
 										  Node *quals,
 										  RelationAccessType relaccess);

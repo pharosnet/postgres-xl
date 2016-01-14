@@ -36,6 +36,7 @@
 #include "parser/parse_type.h"
 #include "pgxc/locator.h"
 #include "pgxc/pgxcnode.h"
+#include "pgxc/nodemgr.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
 
@@ -99,6 +100,8 @@ typedef enum
 	SS_UNSHIPPABLE_TRIGGER,		/* the type of trigger is unshippable */
 	SS_UPDATES_DISTRIBUTION_COLUMN	/* query updates the distribution column */
 } ShippabilityStat;
+
+extern void PoolPingNodes(void);
 
 /* Manipulation of shippability reason */
 static bool pgxc_test_shippability_reason(Shippability_context *context,
@@ -437,6 +440,7 @@ pgxc_FQS_get_relation_nodes(RangeTblEntry *rte, Index varno, Query *query)
 	ExecNodes	*rel_exec_nodes;
 	RelationAccessType rel_access = RELATION_ACCESS_READ;
 	RelationLocInfo *rel_loc_info;
+	bool retry = true;
 
 	Assert(rte == rt_fetch(varno, (query->rtable)));
 
@@ -471,13 +475,62 @@ pgxc_FQS_get_relation_nodes(RangeTblEntry *rte, Index varno, Query *query)
 
 	/*
 	 * Find out the datanodes to execute this query on.
+	 * But first if it's a replicated table, identify and remove
+	 * unhealthy nodes from the rel_loc_info. Only for SELECTs!
+	 *
 	 * PGXC_FQS_TODO: for now, we apply node reduction only when there is only
 	 * one relation involved in the query. If there are multiple distributed
 	 * tables in the query and we apply node reduction here, we may fail to ship
 	 * the entire join. We should apply node reduction transitively.
 	 */
+retry_pools:
+	if (command_type == CMD_SELECT &&
+			rel_loc_info->locatorType == LOCATOR_TYPE_REPLICATED)
+	{
+		int i;
+		List *newlist = NIL;
+		ListCell *lc;
+		bool healthmap[MaxDataNodes];
+
+	   	PgxcNodeDnListHealth(rel_loc_info->nodeList, &healthmap);
+
+		i = 0;
+		foreach(lc, rel_loc_info->nodeList)
+		{
+			if (!healthmap[i++])
+				newlist = lappend_int(newlist, lfirst_int(lc));
+		}
+
+		if (newlist != NIL)
+			rel_loc_info->nodeList = list_difference_int(rel_loc_info->nodeList,
+													 newlist);
+		/*
+		 * If all nodes are down, cannot do much, just return NULL here
+		 */
+		if (rel_loc_info->nodeList == NIL)
+		{
+			/*
+			 * Try an on-demand pool maintenance just to see if some nodes
+			 * have come back.
+			 *
+			 * Try once and error out if datanodes are still down
+			 */
+			if (retry)
+			{
+				rel_loc_info->nodeList = newlist;
+				newlist = NIL;
+				PoolPingNodes();
+				retry = false;
+				goto retry_pools;
+			}
+			else
+				elog(ERROR,
+				 "Could not find healthy datanodes for replicated table. Exiting!");
+			return NULL;
+		}
+	}
 	if (list_length(query->rtable) == 1)
-		rel_exec_nodes = GetRelationNodesByQuals(rte->relid, varno,
+		rel_exec_nodes = GetRelationNodesByQuals(rte->relid, rel_loc_info, varno,
 												 query->jointree->quals, rel_access);
 	else
 		rel_exec_nodes = GetRelationNodes(rel_loc_info, (Datum) 0,

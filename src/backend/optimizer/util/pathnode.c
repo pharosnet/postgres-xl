@@ -67,6 +67,7 @@ static Path *redistribute_path(Path *subpath, char distributionType,
 				  Node* distributionExpr);
 static void set_scanpath_distribution(PlannerInfo *root, RelOptInfo *rel, Path *pathnode);
 static List *set_joinpath_distribution(PlannerInfo *root, JoinPath *pathnode);
+extern void PoolPingNodes(void);
 #endif
 
 /*****************************************************************************
@@ -878,11 +879,57 @@ set_scanpath_distribution(PlannerInfo *root, RelOptInfo *rel, Path *pathnode)
 	if (rel_loc_info)
 	{
 		ListCell *lc;
+		bool retry = true;
 		Distribution *distribution = makeNode(Distribution);
 		distribution->distributionType = rel_loc_info->locatorType;
-		foreach(lc, rel_loc_info->nodeList)
-			distribution->nodes = bms_add_member(distribution->nodes,
-												 lfirst_int(lc));
+		/*
+		 * for LOCATOR_TYPE_REPLICATED distribution, check if
+		 * all of the mentioned nodes are hale and hearty. Remove
+		 * those which are not. Do this only for SELECT queries!
+		 */
+retry_pools:
+		if (root->parse->commandType == CMD_SELECT &&
+				distribution->distributionType == LOCATOR_TYPE_REPLICATED)
+		{
+			int i;
+			bool healthmap[MaxDataNodes];
+
+			PgxcNodeDnListHealth(rel_loc_info->nodeList, &healthmap);
+
+			i = 0;
+			foreach(lc, rel_loc_info->nodeList)
+			{
+				if (healthmap[i++] == true)
+					distribution->nodes = bms_add_member(distribution->nodes,
+														 lfirst_int(lc));
+			}
+
+			if (bms_is_empty(distribution->nodes))
+			{
+				/*
+				 * Try an on-demand pool maintenance just to see if some nodes
+				 * have come back.
+				 *
+				 * Try once and error out if datanodes are still down
+				 */
+				if (retry)
+				{
+					PoolPingNodes();
+					retry = false;
+					goto retry_pools;
+				}
+				else
+					elog(ERROR,
+						 "Could not find healthy nodes for replicated table. Exiting!");
+			}
+		}
+		else
+		{
+			foreach(lc, rel_loc_info->nodeList)
+				distribution->nodes = bms_add_member(distribution->nodes,
+													 lfirst_int(lc));
+		}
+
 		distribution->restrictNodes = NULL;
 		/*
 		 * Distribution expression of the base relation is Var representing

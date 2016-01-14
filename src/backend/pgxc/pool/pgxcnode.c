@@ -293,6 +293,19 @@ PGXCNodeConnect(char *connstr)
 	return (NODE_CONNECTION *) conn;
 }
 
+int PGXCNodePing(const char *connstr)
+{
+	if (connstr[0])
+	{
+		PGPing status = PQping(connstr);
+		if (status == PQPING_OK)
+			return 0;
+		else
+			return 1;
+	}
+	else
+		return -1;
+}
 
 /*
  * Close specified connection
@@ -531,6 +544,22 @@ retry:
 					conn->state = DN_CONNECTION_STATE_ERROR_FATAL;
 					add_error_message(conn, "unexpected EOF on datanode connection.");
 					elog(WARNING, "unexpected EOF on datanode oid connection: %d", conn->nodeoid);
+
+					/*
+					 * before returning, also update the shared health
+					 * status field to indicate that this node could be
+					 * possibly unavailable
+					 */
+					if (!PgxcNodeUpdateHealth(conn->nodeoid, false))
+						elog(WARNING, "Could not update health status of node %u",
+							 conn->nodeoid);
+					else
+						elog(WARNING, "Health map updated to reflect DOWN node (%u)",
+							 conn->nodeoid);
+
+					/* But ping once to see if the node is still available */
+					PoolPingNodes();
+
 					/* Should we read from the other connections before returning? */
 					return ERROR_OCCURED;
 				}
@@ -1599,6 +1628,20 @@ pgxc_node_flush(PGXCNodeHandle *handle)
 		if (send_some(handle, handle->outEnd) < 0)
 		{
 			add_error_message(handle, "failed to send data to datanode");
+
+			/*
+			 * before returning, also update the shared health
+			 * status field to indicate that this node is down
+			 */
+			if (!PgxcNodeUpdateHealth(handle->nodeoid, false))
+				elog(WARNING, "Could not update health status of node %u",
+					 handle->nodeoid);
+			else
+				elog(WARNING, "Health map updated to reflect DOWN node (%u)",
+					 handle->nodeoid);
+
+			/* But ping once to see if the node is still available */
+			PoolPingNodes();
 			return EOF;
 		}
 	}

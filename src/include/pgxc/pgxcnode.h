@@ -116,6 +116,7 @@ extern void PGXCNodeClose(NODE_CONNECTION * conn);
 extern int PGXCNodeConnected(NODE_CONNECTION * conn);
 extern int PGXCNodeConnClean(NODE_CONNECTION * conn);
 extern void PGXCNodeCleanAndRelease(int code, Datum arg);
+extern int PGXCNodePing(const char *connstr);
 
 extern PGXCNodeHandle *get_any_handle(List *datanodelist);
 /* Look at information cached in node handles */

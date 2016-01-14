@@ -112,6 +112,7 @@ create_plainrel_rqpath(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte)
 {
 	List			*quals;
 	ExecNodes		*exec_nodes;
+	RelationLocInfo *rel_loc_info;
 
 	/*
 	 * If we are on the Coordinator, we always want to use
@@ -122,7 +123,8 @@ create_plainrel_rqpath(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte)
 		return false;
 
 	quals = extract_actual_clauses(rel->baserestrictinfo, false);
-	exec_nodes = GetRelationNodesByQuals(rte->relid, rel->relid,
+	rel_loc_info = GetRelationLocInfo(rte->relid);
+	exec_nodes = GetRelationNodesByQuals(rte->relid, rel_loc_info, rel->relid,
 														(Node *)quals,
 														RELATION_ACCESS_READ);
 	if (!exec_nodes)

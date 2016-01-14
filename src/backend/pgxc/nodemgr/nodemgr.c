@@ -65,6 +65,8 @@ void
 NodeTablesShmemInit(void)
 {
 	bool found;
+	int i;
+
 	/*
 	 * Initialize the table of Coordinators: first sizeof(int) bytes are to
 	 * store actual number of Coordinators, remaining data in the structure is
@@ -83,7 +85,12 @@ NodeTablesShmemInit(void)
 
 	/* Mark it empty upon creation */
 	if (!found)
+	{
 		*shmemNumCoords = 0;
+		/* Mark nodeishealthy true at init time for all */
+		for (i = 0; i < MaxCoords; i++)
+			coDefs[i].nodeishealthy = true;
+	}
 
 	/* Same for Datanodes */
 	shmemNumDataNodes = ShmemInitStruct("Datanode Table",
@@ -91,12 +98,17 @@ NodeTablesShmemInit(void)
 									   sizeof(NodeDefinition) * MaxDataNodes,
 								   &found);
 
-	/* Have coDefs pointing right behind shmemNumDataNodes */
+	/* Have dnDefs pointing right behind shmemNumDataNodes */
 	dnDefs = (NodeDefinition *) (shmemNumDataNodes + 1);
 
 	/* Mark it empty upon creation */
 	if (!found)
+	{
 		*shmemNumDataNodes = 0;
+		/* Mark nodeishealthy true at init time for all */
+		for (i = 0; i < MaxDataNodes; i++)
+			dnDefs[i].nodeishealthy = true;
+	}
 }
 
 
@@ -314,8 +326,38 @@ PgxcNodeListAndCount(void)
 	Relation rel;
 	HeapScanDesc scan;
 	HeapTuple   tuple;
+	NodeHealthStatus *nodehealth;
+	int	numNodes = 0;
 
 	LWLockAcquire(NodeTableLock, LW_EXCLUSIVE);
+
+	/*
+	 * Save the existing health status values because nodes
+	 * might get added or deleted here. We will save
+	 * nodeoid, status. No need to differentiate between
+	 * coords and datanodes since oids will be unique anyways
+	 */
+	if (*shmemNumDataNodes != 0 || *shmemNumCoords != 0)
+	{
+		int i, j;
+
+		numNodes = *shmemNumCoords + *shmemNumDataNodes;
+		nodehealth = palloc0(
+					numNodes * sizeof(NodeHealthStatus));
+
+		for (i = 0; i < *shmemNumCoords; i++)
+		{
+			nodehealth[i].nodeoid = coDefs[i].nodeoid;
+			nodehealth[i].nodeishealthy = coDefs[i].nodeishealthy;
+		}
+
+		j = i;
+		for (i = 0; i < *shmemNumDataNodes; i++)
+		{
+			nodehealth[j].nodeoid = dnDefs[i].nodeoid;
+			nodehealth[j++].nodeishealthy = dnDefs[i].nodeishealthy;
+		}
+	}
 
 	*shmemNumCoords = 0;
 	*shmemNumDataNodes = 0;
@@ -333,6 +375,7 @@ PgxcNodeListAndCount(void)
 	{
 		Form_pgxc_node  nodeForm = (Form_pgxc_node) GETSTRUCT(tuple);
 		NodeDefinition *node;
+		int i;
 
 		/* Take definition for given node type */
 		switch (nodeForm->node_type)
@@ -353,12 +396,29 @@ PgxcNodeListAndCount(void)
 		node->nodeport = nodeForm->node_port;
 		node->nodeisprimary = nodeForm->nodeis_primary;
 		node->nodeispreferred = nodeForm->nodeis_preferred;
+		/*
+		 * Copy over the health status from above for nodes that
+		 * existed before and after the refresh. If we do not find
+		 * entry for a nodeoid, we mark it as healthy
+		 */
+		node->nodeishealthy = true;
+		for (i = 0; i < numNodes; i++)
+		{
+			if (nodehealth[i].nodeoid == node->nodeoid)
+			{
+				node->nodeishealthy = nodehealth[i].nodeishealthy;
+				break;
+			}
+		}
 	}
 	heap_endscan(scan);
 	heap_close(rel, AccessShareLock);
 
 	elog(DEBUG1, "Done pgxc_nodes scan: %d coordinators and %d datanodes",
 			*shmemNumCoords, *shmemNumDataNodes);
+
+	if (numNodes)
+		pfree(nodehealth);
 
 	/* Finally sort the lists */
 	if (*shmemNumCoords > 1)
@@ -436,6 +496,92 @@ PgxcNodeGetOids(Oid **coOids, Oid **dnOids,
 	LWLockRelease(NodeTableLock);
 }
 
+/*
+ * PgxcNodeGetHealthMap
+ *
+ * List into palloc'ed arrays Oids of Coordinators and Datanodes currently
+ * presented in the node table, as well as number of Coordinators and Datanodes.
+ * Any parameter may be NULL if caller is not interested in receiving
+ * appropriate results for either the Coordinators or Datanodes.
+ */
+void
+PgxcNodeGetHealthMap(Oid *coOids, Oid *dnOids,
+				int *num_coords, int *num_dns, bool *coHealthMap,
+				bool *dnHealthMap)
+{
+	elog(DEBUG1, "Get HealthMap from table: %d coordinators and %d datanodes",
+			*shmemNumCoords, *shmemNumDataNodes);
+
+	LWLockAcquire(NodeTableLock, LW_SHARED);
+
+	if (num_coords)
+		*num_coords = *shmemNumCoords;
+	if (num_dns)
+		*num_dns = *shmemNumDataNodes;
+
+	if (coOids)
+	{
+		int i;
+		for (i = 0; i < *shmemNumCoords; i++)
+		{
+			coOids[i] = coDefs[i].nodeoid;
+			if (coHealthMap)
+				coHealthMap[i] = coDefs[i].nodeishealthy;
+		}
+	}
+
+	if (dnOids)
+	{
+		int i;
+
+		for (i = 0; i < *shmemNumDataNodes; i++)
+		{
+			dnOids[i] = dnDefs[i].nodeoid;
+			if (dnHealthMap)
+				dnHealthMap[i] = dnDefs[i].nodeishealthy;
+		}
+	}
+
+	LWLockRelease(NodeTableLock);
+}
+
+/*
+ * Consult the shared memory NodeDefinition structures and
+ * fetch the nodeishealthy value and return it back
+ *
+ * We will probably need a similar function for coordinators
+ * in the future..
+ */
+void
+PgxcNodeDnListHealth(List *nodeList, bool *healthmap)
+{
+	ListCell *lc;
+	int index = 0;
+
+	elog(DEBUG1, "Get healthmap from datanodeList");
+
+	if (!nodeList || !list_length(nodeList))
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_OBJECT),
+				 errmsg("NIL or empty nodeList passed")));
+
+	LWLockAcquire(NodeTableLock, LW_SHARED);
+	foreach(lc, nodeList)
+	{
+		int node = lfirst_int(lc);
+
+		if (node >= *shmemNumDataNodes)
+		{
+			LWLockRelease(NodeTableLock);
+			ereport(ERROR,
+					(errcode(ERRCODE_UNDEFINED_OBJECT),
+					 errmsg("PGXC health status not found for datanode with oid (%d)",
+						 node)));
+		}
+		healthmap[index++] = dnDefs[node].nodeishealthy;
+	}
+	LWLockRelease(NodeTableLock);
+}
 
 /*
  * Find node definition in the shared memory node table.
@@ -484,6 +630,51 @@ PgxcNodeGetDefinition(Oid node)
 	return NULL;
 }
 
+/*
+ * Update health status of a node in the shared memory node table.
+ *
+ * We could try to optimize this by checking if the ishealthy value
+ * is already the same as the passed in one.. but if the cluster is
+ * impaired, dunno how much such optimizations are worth. So keeping
+ * it simple for now
+ */
+bool
+PgxcNodeUpdateHealth(Oid node, bool status)
+{
+	int				i;
+
+	LWLockAcquire(NodeTableLock, LW_EXCLUSIVE);
+
+	/* search through the Datanodes first */
+	for (i = 0; i < *shmemNumDataNodes; i++)
+	{
+		if (dnDefs[i].nodeoid == node)
+		{
+			dnDefs[i].nodeishealthy = status;
+
+			LWLockRelease(NodeTableLock);
+
+			return true;
+		}
+	}
+
+	/* if not found, search through the Coordinators */
+	for (i = 0; i < *shmemNumCoords; i++)
+	{
+		if (coDefs[i].nodeoid == node)
+		{
+			coDefs[i].nodeishealthy = status;
+
+			LWLockRelease(NodeTableLock);
+
+			return true;
+		}
+	}
+
+	/* not found, return false */
+	LWLockRelease(NodeTableLock);
+	return false;
+}
 
 /*
  * PgxcNodeCreate

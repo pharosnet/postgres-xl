@@ -158,6 +158,8 @@ static void PoolManagerConnect(const char *database, const char *user_name,
 static void pooler_sighup(SIGNAL_ARGS);
 static bool shrink_pool(DatabasePool *pool);
 static void pools_maintenance(void);
+static void TryPingUnhealthyNode(Oid nodeoid);
+
 /*
  * Flags set by interrupt handlers for later service in the main loop.
  */
@@ -744,6 +746,97 @@ agent_destroy(PoolAgent *agent)
 	}
 }
 
+/*
+ * Ping an UNHEALTHY node and if it succeeds, update SHARED node
+ * information
+ */
+static void
+TryPingUnhealthyNode(Oid nodeoid)
+{
+	int status;
+	NodeDefinition *nodeDef;
+	char connstr[1024];
+
+	nodeDef = PgxcNodeGetDefinition(nodeoid);
+	if (nodeDef == NULL)
+	{
+		/* No such definition, node dropped? */
+		elog(DEBUG1, "Could not find node (%u) definition,"
+			 " skipping health check", nodeoid);
+		return;
+	}
+	if (nodeDef->nodeishealthy)
+	{
+		/* hmm, can this happen? */
+		elog(DEBUG1, "node (%u) healthy!"
+			 " skipping health check", nodeoid);
+		return;
+	}
+
+	elog(LOG, "node (%s:%u) down! Trying ping",
+		 NameStr(nodeDef->nodename), nodeoid);
+	sprintf(connstr,
+			"host=%s port=%d", NameStr(nodeDef->nodehost),
+			nodeDef->nodeport);
+	status = PGXCNodePing(connstr);
+	if (status != 0)
+	{
+		pfree(nodeDef);
+		return;
+	}
+
+	elog(DEBUG1, "Node (%s) back online!", NameStr(nodeDef->nodename));
+	if (!PgxcNodeUpdateHealth(nodeoid, true))
+		elog(WARNING, "Could not update health status of node (%s)",
+			 NameStr(nodeDef->nodename));
+	else
+		elog(LOG, "Health map updated to reflect HEALTHY node (%s)",
+			 NameStr(nodeDef->nodename));
+	pfree(nodeDef);
+
+	return;
+}
+
+/*
+ * Ping UNHEALTHY nodes as part of the maintenance window
+ */
+void
+PoolPingNodes()
+{
+	Oid				coOids[MaxCoords];
+	Oid				dnOids[MaxDataNodes];
+	bool			coHealthMap[MaxCoords];
+	bool			dnHealthMap[MaxDataNodes];
+	int				numCo;
+	int				numDn;
+	int				i;
+
+	PgxcNodeGetHealthMap(coOids, dnOids, &numCo, &numDn,
+						 coHealthMap, dnHealthMap);
+
+	/*
+	 * Find unhealthy datanodes and try to re-ping them
+	 */
+	for (i = 0; i < numDn; i++)
+	{
+		if (!dnHealthMap[i])
+		{
+			Oid	 nodeoid = dnOids[i];
+			TryPingUnhealthyNode(nodeoid);
+		}
+	}
+	/*
+	 * Find unhealthy coordinators and try to re-ping them
+	 */
+	for (i = 0; i < numCo; i++)
+	{
+		if (!coHealthMap[i])
+		{
+			Oid	 nodeoid = coOids[i];
+			TryPingUnhealthyNode(nodeoid);
+		}
+	}
+}
 
 /*
  * Release handle to pool manager
@@ -1204,6 +1297,19 @@ agent_handle_input(PoolAgent * agent, StringInfo s)
 
 				/* First update all the pools */
 				reload_database_pools(agent);
+				break;
+			case 'P':			/* Ping connection info */
+				/*
+				 * Ping unhealthy nodes in the pools. If any of the
+				 * nodes come up, update SHARED memory to
+				 * indicate the same.
+				 */
+				pool_getmessage(&agent->port, s, 4);
+				pq_getmsgend(s);
+
+				/* Ping all the pools */
+				PoolPingNodes();
+
 				break;
 			case 'q':			/* Check connection info consistency */
 				pool_getmessage(&agent->port, s, 4);
@@ -1866,7 +1972,20 @@ acquire_connection(DatabasePool *dbPool, Oid node)
 	}
 
 	if (slot == NULL)
+	{
 		elog(WARNING, "can not connect to node %u", node);
+
+		/*
+		 * before returning, also update the shared health
+		 * status field to indicate that this node is down
+		 */
+		if (!PgxcNodeUpdateHealth(node, false))
+			elog(WARNING, "Could not update health status of node %u", node);
+		else
+			elog(WARNING, "Health map updated to reflect DOWN node (%u)", node);
+	}
+	else
+		PgxcNodeUpdateHealth(node, true);
 
 	return slot;
 }
@@ -2067,7 +2186,6 @@ PoolerLoop(void)
 	time_t			last_maintenance = (time_t) 0;
 	int				maintenance_timeout;
 	struct pollfd	*pool_fd;
-	int i;
 
 #ifdef HAVE_UNIX_SOCKETS
 	if (Unix_socket_directories)
@@ -2244,6 +2362,7 @@ PoolerLoop(void)
 		{
 			/* maintenance timeout */
 			pools_maintenance();
+			PoolPingNodes();
 			last_maintenance = time(NULL);
 		}
 	}

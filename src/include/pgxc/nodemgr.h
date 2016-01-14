@@ -38,7 +38,14 @@ typedef struct
 	int			nodeport;
 	bool		nodeisprimary;
 	bool 		nodeispreferred;
+	bool		nodeishealthy;
 } NodeDefinition;
+
+typedef struct
+{
+	Oid			nodeoid;
+	bool		nodeishealthy;
+} NodeHealthStatus;
 
 extern void NodeTablesShmemInit(void);
 extern Size NodeTablesShmemSize(void);
@@ -47,9 +54,14 @@ extern void PgxcNodeListAndCount(void);
 extern void PgxcNodeGetOids(Oid **coOids, Oid **dnOids,
 							int *num_coords, int *num_dns,
 							bool update_preferred);
+extern void PgxcNodeGetHealthMap(Oid *coOids, Oid *dnOids,
+				int *num_coords, int *num_dns, bool *coHealthMap,
+				bool *dnHealthMap);
 extern NodeDefinition *PgxcNodeGetDefinition(Oid node);
 extern void PgxcNodeAlter(AlterNodeStmt *stmt);
 extern void PgxcNodeCreate(CreateNodeStmt *stmt);
 extern void PgxcNodeRemove(DropNodeStmt *stmt);
+extern void PgxcNodeDnListHealth(List *nodeList, bool *dnhealth);
+extern bool PgxcNodeUpdateHealth(Oid node, bool status);
 
 #endif	/* NODEMGR_H */

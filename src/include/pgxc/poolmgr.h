@@ -139,4 +139,6 @@ extern void PoolManagerCancelQuery(int dn_count, int* dn_list, int co_count, int
 /* Lock/unlock pool manager */
 extern void PoolManagerLock(bool is_lock);
 
+/* Do pool health check activity */
+extern void PoolPingNodes(void);
 #endif
