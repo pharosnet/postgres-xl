@@ -131,8 +131,8 @@ const char *data_gtm = "data_gtm"; /* GTM */
 /* Node names */
 const char *name_co1 = "coord1"; /* Coordinator 1 */
 const char *name_co2 = "coord2"; /* Coordinator 2 */
-const char *name_dn1 = "dn1"; /* Datanode 1 */
-const char *name_dn2 = "dn2"; /* Datanode 2 */
+const char *name_dn1 = "datanode_1"; /* Datanode 1 */
+const char *name_dn2 = "datanode_2"; /* Datanode 2 */
 
 /* 7 port numbers are needed */
 #define PORT_NUM_INTERVAL 7
@@ -368,8 +368,10 @@ stop_gtm(void)
 	fflush(stderr);
 
 	snprintf(buf, sizeof(buf),
-			 "\"%s/gtm_ctl\" stop -Z gtm -D \"%s/%s\" -m fast",
-			 bindir, temp_instance, data_folder);
+			 "\"%s%sgtm_ctl\" stop -Z gtm -D \"%s/%s\" -m fast",
+			 bindir ? bindir : "",
+			 bindir ? "/" : "",
+			 temp_instance, data_folder);
 	r = system(buf);
 	if (r != 0)
 	{
@@ -394,8 +396,10 @@ stop_node(PGXCNodeTypeNum node)
 	fflush(stderr);
 
 	snprintf(buf, sizeof(buf),
-			 "\"%s/pg_ctl\" stop -D \"%s/%s\" -s -m fast",
-			 bindir, temp_instance, data_folder);
+			 "\"%s%spg_ctl\" stop -D \"%s/%s\" -s -m fast",
+			 bindir ? bindir : "",
+			 bindir ? "/" : "",
+			 temp_instance, data_folder);
 	r = system(buf);
 	if (r != 0)
 	{
@@ -599,8 +603,10 @@ calculate_node_port(PGXCNodeTypeNum node, bool is_main)
 	 * Check if there is a postmaster running already.
 	 */
 	snprintf(buf, sizeof(buf),
-			 "\"%s/psql\" -p %d -X postgres <%s 2>%s",
-			 bindir, port_number, DEVNULL, DEVNULL);
+			 "\"%s%spsql\" -p %d -X postgres <%s 2>%s",
+			 bindir ? bindir : "",
+			 bindir ? "/" : "",
+			 port_number, DEVNULL, DEVNULL);
 
 	for (i = 0; i < 16; i++)
 	{
@@ -712,8 +718,10 @@ start_node(PGXCNodeTypeNum node, bool is_coord, bool is_main)
 		/* Case of a GTM start */
 		header(_("starting GTM process"));
 		snprintf(buf, sizeof(buf),
-				 "\"%s/gtm\" -D \"%s/%s\" -p %d -x 10000 > \"%s/log/gtm.log\" 2>&1",
-				 bindir, temp_instance, data_folder, port_number,
+				 "\"%s%sgtm\" -D \"%s/%s\" -p %d -x 10000 > \"%s/log/gtm.log\" 2>&1",
+				 bindir ? bindir : "",
+				 bindir ? "/" : "",
+				 temp_instance, data_folder, port_number,
 				 outputdir);
 	}
 	else
@@ -721,26 +729,33 @@ start_node(PGXCNodeTypeNum node, bool is_coord, bool is_main)
 		/* Case of normal nodes, start the node */
 		if (is_main)
 			snprintf(buf, sizeof(buf),
-					 "\"%s/postgres\" %s -i -p %d -D \"%s/%s\"%s -c \"listen_addresses=%s\" > \"%s/log/postmaster_%d.log\" 2>&1",
-					 bindir,
+					 "\"%s%spostgres\" %s -i -p %d -D \"%s/%s\"%s "
+					 "-c \"listen_addresses=%s\" -k \"%s\" "
+					 "> \"%s/log/postmaster_%d.log\" 2>&1",
+					 bindir ? bindir : "",
+					 bindir ? "/" : "",
 					 is_coord ? "--coordinator" : "--datanode",
 					 port_number,
 					 temp_instance, data_folder,
 					 debug ? " -d 5" : "",
-					 hostname ? hostname : "",
-					 outputdir,
-					 node);
+					 hostname ? hostname : "", sockdir ? sockdir : "",
+					 outputdir, node);
 		else
 			snprintf(buf, sizeof(buf),
-					 "\"%s/postgres\" %s -i -p %d -D \"%s/%s\"%s > \"%s/log/postmaster_%d.log\" 2>&1",
-					 bindir,
+					 "\"%s%spostgres\" %s -i -p %d -D \"%s/%s\"%s "
+					 "-k \"%s\" "
+					 "> \"%s/log/postmaster_%d.log\" 2>&1",
+					 bindir ? bindir : "",
+					 bindir ? "/" : "",
 					 is_coord ? "--coordinator" : "--datanode",
 					 port_number,
 					 temp_instance, data_folder,
 					 debug ? " -d 5" : "",
-					 outputdir,
-					 node);
+					 sockdir ? sockdir : "",
+					 outputdir, node);
 	}
+
+	fprintf(stderr, "%s", buf);
 
 	/* Check process spawn */
 	node_pid = spawn_process(buf);
@@ -774,8 +789,10 @@ initdb_node(PGXCNodeTypeNum node)
 	if (node == PGXC_GTM)
 	{
 		snprintf(buf, sizeof(buf),
-				 "\"%s/initgtm\" -Z gtm -D \"%s/%s\" --noclean%s > \"%s/log/initgtm.log\" 2>&1",
-				 bindir, temp_instance, data_folder,
+				 "\"%s%sinitgtm\" -Z gtm -D \"%s/%s\" --noclean%s > \"%s/log/initgtm.log\" 2>&1",
+				 bindir ? bindir : "",
+				 bindir ? "/" : "",
+				 temp_instance, data_folder,
 				 debug ? " --debug" : "",
 				 outputdir);
 		if (system(buf))
@@ -787,8 +804,10 @@ initdb_node(PGXCNodeTypeNum node)
 	else
 	{
 		snprintf(buf, sizeof(buf),
-				 "\"%s/initdb\" --nodename %s -D \"%s/%s\"  --noclean%s%s > \"%s/log/initdb.log\" 2>&1",
-				 bindir, (char *)get_node_name(node), temp_instance, data_folder, 
+				 "\"%s%sinitdb\" --nodename %s -D \"%s/%s\"  --noclean%s%s > \"%s/log/initdb.log\" 2>&1",
+				 bindir ? bindir : "",
+				 bindir ? "/" : "",
+				 (char *)get_node_name(node), temp_instance, data_folder, 
 				 debug ? " --debug" : "",
 				 nolocale ? " --no-locale" : "",
 				 outputdir);
@@ -1024,9 +1043,10 @@ check_node_running(PGXCNodeTypeNum node)
 	char		buf[MAXPGPATH * 4];
 
 	snprintf(buf, sizeof(buf),
-			 "\"%s/psql\" -p %d -X postgres <%s 2>%s",
-			 bindir, get_port_number(node), DEVNULL, DEVNULL);
-
+			 "\"%s%spsql\" -p %d -X postgres <%s 2>%s",
+			 bindir ? bindir : "",
+			 bindir ? "/" : "",
+			 get_port_number(node), DEVNULL, "/tmp/makecheck.log");
 	return system(buf) == 0;
 }
 
