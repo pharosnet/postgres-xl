@@ -64,21 +64,30 @@ cmd_t *prepare_initDatanodeMaster(char *nodeName)
 	char **fileList = NULL;
 	FILE *f;
 	char timeStamp[MAXTOKEN+1];
+	char remoteDirCheck[MAXPATH * 2 + 128];
 
 	if ((idx = datanodeIdx(nodeName)) < 0)
 		return(NULL);
 
-	if ((pgxc_check_dir(aval(VAR_datanodeMasterDirs)[idx]) == 2) && !forceInit)
+	remoteDirCheck[0] = '\0';
+	if (!forceInit)
 	{
-		elog(ERROR, "ERROR: target datanode directory %s exists and is not empty. Skip initilialization.\n",
-				aval(VAR_datanodeMasterDirs)[idx]); 
-		return NULL;
+		sprintf(remoteDirCheck, "if [ \"$(ls -A %s 2> /dev/null)\" ]; then echo 'ERROR: "
+				"target directory (%s) exists and not empty. "
+				"Skip Datanode initilialization'; exit; fi",
+				aval(VAR_datanodeMasterDirs)[idx],
+				aval(VAR_datanodeMasterDirs)[idx]
+			   );
+
 	}
 
 	/* Build each datanode's initialize command */
 	cmd = cmdInitdb = initCmd(aval(VAR_datanodeMasterServers)[idx]);
 	snprintf(newCommand(cmdInitdb), MAXLINE,
-			 "rm -rf %s; mkdir -p %s; initdb --nodename %s -D %s",
+			 "%s;"
+			 "rm -rf %s;"
+			 "mkdir -p %s; initdb --nodename %s -D %s",
+			 remoteDirCheck,
 			 aval(VAR_datanodeMasterDirs)[idx], aval(VAR_datanodeMasterDirs)[idx],
 			 aval(VAR_datanodeNames)[idx], aval(VAR_datanodeMasterDirs)[idx]);
 		

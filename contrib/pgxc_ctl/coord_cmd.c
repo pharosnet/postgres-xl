@@ -64,6 +64,7 @@ cmd_t *prepare_initCoordinatorMaster(char *nodeName)
 	char localStdin[MAXPATH+1];
 	char *gtmHost, *gtmPort;
 	char timestamp[MAXTOKEN+1];
+	char remoteDirCheck[MAXPATH * 2 + 128];
 
 	/* Reset coordinator master directory and run initdb */
 	if ((jj = coordIdx(nodeName)) < 0)
@@ -78,18 +79,24 @@ cmd_t *prepare_initCoordinatorMaster(char *nodeName)
 		return(NULL);
 	}
 
-	if ((pgxc_check_dir(aval(VAR_coordMasterDirs)[jj]) == 2) && !forceInit)
+	remoteDirCheck[0] = '\0';
+	if (!forceInit)
 	{
-		elog(ERROR, "ERROR: target coordinator directory %s exists and is not empty. Skip initilialization.\n",
-				aval(VAR_coordMasterDirs)[jj]); 
-		return NULL;
+		sprintf(remoteDirCheck, "if [ \"$(ls -A %s 2> /dev/null)\" ]; then echo 'ERROR: "
+				"target directory (%s) exists and not empty. "
+				"Skip Coordinator initilialization'; exit; fi",
+				aval(VAR_coordMasterDirs)[jj],
+				aval(VAR_coordMasterDirs)[jj]
+			   );
 	}
 
 	cmd = cmdInitdb = initCmd(aval(VAR_coordMasterServers)[jj]);
 	snprintf(newCommand(cmdInitdb), MAXLINE, 
+			 "%s;"
 			 "rm -rf %s;"
 			 "mkdir -p %s;"
 			 "initdb --nodename %s -D %s",
+			 remoteDirCheck,
 			 aval(VAR_coordMasterDirs)[jj],
 			 aval(VAR_coordMasterDirs)[jj],
 			 nodeName,

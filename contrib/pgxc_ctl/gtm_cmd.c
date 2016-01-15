@@ -54,20 +54,25 @@ cmd_t *prepare_initGtmMaster(void)
 	FILE *f;
 	char **fileList = NULL;
 	int result;
+	char remoteDirCheck[MAXPATH * 2 + 128];
 
-	result = pgxc_check_dir(sval(VAR_gtmMasterDir));
-   
-	if ((result == 2) && !forceInit)
+	remoteDirCheck[0] = '\0';
+	if (!forceInit)
 	{
-		elog(ERROR, "ERROR: target GTM directory %s exists and is not empty. Skip initilialization.\n",
-				sval(VAR_gtmMasterDir)); 
-		return NULL;
+		sprintf(remoteDirCheck, "if [ \"$(ls -A %s 2> /dev/null)\" ]; then echo 'ERROR: "
+				"target directory (%s) exists and not empty. "
+				"Skip GTM initilialization'; exit; fi",
+				sval(VAR_gtmMasterDir),
+				sval(VAR_gtmMasterDir)
+			   );
 	}
 
 	/* Kill current gtm, bild work directory and run initgtm */
 	cmdInitGtmMaster = initCmd(sval(VAR_gtmMasterServer));
 	snprintf(newCommand(cmdInitGtmMaster), MAXLINE,
+			 "%s;"
 			 "gtm_ctl -D %s -m immediate -Z gtm stop; rm -rf %s; mkdir -p %s;initgtm -Z gtm -D %s",
+			 remoteDirCheck,
 			 sval(VAR_gtmMasterDir),
 			 sval(VAR_gtmMasterDir), sval(VAR_gtmMasterDir), sval(VAR_gtmMasterDir));
 
