@@ -580,7 +580,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
  */
 
 /* ordinary key words in alphabetical order */
-/* PGXC - added DISTRIBUTE, DIRECT, COORDINATOR, CLEAN,  NODE, BARRIER */
+/* PGXC - added DISTRIBUTE, DISTRIBUTED, RANDOMLY, DIRECT, COORDINATOR, CLEAN,  NODE, BARRIER */
 %token <keyword> ABORT_P ABSOLUTE_P ACCESS ACTION ADD_P ADMIN AFTER
 	AGGREGATE ALL ALSO ALTER ALWAYS ANALYSE ANALYZE AND ANY ARRAY AS ASC
 	ASSERTION ASSIGNMENT ASYMMETRIC AT ATTRIBUTE AUTHORIZATION
@@ -600,7 +600,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	DATA_P DATABASE DAY_P DEALLOCATE DEC DECIMAL_P DECLARE DEFAULT DEFAULTS
 	DEFERRABLE DEFERRED DEFINER DELETE_P DELIMITER DELIMITERS DESC
 /* PGXC_BEGIN */
-	DICTIONARY DIRECT DISABLE_P DISCARD DISTINCT DISTRIBUTE DO DOCUMENT_P DOMAIN_P DOUBLE_P
+	DICTIONARY DIRECT DISABLE_P DISCARD DISTINCT DISTRIBUTE DISTRIBUTED DO DOCUMENT_P DOMAIN_P DOUBLE_P
 /* PGXC_END */
 	DROP
 
@@ -645,7 +645,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 
 	QUOTE
 
-	RANGE READ REAL REASSIGN RECHECK RECURSIVE REF REFERENCES REFRESH REINDEX
+	RANDOMLY RANGE READ REAL REASSIGN RECHECK RECURSIVE REF REFERENCES REFRESH REINDEX
 	RELATIVE_P RELEASE RENAME REPEATABLE REPLACE REPLICA
 	RESET RESTART RESTRICT RETURNING RETURNS REVOKE RIGHT ROLE ROLLBACK ROLLUP
 	ROW ROWS RULE
@@ -3594,6 +3594,20 @@ OptDistributeByInternal:  DISTRIBUTE BY OptDistributeType '(' name ')'
                         ereport(ERROR,
                                 (errcode(ERRCODE_SYNTAX_ERROR),
                                  errmsg("unrecognized distribution option \"%s\"", $3)));
+					n->colname = NULL;
+					$$ = n;
+				}
+			| DISTRIBUTED BY '(' name ')'
+				{
+					DistributeBy *n = makeNode(DistributeBy);
+					n->disttype = DISTTYPE_HASH;
+					n->colname = $4;
+					$$ = n;
+				}
+			| DISTRIBUTED RANDOMLY
+				{
+					DistributeBy *n = makeNode(DistributeBy);
+					n->disttype = DISTTYPE_ROUNDROBIN;
 					n->colname = NULL;
 					$$ = n;
 				}
@@ -14058,7 +14072,7 @@ ColLabel:	IDENT									{ $$ = $1; }
 
 /* "Unreserved" keywords --- available for use as any kind of name.
  */
-/* PGXC - added DISTRIBUTE, DIRECT, COORDINATOR, CLEAN, NODE, BARRIER */
+/* PGXC - added DISTRIBUTE, DISTRIBUTED, RANDOMLY, DIRECT, COORDINATOR, CLEAN, NODE, BARRIER */
 unreserved_keyword:
 			  ABORT_P
 			| ABSOLUTE_P
@@ -14130,6 +14144,7 @@ unreserved_keyword:
 			| DISCARD
 /* PGXC_BEGIN */
 			| DISTRIBUTE
+			| DISTRIBUTED
 /* PGXC_END */
 			| DOCUMENT_P
 			| DOMAIN_P
@@ -14248,6 +14263,9 @@ unreserved_keyword:
 			| PROCEDURE
 			| PROGRAM
 			| QUOTE
+/* PGXC_BEGIN */
+			| RANDOMLY
+/* PGXC_END */
 			| RANGE
 			| READ
 			| REASSIGN
