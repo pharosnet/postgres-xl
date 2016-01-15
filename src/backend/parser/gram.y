@@ -552,7 +552,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 				opt_frame_clause frame_extent frame_bound
 %type <str>		opt_existing_window_name
 /* PGXC_BEGIN */
-%type <str>		opt_barrier_id OptDistributeType
+%type <str>		opt_barrier_id OptDistributeType DistributeStyle OptDistKey
 %type <distby>	OptDistributeBy OptDistributeByInternal
 %type <subclus> OptSubCluster OptSubClusterInternal
 /* PGXC_END */
@@ -580,7 +580,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
  */
 
 /* ordinary key words in alphabetical order */
-/* PGXC - added DISTRIBUTE, DISTRIBUTED, RANDOMLY, DIRECT, COORDINATOR, CLEAN,  NODE, BARRIER */
+/* PGXC - added DISTRIBUTE, DISTRIBUTED, DISTSYLE, DISTKEY, RANDOMLY, DIRECT, COORDINATOR, CLEAN,  NODE, BARRIER */
 %token <keyword> ABORT_P ABSOLUTE_P ACCESS ACTION ADD_P ADMIN AFTER
 	AGGREGATE ALL ALSO ALTER ALWAYS ANALYSE ANALYZE AND ANY ARRAY AS ASC
 	ASSERTION ASSIGNMENT ASYMMETRIC AT ATTRIBUTE AUTHORIZATION
@@ -600,7 +600,8 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	DATA_P DATABASE DAY_P DEALLOCATE DEC DECIMAL_P DECLARE DEFAULT DEFAULTS
 	DEFERRABLE DEFERRED DEFINER DELETE_P DELIMITER DELIMITERS DESC
 /* PGXC_BEGIN */
-	DICTIONARY DIRECT DISABLE_P DISCARD DISTINCT DISTRIBUTE DISTRIBUTED DO DOCUMENT_P DOMAIN_P DOUBLE_P
+	DICTIONARY DIRECT DISABLE_P DISCARD DISTINCT DISTKEY DISTRIBUTE DISTRIBUTED
+	DISTSTYLE DO DOCUMENT_P DOMAIN_P DOUBLE_P
 /* PGXC_END */
 	DROP
 
@@ -3569,6 +3570,22 @@ OptDistributeBy: OptDistributeByInternal			{ $$ = $1; }
 OptDistributeType: IDENT							{ $$ = $1; }
 		;
 
+DistributeStyle: ALL								{ $$ = strdup("all"); }
+			| KEY									{ $$ = strdup("key"); }
+			| IDENT									
+				{ 
+					if (strcmp($1, "even") != 0)
+                        ereport(ERROR,
+                                (errcode(ERRCODE_SYNTAX_ERROR),
+                                 errmsg("unrecognized distribution style \"%s\"", $1)));
+					$$ = $1;
+				}
+		;
+
+OptDistKey: DISTKEY '(' name ')'					{ $$ = $3; }
+			| /* EMPTY */							{ $$ = NULL; }
+		;
+
 OptDistributeByInternal:  DISTRIBUTE BY OptDistributeType '(' name ')'
 				{
 					DistributeBy *n = makeNode(DistributeBy);
@@ -3609,6 +3626,34 @@ OptDistributeByInternal:  DISTRIBUTE BY OptDistributeType '(' name ')'
 					DistributeBy *n = makeNode(DistributeBy);
 					n->disttype = DISTTYPE_ROUNDROBIN;
 					n->colname = NULL;
+					$$ = n;
+				}
+			| DISTSTYLE DistributeStyle OptDistKey
+				{
+					DistributeBy *n = makeNode(DistributeBy);
+					if (strcmp($2, "even") == 0)
+						n->disttype = DISTTYPE_ROUNDROBIN;
+					else if (strcmp($2, "key") == 0)
+						n->disttype = DISTTYPE_HASH;
+					else if (strcmp($2, "all") == 0)
+						n->disttype = DISTTYPE_REPLICATION;
+					else
+						ereport(ERROR,
+								(errcode(ERRCODE_SYNTAX_ERROR),
+								 errmsg("unrecognized distribution style \"%s\"", $2)));
+					if ((n->disttype == DISTTYPE_ROUNDROBIN ||
+						 n->disttype == DISTTYPE_REPLICATION) &&
+						($3 != NULL))
+						ereport(ERROR,
+								(errcode(ERRCODE_SYNTAX_ERROR),
+								 errmsg("distribution key cannot be specified for distribution style \"%s\"", $2)));
+
+					if ((n->disttype == DISTTYPE_HASH) && ($3 == NULL))
+						ereport(ERROR,
+								(errcode(ERRCODE_SYNTAX_ERROR),
+								 errmsg("distribution key must be specified for distribution style \"%s\"", $2)));
+
+					n->colname = $3;
 					$$ = n;
 				}
 		;
@@ -14143,8 +14188,10 @@ unreserved_keyword:
 			| DISABLE_P
 			| DISCARD
 /* PGXC_BEGIN */
+			| DISTKEY
 			| DISTRIBUTE
 			| DISTRIBUTED
+			| DISTSTYLE
 /* PGXC_END */
 			| DOCUMENT_P
 			| DOMAIN_P
