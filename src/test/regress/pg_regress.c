@@ -755,8 +755,6 @@ start_node(PGXCNodeTypeNum node, bool is_coord, bool is_main)
 					 outputdir, node);
 	}
 
-	fprintf(stderr, "%s", buf);
-
 	/* Check process spawn */
 	node_pid = spawn_process(buf);
 	if (node_pid == INVALID_PID)
