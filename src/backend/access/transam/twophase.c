@@ -889,7 +889,7 @@ typedef struct TwoPhaseFileHeader
 	int32		nabortrels;		/* number of delete-on-abort rels */
 	int32		ninvalmsgs;		/* number of cache invalidation messages */
 	bool		initfileinval;	/* does relcache init file need invalidation? */
-	char		gid[GIDSIZE];	/* GID for transaction */
+	uint32		gidlen;			/* length of the GID */
 } TwoPhaseFileHeader;
 
 /*
@@ -1000,9 +1000,10 @@ StartPrepare(GlobalTransaction gxact)
 	hdr.nabortrels = smgrGetPendingDeletes(false, &abortrels);
 	hdr.ninvalmsgs = xactGetCommittedInvalidationMessages(&invalmsgs,
 														  &hdr.initfileinval);
-	StrNCpy(hdr.gid, gxact->gid, GIDSIZE);
+	hdr.gidlen = strlen(gxact->gid);
 
 	save_state_data(&hdr, sizeof(TwoPhaseFileHeader));
+	save_state_data(gxact->gid, hdr.gidlen);
 
 	/*
 	 * Add the additional info about subxacts, deletable files and cache
@@ -1424,6 +1425,7 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 	hdr = (TwoPhaseFileHeader *) buf;
 	Assert(TransactionIdEquals(hdr->xid, xid));
 	bufptr = buf + MAXALIGN(sizeof(TwoPhaseFileHeader));
+	bufptr += MAXALIGN(hdr->gidlen);
 	children = (TransactionId *) bufptr;
 	bufptr += MAXALIGN(hdr->nsubxacts * sizeof(TransactionId));
 	commitrels = (RelFileNode *) bufptr;
@@ -2004,6 +2006,7 @@ RecoverPreparedTransactions(void)
 			TwoPhaseFileHeader *hdr;
 			TransactionId *subxids;
 			GlobalTransaction gxact;
+			const char	*gid;
 			int			i;
 
 			xid = (TransactionId) strtoul(clde->d_name, NULL, 16);
@@ -2036,6 +2039,8 @@ RecoverPreparedTransactions(void)
 			hdr = (TwoPhaseFileHeader *) buf;
 			Assert(TransactionIdEquals(hdr->xid, xid));
 			bufptr = buf + MAXALIGN(sizeof(TwoPhaseFileHeader));
+			gid = (const char *) bufptr;
+			bufptr += MAXALIGN(hdr->gidlen);
 			subxids = (TransactionId *) bufptr;
 			bufptr += MAXALIGN(hdr->nsubxacts * sizeof(TransactionId));
 			bufptr += MAXALIGN(hdr->ncommitrels * sizeof(RelFileNode));
@@ -2071,7 +2076,7 @@ RecoverPreparedTransactions(void)
 			 * negligible (especially since we know the state file has already
 			 * been fsynced).
 			 */
-			gxact = MarkAsPreparing(xid, hdr->gid,
+			gxact = MarkAsPreparing(xid, gid,
 									hdr->prepared_at,
 									hdr->owner, hdr->database);
 			GXactLoadSubxactData(gxact, hdr->nsubxacts, subxids);
