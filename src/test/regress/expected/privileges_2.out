@@ -307,7 +307,7 @@ SELECT 1 FROM atest5; -- ok
         1
 (1 row)
 
-SELECT 1 FROM atest5 a JOIN atest5 b USING (one); -- ok
+SELECT 1 FROM atest5 a JOIN atest5 b USING (one); -- ok 
  ?column? 
 ----------
         1
@@ -371,8 +371,7 @@ INSERT INTO atest5 VALUES (5,5,5); -- fail
 ERROR:  permission denied for relation atest5
 UPDATE atest5 SET three = 10; -- ok
 UPDATE atest5 SET one = 8; -- fail
-ERROR:  could not plan this distributed update
-DETAIL:  correlated UPDATE or updating distribution column currently not supported in Postgres-XL.
+ERROR:  permission denied for relation atest5
 UPDATE atest5 SET three = 5, one = 2; -- fail
 ERROR:  permission denied for relation atest5
 -- Check that column level privs are enforced in RETURNING
@@ -409,8 +408,7 @@ SET SESSION AUTHORIZATION regressuser4;
 SELECT one FROM atest5; -- fail
 ERROR:  permission denied for relation atest5
 UPDATE atest5 SET one = 1; -- fail
-ERROR:  could not plan this distributed update
-DETAIL:  correlated UPDATE or updating distribution column currently not supported in Postgres-XL.
+ERROR:  permission denied for relation atest5
 SELECT atest6 FROM atest6; -- ok
  atest6 
 --------
@@ -545,6 +543,7 @@ REVOKE ALL PRIVILEGES ON LANGUAGE sql FROM PUBLIC;
 GRANT USAGE ON LANGUAGE sql TO regressuser1; -- ok
 GRANT USAGE ON LANGUAGE c TO PUBLIC; -- fail
 ERROR:  language "c" is not trusted
+HINT:  Only superusers can use untrusted languages.
 SET SESSION AUTHORIZATION regressuser1;
 GRANT USAGE ON LANGUAGE sql TO regressuser2; -- fail
 WARNING:  no privileges were granted for "sql"
@@ -576,11 +575,8 @@ ERROR:  permission denied for function testfunc1
 SELECT col1 FROM atest2 WHERE col2 = true; -- fail
 ERROR:  permission denied for relation atest2
 SELECT testfunc4(true); -- fail due to issue 3520503, see above
- testfunc4 
------------
- bar
-(1 row)
-
+ERROR:  permission denied for relation atest2
+CONTEXT:  SQL function "testfunc4" statement 1
 SET SESSION AUTHORIZATION regressuser4;
 SELECT testfunc1(5); -- ok
  testfunc1 
@@ -602,6 +598,7 @@ REVOKE USAGE ON TYPE testtype1 FROM PUBLIC;
 GRANT USAGE ON TYPE testtype1 TO regressuser2;
 GRANT USAGE ON TYPE _testtype1 TO regressuser2; -- fail
 ERROR:  cannot set privileges of array types
+HINT:  Set the privileges of the element type instead.
 GRANT USAGE ON DOMAIN testtype1 TO regressuser2; -- fail
 ERROR:  "testtype1" is not a domain
 CREATE DOMAIN testdomain1 AS int;
@@ -631,7 +628,7 @@ ERROR:  permission denied for type testdomain1
 CREATE TABLE test6a OF testtype1;
 ERROR:  permission denied for type testtype1
 CREATE TABLE test10a (a int[], b testtype1[]);
-ERROR:  permission denied for type testtype1[]
+ERROR:  permission denied for type testtype1
 CREATE TABLE test9a (a int, b int);
 ALTER TABLE test9a ADD COLUMN c testdomain1;
 ERROR:  permission denied for type testdomain1
@@ -710,7 +707,11 @@ ERROR:  role "nosuchuser" does not exist
 select has_table_privilege('pg_authid','sel');
 ERROR:  unrecognized privilege type: "sel"
 select has_table_privilege(-999999,'pg_authid','update');
-ERROR:  role with OID 4293967297 does not exist
+ has_table_privilege 
+---------------------
+ f
+(1 row)
+
 select has_table_privilege(1,'select');
  has_table_privilege 
 ---------------------
@@ -993,6 +994,7 @@ SELECT has_table_privilege('regressuser3', 'atest4', 'SELECT'); -- true
 
 REVOKE SELECT ON atest4 FROM regressuser2; -- fail
 ERROR:  dependent privileges exist
+HINT:  Use CASCADE to revoke them too.
 REVOKE GRANT OPTION FOR SELECT ON atest4 FROM regressuser2 CASCADE; -- ok
 SELECT has_table_privilege('regressuser2', 'atest4', 'SELECT'); -- true
  has_table_privilege 
@@ -1026,11 +1028,8 @@ ERROR:  must have admin option on role "regressgroup2"
 SELECT dogrant_ok();			-- ok: SECURITY DEFINER conveys ADMIN
 NOTICE:  role "regressuser5" is already a member of role "regressgroup2"
 CONTEXT:  SQL function "dogrant_ok" statement 1
- dogrant_ok 
-------------
- 
-(1 row)
-
+ERROR:  must have admin option on role "regressgroup2"
+CONTEXT:  SQL function "dogrant_ok" statement 1
 SET ROLE regressgroup2;
 GRANT regressgroup2 TO regressuser5; -- fails: SET ROLE did not help
 ERROR:  must have admin option on role "regressgroup2"
@@ -1483,6 +1482,7 @@ drop table dep_priv_test;
 drop sequence x_seq;
 DROP FUNCTION testfunc2(int);
 DROP FUNCTION testfunc4(boolean);
+DROP VIEW atestv0;
 DROP VIEW atestv1;
 DROP VIEW atestv2;
 -- this should cascade to drop atestv4
@@ -1517,3 +1517,86 @@ DROP USER regressuser4;
 DROP USER regressuser5;
 DROP USER regressuser6;
 ERROR:  role "regressuser6" does not exist
+-- permissions with LOCK TABLE
+CREATE USER locktable_user;
+CREATE TABLE lock_table (a int);
+-- LOCK TABLE and SELECT permission
+GRANT SELECT ON lock_table TO locktable_user;
+SET SESSION AUTHORIZATION locktable_user;
+BEGIN;
+LOCK TABLE lock_table IN ROW EXCLUSIVE MODE; -- should fail
+ERROR:  permission denied for relation lock_table
+ROLLBACK;
+BEGIN;
+LOCK TABLE lock_table IN ACCESS SHARE MODE; -- should pass
+COMMIT;
+BEGIN;
+LOCK TABLE lock_table IN ACCESS EXCLUSIVE MODE; -- should fail
+ERROR:  permission denied for relation lock_table
+ROLLBACK;
+\c
+REVOKE SELECT ON lock_table FROM locktable_user;
+-- LOCK TABLE and INSERT permission
+GRANT INSERT ON lock_table TO locktable_user;
+SET SESSION AUTHORIZATION locktable_user;
+BEGIN;
+LOCK TABLE lock_table IN ROW EXCLUSIVE MODE; -- should pass
+COMMIT;
+BEGIN;
+LOCK TABLE lock_table IN ACCESS SHARE MODE; -- should fail
+ERROR:  permission denied for relation lock_table
+ROLLBACK;
+BEGIN;
+LOCK TABLE lock_table IN ACCESS EXCLUSIVE MODE; -- should fail
+ERROR:  permission denied for relation lock_table
+ROLLBACK;
+\c
+REVOKE INSERT ON lock_table FROM locktable_user;
+-- LOCK TABLE and UPDATE permission
+GRANT UPDATE ON lock_table TO locktable_user;
+SET SESSION AUTHORIZATION locktable_user;
+BEGIN;
+LOCK TABLE lock_table IN ROW EXCLUSIVE MODE; -- should pass
+COMMIT;
+BEGIN;
+LOCK TABLE lock_table IN ACCESS SHARE MODE; -- should fail
+ERROR:  permission denied for relation lock_table
+ROLLBACK;
+BEGIN;
+LOCK TABLE lock_table IN ACCESS EXCLUSIVE MODE; -- should pass
+COMMIT;
+\c
+REVOKE UPDATE ON lock_table FROM locktable_user;
+-- LOCK TABLE and DELETE permission
+GRANT DELETE ON lock_table TO locktable_user;
+SET SESSION AUTHORIZATION locktable_user;
+BEGIN;
+LOCK TABLE lock_table IN ROW EXCLUSIVE MODE; -- should pass
+COMMIT;
+BEGIN;
+LOCK TABLE lock_table IN ACCESS SHARE MODE; -- should fail
+ERROR:  permission denied for relation lock_table
+ROLLBACK;
+BEGIN;
+LOCK TABLE lock_table IN ACCESS EXCLUSIVE MODE; -- should pass
+COMMIT;
+\c
+REVOKE DELETE ON lock_table FROM locktable_user;
+-- LOCK TABLE and TRUNCATE permission
+GRANT TRUNCATE ON lock_table TO locktable_user;
+SET SESSION AUTHORIZATION locktable_user;
+BEGIN;
+LOCK TABLE lock_table IN ROW EXCLUSIVE MODE; -- should pass
+COMMIT;
+BEGIN;
+LOCK TABLE lock_table IN ACCESS SHARE MODE; -- should fail
+ERROR:  permission denied for relation lock_table
+ROLLBACK;
+BEGIN;
+LOCK TABLE lock_table IN ACCESS EXCLUSIVE MODE; -- should pass
+COMMIT;
+\c
+REVOKE TRUNCATE ON lock_table FROM locktable_user;
+-- clean up
+DROP TABLE lock_table;
+DROP USER locktable_user;

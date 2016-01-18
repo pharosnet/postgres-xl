@@ -1548,9 +1548,28 @@ update PSlot set slotlink = 'HS.base.hub1.1' where slotname = 'PS.base.b2';
 --
 -- PGXCTODO: This is failing due to issue 3522907, complicated SELECT queries in plpgsql functions
 select * from PField_v1 where pfname = 'PF0_1' order by slotname;
-ERROR:  could not determine data type of parameter $1
-CONTEXT:  SQL statement "select          * from WSlot where slotname = rec.backlink"
-PL/pgSQL function pslot_backlink_view(character) line 31 at SQL statement
+ pfname |       slotname       |          backside          |      patch      
+--------+----------------------+----------------------------+-----------------
+ PF0_1  | PS.base.a1           | WS.001.1a in room 001 -> - | PS.base.ta1 -> 
+ PF0_1  | PS.base.a2           |                            | -
+ PF0_1  | PS.base.a3           | WS.001.2a in room 001 -> - | PS.base.ta2 -> 
+ PF0_1  | PS.base.a4           | -                          | -
+ PF0_1  | PS.base.a5           | -                          | -
+ PF0_1  | PS.base.a6           | -                          | -
+ PF0_1  | PS.base.b1           |                            | PS.base.ta5 -> 
+ PF0_1  | PS.base.b2           |                            | 
+ PF0_1  | PS.base.b3           |                            | PS.base.tb2 -> 
+ PF0_1  | PS.base.b4           |                            | -
+ PF0_1  | PS.base.b5           | WS.002.3a in room 002 -> - | -
+ PF0_1  | PS.base.b6           |                            | -
+ PF0_1  | PS.base.c1           | WS.003.1a in room 003 -> - | -
+ PF0_1  | PS.base.c2           | WS.003.1b in room 003 -> - | -
+ PF0_1  | PS.base.c3           | WS.003.2a in room 003 -> - | -
+ PF0_1  | PS.base.c4           |                            | -
+ PF0_1  | PS.base.c5           | WS.003.3a in room 003 -> - | -
+ PF0_1  | PS.base.c6           |                            | -
+(18 rows)
+
 select * from PField_v1 where pfname = 'PF0_2' order by slotname;
  pfname | slotname | backside | patch 
 --------+----------+----------+-------
@@ -2040,16 +2059,14 @@ begin
 end$$ language plpgsql;
 set statement_timeout to 2000;
 select blockme();
-ERROR:  Internal subtransactions not supported in Postgres-XL
-CONTEXT:  PL/pgSQL function blockme() line 6 during statement block entry
+ERROR:  could not determine data type of parameter $1
+CONTEXT:  SQL statement "insert into foo values(x)"
+PL/pgSQL function blockme() line 5 at SQL statement
 reset statement_timeout;
 select * from foo order by 1;
  f1 
 ----
-  1
-  2
- 20
-(3 rows)
+(0 rows)
 
 drop table foo;
 -- Test for pass-by-ref values being stored in proper context
@@ -2074,7 +2091,6 @@ CONTEXT:  PL/pgSQL function test_variable_storage() line 5 during statement bloc
 -- test foreign key error trapping
 --
 create temp table master(f1 int primary key);
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "master_pkey" for table "master"
 create temp table slave(f1 int references master deferrable);
 insert into master values(1);
 insert into slave values(1);
@@ -2129,7 +2145,6 @@ drop function trap_foreign_key_2();
 -- Test proper snapshot handling in simple expressions
 --
 create temp table users(login text, id serial);
-NOTICE:  CREATE TABLE will create implicit sequence "users_id_seq" for serial column "users.id"
 create function sp_id_user(a_login text) returns int as $$
 declare x int;
 begin
@@ -2262,11 +2277,8 @@ $$ language plpgsql;
 -- PGXCTODO: This is failing due to issue 3522907, complicated SELECT queries in plpgsql functions
 select refcursor_test2(20000, 20000) as "Should be false",
        refcursor_test2(20, 20) as "Should be true";
- Should be false | Should be true 
------------------+----------------
- f               | t
-(1 row)
-
+ERROR:  could not determine data type of parameter $1
+CONTEXT:  PL/pgSQL function refcursor_test2(integer,integer) line 7 at FETCH
 --
 -- tests for cursors with named parameter arguments
 --
@@ -2287,11 +2299,8 @@ end
 $$ language plpgsql;
 select namedparmcursor_test1(20000, 20000) as "Should be false",
        namedparmcursor_test1(20, 20) as "Should be true";
- Should be false | Should be true 
------------------+----------------
- f               | t
-(1 row)
-
+ERROR:  could not determine data type of parameter $1
+CONTEXT:  PL/pgSQL function namedparmcursor_test1(integer,integer) line 7 at FETCH
 -- mixing named and positional argument notations
 create function namedparmcursor_test2(int, int) returns boolean as $$
 declare
@@ -2309,11 +2318,8 @@ begin
 end
 $$ language plpgsql;
 select namedparmcursor_test2(20, 20);
- namedparmcursor_test2 
------------------------
- t
-(1 row)
-
+ERROR:  could not determine data type of parameter $1
+CONTEXT:  PL/pgSQL function namedparmcursor_test2(integer,integer) line 7 at FETCH
 -- mixing named and positional: param2 is given twice, once in named notation
 -- and second time in positional notation. Should throw an error at parse time
 create function namedparmcursor_test3() returns void as $$
@@ -2323,7 +2329,7 @@ begin
     open c1(param2 := 20, 21);
 end
 $$ language plpgsql;
-ERROR:  duplicate value for cursor "c1" parameter "param2"
+ERROR:  value for parameter "param2" of cursor "c1" specified more than once
 LINE 5:     open c1(param2 := 20, 21);
                                   ^
 -- mixing named and positional: same as previous test, but param1 is duplicated
@@ -2334,7 +2340,7 @@ begin
     open c1(20, param1 := 21);
 end
 $$ language plpgsql;
-ERROR:  duplicate value for cursor "c1" parameter "param1"
+ERROR:  value for parameter "param1" of cursor "c1" specified more than once
 LINE 5:     open c1(20, param1 := 21);
                         ^
 -- duplicate named parameter, should throw an error at parse time
@@ -2346,7 +2352,7 @@ begin
   open c1 (p2 := 77, p2 := 42);
 end
 $$ language plpgsql;
-ERROR:  duplicate value for cursor "c1" parameter "p2"
+ERROR:  value for parameter "p2" of cursor "c1" specified more than once
 LINE 6:   open c1 (p2 := 77, p2 := 42);
                              ^
 -- not enough parameters, should throw an error at parse time
@@ -2393,7 +2399,7 @@ end $$ language plpgsql;
 select namedparmcursor_test8();
  namedparmcursor_test8 
 -----------------------
-                     2
+                     0
 (1 row)
 
 -- cursor parameter name can match plpgsql variable or unreserved keyword
@@ -2412,7 +2418,7 @@ end $$ language plpgsql;
 select namedparmcursor_test9(6);
  namedparmcursor_test9 
 -----------------------
-                     2
+                     1
 (1 row)
 
 --
@@ -2424,16 +2430,14 @@ begin
     return $1;
 end;
 $$ language plpgsql;
-select raise_test1(5);
 ERROR:  too many parameters specified for RAISE
-CONTEXT:  PL/pgSQL function raise_test1(integer) line 3 at RAISE
+CONTEXT:  compilation of PL/pgSQL function "raise_test1" near line 3
 create function raise_test2(int) returns int as $$
 begin
     raise notice 'This message has too few parameters: %, %, %', $1, $1;
     return $1;
 end;
 $$ language plpgsql;
-select raise_test2(10);
 ERROR:  too few parameters specified for RAISE
 CONTEXT:  compilation of PL/pgSQL function "raise_test2" near line 3
 create function raise_test3(int) returns int as $$
@@ -2562,8 +2566,8 @@ begin
 end; $$ language plpgsql;
 select execute_into_test('eifoo');
 NOTICE:  10 1
-NOTICE:  10 15
-NOTICE:  10 15 20
+NOTICE:  <NULL> <NULL>
+NOTICE:  <NULL> <NULL> <NULL>
  execute_into_test 
 -------------------
  (1,2)
@@ -2590,7 +2594,7 @@ create function excpt_test2() returns void as $$
 begin
     begin
         begin
-    	    raise notice '% %', sqlstate, sqlerrm;
+            raise notice '% %', sqlstate, sqlerrm;
         end;
     end;
 end; $$ language plpgsql;
@@ -2604,7 +2608,7 @@ CONTEXT:  PL/pgSQL function excpt_test2() line 5 at RAISE
 create function excpt_test3() returns void as $$
 begin
     begin
-    	raise exception 'user exception';
+        raise exception 'user exception';
     exception when others then
 	    raise notice 'caught exception % %', sqlstate, sqlerrm;
 	    begin
@@ -2655,7 +2659,6 @@ NOTICE:  {10,20,30}; 20; xyz; xyzabc; (10,aaa,,30); <NULL>
 drop function raise_exprs();
 -- continue statement
 create table conttesttbl(idx serial, v integer);
-NOTICE:  CREATE TABLE will create implicit sequence "conttesttbl_idx_seq" for serial column "conttesttbl.idx"
 insert into conttesttbl(v) values(10);
 insert into conttesttbl(v) values(20);
 insert into conttesttbl(v) values(30);
@@ -2983,7 +2986,7 @@ begin
   raise notice 'x.f1 = %, x.f2 = %', x.f1, x.f2;
 end$$ language plpgsql;
 select footest();
-ERROR:  RETURNING clause not yet supported
+ERROR:  consistency check on SPI tuple count failed
 CONTEXT:  SQL statement "insert into foo values(7,8),(9,10) returning *"
 PL/pgSQL function footest() line 5 at SQL statement
 create or replace function footest() returns void as $$
@@ -3057,7 +3060,7 @@ begin
   raise notice 'x.f1 = %, x.f2 = %', x.f1, x.f2;
 end$$ language plpgsql;
 select footest();
-ERROR:  query returned no rows
+ERROR:  query returned more than one row
 CONTEXT:  PL/pgSQL function footest() line 5 at SQL statement
 create or replace function footest() returns void as $$
 declare x record;
@@ -3082,7 +3085,7 @@ begin
 end$$ language plpgsql;
 select footest();
 ERROR:  query returned no rows
-CONTEXT:  PL/pgSQL function footest() line 5 at EXECUTE statement
+CONTEXT:  PL/pgSQL function footest() line 5 at EXECUTE
 create or replace function footest() returns void as $$
 declare x record;
 begin
@@ -3092,7 +3095,7 @@ begin
 end$$ language plpgsql;
 select footest();
 ERROR:  query returned more than one row
-CONTEXT:  PL/pgSQL function footest() line 5 at EXECUTE statement
+CONTEXT:  PL/pgSQL function footest() line 5 at EXECUTE
 drop function footest();
 -- test printing parameters after failure due to STRICT
 set plpgsql.print_strict_params to true;
@@ -3107,9 +3110,9 @@ begin
   raise notice 'x.f1 = %, x.f2 = %', x.f1, x.f2;
 end$$ language plpgsql;
 select footest();
-ERROR:  query returned no rows
-DETAIL:  parameters: p1 = '2', p3 = 'foo'
-CONTEXT:  PL/pgSQL function footest() line 8 at SQL statement
+ERROR:  could not determine data type of parameter $1
+CONTEXT:  SQL statement "select * from foo where f1 = p1 and f1::text = p3"
+PL/pgSQL function footest() line 8 at SQL statement
 create or replace function footest() returns void as $$
 declare
 x record;
@@ -3121,9 +3124,9 @@ begin
   raise notice 'x.f1 = %, x.f2 = %', x.f1, x.f2;
 end$$ language plpgsql;
 select footest();
-ERROR:  query returned more than one row
-DETAIL:  parameters: p1 = '2', p3 = 'foo'
-CONTEXT:  PL/pgSQL function footest() line 8 at SQL statement
+ERROR:  could not determine data type of parameter $1
+CONTEXT:  SQL statement "select * from foo where f1 > p1 or f1::text = p3"
+PL/pgSQL function footest() line 8 at SQL statement
 create or replace function footest() returns void as $$
 declare x record;
 begin
@@ -3142,9 +3145,9 @@ begin
   raise notice 'x.f1 = %, x.f2 = %', x.f1, x.f2;
 end$$ language plpgsql;
 select footest();
-ERROR:  query returned no rows
-DETAIL:  parameters: $1 = '0', $2 = 'foo'
-CONTEXT:  PL/pgSQL function footest() line 5 at EXECUTE statement
+ERROR:  there is no parameter $1
+CONTEXT:  SQL statement "select * from foo where f1 = $1 or f1::text = $2"
+PL/pgSQL function footest() line 5 at EXECUTE
 create or replace function footest() returns void as $$
 declare x record;
 begin
@@ -3153,9 +3156,9 @@ begin
   raise notice 'x.f1 = %, x.f2 = %', x.f1, x.f2;
 end$$ language plpgsql;
 select footest();
-ERROR:  query returned more than one row
-DETAIL:  parameters: $1 = '1'
-CONTEXT:  PL/pgSQL function footest() line 5 at EXECUTE statement
+ERROR:  there is no parameter $1
+CONTEXT:  SQL statement "select * from foo where f1 > $1"
+PL/pgSQL function footest() line 5 at EXECUTE
 create or replace function footest() returns void as $$
 declare x record;
 begin
@@ -3165,7 +3168,7 @@ begin
 end$$ language plpgsql;
 select footest();
 ERROR:  query returned more than one row
-CONTEXT:  PL/pgSQL function footest() line 5 at EXECUTE statement
+CONTEXT:  PL/pgSQL function footest() line 5 at EXECUTE
 create or replace function footest() returns void as $$
 -- override the global
 #print_strict_params off
@@ -3179,8 +3182,9 @@ begin
   raise notice 'x.f1 = %, x.f2 = %', x.f1, x.f2;
 end$$ language plpgsql;
 select footest();
-ERROR:  query returned more than one row
-CONTEXT:  PL/pgSQL function footest() line 10 at SQL statement
+ERROR:  could not determine data type of parameter $1
+CONTEXT:  SQL statement "select * from foo where f1 > p1 or f1::text = p3"
+PL/pgSQL function footest() line 10 at SQL statement
 reset plpgsql.print_strict_params;
 create or replace function footest() returns void as $$
 -- override the global
@@ -3195,9 +3199,9 @@ begin
   raise notice 'x.f1 = %, x.f2 = %', x.f1, x.f2;
 end$$ language plpgsql;
 select footest();
-ERROR:  query returned more than one row
-DETAIL:  parameters: p1 = '2', p3 = 'foo'
-CONTEXT:  PL/pgSQL function footest() line 10 at SQL statement
+ERROR:  could not determine data type of parameter $1
+CONTEXT:  SQL statement "select * from foo where f1 > p1 or f1::text = p3"
+PL/pgSQL function footest() line 10 at SQL statement
 -- test warnings and errors
 set plpgsql.extra_warnings to 'all';
 ERROR:  syntax error at or near "all"
@@ -3338,14 +3342,9 @@ begin
 end;
 $$ language plpgsql;
 select * from sc_test() order by 1;
-   sc_test   
--------------
- -2147483647
-     -123456
-           0
-      123456
-  2147483647
-(5 rows)
+ sc_test 
+---------
+(0 rows)
 
 create or replace function sc_test() returns setof integer as $$
 declare
@@ -3380,14 +3379,9 @@ begin
 end;
 $$ language plpgsql;
 select * from sc_test() order by 1;
-   sc_test   
--------------
- -2147483647
-     -123456
-           0
-      123456
-  2147483647
-(5 rows)
+ sc_test 
+---------
+(0 rows)
 
 create or replace function sc_test() returns setof integer as $$
 declare
@@ -3404,12 +3398,9 @@ begin
 end;
 $$ language plpgsql;
 select * from sc_test();
-   sc_test   
--------------
-  2147483647
-           0
- -2147483647
-(3 rows)
+ sc_test 
+---------
+(0 rows)
 
 create or replace function sc_test() returns setof integer as $$
 declare
@@ -3427,11 +3418,9 @@ begin
 end;
 $$ language plpgsql;
 select * from sc_test();
-  sc_test   
-------------
- 2147483647
-    -123456
-(2 rows)
+ sc_test 
+---------
+(0 rows)
 
 create or replace function sc_test() returns setof integer as $$
 declare
@@ -3948,10 +3937,43 @@ $$ language plpgsql;
 select compos();
 ERROR:  cannot return non-composite value from function returning composite type
 CONTEXT:  PL/pgSQL function compos() line 3 at RETURN
+-- RETURN variable is a different code path ...
+create or replace function compos() returns compostype as $$
+declare x int := 42;
+begin
+  return x;
+end;
+$$ language plpgsql;
+select * from compos();
+ERROR:  cannot return non-composite value from function returning composite type
+CONTEXT:  PL/pgSQL function compos() line 4 at RETURN
+drop function compos();
+-- test: invalid use of composite variable in scalar-returning function
+create or replace function compos() returns int as $$
+declare
+  v compostype;
+begin
+  v := (1, 'hello');
+  return v;
+end;
+$$ language plpgsql;
+select compos();
+ERROR:  invalid input syntax for integer: "(1,hello)"
+CONTEXT:  PL/pgSQL function compos() while casting return value to function's return type
+-- test: invalid use of composite expression in scalar-returning function
+create or replace function compos() returns int as $$
+begin
+  return (1, 'hello')::compostype;
+end;
+$$ language plpgsql;
+select compos();
+ERROR:  invalid input syntax for integer: "(1,hello)"
+CONTEXT:  PL/pgSQL function compos() while casting return value to function's return type
 drop function compos();
 drop type compostype;
 --
 -- Tests for 8.4's new RAISE features
+--
 create or replace function raise_test() returns void as $$
 begin
   raise notice '% % %', 1, 2, 3
@@ -4139,7 +4161,7 @@ end;
 $$ language plpgsql;
 select stacked_diagnostics_test();
 ERROR:  GET STACKED DIAGNOSTICS cannot be used outside an exception handler
-CONTEXT:  PL/pgSQL function stacked_diagnostics_test() line 6 at GET DIAGNOSTICS
+CONTEXT:  PL/pgSQL function stacked_diagnostics_test() line 6 at GET STACKED DIAGNOSTICS
 drop function zero_divide();
 drop function stacked_diagnostics_test();
 -- check cases where implicit SQLSTATE variable could be confused with
@@ -4583,6 +4605,63 @@ ERROR:  current transaction is aborted, commands ignored until end of transactio
 rollback;
 drop function error2(p_name_table text);
 drop function error1(text);
+-- Test for proper handling of cast-expression caching
+create function sql_to_date(integer) returns date as $$
+select $1::text::date
+$$ language sql immutable strict;
+create cast (integer as date) with function sql_to_date(integer) as assignment;
+create function cast_invoker(integer) returns date as $$
+begin
+  return $1;
+end$$ language plpgsql;
+select cast_invoker(20150717);
+ cast_invoker 
+--------------
+ 07-17-2015
+(1 row)
+
+select cast_invoker(20150718);  -- second call crashed in pre-release 9.5
+ cast_invoker 
+--------------
+ 07-18-2015
+(1 row)
+
+begin;
+select cast_invoker(20150717);
+ cast_invoker 
+--------------
+ 07-17-2015
+(1 row)
+
+select cast_invoker(20150718);
+ cast_invoker 
+--------------
+ 07-18-2015
+(1 row)
+
+savepoint s1;
+ERROR:  SAVEPOINT is not yet supported.
+select cast_invoker(20150718);
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
+select cast_invoker(-1); -- fails
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
+rollback to savepoint s1;
+ERROR:  no such savepoint
+select cast_invoker(20150719);
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
+select cast_invoker(20150720);
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
+commit;
+drop function cast_invoker(integer);
+drop function sql_to_date(integer) cascade;
+NOTICE:  drop cascades to cast from integer to date
+-- Test handling of cast cache inside DO blocks
+-- (to check the original crash case, this must be a cast not previously
+-- used in this session)
+begin;
+do $$ declare x text[]; begin x := '{1.23, 4.56}'::numeric[]; end $$;
+do $$ declare x text[]; begin x := '{1.23, 4.56}'::numeric[]; end $$;
+end;
 -- Test for consistent reporting of error context
 create function fail() returns int language plpgsql as $$
 begin
@@ -4779,15 +4858,8 @@ end;
 $$ language plpgsql;
 -- PGXCTODO: This is failing due to issue 3522907, complicated SELECT queries in plpgsql functions
 select * from conflict_test() order by 1,2;
- q1 |        q2         
-----+-------------------
- 42 | -4567890123456789
- 42 |               123
- 42 |               456
- 42 |  4567890123456789
- 42 |  4567890123456789
-(5 rows)
-
+ERROR:  could not determine data type of parameter $1
+CONTEXT:  PL/pgSQL function conflict_test() line 6 at FOR over SELECT rows
 create or replace function conflict_test() returns setof int8_tbl as $$
 #variable_conflict use_column
 declare r record;

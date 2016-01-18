@@ -824,7 +824,7 @@ insert into tt1 values(2);
 fetch all from c1;
  count_tt1_v | count_tt1_s 
 -------------+-------------
-           2 |           2
+           2 |           1
 (1 row)
 
 rollback;

@@ -46,7 +46,7 @@ SELECT count(*) AS One FROM TIMESTAMP_TBL WHERE d1 = timestamp without time zone
 SELECT count(*) AS One FROM TIMESTAMP_TBL WHERE d1 = timestamp(2) without time zone 'now';
  one 
 -----
-   1
+   0
 (1 row)
 
 COMMIT;
@@ -70,7 +70,7 @@ SELECT pg_sleep(0.1);
 SELECT count(*) AS two FROM TIMESTAMP_TBL WHERE d1 = timestamp(2) without time zone 'now';
  two 
 -----
-   2
+   1
 (1 row)
 
 COMMIT;

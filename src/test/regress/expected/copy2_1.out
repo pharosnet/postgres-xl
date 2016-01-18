@@ -5,7 +5,6 @@ CREATE TEMP TABLE x (
 	d text,
 	e text
 ) WITH OIDS;
-NOTICE:  CREATE TABLE will create implicit sequence "x_a_seq" for serial column "x.a"
 CREATE FUNCTION fn_x_before () RETURNS TRIGGER AS '
   BEGIN
 		NEW.e := ''before trigger fired''::text;
@@ -259,6 +258,258 @@ SELECT * FROM testnull ORDER BY 1,2;
     | 
 (4 rows)
 
+BEGIN;
+CREATE TABLE vistest (LIKE testeoc);
+ERROR:  relation "testeoc" does not exist
+COPY vistest FROM stdin CSV;
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
+a0
+b
+\.
+invalid command \.
+COMMIT;
+ERROR:  syntax error at or near "a0"
+LINE 1: a0
+        ^
+SELECT * FROM vistest;
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
+BEGIN;
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
+TRUNCATE vistest;
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
+COPY vistest FROM stdin CSV;
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
+a1
+b
+\.
+invalid command \.
+SELECT * FROM vistest;
+ERROR:  syntax error at or near "a1"
+LINE 1: a1
+        ^
+SAVEPOINT s1;
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
+TRUNCATE vistest;
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
+COPY vistest FROM stdin CSV;
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
+d1
+e
+\.
+invalid command \.
+SELECT * FROM vistest;
+ERROR:  syntax error at or near "d1"
+LINE 1: d1
+        ^
+COMMIT;
+SELECT * FROM vistest;
+ERROR:  relation "vistest" does not exist
+LINE 1: SELECT * FROM vistest;
+                      ^
+BEGIN;
+TRUNCATE vistest;
+ERROR:  relation "vistest" does not exist
+COPY vistest FROM stdin CSV FREEZE;
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
+a2
+b
+\.
+invalid command \.
+SELECT * FROM vistest;
+ERROR:  syntax error at or near "a2"
+LINE 1: a2
+        ^
+SAVEPOINT s1;
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
+TRUNCATE vistest;
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
+COPY vistest FROM stdin CSV FREEZE;
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
+d2
+e
+\.
+invalid command \.
+SELECT * FROM vistest;
+ERROR:  syntax error at or near "d2"
+LINE 1: d2
+        ^
+COMMIT;
+SELECT * FROM vistest;
+ERROR:  relation "vistest" does not exist
+LINE 1: SELECT * FROM vistest;
+                      ^
+BEGIN;
+TRUNCATE vistest;
+ERROR:  relation "vistest" does not exist
+COPY vistest FROM stdin CSV FREEZE;
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
+x
+y
+\.
+invalid command \.
+SELECT * FROM vistest;
+ERROR:  syntax error at or near "x"
+LINE 1: x
+        ^
+COMMIT;
+TRUNCATE vistest;
+ERROR:  relation "vistest" does not exist
+COPY vistest FROM stdin CSV FREEZE;
+ERROR:  relation "vistest" does not exist
+p
+g
+\.
+invalid command \.
+BEGIN;
+ERROR:  syntax error at or near "p"
+LINE 1: p
+        ^
+TRUNCATE vistest;
+ERROR:  relation "vistest" does not exist
+SAVEPOINT s1;
+ERROR:  SAVEPOINT is not yet supported.
+COPY vistest FROM stdin CSV FREEZE;
+ERROR:  relation "vistest" does not exist
+m
+k
+\.
+invalid command \.
+COMMIT;
+ERROR:  syntax error at or near "m"
+LINE 1: m
+        ^
+BEGIN;
+INSERT INTO vistest VALUES ('z');
+ERROR:  relation "vistest" does not exist
+LINE 1: INSERT INTO vistest VALUES ('z');
+                    ^
+SAVEPOINT s1;
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
+TRUNCATE vistest;
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
+ROLLBACK TO SAVEPOINT s1;
+ERROR:  no such savepoint
+COPY vistest FROM stdin CSV FREEZE;
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
+d3
+e
+\.
+invalid command \.
+COMMIT;
+ERROR:  syntax error at or near "d3"
+LINE 1: d3
+        ^
+CREATE FUNCTION truncate_in_subxact() RETURNS VOID AS
+$$
+BEGIN
+	TRUNCATE vistest;
+EXCEPTION
+  WHEN OTHERS THEN
+	INSERT INTO vistest VALUES ('subxact failure');
+END;
+$$ language plpgsql;
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
+BEGIN;
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
+INSERT INTO vistest VALUES ('z');
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
+SELECT truncate_in_subxact();
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
+COPY vistest FROM stdin CSV FREEZE;
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
+d4
+e
+\.
+invalid command \.
+SELECT * FROM vistest;
+ERROR:  syntax error at or near "d4"
+LINE 1: d4
+        ^
+COMMIT;
+SELECT * FROM vistest;
+ERROR:  relation "vistest" does not exist
+LINE 1: SELECT * FROM vistest;
+                      ^
+-- Test FORCE_NOT_NULL and FORCE_NULL options
+CREATE TEMP TABLE forcetest (
+    a INT NOT NULL,
+    b TEXT NOT NULL,
+    c TEXT,
+    d TEXT,
+    e TEXT
+);
+\pset null NULL
+-- should succeed with no effect ("b" remains an empty string, "c" remains NULL)
+BEGIN;
+COPY forcetest (a, b, c) FROM STDIN WITH (FORMAT csv, FORCE_NOT_NULL(b), FORCE_NULL(c));
+COMMIT;
+SELECT b, c FROM forcetest WHERE a = 1;
+ b | c 
+---+---
+   | 
+(1 row)
+
+-- should succeed, FORCE_NULL and FORCE_NOT_NULL can be both specified
+BEGIN;
+COPY forcetest (a, b, c, d) FROM STDIN WITH (FORMAT csv, FORCE_NOT_NULL(c,d), FORCE_NULL(c,d));
+COMMIT;
+SELECT c, d FROM forcetest WHERE a = 2;
+ c | d 
+---+---
+   | 
+(1 row)
+
+-- should fail with not-null constraint violation
+BEGIN;
+COPY forcetest (a, b, c) FROM STDIN WITH (FORMAT csv, FORCE_NULL(b), FORCE_NOT_NULL(c));
+ERROR:  null value in column "b" violates not-null constraint
+DETAIL:  Failing row contains (3, null, , null, null).
+ROLLBACK;
+-- should fail with "not referenced by COPY" error
+BEGIN;
+COPY forcetest (d, e) FROM STDIN WITH (FORMAT csv, FORCE_NOT_NULL(b));
+ERROR:  FORCE NOT NULL column "b" not referenced by COPY
+ROLLBACK;
+-- should fail with "not referenced by COPY" error
+BEGIN;
+COPY forcetest (d, e) FROM STDIN WITH (FORMAT csv, FORCE_NULL(b));
+ERROR:  FORCE NULL column "b" not referenced by COPY
+ROLLBACK;
+\pset null ''
+-- test case with whole-row Var in a check constraint
+create table check_con_tbl (f1 int);
+create function check_con_function(check_con_tbl) returns bool as $$
+begin
+  raise notice 'input = %', row_to_json($1);
+  return $1.f1 > 0;
+end $$ language plpgsql immutable;
+alter table check_con_tbl add check (check_con_function(check_con_tbl.*));
+\d+ check_con_tbl
+                    Table "public.check_con_tbl"
+ Column |  Type   | Modifiers | Storage | Stats target | Description 
+--------+---------+-----------+---------+--------------+-------------
+ f1     | integer |           | plain   |              | 
+Check constraints:
+    "check_con_tbl_check" CHECK (check_con_function(check_con_tbl.*))
+Distribute By: HASH(f1)
+Location Nodes: ALL DATANODES
+
+copy check_con_tbl from stdin;
+copy check_con_tbl from stdin;
+ERROR:  new row for relation "check_con_tbl" violates check constraint "check_con_tbl_check"
+DETAIL:  Failing row contains (0).
+select * from check_con_tbl;
+ f1 
+----
+  1
+   
+(2 rows)
+
+DROP TABLE forcetest;
+DROP TABLE vistest;
+ERROR:  table "vistest" does not exist
+DROP FUNCTION truncate_in_subxact();
+ERROR:  function truncate_in_subxact() does not exist
 DROP TABLE x, y;
 DROP FUNCTION fn_x_before();
 DROP FUNCTION fn_x_after();

@@ -349,11 +349,13 @@ SELECT jsonb_agg(q ORDER BY x, y)
 (1 row)
 
 UPDATE rows SET x = NULL WHERE x = 1;
+ERROR:  could not plan this distributed update
+DETAIL:  correlated UPDATE or updating distribution column currently not supported in Postgres-XL.
 SELECT jsonb_agg(q ORDER BY x NULLS FIRST, y)
   FROM rows q;
-                                jsonb_agg                                 
---------------------------------------------------------------------------
- [{"x": null, "y": "txt1"}, {"x": 2, "y": "txt2"}, {"x": 3, "y": "txt3"}]
+                               jsonb_agg                               
+-----------------------------------------------------------------------
+ [{"x": 1, "y": "txt1"}, {"x": 2, "y": "txt2"}, {"x": 3, "y": "txt3"}]
 (1 row)
 
 -- jsonb extraction functions

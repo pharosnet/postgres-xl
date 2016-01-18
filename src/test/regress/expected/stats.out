@@ -78,21 +78,32 @@ INSERT INTO trunc_stats_test1 DEFAULT VALUES;
 INSERT INTO trunc_stats_test1 DEFAULT VALUES;
 INSERT INTO trunc_stats_test1 DEFAULT VALUES;
 UPDATE trunc_stats_test1 SET id = id + 10 WHERE id IN (1, 2);
+ERROR:  could not plan this distributed update
+DETAIL:  correlated UPDATE or updating distribution column currently not supported in Postgres-XL.
 DELETE FROM trunc_stats_test1 WHERE id = 3;
 BEGIN;
 UPDATE trunc_stats_test1 SET id = id + 100;
+ERROR:  could not plan this distributed update
+DETAIL:  correlated UPDATE or updating distribution column currently not supported in Postgres-XL.
 TRUNCATE trunc_stats_test1;
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
 INSERT INTO trunc_stats_test1 DEFAULT VALUES;
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
 COMMIT;
 -- use a savepoint: 1 insert, 1 live
 BEGIN;
 INSERT INTO trunc_stats_test2 DEFAULT VALUES;
 INSERT INTO trunc_stats_test2 DEFAULT VALUES;
 SAVEPOINT p1;
+ERROR:  SAVEPOINT is not yet supported.
 INSERT INTO trunc_stats_test2 DEFAULT VALUES;
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
 TRUNCATE trunc_stats_test2;
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
 INSERT INTO trunc_stats_test2 DEFAULT VALUES;
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
 RELEASE SAVEPOINT p1;
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
 COMMIT;
 -- rollback a savepoint: this should count 4 inserts and have 2
 -- live tuples after commit (and 2 dead ones due to aborted subxact)
@@ -100,11 +111,17 @@ BEGIN;
 INSERT INTO trunc_stats_test3 DEFAULT VALUES;
 INSERT INTO trunc_stats_test3 DEFAULT VALUES;
 SAVEPOINT p1;
+ERROR:  SAVEPOINT is not yet supported.
 INSERT INTO trunc_stats_test3 DEFAULT VALUES;
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
 INSERT INTO trunc_stats_test3 DEFAULT VALUES;
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
 TRUNCATE trunc_stats_test3;
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
 INSERT INTO trunc_stats_test3 DEFAULT VALUES;
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
 ROLLBACK TO SAVEPOINT p1;
+ERROR:  no such savepoint
 COMMIT;
 -- rollback a truncate: this should count 2 inserts and produce 2 dead tuples
 BEGIN;
@@ -148,10 +165,10 @@ SELECT relname, n_tup_ins, n_tup_upd, n_tup_del, n_live_tup, n_dead_tup
  WHERE relname like 'trunc_stats_test%' order by relname;
       relname      | n_tup_ins | n_tup_upd | n_tup_del | n_live_tup | n_dead_tup 
 -------------------+-----------+-----------+-----------+------------+------------
- trunc_stats_test  |         3 |         0 |         0 |          0 |          0
- trunc_stats_test1 |         4 |         2 |         1 |          1 |          0
- trunc_stats_test2 |         1 |         0 |         0 |          1 |          0
- trunc_stats_test3 |         4 |         0 |         0 |          2 |          2
+ trunc_stats_test  |         3 |         0 |         0 |          3 |          0
+ trunc_stats_test1 |         3 |         0 |         0 |          3 |          0
+ trunc_stats_test2 |         2 |         0 |         0 |          0 |          2
+ trunc_stats_test3 |         2 |         0 |         0 |          0 |          2
  trunc_stats_test4 |         2 |         0 |         0 |          0 |          2
 (5 rows)
 
@@ -163,7 +180,7 @@ SELECT st.seq_scan >= pr.seq_scan + 1,
  WHERE st.relname='tenk2' AND cl.relname='tenk2';
  ?column? | ?column? | ?column? | ?column? 
 ----------+----------+----------+----------
- t        | f        | f        | f
+ f        | f        | f        | f
 (1 row)
 
 SELECT st.heap_blks_read + st.heap_blks_hit >= pr.heap_blks + cl.relpages,
