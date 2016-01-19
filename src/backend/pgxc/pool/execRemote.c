@@ -2304,7 +2304,7 @@ pgxc_node_remote_prepare(char *prepareGID, bool localNode)
 	return nodestr.data;
 
 prepare_err:
- 	abort_cmd = (char *) palloc (64 + strlen(abort_cmd));
+ 	abort_cmd = (char *) palloc (64 + strlen(prepareGID));
 	sprintf(abort_cmd, "ROLLBACK PREPARED '%s'", prepareGID);
 
 	auxXid = GetAuxilliaryTransactionId();
