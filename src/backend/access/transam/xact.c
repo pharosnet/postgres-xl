@@ -548,6 +548,14 @@ GetCurrentTransactionId(void)
 TransactionId
 GetCurrentTransactionIdIfAny(void)
 {
+#ifdef XCP
+	/*
+	 * Return XID if its available from the remote node, without assigning to
+	 * the transaction state
+	 */
+	if (IsConnFromDatanode())
+		return GetNextTransactionId();
+#endif
 	return CurrentTransactionState->transactionId;
 }
 
