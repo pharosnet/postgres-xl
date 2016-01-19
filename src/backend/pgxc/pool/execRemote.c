@@ -2063,8 +2063,8 @@ pgxc_node_remote_prepare(char *prepareGID, bool localNode)
 {
 	bool 			isOK = true;
 	StringInfoData 	nodestr;
-	char			prepare_cmd[256];
-	char			abort_cmd[256];
+	char			*prepare_cmd = (char *) palloc (64 + strlen(prepareGID));
+	char			*abort_cmd;
 	GlobalTransactionId auxXid;
 	char		   *commit_cmd = "COMMIT TRANSACTION";
 	int				i;
@@ -2300,8 +2300,11 @@ pgxc_node_remote_prepare(char *prepareGID, bool localNode)
 		}
 	}
 
+	pfree(prepare_cmd);
 	return nodestr.data;
+
 prepare_err:
+ 	abort_cmd = (char *) palloc (64 + strlen(abort_cmd));
 	sprintf(abort_cmd, "ROLLBACK PREPARED '%s'", prepareGID);
 
 	auxXid = GetAuxilliaryTransactionId();
@@ -2407,6 +2410,7 @@ prepare_err:
 	}
 
 	pfree_pgxc_all_handles(handles);
+	pfree(abort_cmd);
 
 	/*
 	 * If the flag is set we are here because combiner carries error message
@@ -4181,7 +4185,7 @@ pgxc_node_remote_finish(char *prepareGID, bool commit,
 						char *nodestring, GlobalTransactionId gxid,
 						GlobalTransactionId prepare_gxid)
 {
-	char				finish_cmd[256];
+	char			   *finish_cmd;
 	PGXCNodeHandle	   *connections[MaxCoords + MaxDataNodes];
 	int					conn_count = 0;
 	ResponseCombiner	combiner;
@@ -4228,6 +4232,8 @@ pgxc_node_remote_finish(char *prepareGID, bool commit,
 		return prepared_local;
 
 	pgxc_handles = get_handles(nodelist, coordlist, false, true);
+
+	finish_cmd = (char *) palloc(64 + strlen(prepareGID));
 
 	if (commit)
 		sprintf(finish_cmd, "COMMIT PREPARED '%s'", prepareGID);
@@ -4320,6 +4326,7 @@ pgxc_node_remote_finish(char *prepareGID, bool commit,
 	}
 
 	pfree_pgxc_all_handles(pgxc_handles);
+	pfree(finish_cmd);
 
 	return prepared_local;
 }

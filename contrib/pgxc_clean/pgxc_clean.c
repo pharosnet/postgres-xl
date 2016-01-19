@@ -509,7 +509,7 @@ do_commit_abort(PGconn *conn, txn_info *txn, bool is_commit)
 	int ii;
 	static const char *EXEC_DIRECT_STMT_FMT = "EXECUTE DIRECT ON (%s) '%s PREPARED ''%s'';';";
 	static const char *GLOBAL_STMT_FMT = "%s PREPARED '%s';";
-	char stmt[1024];
+	char *stmt = (char *) malloc (64 + strlen(txn->xid));
 	PGresult *res;
 	ExecStatusType res_status;
 

@@ -1981,7 +1981,7 @@ void
 ProcessGetGIDDataTransactionCommand(Port *myport, StringInfo message)
 {
 	StringInfoData buf;
-	char gid[1024];
+	char *gid;
 	char *nodestring = NULL;
 	int gidlen;
 	GTM_IsolationLevel txn_isolation_level;
@@ -1996,6 +1996,7 @@ ProcessGetGIDDataTransactionCommand(Port *myport, StringInfo message)
 
 	/* receive GID */
 	gidlen = pq_getmsgint(message, sizeof (GTM_StrLen));
+	gid = (char *) palloc(gidlen + 1);
 	memcpy(gid, (char *)pq_getmsgbytes(message, gidlen), gidlen);
 	gid[gidlen] = '\0';
 
@@ -2096,6 +2097,7 @@ retry:
 	/* No backup to the standby because this does not change internal status */
 	if (myport->remote_type != GTM_NODE_GTM_PROXY)
 		pq_flush(myport);
+	pfree(gid);
 	return;
 }
 /*
@@ -2441,7 +2443,7 @@ ProcessStartPreparedTransactionCommand(Port *myport, StringInfo message, bool is
 	GTM_StrLen gidlen, nodelen;
 	char nodestring[1024];
 	MemoryContext oldContext;
-	char gid[1024];
+	char *gid;
 	const char *data = pq_getmsgbytes(message, sizeof (gxid));
 
 	if (data == NULL)
@@ -2453,6 +2455,7 @@ ProcessStartPreparedTransactionCommand(Port *myport, StringInfo message, bool is
 
 	/* get GID */
 	gidlen = pq_getmsgint(message, sizeof (GTM_StrLen));
+	gid = (char *) palloc(gidlen + 1);
 	memcpy(gid, (char *)pq_getmsgbytes(message, gidlen), gidlen);
 	gid[gidlen] = '\0';
 
@@ -2523,6 +2526,7 @@ ProcessStartPreparedTransactionCommand(Port *myport, StringInfo message, bool is
 		}
 
 	}
+	pfree(gid);
 	return;
 }
 
