@@ -25,6 +25,7 @@
 #include "pgxcnode.h"
 #include "poolcomm.h"
 #include "storage/pmsignal.h"
+#include "utils/guc.h"
 #include "utils/hsearch.h"
 
 #define MAX_IDLE_TIME 60
@@ -141,4 +142,7 @@ extern void PoolManagerLock(bool is_lock);
 
 /* Do pool health check activity */
 extern void PoolPingNodes(void);
+
+extern bool check_persistent_connections(bool *newval, void **extra,
+		GucSource source);
 #endif

@@ -2650,3 +2650,15 @@ pools_maintenance(void)
 	elog(DEBUG1, "Pool maintenance, done in %f seconds, removed %d pools",
 			difftime(time(NULL), now), count);
 }
+
+bool
+check_persistent_connections(bool *newval, void **extra, GucSource source)
+{
+	if (*newval && IS_PGXC_DATANODE)
+	{
+		elog(WARNING, "persistent_datanode_connections = ON is currently not "
+				"supported on datanodes - ignoring");
+		*newval = false;
+	}
+	return true;
+}

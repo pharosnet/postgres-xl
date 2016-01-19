@@ -1717,7 +1717,7 @@ static struct config_bool ConfigureNamesBool[] =
 		},
 		&PersistentConnections,
 		false,
-		NULL, NULL, NULL
+		check_persistent_connections, NULL, NULL
 	},
 	{
 		{"strict_statement_checking", PGC_USERSET, DEVELOPER_OPTIONS,
