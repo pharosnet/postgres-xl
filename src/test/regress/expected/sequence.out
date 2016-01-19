@@ -1,6 +1,7 @@
 ---
 --- test creation of SERIAL column
 ---
+SET sequence_range = 1;
 CREATE TABLE serialTest (f1 text, f2 serial);
 INSERT INTO serialTest VALUES ('foo');
 INSERT INTO serialTest VALUES ('bar');

@@ -223,7 +223,7 @@ with recursive q as (
         )
        select * from x)
     )
-select * from q limit 32) rel_alias order by 1, 2, 3;
+select * from q order by 1, 2, 3 limit 32;
 
 -- recursive term has sub-UNION
 WITH RECURSIVE t(i,j) AS (

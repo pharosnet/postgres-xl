@@ -10,6 +10,7 @@
 --
 -- DEFAULT syntax
 --
+SET sequence_range = 1;
 CREATE TABLE DEFAULT_TBL (i int DEFAULT 100,
 	x text DEFAULT 'vadim', f float8 DEFAULT 123.456);
 INSERT INTO DEFAULT_TBL VALUES (1, 'thomas', 57.0613);
@@ -159,20 +160,19 @@ INSERT INTO INSERT_TBL(y,z) VALUES ('check failed', 4);
 ERROR:  new row for relation "insert_tbl" violates check constraint "insert_tbl_check"
 DETAIL:  Failing row contains (5, check failed, 4).
 INSERT INTO INSERT_TBL(x,y) VALUES (5, 'check failed');
-ERROR:  new row for relation "insert_tbl" violates check constraint "insert_tbl_con"
-DETAIL:  Failing row contains (5, check failed, -5).
+ERROR:  currval of sequence "insert_seq" is not yet defined in this session
 INSERT INTO INSERT_TBL(x,y) VALUES (5, '!check failed');
+ERROR:  currval of sequence "insert_seq" is not yet defined in this session
 INSERT INTO INSERT_TBL(y) VALUES ('-!NULL-');
 SELECT '' AS six, * FROM INSERT_TBL order by x,y,z;
  six | x |       y       | z  
 -----+---+---------------+----
      | 3 | Y             | -3
      | 4 | -!NULL-       | -4
-     | 5 | !check failed | -5
      | 6 | -!NULL-       | -6
      | 7 | !check failed | -7
      | 7 | -NULL-        | -7
-(6 rows)
+(5 rows)
 
 SELECT 'seven' AS one, nextval('insert_seq');
   one  | nextval 
@@ -198,12 +198,11 @@ SELECT '' AS nine, * FROM INSERT_TBL order by x,y,z;
 ------+---+---------------+----
       | 3 | Y             | -3
       | 4 | -!NULL-       | -4
-      | 5 | !check failed | -5
       | 6 | -!NULL-       | -6
       | 7 | !check failed | -7
       | 7 | -NULL-        | -7
       |   |               |   
-(7 rows)
+(6 rows)
 
 --
 -- Check constraints on system columns
@@ -323,16 +322,20 @@ DROP TABLE tmp;
 -- Check constraints on UPDATE
 --
 UPDATE INSERT_TBL SET x = NULL WHERE x = 5;
+ERROR:  could not plan this distributed update
+DETAIL:  correlated UPDATE or updating distribution column currently not supported in Postgres-XL.
 UPDATE INSERT_TBL SET x = 6 WHERE x = 6;
 UPDATE INSERT_TBL SET x = -z, z = -x;
+ERROR:  could not plan this distributed update
+DETAIL:  correlated UPDATE or updating distribution column currently not supported in Postgres-XL.
 UPDATE INSERT_TBL SET x = z, z = x;
-ERROR:  new row for relation "insert_tbl" violates check constraint "insert_tbl_con"
-DETAIL:  Failing row contains (-4, Y, 4).
+ERROR:  could not plan this distributed update
+DETAIL:  correlated UPDATE or updating distribution column currently not supported in Postgres-XL.
 SELECT * FROM INSERT_TBL order by x,y,z;
  x |       y       | z  
 ---+---------------+----
  4 | Y             | -4
- 5 | !check failed |   
+ 5 | !check failed | -5
  6 | try again     | -6
  7 | try again     | -7
    | try again     |   
@@ -345,7 +348,7 @@ SELECT * FROM INSERT_TBL order by x,y,z;
 CREATE TABLE COPY_TBL (x INT, y TEXT, z INT,
 	CONSTRAINT COPY_CON
 	CHECK (x > 3 AND y <> 'check failed' AND x < 7 ));
-COPY COPY_TBL FROM '@abs_srcdir@/data/constro.data';
+COPY COPY_TBL FROM '/var/lib/postgresql/sources/postgresxl_master/postgres-xl/src/test/regress/data/constro.data';
 SELECT '' AS two, * FROM COPY_TBL order by x,y,z;
  two | x |       y       | z 
 -----+---+---------------+---
@@ -353,10 +356,9 @@ SELECT '' AS two, * FROM COPY_TBL order by x,y,z;
      | 6 | OK            | 4
 (2 rows)
 
-COPY COPY_TBL FROM '@abs_srcdir@/data/constrf.data';
+COPY COPY_TBL FROM '/var/lib/postgresql/sources/postgresxl_master/postgres-xl/src/test/regress/data/constrf.data';
 ERROR:  new row for relation "copy_tbl" violates check constraint "copy_con"
 DETAIL:  Failing row contains (7, check failed, 6).
-CONTEXT:  COPY copy_tbl, line 2: "7	check failed	6"
 SELECT * FROM COPY_TBL order by x,y,z;
  x |       y       | z 
 ---+---------------+---
@@ -429,15 +431,16 @@ INSERT INTO UNIQUE_TBL VALUES (1, 'a'), (2, 'b'), (2, 'b') ON CONFLICT (i) DO UP
 ERROR:  ON CONFLICT DO UPDATE command cannot affect row a second time
 HINT:  Ensure that no rows proposed for insertion within the same command have duplicate constrained values.
 SELECT '' AS five, * FROM UNIQUE_TBL order by i,t; 
- five | i |   t   
-------+---+-------
+ five | i |         t          
+------+---+--------------------
       | 1 | one
       | 2 | two
       | 4 | four
-      | 5 | one
+      | 5 | five-upsert-update
+      | 6 | six-upsert-insert
       |   | seven
       |   | six
-(6 rows)
+(7 rows)
 
 DROP TABLE UNIQUE_TBL;
 CREATE TABLE UNIQUE_TBL (i int, t text,

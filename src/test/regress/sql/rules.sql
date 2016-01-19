@@ -7,6 +7,7 @@
 --
 -- Tables and rules for the view test
 --
+SET sequence_range = 1;
 create table rtest_t1 (a int4, b int4) distribute by replication;
 create table rtest_t2 (a int4, b int4);
 create table rtest_t3 (a int4, b int4);

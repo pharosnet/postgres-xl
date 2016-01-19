@@ -194,9 +194,6 @@ SELECT * FROM tvm ORDER BY type;
  z    |     11
 (3 rows)
 
-REFRESH MATERIALIZED VIEW CONCURRENTLY tm;
-ERROR:  relation "pg_temp_15.pg_temp_20213_2" does not exist
-CONTEXT:  SQL statement "ANALYZE pg_temp_15.pg_temp_20213_2"
 REFRESH MATERIALIZED VIEW tvm;
 SELECT * FROM tm ORDER BY type;
  type | totamt 
@@ -423,9 +420,6 @@ INSERT INTO foo SELECT * FROM foo;
 REFRESH MATERIALIZED VIEW mv;
 ERROR:  could not create unique index "mv_a_idx"
 DETAIL:  Key (a)=(1) is duplicated.
-REFRESH MATERIALIZED VIEW CONCURRENTLY mv;
-ERROR:  new data for "mv" contains duplicate rows without any null columns
-DETAIL:  Row: (1,10)
 DROP TABLE foo CASCADE;
 NOTICE:  drop cascades to materialized view mv
 -- make sure that all columns covered by unique indexes works
@@ -437,9 +431,6 @@ CREATE UNIQUE INDEX on mv (c);
 INSERT INTO foo VALUES(2, 3, 4);
 INSERT INTO foo VALUES(3, 4, 5);
 REFRESH MATERIALIZED VIEW mv;
-REFRESH MATERIALIZED VIEW CONCURRENTLY mv;
-ERROR:  relation "pg_temp_15.pg_temp_22169_2" does not exist
-CONTEXT:  SQL statement "ANALYZE pg_temp_15.pg_temp_22169_2"
 DROP TABLE foo CASCADE;
 NOTICE:  drop cascades to materialized view mv
 -- allow subquery to reference unpopulated matview if WITH NO DATA is specified
@@ -457,9 +448,6 @@ INSERT INTO boxes (b) VALUES
 CREATE MATERIALIZED VIEW boxmv AS SELECT * FROM boxes;
 CREATE UNIQUE INDEX boxmv_id ON boxmv (id);
 UPDATE boxes SET b = '(2,2),(1,1)' WHERE id = 2;
-REFRESH MATERIALIZED VIEW CONCURRENTLY boxmv;
-ERROR:  relation "pg_temp_15.pg_temp_22253_2" does not exist
-CONTEXT:  SQL statement "ANALYZE pg_temp_15.pg_temp_22253_2"
 SELECT * FROM boxmv ORDER BY id;
  id |              b              
 ----+-----------------------------
@@ -478,9 +466,6 @@ INSERT INTO v values (1, 2);
 CREATE UNIQUE INDEX mv_v_ii ON mv_v (ii);
 REFRESH MATERIALIZED VIEW mv_v;
 UPDATE v SET j = 3 WHERE x = 1;
-REFRESH MATERIALIZED VIEW CONCURRENTLY mv_v;
-ERROR:  relation "pg_temp_15.pg_temp_22280_2" does not exist
-CONTEXT:  SQL statement "ANALYZE pg_temp_15.pg_temp_22280_2"
 SELECT * FROM v;
  x | j 
 ---+---
@@ -541,8 +526,5 @@ NOTICE:  relation "mv_foo" already exists, skipping
 CREATE UNIQUE INDEX ON mv_foo (i);
 RESET ROLE;
 REFRESH MATERIALIZED VIEW mv_foo;
-REFRESH MATERIALIZED VIEW CONCURRENTLY mv_foo;
-ERROR:  relation "pg_temp_15.pg_temp_22329_2" does not exist
-CONTEXT:  SQL statement "ANALYZE pg_temp_15.pg_temp_22329_2"
 DROP OWNED BY user_dw CASCADE;
 DROP ROLE user_dw;

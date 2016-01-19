@@ -405,8 +405,8 @@ select * from q limit 24;
   7 |                 5 | G
 (24 rows)
 
-select * from (with recursive q as (
-      (select * from department order by id)
+with recursive q as (
+      select * from department
     union all
       (with recursive x as (
            select * from department
@@ -415,43 +415,8 @@ select * from (with recursive q as (
         )
        select * from x)
     )
-select * from q limit 32) rel_alias order by 1, 2, 3;
- id | parent_department | name 
-----+-------------------+------
-  0 |                   | ROOT
-  0 |                   | ROOT
-  0 |                   | ROOT
-  0 |                   | ROOT
-  1 |                 0 | A
-  1 |                 0 | A
-  1 |                 0 | A
-  1 |                 0 | A
-  2 |                 1 | B
-  2 |                 1 | B
-  2 |                 1 | B
-  2 |                 1 | B
-  3 |                 2 | C
-  3 |                 2 | C
-  3 |                 2 | C
-  3 |                 2 | C
-  4 |                 2 | D
-  4 |                 2 | D
-  4 |                 2 | D
-  4 |                 2 | D
-  5 |                 0 | E
-  5 |                 0 | E
-  5 |                 0 | E
-  5 |                 0 | E
-  6 |                 4 | F
-  6 |                 4 | F
-  6 |                 4 | F
-  6 |                 4 | F
-  7 |                 5 | G
-  7 |                 5 | G
-  7 |                 5 | G
-  7 |                 5 | G
-(32 rows)
-
+select * from q order by 1, 2, 3 limit 32;
+ERROR:  unrecognized node type: 120
 -- recursive term has sub-UNION
 WITH RECURSIVE t(i,j) AS (
 	VALUES (1,2)
@@ -575,7 +540,7 @@ with recursive search_graph(f, t, label, path, cycle) as (
 	where g.f = sg.t and not cycle
 )
 select * from search_graph order by path;
-ERROR:  WITH RECURSIVE currently not supported on distributed tables.
+ERROR:  input of anonymous composite types is not implemented
 -- ordering by the path column has same effect as SEARCH DEPTH FIRST
 with recursive search_graph(f, t, label, path, cycle) as (
 	select *, array[row(g.f, g.t)], false from graph g
@@ -585,7 +550,7 @@ with recursive search_graph(f, t, label, path, cycle) as (
 	where g.f = sg.t and not cycle
 )
 select * from search_graph order by path;
-ERROR:  WITH RECURSIVE currently not supported on distributed tables.
+ERROR:  input of anonymous composite types is not implemented
 --
 -- test multiple WITH queries
 --
@@ -767,7 +732,7 @@ WITH t AS (
 )
 INSERT INTO y
 SELECT a+20 FROM t RETURNING *;
-ERROR:  INSERT/UPDATE/DELETE is not supported in subquery
+ERROR:  unrecognized node type: 119
 SELECT * FROM y order by 1;
  a  
 ----
@@ -810,7 +775,8 @@ WITH RECURSIVE t(a) AS (
 	SELECT a+1 FROM t WHERE a < 50
 )
 DELETE FROM y USING t WHERE t.a = y.a RETURNING y.a;
-ERROR:  WITH RECURSIVE currently not supported on distributed tables.
+ERROR:  could not plan this distributed delete
+DETAIL:  correlated or complex DELETE is currently not supported in Postgres-XL.
 SELECT * FROM y order by 1;
  a  
 ----
@@ -1513,33 +1479,6 @@ SELECT * FROM y order by 1;
  10
 (10 rows)
 
-SELECT * FROM y;
-   a   
--------
-  1100
-  1200
-  1300
-  1400
-  1500
-  4200
-     0
-  -100
-  -200
-  -300
-  -400
-  -500
-  -600
-  -700
-  -800
-  -900
- -1000
-     0
-  -100
-  -200
-  -300
-  -400
-(22 rows)
-
 -- data-modifying WITH containing INSERT...ON CONFLICT DO UPDATE
 CREATE TABLE z AS SELECT i AS k, (i || ' v')::text v FROM generate_series(1, 16, 3) i;
 ALTER TABLE z ADD UNIQUE (k);
@@ -1550,12 +1489,7 @@ WITH t AS (
     RETURNING *
 )
 SELECT * FROM t JOIN y ON t.k = y.a ORDER BY a, k;
- k |   v    | a 
----+--------+---
- 0 | insert | 0
- 0 | insert | 0
-(2 rows)
-
+ERROR:  INSERT/UPDATE/DELETE is not supported in subquery
 -- Test EXCLUDED.* reference within CTE
 WITH aa AS (
     INSERT INTO z VALUES(1, 5) ON CONFLICT (k) DO UPDATE SET v = EXCLUDED.v
@@ -1563,32 +1497,18 @@ WITH aa AS (
     RETURNING *
 )
 SELECT * FROM aa;
- k | v 
----+---
-(0 rows)
-
+ERROR:  INSERT/UPDATE/DELETE is not supported in subquery
 -- New query/snapshot demonstrates side-effects of previous query.
 SELECT * FROM z ORDER BY k;
- k  |        v         
-----+------------------
-  0 | insert
-  1 | 1 v, now update
-  2 | insert
-  3 | insert
-  4 | 4 v, now update
-  5 | insert
-  6 | insert
-  7 | 7 v, now update
-  8 | insert
-  9 | insert
- 10 | 10 v, now update
- 11 | insert
- 12 | insert
- 13 | 13 v, now update
- 14 | insert
- 15 | insert
- 16 | 16 v, now update
-(17 rows)
+ k  |  v   
+----+------
+  1 | 1 v
+  4 | 4 v
+  7 | 7 v
+ 10 | 10 v
+ 13 | 13 v
+ 16 | 16 v
+(6 rows)
 
 --
 -- Ensure subqueries within the update clause work, even if they
@@ -1620,7 +1540,7 @@ upsert_cte AS (
 INSERT INTO z VALUES(2, 'Red') ON CONFLICT (k) DO
 UPDATE SET (k, v) = (SELECT k, v FROM upsert_cte WHERE upsert_cte.k = z.k)
 RETURNING k, v;
-ERROR:  attempted to update invisible tuple
+ERROR:  INSERT/UPDATE/DELETE is not supported in subquery
 DROP TABLE z;
 -- check that run to completion happens in proper ordering
 TRUNCATE TABLE y;
@@ -1784,14 +1704,16 @@ INSERT INTO child1 VALUES ( 11, 'c11' ),( 12, 'c12' );
 INSERT INTO child2 VALUES ( 23, 'c21' ),( 24, 'c22' );
 WITH rcte AS ( SELECT sum(id) AS totalid FROM parent )
 UPDATE parent SET id = id + totalid FROM rcte;
+ERROR:  could not plan this distributed update
+DETAIL:  correlated UPDATE or updating distribution column currently not supported in Postgres-XL.
 SELECT * FROM parent ORDER BY id;
  id | val 
 ----+-----
- 72 | p1
- 82 | c11
- 83 | c12
- 94 | c21
- 95 | c22
+  1 | p1
+ 11 | c11
+ 12 | c12
+ 23 | c21
+ 24 | c22
 (5 rows)
 
 WITH wcte AS ( INSERT INTO child1 VALUES ( 42, 'new' ) RETURNING id AS newid )
@@ -1800,23 +1722,26 @@ ERROR:  INSERT/UPDATE/DELETE is not supported in subquery
 SELECT * FROM parent ORDER BY id;
  id | val 
 ----+-----
- 72 | p1
- 82 | c11
- 83 | c12
- 94 | c21
- 95 | c22
+  1 | p1
+ 11 | c11
+ 12 | c12
+ 23 | c21
+ 24 | c22
 (5 rows)
 
 WITH rcte AS ( SELECT max(id) AS maxid FROM parent )
 DELETE FROM parent USING rcte WHERE id = maxid;
+ERROR:  could not plan this distributed delete
+DETAIL:  correlated or complex DELETE is currently not supported in Postgres-XL.
 SELECT * FROM parent ORDER BY id;
  id | val 
 ----+-----
- 72 | p1
- 82 | c11
- 83 | c12
- 94 | c21
-(4 rows)
+  1 | p1
+ 11 | c11
+ 12 | c12
+ 23 | c21
+ 24 | c22
+(5 rows)
 
 WITH wcte AS ( INSERT INTO child2 VALUES ( 42, 'new2' ) RETURNING id AS newid )
 DELETE FROM parent USING wcte WHERE id = newid;
@@ -1824,58 +1749,18 @@ ERROR:  INSERT/UPDATE/DELETE is not supported in subquery
 SELECT * FROM parent ORDER BY id;
  id | val 
 ----+-----
- 72 | p1
- 82 | c11
- 83 | c12
- 94 | c21
-(4 rows)
+  1 | p1
+ 11 | c11
+ 12 | c12
+ 23 | c21
+ 24 | c22
+(5 rows)
 
 -- check EXPLAIN VERBOSE for a wCTE with RETURNING
 EXPLAIN (VERBOSE, COSTS OFF, NODES OFF, NUM_NODES OFF)
 WITH wcte AS ( INSERT INTO int8_tbl VALUES ( 42, 47 ) RETURNING q2 )
 DELETE FROM a USING wcte WHERE aa = q2;
-                     QUERY PLAN                     
-----------------------------------------------------
- Delete on public.a
-   Delete on public.a
-   Delete on public.b
-   Delete on public.c
-   Delete on public.d
-   CTE wcte
-     ->  Insert on public.int8_tbl
-           Output: int8_tbl.q2
-           ->  Result
-                 Output: '42'::bigint, '47'::bigint
-   ->  Nested Loop
-         Output: a.ctid, wcte.*
-         Join Filter: (a.aa = wcte.q2)
-         ->  Seq Scan on public.a
-               Output: a.ctid, a.aa
-         ->  CTE Scan on wcte
-               Output: wcte.*, wcte.q2
-   ->  Nested Loop
-         Output: b.ctid, wcte.*
-         Join Filter: (b.aa = wcte.q2)
-         ->  Seq Scan on public.b
-               Output: b.ctid, b.aa
-         ->  CTE Scan on wcte
-               Output: wcte.*, wcte.q2
-   ->  Nested Loop
-         Output: c.ctid, wcte.*
-         Join Filter: (c.aa = wcte.q2)
-         ->  Seq Scan on public.c
-               Output: c.ctid, c.aa
-         ->  CTE Scan on wcte
-               Output: wcte.*, wcte.q2
-   ->  Nested Loop
-         Output: d.ctid, wcte.*
-         Join Filter: (d.aa = wcte.q2)
-         ->  Seq Scan on public.d
-               Output: d.ctid, d.aa
-         ->  CTE Scan on wcte
-               Output: wcte.*, wcte.q2
-(38 rows)
-
+ERROR:  INSERT/UPDATE/DELETE is not supported in subquery
 -- error cases
 -- data-modifying WITH tries to use its own output
 WITH RECURSIVE t AS (

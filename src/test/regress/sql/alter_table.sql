@@ -2,7 +2,7 @@
 -- ALTER_TABLE
 -- add attribute
 --
-
+SET sequence_range = 1;
 CREATE TABLE tmp (initial int4);
 
 COMMENT ON TABLE tmp_wrong IS 'table comment';

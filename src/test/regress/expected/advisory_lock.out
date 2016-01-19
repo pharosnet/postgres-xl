@@ -19,16 +19,7 @@ SELECT locktype, classid, objid, objsubid, mode, granted
  advisory |       0 |     2 |        1 | ShareLock     | t
  advisory |       1 |     1 |        2 | ExclusiveLock | t
  advisory |       2 |     2 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
-(13 rows)
+(4 rows)
 
 -- pg_advisory_unlock_all() shouldn't release xact locks
 SELECT pg_advisory_unlock_all();
@@ -40,7 +31,7 @@ SELECT pg_advisory_unlock_all();
 SELECT count(*) FROM pg_locks WHERE locktype = 'advisory';
  count 
 -------
-    13
+     4
 (1 row)
 
 -- can't unlock xact locks
@@ -61,7 +52,7 @@ COMMIT;
 SELECT count(*) FROM pg_locks WHERE locktype = 'advisory';
  count 
 -------
-     9
+     0
 (1 row)
 
 BEGIN;
@@ -83,16 +74,7 @@ SELECT locktype, classid, objid, objsubid, mode, granted
  advisory |       0 |     2 |        1 | ShareLock     | t
  advisory |       1 |     1 |        2 | ExclusiveLock | t
  advisory |       2 |     2 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
-(13 rows)
+(4 rows)
 
 SELECT
 	pg_advisory_lock(1), pg_advisory_lock_shared(2),
@@ -112,16 +94,7 @@ SELECT locktype, classid, objid, objsubid, mode, granted
  advisory |       0 |     2 |        1 | ShareLock     | t
  advisory |       1 |     1 |        2 | ExclusiveLock | t
  advisory |       2 |     2 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
-(13 rows)
+(4 rows)
 
 -- unlocking session locks
 SELECT
@@ -141,7 +114,7 @@ WARNING:  you don't own a lock of type ShareLock
 SELECT count(*) FROM pg_locks WHERE locktype = 'advisory';
  count 
 -------
-    10
+     0
 (1 row)
 
 BEGIN;
@@ -163,17 +136,7 @@ SELECT locktype, classid, objid, objsubid, mode, granted
  advisory |       0 |     2 |        1 | ShareLock     | t
  advisory |       1 |     1 |        2 | ExclusiveLock | t
  advisory |       2 |     2 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
-(14 rows)
+(4 rows)
 
 SELECT
 	pg_advisory_xact_lock(1), pg_advisory_xact_lock_shared(2),
@@ -193,17 +156,7 @@ SELECT locktype, classid, objid, objsubid, mode, granted
  advisory |       0 |     2 |        1 | ShareLock     | t
  advisory |       1 |     1 |        2 | ExclusiveLock | t
  advisory |       2 |     2 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
-(14 rows)
+(4 rows)
 
 -- releasing all session locks
 SELECT pg_advisory_unlock_all();
@@ -215,7 +168,7 @@ SELECT pg_advisory_unlock_all();
 SELECT count(*) FROM pg_locks WHERE locktype = 'advisory';
  count 
 -------
-    10
+     0
 (1 row)
 
 BEGIN;
@@ -239,23 +192,13 @@ SELECT locktype, classid, objid, objsubid, mode, granted
  advisory |       0 |     2 |        1 | ShareLock     | t
  advisory |       1 |     1 |        2 | ExclusiveLock | t
  advisory |       2 |     2 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
-(14 rows)
+(4 rows)
 
 COMMIT;
 SELECT count(*) FROM pg_locks WHERE locktype = 'advisory';
  count 
 -------
-    10
+     0
 (1 row)
 
 -- grabbing session locks multiple times
@@ -278,17 +221,7 @@ SELECT locktype, classid, objid, objsubid, mode, granted
  advisory |       0 |     2 |        1 | ShareLock     | t
  advisory |       1 |     1 |        2 | ExclusiveLock | t
  advisory |       2 |     2 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
-(14 rows)
+(4 rows)
 
 SELECT
 	pg_advisory_unlock(1), pg_advisory_unlock(1),
@@ -303,7 +236,7 @@ SELECT
 SELECT count(*) FROM pg_locks WHERE locktype = 'advisory';
  count 
 -------
-    10
+     0
 (1 row)
 
 -- .. and releasing them all at once
@@ -326,17 +259,7 @@ SELECT locktype, classid, objid, objsubid, mode, granted
  advisory |       0 |     2 |        1 | ShareLock     | t
  advisory |       1 |     1 |        2 | ExclusiveLock | t
  advisory |       2 |     2 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
- advisory |   65535 |     0 |        2 | ShareLock     | t
-(14 rows)
+(4 rows)
 
 SELECT pg_advisory_unlock_all();
  pg_advisory_unlock_all 
@@ -347,6 +270,6 @@ SELECT pg_advisory_unlock_all();
 SELECT count(*) FROM pg_locks WHERE locktype = 'advisory';
  count 
 -------
-    11
+     0
 (1 row)
 
