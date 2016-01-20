@@ -1202,6 +1202,13 @@ set_foreignscan_references(PlannerInfo *root,
 						   INDEX_VAR,
 						   rtoffset,
 						   false);
+		fscan->fdw_recheck_quals = (List *)
+			fix_upper_expr(root,
+						   (Node *) fscan->fdw_recheck_quals,
+						   itlist,
+						   INDEX_VAR,
+						   rtoffset,
+						   false);
 #else		
 		fscan->scan.plan.targetlist = (List *)
 			fix_upper_expr(root,
@@ -1221,6 +1228,12 @@ set_foreignscan_references(PlannerInfo *root,
 						   itlist,
 						   INDEX_VAR,
 						   rtoffset);
+		fscan->fdw_recheck_quals = (List *)
+			fix_upper_expr(root,
+						   (Node *) fscan->fdw_recheck_quals,
+						   itlist,
+						   INDEX_VAR,
+						   rtoffset);
 #endif
 		pfree(itlist);
 		/* fdw_scan_tlist itself just needs fix_scan_list() adjustments */
@@ -1229,13 +1242,15 @@ set_foreignscan_references(PlannerInfo *root,
 	}
 	else
 	{
-		/* Adjust tlist, qual, fdw_exprs in the standard way */
+		/* Adjust tlist, qual, fdw_exprs, etc. in the standard way */
 		fscan->scan.plan.targetlist =
 			fix_scan_list(root, fscan->scan.plan.targetlist, rtoffset);
 		fscan->scan.plan.qual =
 			fix_scan_list(root, fscan->scan.plan.qual, rtoffset);
 		fscan->fdw_exprs =
 			fix_scan_list(root, fscan->fdw_exprs, rtoffset);
+		fscan->fdw_recheck_quals =
+			fix_scan_list(root, fscan->fdw_recheck_quals, rtoffset);
 	}
 
 	/* Adjust fs_relids if needed */
@@ -2574,7 +2589,8 @@ extract_query_dependencies_walker(Node *node, PlannerInfo *context)
 		ListCell   *lc;
 
 		/* Collect row security information */
-		context->glob->hasRowSecurity = query->hasRowSecurity;
+		if (query->hasRowSecurity)
+			context->glob->hasRowSecurity = true;
 
 		if (query->commandType == CMD_UTILITY)
 		{

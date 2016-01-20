@@ -2177,24 +2177,29 @@ heap_insert(Relation relation, HeapTuple tup, CommandId cid,
 	heaptup = heap_prepare_insert(relation, tup, xid, cid, options);
 
 	/*
-	 * We're about to do the actual insert -- but check for conflict first, to
-	 * avoid possibly having to roll back work we've just done.
-	 *
-	 * For a heap insert, we only need to check for table-level SSI locks. Our
-	 * new tuple can't possibly conflict with existing tuple locks, and heap
-	 * page locks are only consolidated versions of tuple locks; they do not
-	 * lock "gaps" as index page locks do.  So we don't need to identify a
-	 * buffer before making the call.
-	 */
-	CheckForSerializableConflictIn(relation, NULL, InvalidBuffer);
-
-	/*
 	 * Find buffer to insert this tuple into.  If the page is all visible,
 	 * this will also pin the requisite visibility map page.
 	 */
 	buffer = RelationGetBufferForTuple(relation, heaptup->t_len,
 									   InvalidBuffer, options, bistate,
 									   &vmbuffer, NULL);
+
+	/*
+	 * We're about to do the actual insert -- but check for conflict first, to
+	 * avoid possibly having to roll back work we've just done.
+	 *
+	 * This is safe without a recheck as long as there is no possibility of
+	 * another process scanning the page between this check and the insert
+	 * being visible to the scan (i.e., an exclusive buffer content lock is
+	 * continuously held from this point until the tuple insert is visible).
+	 *
+	 * For a heap insert, we only need to check for table-level SSI locks. Our
+	 * new tuple can't possibly conflict with existing tuple locks, and heap
+	 * page locks are only consolidated versions of tuple locks; they do not
+	 * lock "gaps" as index page locks do.  So we don't need to specify a
+	 * buffer when making the call, which makes for a faster check.
+	 */
+	CheckForSerializableConflictIn(relation, NULL, InvalidBuffer);
 
 	/* NO EREPORT(ERROR) from here till changes are logged */
 	START_CRIT_SECTION();
@@ -2452,13 +2457,26 @@ heap_multi_insert(Relation relation, HeapTuple *tuples, int ntuples,
 
 	/*
 	 * We're about to do the actual inserts -- but check for conflict first,
-	 * to avoid possibly having to roll back work we've just done.
+	 * to minimize the possibility of having to roll back work we've just
+	 * done.
 	 *
-	 * For a heap insert, we only need to check for table-level SSI locks. Our
-	 * new tuple can't possibly conflict with existing tuple locks, and heap
+	 * A check here does not definitively prevent a serialization anomaly;
+	 * that check MUST be done at least past the point of acquiring an
+	 * exclusive buffer content lock on every buffer that will be affected,
+	 * and MAY be done after all inserts are reflected in the buffers and
+	 * those locks are released; otherwise there race condition.  Since
+	 * multiple buffers can be locked and unlocked in the loop below, and it
+	 * would not be feasible to identify and lock all of those buffers before
+	 * the loop, we must do a final check at the end.
+	 *
+	 * The check here could be omitted with no loss of correctness; it is
+	 * present strictly as an optimization.
+	 *
+	 * For heap inserts, we only need to check for table-level SSI locks. Our
+	 * new tuples can't possibly conflict with existing tuple locks, and heap
 	 * page locks are only consolidated versions of tuple locks; they do not
-	 * lock "gaps" as index page locks do.  So we don't need to identify a
-	 * buffer before making the call.
+	 * lock "gaps" as index page locks do.  So we don't need to specify a
+	 * buffer when making the call, which makes for a faster check.
 	 */
 	CheckForSerializableConflictIn(relation, NULL, InvalidBuffer);
 
@@ -2636,6 +2654,22 @@ heap_multi_insert(Relation relation, HeapTuple *tuples, int ntuples,
 
 		ndone += nthispage;
 	}
+
+	/*
+	 * We're done with the actual inserts.  Check for conflicts again, to
+	 * ensure that all rw-conflicts in to these inserts are detected.  Without
+	 * this final check, a sequential scan of the heap may have locked the
+	 * table after the "before" check, missing one opportunity to detect the
+	 * conflict, and then scanned the table before the new tuples were there,
+	 * missing the other chance to detect the conflict.
+	 *
+	 * For heap inserts, we only need to check for table-level SSI locks. Our
+	 * new tuples can't possibly conflict with existing tuple locks, and heap
+	 * page locks are only consolidated versions of tuple locks; they do not
+	 * lock "gaps" as index page locks do.  So we don't need to specify a
+	 * buffer when making the call.
+	 */
+	CheckForSerializableConflictIn(relation, NULL, InvalidBuffer);
 
 	/*
 	 * If tuples are cachable, mark them for invalidation from the caches in
@@ -2950,6 +2984,11 @@ l1:
 	/*
 	 * We're about to do the actual delete -- check for conflict first, to
 	 * avoid possibly having to roll back work we've just done.
+	 *
+	 * This is safe without a recheck as long as there is no possibility of
+	 * another process scanning the page between this check and the delete
+	 * being visible to the scan (i.e., an exclusive buffer content lock is
+	 * continuously held from this point until the tuple delete is visible).
 	 */
 	CheckForSerializableConflictIn(relation, &tp, buffer);
 
@@ -3577,12 +3616,6 @@ l2:
 		goto l2;
 	}
 
-	/*
-	 * We're about to do the actual update -- check for conflict first, to
-	 * avoid possibly having to roll back work we've just done.
-	 */
-	CheckForSerializableConflictIn(relation, &oldtup, buffer);
-
 	/* Fill in transaction status data */
 
 	/*
@@ -3774,14 +3807,20 @@ l2:
 	}
 
 	/*
-	 * We're about to create the new tuple -- check for conflict first, to
+	 * We're about to do the actual update -- check for conflict first, to
 	 * avoid possibly having to roll back work we've just done.
 	 *
-	 * NOTE: For a tuple insert, we only need to check for table locks, since
-	 * predicate locking at the index level will cover ranges for anything
-	 * except a table scan.  Therefore, only provide the relation.
+	 * This is safe without a recheck as long as there is no possibility of
+	 * another process scanning the pages between this check and the update
+	 * being visible to the scan (i.e., exclusive buffer content lock(s) are
+	 * continuously held from this point until the tuple update is visible).
+	 *
+	 * For the new tuple the only check needed is at the relation level, but
+	 * since both tuples are in the same relation and the check for oldtup
+	 * will include checking the relation level, there is no benefit to a
+	 * separate check for the new tuple.
 	 */
-	CheckForSerializableConflictIn(relation, NULL, InvalidBuffer);
+	CheckForSerializableConflictIn(relation, &oldtup, buffer);
 
 	/*
 	 * At this point newbuf and buffer are both pinned and locked, and newbuf
@@ -5571,7 +5610,7 @@ heap_finish_speculative(Relation relation, HeapTuple tuple)
 		lp = PageGetItemId(page, offnum);
 
 	if (PageGetMaxOffsetNumber(page) < offnum || !ItemIdIsNormal(lp))
-		elog(ERROR, "heap_confirm_insert: invalid lp");
+		elog(ERROR, "invalid lp");
 
 	htup = (HeapTupleHeader) PageGetItem(page, lp);
 
@@ -5812,14 +5851,14 @@ heap_inplace_update(Relation relation, HeapTuple tuple)
 		lp = PageGetItemId(page, offnum);
 
 	if (PageGetMaxOffsetNumber(page) < offnum || !ItemIdIsNormal(lp))
-		elog(ERROR, "heap_inplace_update: invalid lp");
+		elog(ERROR, "invalid lp");
 
 	htup = (HeapTupleHeader) PageGetItem(page, lp);
 
 	oldlen = ItemIdGetLength(lp) - htup->t_hoff;
 	newlen = tuple->t_len - tuple->t_data->t_hoff;
 	if (oldlen != newlen || htup->t_hoff != tuple->t_data->t_hoff)
-		elog(ERROR, "heap_inplace_update: wrong tuple length");
+		elog(ERROR, "wrong tuple length");
 
 	/* NO EREPORT(ERROR) from here till changes are logged */
 	START_CRIT_SECTION();
@@ -7749,7 +7788,7 @@ heap_xlog_delete(XLogReaderState *record)
 			lp = PageGetItemId(page, xlrec->offnum);
 
 		if (PageGetMaxOffsetNumber(page) < xlrec->offnum || !ItemIdIsNormal(lp))
-			elog(PANIC, "heap_delete_redo: invalid lp");
+			elog(PANIC, "invalid lp");
 
 		htup = (HeapTupleHeader) PageGetItem(page, lp);
 
@@ -7840,7 +7879,7 @@ heap_xlog_insert(XLogReaderState *record)
 		page = BufferGetPage(buffer);
 
 		if (PageGetMaxOffsetNumber(page) + 1 < xlrec->offnum)
-			elog(PANIC, "heap_insert_redo: invalid max offset number");
+			elog(PANIC, "invalid max offset number");
 
 		data = XLogRecGetBlockData(record, 0, &datalen);
 
@@ -7865,7 +7904,7 @@ heap_xlog_insert(XLogReaderState *record)
 
 		if (PageAddItem(page, (Item) htup, newlen, xlrec->offnum,
 						true, true) == InvalidOffsetNumber)
-			elog(PANIC, "heap_insert_redo: failed to add tuple");
+			elog(PANIC, "failed to add tuple");
 
 		freespace = PageGetHeapFreeSpace(page); /* needed to update FSM below */
 
@@ -7975,7 +8014,7 @@ heap_xlog_multi_insert(XLogReaderState *record)
 			else
 				offnum = xlrec->offsets[i];
 			if (PageGetMaxOffsetNumber(page) + 1 < offnum)
-				elog(PANIC, "heap_multi_insert_redo: invalid max offset number");
+				elog(PANIC, "invalid max offset number");
 
 			xlhdr = (xl_multi_insert_tuple *) SHORTALIGN(tupdata);
 			tupdata = ((char *) xlhdr) + SizeOfMultiInsertTuple;
@@ -8001,10 +8040,10 @@ heap_xlog_multi_insert(XLogReaderState *record)
 
 			offnum = PageAddItem(page, (Item) htup, newlen, offnum, true, true);
 			if (offnum == InvalidOffsetNumber)
-				elog(PANIC, "heap_multi_insert_redo: failed to add tuple");
+				elog(PANIC, "failed to add tuple");
 		}
 		if (tupdata != endptr)
-			elog(PANIC, "heap_multi_insert_redo: total tuple length mismatch");
+			elog(PANIC, "total tuple length mismatch");
 
 		freespace = PageGetHeapFreeSpace(page); /* needed to update FSM below */
 
@@ -8115,7 +8154,7 @@ heap_xlog_update(XLogReaderState *record, bool hot_update)
 			lp = PageGetItemId(page, offnum);
 
 		if (PageGetMaxOffsetNumber(page) < offnum || !ItemIdIsNormal(lp))
-			elog(PANIC, "heap_update_redo: invalid lp");
+			elog(PANIC, "invalid lp");
 
 		htup = (HeapTupleHeader) PageGetItem(page, lp);
 
@@ -8193,7 +8232,7 @@ heap_xlog_update(XLogReaderState *record, bool hot_update)
 
 		offnum = xlrec->new_offnum;
 		if (PageGetMaxOffsetNumber(page) + 1 < offnum)
-			elog(PANIC, "heap_update_redo: invalid max offset number");
+			elog(PANIC, "invalid max offset number");
 
 		if (xlrec->flags & XLH_UPDATE_PREFIX_FROM_OLD)
 		{
@@ -8271,7 +8310,7 @@ heap_xlog_update(XLogReaderState *record, bool hot_update)
 
 		offnum = PageAddItem(page, (Item) htup, newlen, offnum, true, true);
 		if (offnum == InvalidOffsetNumber)
-			elog(PANIC, "heap_update_redo: failed to add tuple");
+			elog(PANIC, "failed to add tuple");
 
 		if (xlrec->flags & XLH_UPDATE_NEW_ALL_VISIBLE_CLEARED)
 			PageClearAllVisible(page);
@@ -8326,7 +8365,7 @@ heap_xlog_confirm(XLogReaderState *record)
 			lp = PageGetItemId(page, offnum);
 
 		if (PageGetMaxOffsetNumber(page) < offnum || !ItemIdIsNormal(lp))
-			elog(PANIC, "heap_confirm_redo: invalid lp");
+			elog(PANIC, "invalid lp");
 
 		htup = (HeapTupleHeader) PageGetItem(page, lp);
 
@@ -8362,7 +8401,7 @@ heap_xlog_lock(XLogReaderState *record)
 			lp = PageGetItemId(page, offnum);
 
 		if (PageGetMaxOffsetNumber(page) < offnum || !ItemIdIsNormal(lp))
-			elog(PANIC, "heap_lock_redo: invalid lp");
+			elog(PANIC, "invalid lp");
 
 		htup = (HeapTupleHeader) PageGetItem(page, lp);
 
@@ -8412,7 +8451,7 @@ heap_xlog_lock_updated(XLogReaderState *record)
 			lp = PageGetItemId(page, offnum);
 
 		if (PageGetMaxOffsetNumber(page) < offnum || !ItemIdIsNormal(lp))
-			elog(PANIC, "heap_xlog_lock_updated: invalid lp");
+			elog(PANIC, "invalid lp");
 
 		htup = (HeapTupleHeader) PageGetItem(page, lp);
 
@@ -8451,13 +8490,13 @@ heap_xlog_inplace(XLogReaderState *record)
 			lp = PageGetItemId(page, offnum);
 
 		if (PageGetMaxOffsetNumber(page) < offnum || !ItemIdIsNormal(lp))
-			elog(PANIC, "heap_inplace_redo: invalid lp");
+			elog(PANIC, "invalid lp");
 
 		htup = (HeapTupleHeader) PageGetItem(page, lp);
 
 		oldlen = ItemIdGetLength(lp) - htup->t_hoff;
 		if (oldlen != newlen)
-			elog(PANIC, "heap_inplace_redo: wrong tuple length");
+			elog(PANIC, "wrong tuple length");
 
 		memcpy((char *) htup + htup->t_hoff, newtup, newlen);
 

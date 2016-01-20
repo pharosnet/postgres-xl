@@ -245,7 +245,8 @@ static ForeignScan *postgresGetForeignPlan(PlannerInfo *root,
 					   Oid foreigntableid,
 					   ForeignPath *best_path,
 					   List *tlist,
-					   List *scan_clauses);
+					   List *scan_clauses,
+					   Plan *outer_plan);
 static void postgresBeginForeignScan(ForeignScanState *node, int eflags);
 static TupleTableSlot *postgresIterateForeignScan(ForeignScanState *node);
 static void postgresReScanForeignScan(ForeignScanState *node);
@@ -560,6 +561,7 @@ postgresGetForeignPaths(PlannerInfo *root,
 								   fpinfo->total_cost,
 								   NIL, /* no pathkeys */
 								   NULL,		/* no outer rel either */
+								   NULL,		/* no extra plan */
 								   NIL);		/* no fdw_private list */
 	add_path(baserel, (Path *) path);
 
@@ -727,6 +729,7 @@ postgresGetForeignPaths(PlannerInfo *root,
 									   total_cost,
 									   NIL,		/* no pathkeys */
 									   param_info->ppi_req_outer,
+									   NULL,
 									   NIL);	/* no fdw_private list */
 		add_path(baserel, (Path *) path);
 	}
@@ -742,12 +745,14 @@ postgresGetForeignPlan(PlannerInfo *root,
 					   Oid foreigntableid,
 					   ForeignPath *best_path,
 					   List *tlist,
-					   List *scan_clauses)
+					   List *scan_clauses,
+					   Plan *outer_plan)
 {
 	PgFdwRelationInfo *fpinfo = (PgFdwRelationInfo *) baserel->fdw_private;
 	Index		scan_relid = baserel->relid;
 	List	   *fdw_private;
 	List	   *remote_conds = NIL;
+	List	   *remote_exprs = NIL;
 	List	   *local_exprs = NIL;
 	List	   *params_list = NIL;
 	List	   *retrieved_attrs;
@@ -769,8 +774,8 @@ postgresGetForeignPlan(PlannerInfo *root,
 	 *
 	 * This code must match "extract_actual_clauses(scan_clauses, false)"
 	 * except for the additional decision about remote versus local execution.
-	 * Note however that we only strip the RestrictInfo nodes from the
-	 * local_exprs list, since appendWhereClause expects a list of
+	 * Note however that we don't strip the RestrictInfo nodes from the
+	 * remote_conds list, since appendWhereClause expects a list of
 	 * RestrictInfos.
 	 */
 	foreach(lc, scan_clauses)
@@ -784,11 +789,17 @@ postgresGetForeignPlan(PlannerInfo *root,
 			continue;
 
 		if (list_member_ptr(fpinfo->remote_conds, rinfo))
+		{
 			remote_conds = lappend(remote_conds, rinfo);
+			remote_exprs = lappend(remote_exprs, rinfo->clause);
+		}
 		else if (list_member_ptr(fpinfo->local_conds, rinfo))
 			local_exprs = lappend(local_exprs, rinfo->clause);
 		else if (is_foreign_expr(root, baserel, rinfo->clause))
+		{
 			remote_conds = lappend(remote_conds, rinfo);
+			remote_exprs = lappend(remote_exprs, rinfo->clause);
+		}
 		else
 			local_exprs = lappend(local_exprs, rinfo->clause);
 	}
@@ -874,7 +885,9 @@ postgresGetForeignPlan(PlannerInfo *root,
 							scan_relid,
 							params_list,
 							fdw_private,
-							NIL /* no custom tlist */ );
+							NIL,	/* no custom tlist */
+							remote_exprs,
+							outer_plan);
 }
 
 /*
@@ -2662,7 +2675,11 @@ postgresImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 
 		/*
 		 * Fetch all table data from this schema, possibly restricted by
-		 * EXCEPT or LIMIT TO.
+		 * EXCEPT or LIMIT TO.  (We don't actually need to pay any attention
+		 * to EXCEPT/LIMIT TO here, because the core code will filter the
+		 * statements we return according to those lists anyway.  But it
+		 * should save a few cycles to not process excluded tables in the
+		 * first place.)
 		 *
 		 * Note: because we run the connection with search_path restricted to
 		 * pg_catalog, the format_type() and pg_get_expr() outputs will always

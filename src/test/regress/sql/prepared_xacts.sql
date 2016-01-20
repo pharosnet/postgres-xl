@@ -135,9 +135,10 @@ SELECT gid FROM pg_prepared_xacts ORDER BY gid;
 SELECT pgxc_prepared_xact FROM pgxc_prepared_xacts ORDER by 1;
 
 -- pxtest3 should be locked because of the pending DROP
+begin;
 set statement_timeout to 2000;
 SELECT * FROM pxtest3;
-reset statement_timeout;
+rollback;
 
 -- Disconnect, we will continue testing in a different backend
 \c -
@@ -148,9 +149,10 @@ SELECT gid FROM pg_prepared_xacts ORDER BY gid;
 SELECT pgxc_prepared_xact FROM pgxc_prepared_xacts ORDER by 1;
 
 -- pxtest3 should still be locked because of the pending DROP
+begin;
 set statement_timeout to 2000;
 SELECT * FROM pxtest3;
-reset statement_timeout;
+rollback;
 
 -- Commit table creation
 COMMIT PREPARED 'regress-one';

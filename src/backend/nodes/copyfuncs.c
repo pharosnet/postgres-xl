@@ -647,6 +647,7 @@ _copyForeignScan(const ForeignScan *from)
 	COPY_NODE_FIELD(fdw_exprs);
 	COPY_NODE_FIELD(fdw_private);
 	COPY_NODE_FIELD(fdw_scan_tlist);
+	COPY_NODE_FIELD(fdw_recheck_quals);
 	COPY_BITMAPSET_FIELD(fs_relids);
 	COPY_SCALAR_FIELD(fsSystemCol);
 
@@ -2216,20 +2217,6 @@ _copySpecialJoinInfo(const SpecialJoinInfo *from)
 	COPY_SCALAR_FIELD(semi_can_hash);
 	COPY_NODE_FIELD(semi_operators);
 	COPY_NODE_FIELD(semi_rhs_exprs);
-
-	return newnode;
-}
-
-/*
- * _copyLateralJoinInfo
- */
-static LateralJoinInfo *
-_copyLateralJoinInfo(const LateralJoinInfo *from)
-{
-	LateralJoinInfo *newnode = makeNode(LateralJoinInfo);
-
-	COPY_BITMAPSET_FIELD(lateral_lhs);
-	COPY_BITMAPSET_FIELD(lateral_rhs);
 
 	return newnode;
 }
@@ -4820,9 +4807,6 @@ copyObject(const void *from)
 			break;
 		case T_SpecialJoinInfo:
 			retval = _copySpecialJoinInfo(from);
-			break;
-		case T_LateralJoinInfo:
-			retval = _copyLateralJoinInfo(from);
 			break;
 		case T_AppendRelInfo:
 			retval = _copyAppendRelInfo(from);

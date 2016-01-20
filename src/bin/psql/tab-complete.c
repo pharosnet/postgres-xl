@@ -1063,7 +1063,7 @@ psql_completion(const char *text, int start, int end)
 
 		COMPLETE_WITH_LIST(list_ALTER);
 	}
-	/* ALTER TABLE,INDEX,MATERIALIZED VIEW xxx ALL IN TABLESPACE xxx */
+	/* ALTER TABLE,INDEX,MATERIALIZED VIEW ALL IN TABLESPACE xxx */
 	else if (pg_strcasecmp(prev4_wd, "ALL") == 0 &&
 			 pg_strcasecmp(prev3_wd, "IN") == 0 &&
 			 pg_strcasecmp(prev2_wd, "TABLESPACE") == 0)
@@ -1073,14 +1073,22 @@ psql_completion(const char *text, int start, int end)
 
 		COMPLETE_WITH_LIST(list_ALTERALLINTSPC);
 	}
-	/* ALTER TABLE,INDEX,MATERIALIZED VIEW xxx ALL IN TABLESPACE xxx OWNED BY */
+	/* ALTER TABLE,INDEX,MATERIALIZED VIEW ALL IN TABLESPACE xxx OWNED BY */
 	else if (pg_strcasecmp(prev6_wd, "ALL") == 0 &&
 			 pg_strcasecmp(prev5_wd, "IN") == 0 &&
 			 pg_strcasecmp(prev4_wd, "TABLESPACE") == 0 &&
 			 pg_strcasecmp(prev2_wd, "OWNED") == 0 &&
-			 pg_strcasecmp(prev4_wd, "BY") == 0)
+			 pg_strcasecmp(prev_wd, "BY") == 0)
 	{
 		COMPLETE_WITH_QUERY(Query_for_list_of_roles);
+	}
+	/* ALTER TABLE,INDEX,MATERIALIZED VIEW ALL IN TABLESPACE xxx OWNED BY xxx */
+	else if (pg_strcasecmp(prev6_wd, "IN") == 0 &&
+			 pg_strcasecmp(prev5_wd, "TABLESPACE") == 0 &&
+			 pg_strcasecmp(prev3_wd, "OWNED") == 0 &&
+			 pg_strcasecmp(prev2_wd, "BY") == 0)
+	{
+		COMPLETE_WITH_CONST("SET TABLESPACE");
 	}
 	/* ALTER AGGREGATE,FUNCTION <name> */
 	else if (pg_strcasecmp(prev3_wd, "ALTER") == 0 &&
@@ -1521,6 +1529,10 @@ psql_completion(const char *text, int start, int end)
 		COMPLETE_WITH_LIST(list_ALTERMATVIEW);
 	}
 
+	/* ALTER POLICY <name> */
+	else if (pg_strcasecmp(prev2_wd, "ALTER") == 0 &&
+			 pg_strcasecmp(prev_wd, "POLICY") == 0)
+		COMPLETE_WITH_QUERY(Query_for_list_of_policies);
 	/* ALTER POLICY <name> ON */
 	else if (pg_strcasecmp(prev3_wd, "ALTER") == 0 &&
 			 pg_strcasecmp(prev2_wd, "POLICY") == 0)
@@ -1529,7 +1541,10 @@ psql_completion(const char *text, int start, int end)
 	else if (pg_strcasecmp(prev4_wd, "ALTER") == 0 &&
 			 pg_strcasecmp(prev3_wd, "POLICY") == 0 &&
 			 pg_strcasecmp(prev_wd, "ON") == 0)
-		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_tables, NULL);
+	{
+		completion_info_charp = prev2_wd;
+		COMPLETE_WITH_QUERY(Query_for_list_of_tables_for_policy);
+	}
 	/* ALTER POLICY <name> ON <table> - show options */
 	else if (pg_strcasecmp(prev5_wd, "ALTER") == 0 &&
 			 pg_strcasecmp(prev4_wd, "POLICY") == 0 &&
@@ -2911,7 +2926,7 @@ psql_completion(const char *text, int start, int end)
 			 pg_strcasecmp(prev2_wd, "FROM") == 0)
 	{
 		static const char *const list_DELETE[] =
-		{"USING", "WHERE", "SET", NULL};
+		{"USING", "WHERE", NULL};
 
 		COMPLETE_WITH_LIST(list_DELETE);
 	}

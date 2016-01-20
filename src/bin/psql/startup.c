@@ -274,8 +274,11 @@ main(int argc, char *argv[])
 	{
 		pset.logfile = fopen(options.logfilename, "a");
 		if (!pset.logfile)
+		{
 			fprintf(stderr, _("%s: could not open log file \"%s\": %s\n"),
 					pset.progname, options.logfilename, strerror(errno));
+			exit(EXIT_FAILURE);
+		}
 	}
 
 	/*
@@ -460,7 +463,8 @@ parse_psql_options(int argc, char *argv[], struct adhoc_opts * options)
 				options->no_readline = true;
 				break;
 			case 'o':
-				setQFout(optarg);
+				if (!setQFout(optarg))
+					exit(EXIT_FAILURE);
 				break;
 			case 'p':
 				options->port = pg_strdup(optarg);

@@ -28,6 +28,7 @@
 #include "tcop/tcopprot.h"
 #include "utils/combocid.h"
 #include "utils/guc.h"
+#include "utils/inval.h"
 #include "utils/memutils.h"
 #include "utils/resowner.h"
 #include "utils/snapmgr.h"
@@ -76,10 +77,6 @@ typedef struct FixedParallelState
 	/* Mutex protects remaining fields. */
 	slock_t		mutex;
 
-	/* Track whether workers have attached. */
-	int			workers_expected;
-	int			workers_attached;
-
 	/* Maximum XactLastRecEnd of any worker. */
 	XLogRecPtr	last_xlog_end;
 } FixedParallelState;
@@ -94,6 +91,9 @@ int			ParallelWorkerNumber = -1;
 
 /* Is there a parallel message pending which we need to receive? */
 bool		ParallelMessagePending = false;
+
+/* Are we initializing a parallel worker? */
+bool		InitializingParallelWorker = false;
 
 /* Pointer to our fixed parallel state. */
 static FixedParallelState *MyFixedParallelState;
@@ -282,8 +282,6 @@ InitializeParallelDSM(ParallelContext *pcxt)
 	fps->parallel_master_backend_id = MyBackendId;
 	fps->entrypoint = pcxt->entrypoint;
 	SpinLockInit(&fps->mutex);
-	fps->workers_expected = pcxt->nworkers;
-	fps->workers_attached = 0;
 	fps->last_xlog_end = 0;
 	shm_toc_insert(pcxt->toc, PARALLEL_KEY_FIXED, fps);
 
@@ -402,6 +400,7 @@ LaunchParallelWorkers(ParallelContext *pcxt)
 	worker.bgw_main = ParallelWorkerMain;
 	worker.bgw_main_arg = UInt32GetDatum(dsm_segment_handle(pcxt->seg));
 	worker.bgw_notify_pid = MyProcPid;
+	memset(&worker.bgw_extra, 0, BGW_EXTRALEN);
 
 	/*
 	 * Start workers.
@@ -413,6 +412,7 @@ LaunchParallelWorkers(ParallelContext *pcxt)
 	 */
 	for (i = 0; i < pcxt->nworkers; ++i)
 	{
+		memcpy(worker.bgw_extra, &i, sizeof(int));
 		if (!any_registrations_failed &&
 			RegisterDynamicBackgroundWorker(&worker,
 											&pcxt->worker[i].bgwhandle))
@@ -814,9 +814,16 @@ ParallelWorkerMain(Datum main_arg)
 	char	   *tstatespace;
 	StringInfoData msgbuf;
 
+	/* Set flag to indicate that we're initializing a parallel worker. */
+	InitializingParallelWorker = true;
+
 	/* Establish signal handlers. */
 	pqsignal(SIGTERM, die);
 	BackgroundWorkerUnblockSignals();
+
+	/* Determine and set our parallel worker number. */
+	Assert(ParallelWorkerNumber == -1);
+	memcpy(&ParallelWorkerNumber, MyBgworkerEntry->bgw_extra, sizeof(int));
 
 	/* Set up a memory context and resource owner. */
 	Assert(CurrentResourceOwner == NULL);
@@ -835,25 +842,16 @@ ParallelWorkerMain(Datum main_arg)
 	if (seg == NULL)
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("unable to map dynamic shared memory segment")));
+				 errmsg("could not map dynamic shared memory segment")));
 	toc = shm_toc_attach(PARALLEL_MAGIC, dsm_segment_address(seg));
 	if (toc == NULL)
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-			   errmsg("bad magic number in dynamic shared memory segment")));
+			   errmsg("invalid magic number in dynamic shared memory segment")));
 
-	/* Determine and set our worker number. */
+	/* Look up fixed parallel state. */
 	fps = shm_toc_lookup(toc, PARALLEL_KEY_FIXED);
 	Assert(fps != NULL);
-	Assert(ParallelWorkerNumber == -1);
-	SpinLockAcquire(&fps->mutex);
-	if (fps->workers_attached < fps->workers_expected)
-		ParallelWorkerNumber = fps->workers_attached++;
-	SpinLockRelease(&fps->mutex);
-	if (ParallelWorkerNumber < 0)
-		ereport(ERROR,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("too many parallel workers already attached")));
 	MyFixedParallelState = fps;
 
 	/*
@@ -867,7 +865,7 @@ ParallelWorkerMain(Datum main_arg)
 					 ParallelWorkerNumber * PARALLEL_ERROR_QUEUE_SIZE);
 	shm_mq_set_sender(mq, MyProc);
 	mqh = shm_mq_attach(mq, seg, NULL);
-	pq_redirect_to_shm_mq(mq, mqh);
+	pq_redirect_to_shm_mq(seg, mqh);
 	pq_set_parallel_master(fps->parallel_master_pid,
 						   fps->parallel_master_backend_id);
 
@@ -928,6 +926,12 @@ ParallelWorkerMain(Datum main_arg)
 	Assert(asnapspace != NULL);
 	PushActiveSnapshot(RestoreSnapshot(asnapspace));
 
+	/*
+	 * We've changed which tuples we can see, and must therefore invalidate
+	 * system caches.
+	 */
+	InvalidateSystemCaches();
+
 	/* Restore user ID and security context. */
 	SetUserIdAndSecContext(fps->current_user_id, fps->sec_context);
 
@@ -935,6 +939,7 @@ ParallelWorkerMain(Datum main_arg)
 	 * We've initialized all of our state now; nothing should change
 	 * hereafter.
 	 */
+	InitializingParallelWorker = false;
 	EnterParallelMode();
 
 	/*
@@ -993,7 +998,7 @@ ParallelExtensionTrampoline(dsm_segment *seg, shm_toc *toc)
 static void
 ParallelErrorContext(void *arg)
 {
-	errcontext("parallel worker, pid %d", *(int32 *) arg);
+	errcontext("parallel worker, PID %d", *(int32 *) arg);
 }
 
 /*

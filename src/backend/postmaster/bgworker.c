@@ -314,6 +314,7 @@ BackgroundWorkerStateChange(void)
 		rw->rw_worker.bgw_restart_time = slot->worker.bgw_restart_time;
 		rw->rw_worker.bgw_main = slot->worker.bgw_main;
 		rw->rw_worker.bgw_main_arg = slot->worker.bgw_main_arg;
+		memcpy(rw->rw_worker.bgw_extra, slot->worker.bgw_extra, BGW_EXTRALEN);
 
 		/*
 		 * Copy the PID to be notified about state changes, but only if the
@@ -828,7 +829,7 @@ RegisterDynamicBackgroundWorker(BackgroundWorker *worker,
 	/*
 	 * We can't register dynamic background workers from the postmaster. If
 	 * this is a standalone backend, we're the only process and can't start
-	 * any more.  In a multi-process environement, it might be theoretically
+	 * any more.  In a multi-process environment, it might be theoretically
 	 * possible, but we don't currently support it due to locking
 	 * considerations; see comments on the BackgroundWorkerSlot data
 	 * structure.

@@ -1140,7 +1140,9 @@ GetNewMultiXactId(int nmembers, MultiXactOffset *offset)
 								 nmembers + MULTIXACT_MEMBERS_PER_PAGE * SLRU_PAGES_PER_SEGMENT * OFFSET_WARN_SEGMENTS))
 		ereport(WARNING,
 				(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
-				 errmsg("database with OID %u must be vacuumed before %d more multixact members are used",
+				 errmsg_plural("database with OID %u must be vacuumed before %d more multixact member is used",
+							   "database with OID %u must be vacuumed before %d more multixact members are used",
+						MultiXactState->offsetStopLimit - nextOffset + nmembers,
 						MultiXactState->oldestMultiXactDB,
 					MultiXactState->offsetStopLimit - nextOffset + nmembers),
 				 errhint("Execute a database-wide VACUUM in that database with reduced vacuum_multixact_freeze_min_age and vacuum_multixact_freeze_table_age settings.")));
@@ -2550,6 +2552,7 @@ SetOffsetVacuumLimit(void)
 	bool		oldestOffsetKnown = false;
 	bool		prevOldestOffsetKnown;
 	MultiXactOffset offsetStopLimit = 0;
+	MultiXactOffset prevOffsetStopLimit;
 
 	/*
 	 * NB: Have to prevent concurrent truncation, we might otherwise try to
@@ -2564,6 +2567,7 @@ SetOffsetVacuumLimit(void)
 	nextOffset = MultiXactState->nextOffset;
 	prevOldestOffsetKnown = MultiXactState->oldestOffsetKnown;
 	prevOldestOffset = MultiXactState->oldestOffset;
+	prevOffsetStopLimit = MultiXactState->offsetStopLimit;
 	Assert(MultiXactState->finishedStartup);
 	LWLockRelease(MultiXactGenLock);
 
@@ -2631,11 +2635,13 @@ SetOffsetVacuumLimit(void)
 	{
 		/*
 		 * If we failed to get the oldest offset this time, but we have a
-		 * value from a previous pass through this function, use the old value
-		 * rather than automatically forcing it.
+		 * value from a previous pass through this function, use the old
+		 * values rather than automatically forcing an emergency autovacuum
+		 * cycle again.
 		 */
 		oldestOffset = prevOldestOffset;
 		oldestOffsetKnown = true;
+		offsetStopLimit = prevOffsetStopLimit;
 	}
 
 	/* Install the computed values */

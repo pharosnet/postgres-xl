@@ -2294,10 +2294,15 @@ create_foreignscan_plan(PlannerInfo *root, ForeignPath *best_path,
 	Index		scan_relid = rel->relid;
 	Oid			rel_oid = InvalidOid;
 	Bitmapset  *attrs_used = NULL;
+	Plan	   *outer_plan = NULL;
 	ListCell   *lc;
 	int			i;
 
 	Assert(rel->fdwroutine != NULL);
+
+	/* transform the child path if any */
+	if (best_path->fdw_outerpath)
+		outer_plan = create_plan_recurse(root, best_path->fdw_outerpath);
 
 	/*
 	 * If we're scanning a base relation, fetch its OID.  (Irrelevant if
@@ -2328,7 +2333,8 @@ create_foreignscan_plan(PlannerInfo *root, ForeignPath *best_path,
 	 */
 	scan_plan = rel->fdwroutine->GetForeignPlan(root, rel, rel_oid,
 												best_path,
-												tlist, scan_clauses);
+												tlist, scan_clauses,
+												outer_plan);
 
 	/* Copy cost data from Path to Plan; no need to make FDW do this */
 	copy_path_costsize(&scan_plan->scan.plan, &best_path->path);
@@ -2352,6 +2358,9 @@ create_foreignscan_plan(PlannerInfo *root, ForeignPath *best_path,
 			replace_nestloop_params(root, (Node *) scan_plan->scan.plan.qual);
 		scan_plan->fdw_exprs = (List *)
 			replace_nestloop_params(root, (Node *) scan_plan->fdw_exprs);
+		scan_plan->fdw_recheck_quals = (List *)
+			replace_nestloop_params(root,
+									(Node *) scan_plan->fdw_recheck_quals);
 	}
 
 	/*
@@ -4314,7 +4323,9 @@ make_foreignscan(List *qptlist,
 				 Index scanrelid,
 				 List *fdw_exprs,
 				 List *fdw_private,
-				 List *fdw_scan_tlist)
+				 List *fdw_scan_tlist,
+				 List *fdw_recheck_quals,
+				 Plan *outer_plan)
 {
 	ForeignScan *node = makeNode(ForeignScan);
 
@@ -4323,7 +4334,7 @@ make_foreignscan(List *qptlist,
 	/* cost will be filled in by create_foreignscan_plan */
 	plan->targetlist = qptlist;
 	plan->qual = qpqual;
-	plan->lefttree = NULL;
+	plan->lefttree = outer_plan;
 	plan->righttree = NULL;
 	node->scan.scanrelid = scanrelid;
 	/* fs_server will be filled in by create_foreignscan_plan */
@@ -4331,6 +4342,7 @@ make_foreignscan(List *qptlist,
 	node->fdw_exprs = fdw_exprs;
 	node->fdw_private = fdw_private;
 	node->fdw_scan_tlist = fdw_scan_tlist;
+	node->fdw_recheck_quals = fdw_recheck_quals;
 	/* fs_relids will be filled in by create_foreignscan_plan */
 	node->fs_relids = NULL;
 	/* fsSystemCol will be filled in by create_foreignscan_plan */

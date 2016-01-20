@@ -204,7 +204,7 @@ cluster_one_database(const char *dbname, bool verbose, const char *table,
 	appendPQExpBufferChar(&sql, ';');
 
 	conn = connectDatabase(dbname, host, port, username, prompt_password,
-						   progname, false);
+						   progname, false, false);
 	if (!executeMaintenanceCommand(conn, sql.data, echo))
 	{
 		if (table)

@@ -76,8 +76,11 @@ COMMIT;
 select to_jsonb(date '2014-05-28');
 
 select to_jsonb(date 'Infinity');
+select to_jsonb(date '-Infinity');
 select to_jsonb(timestamp 'Infinity');
+select to_jsonb(timestamp '-Infinity');
 select to_jsonb(timestamptz 'Infinity');
+select to_jsonb(timestamptz '-Infinity');
 
 --jsonb_agg
 
@@ -329,6 +332,10 @@ SELECT jsonb_build_object(r,2) FROM (SELECT 1 AS a, 2 AS b) r;
 SELECT jsonb_build_object(json '{"a":1,"b":2}', 3);
 
 SELECT jsonb_build_object('{1,2,3}'::int[], 3);
+
+-- handling of NULL values
+SELECT jsonb_object_agg(1, NULL::jsonb);
+SELECT jsonb_object_agg(NULL, '{"a":1}');
 
 CREATE TEMP TABLE foo (serial_num int, name text, type text);
 INSERT INTO foo VALUES (847001,'t15','GE1043');
@@ -610,6 +617,26 @@ SELECT '{"a":[1,2,{"c":3,"x":4}],"c":"b"}'::jsonb @> '{"a":[{"c":3}]}';
 SELECT '{"a":[1,2,{"c":3,"x":4}],"c":"b"}'::jsonb @> '{"a":[{"x":4}]}';
 SELECT '{"a":[1,2,{"c":3,"x":4}],"c":"b"}'::jsonb @> '{"a":[{"x":4},3]}';
 SELECT '{"a":[1,2,{"c":3,"x":4}],"c":"b"}'::jsonb @> '{"a":[{"x":4},1]}';
+
+-- check some corner cases for indexed nested containment (bug #13756)
+create temp table nestjsonb (j jsonb);
+insert into nestjsonb (j) values ('{"a":[["b",{"x":1}],["b",{"x":2}]],"c":3}');
+insert into nestjsonb (j) values ('[[14,2,3]]');
+insert into nestjsonb (j) values ('[1,[14,2,3]]');
+create index on nestjsonb using gin(j jsonb_path_ops);
+
+set enable_seqscan = on;
+set enable_bitmapscan = off;
+select * from nestjsonb where j @> '{"a":[[{"x":2}]]}'::jsonb;
+select * from nestjsonb where j @> '{"c":3}';
+select * from nestjsonb where j @> '[[14]]';
+set enable_seqscan = off;
+set enable_bitmapscan = on;
+select * from nestjsonb where j @> '{"a":[[{"x":2}]]}'::jsonb;
+select * from nestjsonb where j @> '{"c":3}';
+select * from nestjsonb where j @> '[[14]]';
+reset enable_seqscan;
+reset enable_bitmapscan;
 
 -- nested object field / array index lookup
 SELECT '{"n":null,"a":1,"b":[1,2],"c":{"1":2},"d":{"1":[2,3]}}'::jsonb -> 'n';

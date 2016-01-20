@@ -909,7 +909,7 @@ remove_symlink:
 		/* Refuse to remove anything that's not a directory or symlink */
 		ereport(redo ? LOG : ERROR,
 				(ERRCODE_SYSTEM_ERROR,
-				 errmsg("not a directory or symbolic link: \"%s\"",
+				 errmsg("\"%s\" is not a directory or symbolic link",
 						linkloc)));
 	}
 
@@ -966,7 +966,7 @@ remove_tablespace_symlink(const char *linkloc)
 			return;
 		ereport(ERROR,
 				(errcode_for_file_access(),
-				 errmsg("could not stat \"%s\": %m", linkloc)));
+				 errmsg("could not stat file \"%s\": %m", linkloc)));
 	}
 
 	if (S_ISDIR(st.st_mode))
@@ -995,7 +995,7 @@ remove_tablespace_symlink(const char *linkloc)
 	{
 		/* Refuse to remove anything that's not a directory or symlink */
 		ereport(ERROR,
-				(errmsg("not a directory or symbolic link: \"%s\"",
+				(errmsg("\"%s\" is not a directory or symbolic link",
 						linkloc)));
 	}
 }
