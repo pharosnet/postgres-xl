@@ -685,7 +685,8 @@ AssignTransactionId(TransactionState s)
 		s->transactionId = GetNewTransactionId(isSubXact, &received_tp, &gtm_timestamp);
 		if (received_tp)
 		{
-			GTMxactStartTimestamp = (TimestampTz) gtm_timestamp;
+			if (GTMxactStartTimestamp == 0)
+				GTMxactStartTimestamp = (TimestampTz) gtm_timestamp;
 			GTMdeltaTimestamp = GTMxactStartTimestamp - stmtStartTimestamp;
 		}
 	}
@@ -905,6 +906,8 @@ GetCurrentTransactionStartTimestamp(void)
 	 * from GTM along with GXID.
 	 */
 #ifdef PGXC
+	if (GTMxactStartTimestamp == 0)
+		GTMxactStartTimestamp = xactStartTimestamp;
 	return GTMxactStartTimestamp;
 #else
 	return xactStartTimestamp;
@@ -964,6 +967,8 @@ GetCurrentTransactionStopTimestamp(void)
 TimestampTz
 GetCurrentGTMStartTimestamp(void)
 {
+	if (GTMxactStartTimestamp == 0)
+		GTMxactStartTimestamp = xactStartTimestamp;
 	return GTMxactStartTimestamp;
 }
 #endif
@@ -995,7 +1000,8 @@ SetCurrentTransactionStopTimestamp(void)
 void
 SetCurrentGTMDeltaTimestamp(TimestampTz timestamp)
 {
-	GTMxactStartTimestamp = timestamp;
+	if (GTMxactStartTimestamp == 0)
+		GTMxactStartTimestamp = timestamp;
 	GTMdeltaTimestamp = GTMxactStartTimestamp - xactStartTimestamp;
 }
 #endif
@@ -2193,7 +2199,9 @@ StartTransaction(void)
 	xactStopTimestamp = 0;
 #ifdef PGXC
 	/* For Postgres-XC, transaction start timestamp has to follow the GTM timeline */
-	pgstat_report_xact_timestamp(GTMxactStartTimestamp);
+	pgstat_report_xact_timestamp(GTMxactStartTimestamp ?
+			GTMxactStartTimestamp :
+			xactStartTimestamp);
 #else
 	pgstat_report_xact_timestamp(xactStartTimestamp);
 #endif
@@ -2650,6 +2658,7 @@ CommitTransaction(void)
 
 #ifdef PGXC
 	AtEOXact_Remote();
+	GTMxactStartTimestamp = 0;
 #endif
 }
 
@@ -3026,6 +3035,7 @@ PrepareTransaction(void)
 	CleanGTMCallbacks();
 #ifdef XCP	
 	AtEOXact_Remote();	
+	GTMxactStartTimestamp = 0;
 #endif	
 #endif
 
@@ -3318,6 +3328,7 @@ AbortTransaction(void)
 
 #ifdef PGXC
 	AtEOXact_Remote();
+	GTMxactStartTimestamp = 0;
 #endif
 
 }
