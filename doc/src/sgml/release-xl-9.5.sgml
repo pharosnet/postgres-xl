@@ -6,33 +6,652 @@
 
   <note>
    <title>Release Date</title>
-   <simpara>2015-??-??</simpara>
-   <simpara>Current as of 2015-06-01</simpara>
+   <simpara>2016-??-??</simpara>
+   <simpara>Current as of 2016-01-18</simpara>
   </note>
 
   <sect2>
    <title>Overview</title>
-
    <para>
-    Major enhancements in <productname>Postgres-XL</> 9.5 include:
+    This major release of <productname>Postgres-XL</productname> is coming
+almost 2 years after <productname>Postgres-XL</productname> 9.2 was released. The
+earlier <productname>Postgres-XL</productname> release was based on
+<productname>PostgreSQL</productname> 9.2. This release includes most of the
+new features added in <productname>PostgreSQL</productname> 9.3, 9.4 and 9.5
+releases. This also includes almost all significant performance enhancements
+that were made to <productname>PostgreSQL</productname> in the last few years.
    </para>
 
-   <!-- This list duplicates items below, but without authors or details-->
-
-   <itemizedlist>
-
-    <listitem>
-     <para>
-      ... to be filled in ...
-     </para>
-    </listitem>
-
-   </itemizedlist>
-
    <para>
-    The above items are explained in more detail in the sections below.
+    Apart from this, a lot of work has gone into fixing outstanding bugs,
+improving stability of the product and significantly improving performance for OLTP
+workloads. The following sections describe the major enhancements in
+<productname>PostgreSQL</productname> that are now available in
+<productname>Postgres-XL</productname>. A short list of features that are
+currently not supported or have limited support is also mentioned in
+<xref linkend="major-unsupported-enhancements">.
    </para>
-
   </sect2>
 
- </sect1>
+  <sect2>
+  <title>Migration to Postgres-XL 9.5 </title>
+   <sect3>
+   <title>Migration to Postgres-XL 9.5 from PostgreSQL 9.5 </title>
+    <para>
+     A dump/restore using <xref linkend="app-pg-dumpall">
+     is required for those wishing to migrate
+     data from PostgreSQL 9.5 release. We don't currently support <xref
+linkend="pgupgrade">, as a mechanism to upgrade from PostgreSQL 9.5
+    </para>
+ 
+    <para>
+    </para>
+   </sect3>
+   <sect3>
+   <title>Migration to Postgres-XL 9.5 from Postgres-XL 9.2 </title>
+    <para>
+     Version 9.5 contains a number of changes that may affect compatibility
+     with previous releases. Since Postgres-XL 9.5 release includes all changes
+from PostgreSQL 9.3, PostgreSQL 9.4 and PostgreSQL 9.5 releases, it is
+recommended that you review respective release notes of those releases to find
+the exact incompatibilities.
+    </para>
+   </sect3>
+  </sect2>
+
+  <sect2>
+   <title>Major Enhancements in Postgres-XL 9.5 </title>
+   <para>
+    <productname>Postgres-XL</productname> 9.5 is the first major release
+after <productname>Postgres-XL</productname> 9.2 release. So this release
+contains most of the major enhancements that went into
+<productname>PostgreSQL</productname> releases 9.3, 9.4 and 9.5. This is a very
+short list of such enhancements, but all other enhancements also apply, unless
+otherwise stated.
+   </para>
+   <sect3>
+    <title>Major Enhancements from PostgreSQL 9.5 </title>
+    <itemizedlist>
+     <listitem>
+      <para>
+       Allow <link linkend="sql-on-conflict"><command>INSERT</></>s
+       that would generate constraint conflicts to be turned into
+       <command>UPDATE</>s or ignored
+      </para>
+     </listitem>
+ 
+ 
+     <listitem>
+      <para>
+       Add <link linkend="ddl-rowsecurity">row-level security control</>
+      </para>
+     </listitem>
+ 
+     <listitem>
+      <para>
+       Create mechanisms for tracking
+       the <link linkend="replication-origins">progress of replication</>,
+       including methods for identifying the origin of individual changes
+       during logical replication
+      </para>
+     </listitem>
+ 
+     <listitem>
+      <para>
+       Add <link linkend="BRIN">Block Range Indexes</> (<acronym>BRIN</>)
+      </para>
+     </listitem>
+ 
+     <listitem>
+      <para>
+       Substantial performance improvements for sorting
+      </para>
+     </listitem>
+ 
+     <listitem>
+      <para>
+       Substantial performance improvements for multi-CPU machines
+      </para>
+     </listitem>
+    </itemizedlist>
+   </sect3>
+   <sect3>
+    <title>Major Enhancements from PostgreSQL 9.4 </title>
+    <itemizedlist>
+     <listitem>
+      <para>
+       Add <link linkend="datatype-json"><type>jsonb</></link>, a more
+       capable and efficient data type for storing <acronym>JSON</> data
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Add new <acronym>SQL</> command <xref linkend="SQL-ALTERSYSTEM">
+       for changing <filename>postgresql.conf</> configuration file entries
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Reduce lock strength for some <xref linkend="SQL-ALTERTABLE">
+       commands
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Allow <link linkend="rules-materializedviews">materialized views</>
+       to be refreshed without blocking concurrent reads
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Add support for <link linkend="logicaldecoding">logical decoding</>
+       of WAL data, to allow database changes to be streamed out in a
+       customizable format
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+        Allow <link linkend="bgworker">background worker processes</>
+        to be dynamically registered, started and terminated
+      </para>
+     </listitem>
+    </itemizedlist>
+   </sect3>
+   <sect3>
+    <title>Major Enhancements from PostgreSQL 9.3 </title>
+    <itemizedlist>
+
+     <listitem>
+      <para>
+       Make simple views <link
+       linkend="SQL-CREATEVIEW-updatable-views">auto-updatable</link>
+      </para>
+     </listitem>
+ 
+     <listitem>
+      <para>
+       Add many features for the <type>JSON</> data type,
+       including <link linkend="functions-json">operators and functions</link>
+       to extract elements from <type>JSON</> values
+      </para>
+     </listitem>
+ 
+     <listitem>
+      <para>
+       Implement <acronym>SQL</>-standard <link
+       linkend="queries-lateral"><literal>LATERAL</></link> option for
+       <literal>FROM</>-clause subqueries and function calls
+      </para>
+     </listitem>
+ 
+     <listitem>
+      <para>
+       Add optional ability to <link
+       linkend="app-initdb-data-checksums">checksum</link> data pages and
+       report corruption
+      </para>
+     </listitem>
+ 
+     <listitem>
+      <para>
+       Prevent non-key-field row updates from blocking foreign key checks
+      </para>
+     </listitem>
+ 
+     <listitem>
+      <para>
+       Greatly reduce System V <link linkend="sysvipc">shared
+       memory</link> requirements
+      </para>
+     </listitem>
+    </itemizedlist>
+   </sect3>
+   <sect3 id="major-unsupported-enhancements">
+    <title>Major Enhancements PostgreSQL that are currently not supported</title>
+    <itemizedlist>
+     <listitem>
+      <para>
+       Add <literal>GROUP BY</> analysis features <link
+       linkend="queries-grouping-sets"><literal>GROUPING SETS</></>,
+       <link linkend="queries-grouping-sets"><literal>CUBE</></> and
+       <link linkend="queries-grouping-sets"><literal>ROLLUP</></>
+      </para>
+     </listitem>
+     <listitem>
+      <para>
+       Add <link linkend="SQL-CREATEMATERIALIZEDVIEW">materialized
+       views</link>
+      </para>
+     </listitem>
+     <listitem>
+      <para>
+       Allow <link linkend="SQL-CREATEFOREIGNDATAWRAPPER">foreign data
+       wrappers</link> to support writes (inserts/updates/deletes) on foreign
+       tables
+      </para>
+     </listitem>
+ 
+     <listitem>
+      <para>
+       Add a <link linkend="postgres-fdw"><productname>Postgres</> foreign
+       data wrapper</link> to allow access to
+       other <productname>Postgres</> servers
+      </para>
+     </listitem>
+ 
+     <listitem>
+      <para>
+       Add support for <link linkend="event-triggers">event triggers</link>
+      </para>
+     </listitem>
+    </itemizedlist>
+   </sect3>
+  </sect2>
+
+  <sect2>
+   <title>Changes</title>
+
+   <para>
+    Below you will find a detailed account of the changes between
+    <productname>Postgres-XL</productname> 9.5 and the previous major
+    release.
+   </para>
+
+  <itemizedlist>
+   <listitem>
+    <para>
+     Analyze all regression failures and make necessary changes to the
+expected output or the test cases.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+     Persistent connections are not supported between datanodes.
+    </para>
+    <para>
+     Configuration parameter <varname>persistent_datanode_connections</varname>
+is ignored on the datanodes. So connections between datanodes are returned back
+to the connection pool at the end of the transaction. A WARNING will be shown
+when this parameter is set on the datanode side and the value will be ignored.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+     Change GID format to include all participant nodes.
+    </para>
+    <para>
+     Every implicit 2PC GID now includes <varname>node_id</varname> of every
+participating node in the 2PC transaction. This refers to the
+       element of <link linkend="catalog-pgxc-node"><structname>pgxc_node
+       </structname></link>.node_id value.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+     WAL log only the actual GID used to prepare a 2PC transaction, not the
+ maximum bytes reserved for GID.
+    </para>
+    <para>
+     This change considerably reduces the WAL space required while preparing a
+transaction and shows siginificant performance improvement.
+    </para>
+   </listitem>
+
+   <listitem>
+    <para>
+   Support Greenplum syntax for specifying distribution strategy for a table.
+    </para>
+    <para>
+     Postgres-XL now supports additional syntax for specifying distribution
+strategy. This syntax is compatible with Greenplum. See
+<xref linkend="SQL-CREATETABLE"> for more details.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Support Redshift syntax for specifying distribution strategy for a table.
+    </para>
+    <para>
+     Postgres-XL now supports additional syntax for specifying distribution
+strategy. This syntax is compatible with Redshift. See
+<xref linkend="SQL-CREATETABLE"> for more details.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Improve pgxc_ctl so that it checks if a directory is empty before it can be
+ used as data directory for a new datanode/coordinator.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Replicated tables are now highly-available for read-access.
+    </para>
+    <para>
+     Every node now maintains a healthmap about all other nodes in the cluster. If
+a node goes down or is unreachable, the healthmap is updated. Queries that read
+from replicated tables are then sent to a healthy node. Unhealthy nodes are
+periodically pinged and their status is updated when they come back online.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   "make check" now automatically sets up a 2-coordinator, 2-datanode cluster
+and runs parallel regression schedule.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Significantly improve performance for queries that can be fully executed on a
+single node by shipping them to the node.
+    </para>
+    <para>
+     <productname>Postgres-XC</productname> has Fast Query Shipping (FQS) feature to fully ship queries that can be safely executed on the remote
+datanodes, without any finalisation at the coordinator. The same feature has
+now been ported to <productname>Postgres-XL</productname>. This improves
+performances for extremely short queries which are now directly planned and
+executed on the datanodes.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Print EXPLAIN plans, as created by the datanodes, for queries that are fully
+shipped to the datanodes.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Bump up default value for <varname>sequence_range</varname> to 1000.
+    </para>
+    <para>
+    The earlier default for this GUC was <literal>1</literal>. But performance of <command>INSERT</command> is observed to be extremely poor
+when sequences are incremented by 1. So the default value of this GUC is now bumped up to
+<literal>1000</literal>. This can create holes in the sequence assignment.
+Applications that do not want holes in sequence values should set this GUC to
+<literal>1</literal>.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Force commit ordering at the GTM for transactions that have followed a
+ specific logical ordering at the datanode/coordinators.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Add a developer GUC "enable_datanode_row_triggers" to allow ROW TRIGGERS to be
+ executed on the datanodes.
+    </para>
+    <para>
+     This is a developer GUC and it must be used with caution since the feature
+is not fully supported yet. When this GUC is turned <literal>on</literal>,
+ROW TRIGGERS can be defined on tables. Such triggers will only be executed on
+the datanodes and they must be written in a way such that they don't need
+access to cluster-wide data. This feature is not well tested and users are 
+advised to do thorough testing before using this feature.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Add a developer-GUC 'gloabl_snapshot_source' to allow users to
+ override the way snapshots are computed.
+    </para>
+    <para>
+     This is a developer GUC and it must be used with caution since its usage can
+lead to inconsistent or wrong query results. In
+<productname>Postgres-XL</productname>, snapshots are normally computed at the
+GTM so that a globally consistent view of the cluster can be obtained. But
+sometimes applications may want to read using a slightly stale snapshot that is
+computed on the coordinator, so that an extra round trip to the GTM is avoided.
+While such snapshots can improve performance, they may give a wrong result,
+especially when more than one coorinators are running.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Allow on-demand assignment of XIDs.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Add a Cluster Monitor process which periodically reports local state to the
+ GTM for computation of a consistent global state.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Compute RecentGlobalXmin on each node separately and send it to the GTM
+ periodically. GTM then computes a cluster-wide RecentGlobalXmin and passes it
+ back to the nodes.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Support recursive queries for replicated tables.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Wait for the socket to become ready to receive more data before attempting to
+ write again.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Cancel queries on remote connections upon transaction abort.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Add two new GUCs, <varname>log_gtm_stats</varname> and
+<varname>log_remotesubplan_stats</varname> to
+ collect runtime information about GTM communication stats and remote subplan
+ stats.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Use poll() instead of select() to check if one or more file descriptors are
+ ready for read/write.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Fix aggregate handling for BIGINT/INT8 datatype for platforms with
+ support for 128-bit integers.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Add support to receive error HINTs from remote nodes and send them back to the
+ client along with the error message.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Add necessary machinery to support TABLESAMPLE clause.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Add 'C' and 'R' to log_line_prefix.
+    </para>
+    <para>
+     This helps us print remote coordinator ID and PID of the remote coordinator
+     process. This is useful for debugging
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Add support for materialized views on the coordinator.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Add "force" option to pgxc_ctl init command to forcefully remove datanode,
+     coordinator or gtm directory.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Add a new "minimal" option to "prepare" command of pgxc_ctl.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Do not read prototype config file when dealing with user specified conf
+ file.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Set the size of pending connections on a pooler socket to some respectable
+ high limit.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Allow DMLs inside a plpgsql procedure on the coordinator.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Add support for GTM to backup data at BARRIER command.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Disable internal subtransactions.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Add support for pg_stat_statements.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Add <varname>xc_maintenance_mode</varname> GUC which is useful for resolving in-doubt
+ prepared transactions.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Add support for gtmSlaveName in pgxc_ctl.conf.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Add "help" command to pgxc_ctl.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Improve "pgxc_ctl configure" command so that datanodes are also properly
+ configured.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Add ability to specify extra server configuration and pg_hba configuration while adding a new
+ datanode master or slave.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Add support to save history of pgxc_ctl commands.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Add ability to specify datanode slave ports and datanode slave pooler ports
+ separately.
+    </para>
+   </listitem>
+  </itemizedlist> 
+ </sect2>
+ <sect2>
+  <title>Important Bug Fixes</title>
+  <itemizedlist> 
+   <listitem>
+    <para>
+   Fix pgxc_clean so that it cleans up outstanding transactions correctly.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Fix multi-command SQL query execution i.e. queries that have multiple SQL
+commands separated by <literal>;</literal>.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Fix memory leaks in prepared statement handling.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Send CREATE/ALETR POLICY utility commands to the remote nodes.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Send SET commands in the same order to remote nodes at session initialization
+ time.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Propogate ALTER TABLE ALL IN correctly to all nodes.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Handle CREATE TABLE IF NOT EXISTS correctly.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Do not propogate REINDEX command to coordinators for indexes on temporary
+ tables.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Rename sequences correctly on the GTM when schemas are renamed.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Push down LIMIT clause to the remote side if its a constant.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Refactor GTM connection management.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Fix a bug in deciding local GTM proxy while adding a new datanode master.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Fix a problem in COPY while redistributing table data when a node is added
+or removed from distribution or when distribution key is changed.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Set up pg_hba.conf on the master properly while adding a slave.
+    </para>
+   </listitem>
+  </itemizedlist> 
+ </sect2>
+</sect1>
