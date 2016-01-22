@@ -1495,12 +1495,13 @@ select pg_get_viewdef('tt18v', true);
 (1 row)
 
 explain (costs off) select * from tt18v;
-                                         QUERY PLAN                                         
---------------------------------------------------------------------------------------------
- Append
-   ->  Seq Scan on int8_tbl xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-   ->  Seq Scan on int8_tbl xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx_1
-(3 rows)
+                                            QUERY PLAN                                            
+--------------------------------------------------------------------------------------------------
+ Remote Subquery Scan on all (datanode_1)
+   ->  Append
+         ->  Seq Scan on int8_tbl xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+         ->  Seq Scan on int8_tbl xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx_1
+(4 rows)
 
 -- clean up all the random objects we made above
 set client_min_messages = warning;
