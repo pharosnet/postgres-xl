@@ -548,17 +548,14 @@ retry:
 					/*
 					 * before returning, also update the shared health
 					 * status field to indicate that this node could be
-					 * possibly unavailable
+					 * possibly unavailable.
+					 *
+					 * Note that this error could be due to a stale handle
+					 * and it's possible that another backend might have
+					 * already updated the health status OR the node
+					 * might have already come back since the last disruption
 					 */
-					if (!PgxcNodeUpdateHealth(conn->nodeoid, false))
-						elog(WARNING, "Could not update health status of node %u",
-							 conn->nodeoid);
-					else
-						elog(WARNING, "Health map updated to reflect DOWN node (%u)",
-							 conn->nodeoid);
-
-					/* But ping once to see if the node is still available */
-					PoolPingNodes();
+					PoolPingNodeRecheck(conn->nodeoid);
 
 					/* Should we read from the other connections before returning? */
 					return ERROR_OCCURED;
@@ -1631,17 +1628,15 @@ pgxc_node_flush(PGXCNodeHandle *handle)
 
 			/*
 			 * before returning, also update the shared health
-			 * status field to indicate that this node is down
+			 * status field to indicate that this node could be
+			 * possibly unavailable.
+			 *
+			 * Note that this error could be due to a stale handle
+			 * and it's possible that another backend might have
+			 * already updated the health status OR the node
+			 * might have already come back since the last disruption
 			 */
-			if (!PgxcNodeUpdateHealth(handle->nodeoid, false))
-				elog(WARNING, "Could not update health status of node %u",
-					 handle->nodeoid);
-			else
-				elog(WARNING, "Health map updated to reflect DOWN node (%u)",
-					 handle->nodeoid);
-
-			/* But ping once to see if the node is still available */
-			PoolPingNodes();
+			PoolPingNodeRecheck(handle->nodeoid);
 			return EOF;
 		}
 	}

@@ -755,7 +755,7 @@ TryPingUnhealthyNode(Oid nodeoid)
 {
 	int status;
 	NodeDefinition *nodeDef;
-	char connstr[1024];
+	char connstr[MAXPGPATH * 2 + 256];
 
 	nodeDef = PgxcNodeGetDefinition(nodeoid);
 	if (nodeDef == NULL)
@@ -792,6 +792,51 @@ TryPingUnhealthyNode(Oid nodeoid)
 	else
 		elog(LOG, "Health map updated to reflect HEALTHY node (%s)",
 			 NameStr(nodeDef->nodename));
+	pfree(nodeDef);
+
+	return;
+}
+
+/*
+ * Check if a node is indeed down and if it is update its UNHEALTHY
+ * status
+ */
+void
+PoolPingNodeRecheck(Oid nodeoid)
+{
+	int status;
+	NodeDefinition *nodeDef;
+	char connstr[MAXPGPATH * 2 + 256];
+	bool	healthy;
+
+	nodeDef = PgxcNodeGetDefinition(nodeoid);
+	if (nodeDef == NULL)
+	{
+		/* No such definition, node dropped? */
+		elog(DEBUG1, "Could not find node (%u) definition,"
+			 " skipping health check", nodeoid);
+		return;
+	}
+
+	sprintf(connstr,
+			"host=%s port=%d", NameStr(nodeDef->nodehost),
+			nodeDef->nodeport);
+	status = PGXCNodePing(connstr);
+	healthy = (status == 0);
+
+	/* if no change in health bit, return */
+	if (healthy == nodeDef->nodeishealthy)
+	{
+		pfree(nodeDef);
+		return;
+	}
+
+	if (!PgxcNodeUpdateHealth(nodeoid, healthy))
+		elog(WARNING, "Could not update health status of node (%s)",
+			 NameStr(nodeDef->nodename));
+	else
+		elog(LOG, "Health map updated to reflect (%s) node (%s)",
+			 healthy ? "HEALTHY" : "UNHEALTHY", NameStr(nodeDef->nodename));
 	pfree(nodeDef);
 
 	return;

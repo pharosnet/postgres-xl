@@ -142,6 +142,7 @@ extern void PoolManagerLock(bool is_lock);
 
 /* Do pool health check activity */
 extern void PoolPingNodes(void);
+extern void PoolPingNodeRecheck(Oid nodeoid);
 
 extern bool check_persistent_connections(bool *newval, void **extra,
 		GucSource source);

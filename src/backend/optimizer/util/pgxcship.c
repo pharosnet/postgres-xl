@@ -492,7 +492,7 @@ retry_pools:
 		ListCell *lc;
 		bool healthmap[MaxDataNodes];
 
-	   	PgxcNodeDnListHealth(rel_loc_info->nodeList, &healthmap);
+		PgxcNodeDnListHealth(rel_loc_info->nodeList, healthmap);
 
 		i = 0;
 		foreach(lc, rel_loc_info->nodeList)
