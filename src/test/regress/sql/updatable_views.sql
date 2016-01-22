@@ -128,8 +128,8 @@ UPDATE rw_view1 SET a=5 WHERE a=4;
 DELETE FROM rw_view1 WHERE b='Row 2';
 SELECT * FROM base_tbl;
 
-EXPLAIN (costs off) UPDATE rw_view1 SET a=6 WHERE a=5;
-EXPLAIN (costs off) DELETE FROM rw_view1 WHERE a=5;
+EXPLAIN (costs off, nodes off) UPDATE rw_view1 SET a=6 WHERE a=5;
+EXPLAIN (costs off, nodes off) DELETE FROM rw_view1 WHERE a=5;
 
 DROP TABLE base_tbl CASCADE;
 
@@ -161,8 +161,8 @@ UPDATE rw_view2 SET bbb='Row 4' WHERE aaa=4;
 DELETE FROM rw_view2 WHERE aaa=2;
 SELECT * FROM rw_view2;
 
-EXPLAIN (costs off) UPDATE rw_view2 SET aaa=5 WHERE aaa=4;
-EXPLAIN (costs off) DELETE FROM rw_view2 WHERE aaa=4;
+EXPLAIN (costs off, nodes off) UPDATE rw_view2 SET aaa=5 WHERE aaa=4;
+EXPLAIN (costs off, nodes off) DELETE FROM rw_view2 WHERE aaa=4;
 
 DROP TABLE base_tbl CASCADE;
 
@@ -249,8 +249,8 @@ SELECT * FROM rw_view2;
 DELETE FROM rw_view2 WHERE a=3 RETURNING *;
 SELECT * FROM rw_view2;
 
-EXPLAIN (costs off) UPDATE rw_view2 SET a=3 WHERE a=2;
-EXPLAIN (costs off) DELETE FROM rw_view2 WHERE a=2;
+EXPLAIN (costs off, nodes off) UPDATE rw_view2 SET a=3 WHERE a=2;
+EXPLAIN (costs off, nodes off) DELETE FROM rw_view2 WHERE a=2;
 
 DROP TABLE base_tbl CASCADE;
 
@@ -363,8 +363,8 @@ SELECT * FROM rw_view2;
 DELETE FROM rw_view2 WHERE a=3 RETURNING *;
 SELECT * FROM rw_view2;
 
-EXPLAIN (costs off) UPDATE rw_view2 SET a=3 WHERE a=2;
-EXPLAIN (costs off) DELETE FROM rw_view2 WHERE a=2;
+EXPLAIN (costs off, nodes off) UPDATE rw_view2 SET a=3 WHERE a=2;
+EXPLAIN (costs off, nodes off) DELETE FROM rw_view2 WHERE a=2;
 
 DROP TABLE base_tbl CASCADE;
 DROP FUNCTION rw_view1_trig_fn();
@@ -383,7 +383,7 @@ UPDATE rw_view1 v SET bb='Updated row 2' WHERE rw_view1_aa(v)=2
   RETURNING rw_view1_aa(v), v.bb;
 SELECT * FROM base_tbl;
 
-EXPLAIN (costs off)
+EXPLAIN (costs off, nodes off)
 UPDATE rw_view1 v SET bb='Updated row 2' WHERE rw_view1_aa(v)=2
   RETURNING rw_view1_aa(v), v.bb;
 
@@ -523,7 +523,7 @@ SELECT * FROM rw_view1;
 INSERT INTO rw_view1 VALUES (7,-8);
 SELECT * FROM rw_view1;
 
-EXPLAIN (verbose, costs off) UPDATE rw_view1 SET b = b + 1 RETURNING *;
+EXPLAIN (verbose, costs off, nodes off) UPDATE rw_view1 SET b = b + 1 RETURNING *;
 UPDATE rw_view1 SET b = b + 1 RETURNING *;
 SELECT * FROM rw_view1;
 
@@ -752,8 +752,8 @@ INSERT INTO rw_view1 VALUES (15); -- should fail
 UPDATE rw_view1 SET a = a + 5; -- ok
 UPDATE rw_view1 SET a = a + 5; -- should fail
 
-EXPLAIN (costs off) INSERT INTO rw_view1 VALUES (5);
-EXPLAIN (costs off) UPDATE rw_view1 SET a = a + 5;
+EXPLAIN (costs off, nodes off) INSERT INTO rw_view1 VALUES (5);
+EXPLAIN (costs off, nodes off) UPDATE rw_view1 SET a = a + 5;
 
 DROP TABLE base_tbl, ref_tbl CASCADE;
 
@@ -906,9 +906,9 @@ SELECT * FROM rw_view1 WHERE snoop(person);
 UPDATE rw_view1 SET person=person WHERE snoop(person);
 DELETE FROM rw_view1 WHERE NOT snoop(person);
 
-EXPLAIN (costs off) SELECT * FROM rw_view1 WHERE snoop(person);
-EXPLAIN (costs off) UPDATE rw_view1 SET person=person WHERE snoop(person);
-EXPLAIN (costs off) DELETE FROM rw_view1 WHERE NOT snoop(person);
+EXPLAIN (costs off, nodes off) SELECT * FROM rw_view1 WHERE snoop(person);
+EXPLAIN (costs off, nodes off) UPDATE rw_view1 SET person=person WHERE snoop(person);
+EXPLAIN (costs off, nodes off) DELETE FROM rw_view1 WHERE NOT snoop(person);
 
 -- security barrier view on top of security barrier view
 
@@ -932,9 +932,9 @@ SELECT * FROM rw_view2 WHERE snoop(person);
 UPDATE rw_view2 SET person=person WHERE snoop(person);
 DELETE FROM rw_view2 WHERE NOT snoop(person);
 
-EXPLAIN (costs off) SELECT * FROM rw_view2 WHERE snoop(person);
-EXPLAIN (costs off) UPDATE rw_view2 SET person=person WHERE snoop(person);
-EXPLAIN (costs off) DELETE FROM rw_view2 WHERE NOT snoop(person);
+EXPLAIN (costs off, nodes off) SELECT * FROM rw_view2 WHERE snoop(person);
+EXPLAIN (costs off, nodes off) UPDATE rw_view2 SET person=person WHERE snoop(person);
+EXPLAIN (costs off, nodes off) DELETE FROM rw_view2 WHERE NOT snoop(person);
 
 DROP TABLE base_tbl CASCADE;
 
@@ -957,10 +957,10 @@ CREATE VIEW rw_view1 WITH (security_barrier=true) AS
 
 SELECT * FROM rw_view1;
 
-EXPLAIN (costs off) DELETE FROM rw_view1 WHERE id = 1 AND snoop(data);
+EXPLAIN (costs off, nodes off) DELETE FROM rw_view1 WHERE id = 1 AND snoop(data);
 DELETE FROM rw_view1 WHERE id = 1 AND snoop(data);
 
-EXPLAIN (costs off) INSERT INTO rw_view1 VALUES (2, 'New row 2');
+EXPLAIN (costs off, nodes off) INSERT INTO rw_view1 VALUES (2, 'New row 2');
 INSERT INTO rw_view1 VALUES (2, 'New row 2');
 
 SELECT * FROM base_tbl;

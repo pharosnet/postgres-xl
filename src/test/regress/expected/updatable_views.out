@@ -401,19 +401,19 @@ SELECT * FROM base_tbl;
   5 | Unspecified
 (6 rows)
 
-EXPLAIN (costs off) UPDATE rw_view1 SET a=6 WHERE a=5;
+EXPLAIN (costs off, nodes off) UPDATE rw_view1 SET a=6 WHERE a=5;
                        QUERY PLAN                       
 --------------------------------------------------------
- Remote Subquery Scan on any (datanode_1,datanode_2)
+ Remote Subquery Scan on any
    ->  Update on base_tbl
          ->  Index Scan using base_tbl_pkey on base_tbl
                Index Cond: ((a > 0) AND (a = 5))
 (4 rows)
 
-EXPLAIN (costs off) DELETE FROM rw_view1 WHERE a=5;
+EXPLAIN (costs off, nodes off) DELETE FROM rw_view1 WHERE a=5;
                        QUERY PLAN                       
 --------------------------------------------------------
- Remote Subquery Scan on any (datanode_1,datanode_2)
+ Remote Subquery Scan on any
    ->  Delete on base_tbl
          ->  Index Scan using base_tbl_pkey on base_tbl
                Index Cond: ((a > 0) AND (a = 5))
@@ -473,19 +473,19 @@ SELECT * FROM rw_view2;
    4 | Row 4
 (3 rows)
 
-EXPLAIN (costs off) UPDATE rw_view2 SET aaa=5 WHERE aaa=4;
+EXPLAIN (costs off, nodes off) UPDATE rw_view2 SET aaa=5 WHERE aaa=4;
                           QUERY PLAN                          
 --------------------------------------------------------------
- Remote Subquery Scan on any (datanode_1,datanode_2)
+ Remote Subquery Scan on any
    ->  Update on base_tbl
          ->  Index Scan using base_tbl_pkey on base_tbl
                Index Cond: ((a < 10) AND (a > 0) AND (a = 4))
 (4 rows)
 
-EXPLAIN (costs off) DELETE FROM rw_view2 WHERE aaa=4;
+EXPLAIN (costs off, nodes off) DELETE FROM rw_view2 WHERE aaa=4;
                           QUERY PLAN                          
 --------------------------------------------------------------
- Remote Subquery Scan on any (datanode_1,datanode_2)
+ Remote Subquery Scan on any
    ->  Delete on base_tbl
          ->  Index Scan using base_tbl_pkey on base_tbl
                Index Cond: ((a < 10) AND (a > 0) AND (a = 4))
@@ -667,10 +667,10 @@ SELECT * FROM rw_view2;
  2 | Row 2
 (2 rows)
 
-EXPLAIN (costs off) UPDATE rw_view2 SET a=3 WHERE a=2;
+EXPLAIN (costs off, nodes off) UPDATE rw_view2 SET a=3 WHERE a=2;
                               QUERY PLAN                              
 ----------------------------------------------------------------------
- Remote Subquery Scan on any (datanode_1,datanode_2)
+ Remote Subquery Scan on any
    ->  Update on base_tbl
          ->  Nested Loop
                ->  Index Scan using base_tbl_pkey on base_tbl
@@ -683,10 +683,10 @@ EXPLAIN (costs off) UPDATE rw_view2 SET a=3 WHERE a=2;
                                  Index Cond: (a > 0)
 (11 rows)
 
-EXPLAIN (costs off) DELETE FROM rw_view2 WHERE a=2;
+EXPLAIN (costs off, nodes off) DELETE FROM rw_view2 WHERE a=2;
                               QUERY PLAN                              
 ----------------------------------------------------------------------
- Remote Subquery Scan on any (datanode_1,datanode_2)
+ Remote Subquery Scan on any
    ->  Delete on base_tbl
          ->  Nested Loop
                ->  Index Scan using base_tbl_pkey on base_tbl
@@ -899,11 +899,11 @@ SELECT * FROM rw_view2;
  2 | Row 2
 (2 rows)
 
-EXPLAIN (costs off) UPDATE rw_view2 SET a=3 WHERE a=2;
+EXPLAIN (costs off, nodes off) UPDATE rw_view2 SET a=3 WHERE a=2;
 ERROR:  cannot update view "rw_view1"
 DETAIL:  Views containing LIMIT or OFFSET are not automatically updatable.
 HINT:  To enable updating the view, provide an INSTEAD OF UPDATE trigger or an unconditional ON UPDATE DO INSTEAD rule.
-EXPLAIN (costs off) DELETE FROM rw_view2 WHERE a=2;
+EXPLAIN (costs off, nodes off) DELETE FROM rw_view2 WHERE a=2;
 ERROR:  cannot delete from view "rw_view1"
 DETAIL:  Views containing LIMIT or OFFSET are not automatically updatable.
 HINT:  To enable deleting from the view, provide an INSTEAD OF DELETE trigger or an unconditional ON DELETE DO INSTEAD rule.
@@ -935,7 +935,7 @@ SELECT * FROM base_tbl;
   2 | Row 2
 (5 rows)
 
-EXPLAIN (costs off)
+EXPLAIN (costs off, nodes off)
 UPDATE rw_view1 v SET bb='Updated row 2' WHERE rw_view1_aa(v)=2
   RETURNING rw_view1_aa(v), v.bb;
 ERROR:  function rw_view1_aa(rw_view1) does not exist
@@ -1129,10 +1129,10 @@ SELECT * FROM rw_view1;
  4 |  5
 (4 rows)
 
-EXPLAIN (verbose, costs off) UPDATE rw_view1 SET b = b + 1 RETURNING *;
+EXPLAIN (verbose, costs off, nodes off) UPDATE rw_view1 SET b = b + 1 RETURNING *;
                             QUERY PLAN                             
 -------------------------------------------------------------------
- Remote Subquery Scan on any (datanode_1,datanode_2)
+ Remote Subquery Scan on any
    Output: base_tbl.a, base_tbl.b
    ->  Update on public.base_tbl
          Output: base_tbl.a, base_tbl.b
@@ -1654,24 +1654,24 @@ UPDATE rw_view1 SET a = a + 5; -- ok
 UPDATE rw_view1 SET a = a + 5; -- should fail
 ERROR:  new row violates check option for view "rw_view1"
 DETAIL:  Failing row contains (15).
-EXPLAIN (costs off) INSERT INTO rw_view1 VALUES (5);
+EXPLAIN (costs off, nodes off) INSERT INTO rw_view1 VALUES (5);
                                 QUERY PLAN                                 
 ---------------------------------------------------------------------------
- Remote Subquery Scan on any (datanode_1,datanode_2)
+ Remote Subquery Scan on any
    ->  Insert on base_tbl b
-         ->  Remote Subquery Scan on all (datanode_1)
+         ->  Remote Subquery Scan on all
                Distribute results by R
                ->  Result
                SubPlan 1
-                 ->  Remote Subquery Scan on all (datanode_2)
+                 ->  Remote Subquery Scan on all
                        ->  Index Only Scan using ref_tbl_pkey on ref_tbl r
                              Index Cond: (a = b.a)
 (9 rows)
 
-EXPLAIN (costs off) UPDATE rw_view1 SET a = a + 5;
+EXPLAIN (costs off, nodes off) UPDATE rw_view1 SET a = a + 5;
                                  QUERY PLAN                                  
 -----------------------------------------------------------------------------
- Remote Subquery Scan on any (datanode_1,datanode_2)
+ Remote Subquery Scan on any
    ->  Update on base_tbl b
          ->  Hash Semi Join
                Hash Cond: (b.a = r.a)
@@ -1679,7 +1679,7 @@ EXPLAIN (costs off) UPDATE rw_view1 SET a = a + 5;
                ->  Hash
                      ->  Seq Scan on ref_tbl r
                SubPlan 1
-                 ->  Remote Subquery Scan on all (datanode_1)
+                 ->  Remote Subquery Scan on all
                        ->  Index Only Scan using ref_tbl_pkey on ref_tbl r_1
                              Index Cond: (a = b.a)
 (11 rows)
@@ -1703,7 +1703,7 @@ ERROR:  Postgres-XL does not support TRIGGER yet
 DETAIL:  The feature is not currently supported
 CREATE VIEW rw_view1 AS SELECT * FROM base_tbl WHERE a < b WITH CHECK OPTION;
 INSERT INTO rw_view1 VALUES (5,0); -- ok
-ERROR:  new row violates WITH CHECK OPTION for "rw_view1"
+ERROR:  new row violates check option for view "rw_view1"
 DETAIL:  Failing row contains (5, 0).
 INSERT INTO rw_view1 VALUES (15, 20); -- should fail
 UPDATE rw_view1 SET a = 20, b = 30; -- should fail
@@ -1738,7 +1738,7 @@ DETAIL:  The feature is not currently supported
 CREATE VIEW rw_view2 AS
   SELECT * FROM rw_view1 WHERE a > 0 WITH LOCAL CHECK OPTION;
 INSERT INTO rw_view2 VALUES (-5); -- should fail
-ERROR:  new row violates WITH CHECK OPTION for "rw_view2"
+ERROR:  new row violates check option for view "rw_view2"
 DETAIL:  Failing row contains (-5, null).
 INSERT INTO rw_view2 VALUES (5); -- ok
 INSERT INTO rw_view2 VALUES (50); -- ok, but not in view
@@ -1753,7 +1753,7 @@ SELECT * FROM base_tbl;
 -- Check option won't cascade down to base view with INSTEAD OF triggers
 ALTER VIEW rw_view2 SET (check_option=cascaded);
 INSERT INTO rw_view2 VALUES (100); -- ok, but not in view (doesn't fail rw_view1's check)
-ERROR:  new row violates WITH CHECK OPTION for "rw_view1"
+ERROR:  new row violates check option for view "rw_view1"
 DETAIL:  Failing row contains (100, null).
 UPDATE rw_view2 SET a = 200 WHERE a = 5; -- ok, but not in view (doesn't fail rw_view1's check)
 SELECT * FROM base_tbl;
@@ -1871,20 +1871,20 @@ SELECT * FROM rw_view1 WHERE snoop(person);
 
 UPDATE rw_view1 SET person=person WHERE snoop(person);
 DELETE FROM rw_view1 WHERE NOT snoop(person);
-EXPLAIN (costs off) SELECT * FROM rw_view1 WHERE snoop(person);
+EXPLAIN (costs off, nodes off) SELECT * FROM rw_view1 WHERE snoop(person);
                      QUERY PLAN                      
 -----------------------------------------------------
- Remote Subquery Scan on all (datanode_1)
+ Remote Subquery Scan on all
    ->  Subquery Scan on rw_view1
          Filter: snoop(rw_view1.person)
          ->  Seq Scan on base_tbl
                Filter: (visibility = 'public'::text)
 (5 rows)
 
-EXPLAIN (costs off) UPDATE rw_view1 SET person=person WHERE snoop(person);
+EXPLAIN (costs off, nodes off) UPDATE rw_view1 SET person=person WHERE snoop(person);
                            QUERY PLAN                            
 -----------------------------------------------------------------
- Remote Subquery Scan on all (datanode_1)
+ Remote Subquery Scan on all
    ->  Update on base_tbl base_tbl_1
          ->  Subquery Scan on base_tbl
                Filter: snoop(base_tbl.person)
@@ -1893,10 +1893,10 @@ EXPLAIN (costs off) UPDATE rw_view1 SET person=person WHERE snoop(person);
                            Filter: (visibility = 'public'::text)
 (7 rows)
 
-EXPLAIN (costs off) DELETE FROM rw_view1 WHERE NOT snoop(person);
+EXPLAIN (costs off, nodes off) DELETE FROM rw_view1 WHERE NOT snoop(person);
                            QUERY PLAN                            
 -----------------------------------------------------------------
- Remote Subquery Scan on all (datanode_2)
+ Remote Subquery Scan on all
    ->  Delete on base_tbl base_tbl_1
          ->  Subquery Scan on base_tbl
                Filter: (NOT snoop(base_tbl.person))
@@ -1942,10 +1942,10 @@ SELECT * FROM rw_view2 WHERE snoop(person);
 
 UPDATE rw_view2 SET person=person WHERE snoop(person);
 DELETE FROM rw_view2 WHERE NOT snoop(person);
-EXPLAIN (costs off) SELECT * FROM rw_view2 WHERE snoop(person);
+EXPLAIN (costs off, nodes off) SELECT * FROM rw_view2 WHERE snoop(person);
                         QUERY PLAN                         
 -----------------------------------------------------------
- Remote Subquery Scan on all (datanode_1)
+ Remote Subquery Scan on all
    ->  Subquery Scan on rw_view2
          Filter: snoop(rw_view2.person)
          ->  Subquery Scan on rw_view1
@@ -1954,10 +1954,10 @@ EXPLAIN (costs off) SELECT * FROM rw_view2 WHERE snoop(person);
                      Filter: (visibility = 'public'::text)
 (7 rows)
 
-EXPLAIN (costs off) UPDATE rw_view2 SET person=person WHERE snoop(person);
+EXPLAIN (costs off, nodes off) UPDATE rw_view2 SET person=person WHERE snoop(person);
                               QUERY PLAN                               
 -----------------------------------------------------------------------
- Remote Subquery Scan on all (datanode_2)
+ Remote Subquery Scan on all
    ->  Update on base_tbl base_tbl_1
          ->  Subquery Scan on base_tbl
                Filter: snoop(base_tbl.person)
@@ -1968,10 +1968,10 @@ EXPLAIN (costs off) UPDATE rw_view2 SET person=person WHERE snoop(person);
                                  Filter: (visibility = 'public'::text)
 (9 rows)
 
-EXPLAIN (costs off) DELETE FROM rw_view2 WHERE NOT snoop(person);
+EXPLAIN (costs off, nodes off) DELETE FROM rw_view2 WHERE NOT snoop(person);
                               QUERY PLAN                               
 -----------------------------------------------------------------------
- Remote Subquery Scan on all (datanode_1)
+ Remote Subquery Scan on all
    ->  Delete on base_tbl base_tbl_1
          ->  Subquery Scan on base_tbl
                Filter: (NOT snoop(base_tbl.person))
@@ -2004,10 +2004,10 @@ SELECT * FROM rw_view1;
   1 | Row 1
 (1 row)
 
-EXPLAIN (costs off) DELETE FROM rw_view1 WHERE id = 1 AND snoop(data);
+EXPLAIN (costs off, nodes off) DELETE FROM rw_view1 WHERE id = 1 AND snoop(data);
                                   QUERY PLAN                                   
 -------------------------------------------------------------------------------
- Remote Subquery Scan on any (datanode_1,datanode_2)
+ Remote Subquery Scan on any
    ->  Update on base_tbl base_tbl_1
          ->  Nested Loop
                ->  Index Scan using base_tbl_pkey on base_tbl base_tbl_1
@@ -2020,24 +2020,24 @@ EXPLAIN (costs off) DELETE FROM rw_view1 WHERE id = 1 AND snoop(data);
 (10 rows)
 
 DELETE FROM rw_view1 WHERE id = 1 AND snoop(data);
-EXPLAIN (costs off) INSERT INTO rw_view1 VALUES (2, 'New row 2');
+EXPLAIN (costs off, nodes off) INSERT INTO rw_view1 VALUES (2, 'New row 2');
                               QUERY PLAN                               
 -----------------------------------------------------------------------
- Remote Subquery Scan on any (datanode_1,datanode_2)
+ Remote Subquery Scan on any
    ->  Insert on base_tbl
          InitPlan 1 (returns $0)
-           ->  Remote Subquery Scan on all (datanode_2)
+           ->  Remote Subquery Scan on all
                  ->  Index Only Scan using base_tbl_pkey on base_tbl t
                        Index Cond: (id = 2)
-         ->  Remote Subquery Scan on all (datanode_1)
+         ->  Remote Subquery Scan on all
                Distribute results by R
                ->  Result
                      One-Time Filter: ($0 IS NOT TRUE)
  
- Remote Subquery Scan on any (datanode_1,datanode_2)
+ Remote Subquery Scan on any
    ->  Update on base_tbl
          InitPlan 1 (returns $0)
-           ->  Remote Subquery Scan on all (datanode_2)
+           ->  Remote Subquery Scan on all
                  ->  Index Only Scan using base_tbl_pkey on base_tbl t
                        Index Cond: (id = 2)
          ->  Result
@@ -2193,7 +2193,7 @@ EXPLAIN (VERBOSE, COSTS OFF)
 UPDATE v1 SET a=a+1 WHERE snoop(a) AND leakproof(a) AND a = 8;
                                                                 QUERY PLAN                                                                
 ------------------------------------------------------------------------------------------------------------------------------------------
- Remote Subquery Scan on any (datanode_1,datanode_2)
+ Remote Subquery Scan on all (datanode_1)
    ->  Update on public.t1 t1_4
          Update on public.t1 t1_4
          Update on public.t11 t1
