@@ -866,6 +866,7 @@ static void do_add_command(char *line)
 	char *port;
 	char *pooler;
 	char *dir;
+	char *walDir;
 	char *archDir;
 	char *dnode;
 	char *extraConf;
@@ -973,16 +974,18 @@ static void do_add_command(char *line)
 			GetAndSet(port, "ERROR: please specify the port number for the datanode master\n");
 			GetAndSet(pooler, "ERROR: please specify the pooler port number for the datanode master.\n");
 			GetAndSet(dir, "ERROR: please specify the working director for the datanode master\n");
+			GetAndSet(walDir, "ERROR: please specify the WAL directory for the datanode master WAL. Specify 'none' for default\n");
 			GetAndSet(dnode, "ERROR: please specify name of existing datanode of which this will be a copy of. Specify 'none' for a bare datanode\n");
 			GetAndSet(extraConf, "ERROR: please specify file to read extra configuration. Specify 'none' if nothig extra to be added.\n");
 			GetAndSet(extraPgHbaConf, "ERROR: please specify file to read extra pg_hba configuration. Specify 'none' if nothig extra to be added.\n");
 			add_datanodeMaster(name, host, atoi(port), atoi(pooler), dir,
-					dnode, extraConf, extraPgHbaConf);
+					walDir, dnode, extraConf, extraPgHbaConf);
 			freeAndReset(name);
 			freeAndReset(host);
 			freeAndReset(port);
 			freeAndReset(pooler);
 			freeAndReset(dir);
+			freeAndReset(walDir);
 		}
 		else
 		{
@@ -990,15 +993,18 @@ static void do_add_command(char *line)
 			GetAndSet(host, "ERROR: please specify the host for the datanode slave\n");
 			GetAndSet(port, "ERROR: please specify the port number for the datanode slave\n");
 			GetAndSet(pooler, "ERROR: please specify the pooler port number for the datanode slave.\n");
-			GetAndSet(dir, "ERROR: please specify the working director for datanode slave\n");
+			GetAndSet(dir, "ERROR: please specify the working directory for datanode slave\n");
+			GetAndSet(walDir, "ERROR: please specify the WAL directory for datanode slave WAL. Specify 'none' for default.\n");
 			GetAndSet(archDir, "ERROR: please specify WAL archive directory for datanode slave\n");
 			
-			add_datanodeSlave(name, host, atoi(port), atoi(pooler), dir, archDir);
+			add_datanodeSlave(name, host, atoi(port), atoi(pooler), dir,
+					walDir, archDir);
 			freeAndReset(name);
 			freeAndReset(host);
 			freeAndReset(port);
 			freeAndReset(pooler);
 			freeAndReset(dir);
+			freeAndReset(walDir);
 		}
 	}
 	return;
@@ -2661,8 +2667,8 @@ do_show_help(char *line)
 				"add gtm_proxy name host port dir\n"
 				"add coordinator master name host port pooler dir extra_conf extra_pghba\n"
 				"add coordinator slave name host port pooler dir archDir\n"
-				"add datanode master name host port pooler dir restore_datanode_name extra_conf extra_pghba\n"
-				"add datanode slave name host port pooler dir archDir\n"
+				"add datanode master name host port pooler dir xlogdir restore_datanode_name extra_conf extra_pghba\n"
+				"add datanode slave name host port pooler dir xlogdir archDir\n"
 				"\n"
 				"Add the specified node to your postgres-xl cluster:\n"
 				"For more details, please see the pgxc_ctl documentation\n"

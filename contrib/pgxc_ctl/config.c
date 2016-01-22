@@ -625,6 +625,9 @@ int checkDirConflict(char *host, char *dir)
 {
 	int ii;
 
+	/* "none" conflictd with nothing */
+	if (strcasecmp(dir, "none") == 0)
+		return 0;
 	/* GTM Master */
 	if ((strcasecmp(host, sval(VAR_gtmMasterServer)) == 0) && (strcmp(dir, sval(VAR_gtmMasterDir)) == 0))
 		return 1;
@@ -649,10 +652,21 @@ int checkDirConflict(char *host, char *dir)
 	for (ii = 0; aval(VAR_datanodeNames)[ii]; ii++)
 		if ((strcasecmp(host, aval(VAR_datanodeMasterServers)[ii]) == 0) && (strcmp(dir, aval(VAR_datanodeMasterDirs)[ii]) == 0))
 			return 1;
+	/* Datanode Master WAL Dirs */
+	for (ii = 0; aval(VAR_datanodeNames)[ii]; ii++)
+		if ((strcasecmp(host, aval(VAR_datanodeMasterServers)[ii]) == 0) &&
+				(strcmp(dir, aval(VAR_datanodeMasterWALDirs)[ii]) == 0))
+			return 1;
 	/* Datanode Slave */
 	if (isVarYes(VAR_datanodeSlave))
 		if (doesExist(VAR_datanodeSlaveServers, ii) && doesExist(VAR_datanodeSlaveDirs, ii) &&
 			(strcasecmp(host, aval(VAR_datanodeSlaveServers)[ii]) == 0) && (strcmp(dir, aval(VAR_datanodeSlaveDirs)[ii]) == 0))
+			return 1;
+	/* Datanode Slave WAL Dirs */
+	if (isVarYes(VAR_datanodeSlave))
+		if (doesExist(VAR_datanodeSlaveServers, ii) && doesExist(VAR_datanodeSlaveDirs, ii) &&
+			(strcasecmp(host, aval(VAR_datanodeSlaveServers)[ii]) == 0) &&
+			(strcmp(dir, aval(VAR_datanodeSlaveWALDirs)[ii]) == 0))
 			return 1;
 	return 0;
 }
@@ -842,6 +856,7 @@ static void verifyResource(void)
 								  VAR_datanodePoolerPorts, 
 								  VAR_datanodeMasterServers,
 								  VAR_datanodeMasterDirs, 
+								  VAR_datanodeMasterWALDirs, 
 								  VAR_datanodeMaxWALSenders, 
 								  NULL};
 	char *datanodeSlaveVars[] = {VAR_datanodeNames,
@@ -849,6 +864,7 @@ static void verifyResource(void)
 								 VAR_datanodeSlavePorts,
 								 VAR_datanodeSlavePoolerPorts, 
 								 VAR_datanodeSlaveDirs,
+								 VAR_datanodeSlaveWALDirs,
 								 VAR_datanodeArchLogDirs,
 								 NULL};
 #if 0
@@ -920,11 +936,21 @@ static void verifyResource(void)
 	/* GTM and datanode masters */
 	checkResourceConflict(VAR_gtmName, VAR_gtmMasterServer, VAR_gtmMasterPort, NULL, VAR_gtmMasterDir,
 						  VAR_datanodeNames, VAR_datanodeMasterServers, VAR_datanodePorts, NULL, VAR_datanodeMasterDirs, TRUE, TRUE);
+	checkResourceConflict(VAR_gtmName, VAR_gtmMasterServer, VAR_gtmMasterPort, NULL, VAR_gtmMasterDir,
+						  VAR_datanodeNames, VAR_datanodeMasterServers,
+						  VAR_datanodePorts, NULL, VAR_datanodeMasterWALDirs, TRUE, TRUE);
 	/* GTM and datanode slaves, if any */
 	if(isVarYes(VAR_datanodeSlave))
+	{
 		checkResourceConflict(VAR_gtmName, VAR_gtmMasterServer, VAR_gtmMasterPort, NULL, VAR_gtmMasterDir,
 							  VAR_datanodeNames, VAR_datanodeMasterServers, VAR_datanodeSlavePorts, NULL, VAR_datanodeSlaveDirs,
 							  TRUE, TRUE);
+		checkResourceConflict(VAR_gtmName, VAR_gtmMasterServer, VAR_gtmMasterPort, NULL, VAR_gtmMasterDir,
+							  VAR_datanodeNames, VAR_datanodeMasterServers,
+							  VAR_datanodeSlavePorts, NULL,
+							  VAR_datanodeSlaveWALDirs,
+							  TRUE, TRUE);
+	}
 	/* 
 	 * GTM slave and others ------------
 	 */
@@ -955,11 +981,22 @@ static void verifyResource(void)
 		checkResourceConflict(VAR_gtmSlaveName, VAR_gtmSlaveServer, VAR_gtmSlavePort, NULL, VAR_gtmSlaveDir,
 							  VAR_datanodeNames, VAR_datanodeMasterServers, VAR_datanodePorts, NULL, VAR_datanodeMasterDirs,
 							  TRUE, TRUE);
+		checkResourceConflict(VAR_gtmSlaveName, VAR_gtmSlaveServer, VAR_gtmSlavePort, NULL, VAR_gtmSlaveDir,
+							  VAR_datanodeNames, VAR_datanodeMasterServers,
+							  VAR_datanodePorts, NULL, VAR_datanodeMasterWALDirs,
+							  TRUE, TRUE);
 		/* GTM slave and datanode slave, if any */
 		if (isVarYes(VAR_datanodeSlave))
+		{
 			checkResourceConflict(VAR_gtmSlaveName, VAR_gtmSlaveServer, VAR_gtmSlavePort, NULL, VAR_gtmSlaveDir,
 								  VAR_datanodeNames, VAR_datanodeSlaveServers, VAR_datanodeSlavePorts, NULL, VAR_datanodeSlaveDirs,
 								  TRUE, TRUE);
+			checkResourceConflict(VAR_gtmSlaveName, VAR_gtmSlaveServer, VAR_gtmSlavePort, NULL, VAR_gtmSlaveDir,
+								  VAR_datanodeNames, VAR_datanodeSlaveServers,
+								  VAR_datanodeSlavePorts, NULL,
+								  VAR_datanodeSlaveWALDirs,
+								  TRUE, TRUE);
+		}
 	}
 	/* 
 	 * GTM proxy and others ---------
@@ -979,11 +1016,22 @@ static void verifyResource(void)
 			checkResourceConflict(VAR_gtmProxyNames, VAR_gtmProxyServers, VAR_gtmProxyPorts, NULL, VAR_gtmProxyDirs,
 							  VAR_datanodeNames, VAR_datanodeMasterServers, VAR_datanodePorts, NULL, VAR_datanodeMasterDirs,
 							  TRUE, TRUE);
+			checkResourceConflict(VAR_gtmProxyNames, VAR_gtmProxyServers, VAR_gtmProxyPorts, NULL, VAR_gtmProxyDirs,
+							  VAR_datanodeNames, VAR_datanodeMasterServers,
+							  VAR_datanodePorts, NULL, VAR_datanodeMasterWALDirs,
+							  TRUE, TRUE);
 		/* GTM proxy and datanode slave, if any */
 		if (sval(VAR_datanodeSlave) && (strcmp(sval(VAR_datanodeSlave), "y") == 0))
+		{
 			checkResourceConflict(VAR_gtmProxyNames, VAR_gtmProxyServers, VAR_gtmProxyPorts, NULL, VAR_gtmProxyDirs,
 								  VAR_datanodeNames, VAR_datanodeSlaveServers, VAR_datanodeSlavePorts, NULL, VAR_datanodeSlaveDirs,
 								  TRUE, TRUE);
+			checkResourceConflict(VAR_gtmProxyNames, VAR_gtmProxyServers, VAR_gtmProxyPorts, NULL, VAR_gtmProxyDirs,
+								  VAR_datanodeNames, VAR_datanodeSlaveServers,
+								  VAR_datanodeSlavePorts, NULL,
+								  VAR_datanodeSlaveWALDirs,
+								  TRUE, TRUE);
+		}
 	}
 	/* 
 	 * Coordinator Masters and others
@@ -998,12 +1046,23 @@ static void verifyResource(void)
 	checkResourceConflict(VAR_coordNames, VAR_coordMasterServers, VAR_coordPorts, VAR_poolerPorts, VAR_coordMasterDirs,
 						  VAR_datanodeNames, VAR_datanodeMasterServers, VAR_datanodePorts, NULL, VAR_datanodeMasterDirs,
 						  FALSE, TRUE);
+	checkResourceConflict(VAR_coordNames, VAR_coordMasterServers, VAR_coordPorts, VAR_poolerPorts, VAR_coordMasterDirs,
+						  VAR_datanodeNames, VAR_datanodeMasterServers,
+						  VAR_datanodePorts, NULL, VAR_datanodeMasterWALDirs,
+						  FALSE, TRUE);
 	/* Coordinator masters and datanode slave, if any */
 	if (isVarYes(VAR_datanodeSlave))
+	{
 		checkResourceConflict(VAR_coordNames, VAR_coordMasterServers, VAR_coordPorts, VAR_poolerPorts, VAR_coordMasterDirs,
 							  VAR_datanodeNames, VAR_datanodeSlaveServers,
 							  VAR_datanodeSlavePorts, NULL, VAR_datanodeSlaveDirs,
 							  TRUE, TRUE);
+		checkResourceConflict(VAR_coordNames, VAR_coordMasterServers, VAR_coordPorts, VAR_poolerPorts, VAR_coordMasterDirs,
+							  VAR_datanodeNames, VAR_datanodeSlaveServers,
+							  VAR_datanodeSlavePorts, NULL,
+							  VAR_datanodeSlaveWALDirs,
+							  TRUE, TRUE);
+	}
 	/* 
 	 * Coordinator slaves and others
 	 */
@@ -1011,14 +1070,26 @@ static void verifyResource(void)
 	{
 		/* Coordinator slave and datanode masters */
 		checkResourceConflict(VAR_coordNames, VAR_coordSlaveServers, VAR_coordSlavePorts, VAR_coordSlavePoolerPorts, VAR_coordSlaveDirs,
-							  VAR_datanodeNames, VAR_datanodeSlaveServers, VAR_datanodePorts, NULL, VAR_datanodeSlaveDirs,
+							  VAR_datanodeNames, VAR_datanodeMasterServers,
+							  VAR_datanodePorts, NULL, VAR_datanodeMasterDirs,
+							  FALSE, TRUE);
+		checkResourceConflict(VAR_coordNames, VAR_coordSlaveServers, VAR_coordSlavePorts, VAR_coordSlavePoolerPorts, VAR_coordSlaveDirs,
+							  VAR_datanodeNames, VAR_datanodeMasterServers,
+							  VAR_datanodePorts, NULL, VAR_datanodeMasterWALDirs,
 							  FALSE, TRUE);
 		/* Coordinator slave and datanode slave, if any */
 		if (isVarYes(VAR_datanodeSlave))
+		{
 			checkResourceConflict(VAR_coordNames, VAR_coordSlaveServers, VAR_coordSlavePorts, VAR_coordSlavePoolerPorts, VAR_coordSlaveDirs,
 								  VAR_datanodeNames, VAR_datanodeSlaveServers,
 								  VAR_datanodeSlavePorts, NULL, VAR_datanodeSlaveDirs,
 								  TRUE, TRUE);
+			checkResourceConflict(VAR_coordNames, VAR_coordSlaveServers, VAR_coordSlavePorts, VAR_coordSlavePoolerPorts, VAR_coordSlaveDirs,
+								  VAR_datanodeNames, VAR_datanodeSlaveServers,
+								  VAR_datanodeSlavePorts, NULL,
+								  VAR_datanodeSlaveWALDirs,
+								  TRUE, TRUE);
+		}
 	}
 	/* 
 	 * Datanode masters and others ---
@@ -1027,12 +1098,23 @@ static void verifyResource(void)
 	checkResourceConflict(VAR_datanodeNames, VAR_datanodeMasterServers, VAR_datanodePorts, NULL, VAR_datanodeMasterDirs,
 						  NULL, NULL, NULL, NULL, NULL,
 						  FALSE, TRUE);
+	checkResourceConflict(VAR_datanodeNames, VAR_datanodeMasterServers,
+			VAR_datanodePorts, NULL, VAR_datanodeMasterWALDirs,
+						  NULL, NULL, NULL, NULL, NULL,
+						  FALSE, TRUE);
 	/* Datanode master and datanode slave, if any */
 	if (sval(VAR_datanodeSlave) && (strcmp(sval(VAR_datanodeSlave), "y") == 0))
+	{
 		checkResourceConflict(VAR_datanodeNames, VAR_datanodeMasterServers, VAR_datanodePorts, NULL, VAR_datanodeMasterDirs,
 							  VAR_datanodeNames, VAR_datanodeSlaveServers,
 							  VAR_datanodeSlavePorts, NULL, VAR_datanodeSlaveDirs,
 							  TRUE, FALSE);
+		checkResourceConflict(VAR_datanodeNames, VAR_datanodeMasterServers, VAR_datanodePorts, NULL, VAR_datanodeMasterDirs,
+							  VAR_datanodeNames, VAR_datanodeSlaveServers,
+							  VAR_datanodeSlavePorts, NULL,
+							  VAR_datanodeSlaveWALDirs,
+							  TRUE, FALSE);
+	}
 	if (anyConfigErrors)
 	{
 		elog(ERROR, "ERROR: Found conflicts among resources.  Exiting.\n");

@@ -98,6 +98,7 @@
 /* Datanode masters */
 #define VAR_datanodeMasterServers	"datanodeMasterServers"
 #define VAR_datanodeMasterDirs		"datanodeMasterDirs"
+#define VAR_datanodeMasterWALDirs		"datanodeMasterWALDirs"
 #define VAR_datanodeMaxWALSenders	"datanodeMaxWALSenders"
 
 /* Datanode slaves */
@@ -107,6 +108,7 @@
 #define VAR_datanodeSlavePoolerPorts		"datanodeSlavePoolerPorts"
 #define VAR_datanodeSlaveSync		"datanodeSlaveSync"
 #define VAR_datanodeSlaveDirs		"datanodeSlaveDirs"
+#define VAR_datanodeSlaveWALDirs		"datanodeSlaveWALDirs"
 #define VAR_datanodeArchLogDirs		"datanodeArchLogDirs"
 
 /* Datanode configuration files */

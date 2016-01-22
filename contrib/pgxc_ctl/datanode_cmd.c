@@ -65,9 +65,16 @@ cmd_t *prepare_initDatanodeMaster(char *nodeName)
 	FILE *f;
 	char timeStamp[MAXTOKEN+1];
 	char remoteDirCheck[MAXPATH * 2 + 128];
+	bool wal;
 
 	if ((idx = datanodeIdx(nodeName)) < 0)
 		return(NULL);
+
+	if (doesExist(VAR_datanodeMasterWALDirs, idx) &&
+			!is_none(aval(VAR_datanodeMasterWALDirs)[idx]))
+		wal = true;
+	else
+		wal = false;
 
 	remoteDirCheck[0] = '\0';
 	if (!forceInit)
@@ -78,6 +85,15 @@ cmd_t *prepare_initDatanodeMaster(char *nodeName)
 				aval(VAR_datanodeMasterDirs)[idx],
 				aval(VAR_datanodeMasterDirs)[idx]
 			   );
+		if (wal)
+		{
+			sprintf(remoteDirCheck, "if [ \"$(ls -A %s 2> /dev/null)\" ]; then echo 'ERROR: "
+					"target directory (%s) exists and not empty. "
+					"Skip Datanode initilialization'; exit; fi",
+					aval(VAR_datanodeMasterWALDirs)[idx],
+					aval(VAR_datanodeMasterWALDirs)[idx]
+				   );
+		}
 
 	}
 
@@ -86,10 +102,13 @@ cmd_t *prepare_initDatanodeMaster(char *nodeName)
 	snprintf(newCommand(cmdInitdb), MAXLINE,
 			 "%s;"
 			 "rm -rf %s;"
-			 "mkdir -p %s; initdb --nodename %s -D %s",
+			 "mkdir -p %s; initdb --nodename %s %s %s -D %s",
 			 remoteDirCheck,
 			 aval(VAR_datanodeMasterDirs)[idx], aval(VAR_datanodeMasterDirs)[idx],
-			 aval(VAR_datanodeNames)[idx], aval(VAR_datanodeMasterDirs)[idx]);
+			 aval(VAR_datanodeNames)[idx],
+			 wal ? "-X" : "",
+			 wal ? aval(VAR_datanodeMasterWALDirs)[idx] : "",
+			 aval(VAR_datanodeMasterDirs)[idx]);
 		
 	/* Initialize postgresql.conf */
 	appendCmdEl(cmdInitdb, (cmdPgConf = initCmd(aval(VAR_datanodeMasterServers)[idx])));
@@ -919,7 +938,8 @@ static int failover_oneDatanode(int datanodeIdx)
  *
  *-----------------------------------------------------------------------*/
 int add_datanodeMaster(char *name, char *host, int port, int pooler, char *dir,
-		char *restore_dname, char *extraConf, char *extraPgHbaConf)
+		char *waldir, char *restore_dname, char *extraConf,
+		char *extraPgHbaConf)
 {
 	FILE *f, *lockf;
 	int size, idx;
@@ -935,7 +955,13 @@ int add_datanodeMaster(char *name, char *host, int port, int pooler, char *dir,
 	char **confFiles = NULL;
 	char **pgHbaConfFiles = NULL;
 	char *only_globals = "-g";
+	bool wal;
 
+	if (waldir && (strcasecmp(waldir, "none") != 0))
+		wal = true;
+	else
+		wal = false;
+	
 	/* Check if all the datanodes are running */
 	if (!check_AllDatanodeRunning())
 	{
@@ -958,6 +984,11 @@ int add_datanodeMaster(char *name, char *host, int port, int pooler, char *dir,
 		elog(ERROR, "ERROR: directory \"%s\" conflicts at host %s.\n", dir, host);
 		return 1;
 	}
+	if (checkDirConflict(host, waldir))
+	{
+		elog(ERROR, "ERROR: directory \"%s\" conflicts at host %s.\n", waldir, host);
+		return 1;
+	}
 	/*
 	 * Check if datanode masgter configuration is consistent
 	 */
@@ -966,6 +997,7 @@ int add_datanodeMaster(char *name, char *host, int port, int pooler, char *dir,
 	    (arraySizeName(VAR_datanodePoolerPorts) != size) ||
 		(arraySizeName(VAR_datanodeMasterServers) != size) ||
 		(arraySizeName(VAR_datanodeMasterDirs) != size) ||
+		(arraySizeName(VAR_datanodeMasterWALDirs) != size) ||
 		(arraySizeName(VAR_datanodeMaxWALSenders) != size) ||
 		(arraySizeName(VAR_datanodeSpecificExtraConfig) != size) ||
 		(arraySizeName(VAR_datanodeSpecificExtraPgHba) != size))
@@ -979,6 +1011,7 @@ int add_datanodeMaster(char *name, char *host, int port, int pooler, char *dir,
 		(extendVar(VAR_datanodePorts, idx + 1, "none")  != 0) ||
 		(extendVar(VAR_datanodePoolerPorts, idx + 1, "none")  != 0) ||
 		(extendVar(VAR_datanodeMasterDirs, idx + 1, "none")  != 0) ||
+		(extendVar(VAR_datanodeMasterWALDirs, idx + 1, "none")  != 0) ||
 		(extendVar(VAR_datanodeMaxWALSenders, idx + 1, "none")  != 0) ||
 		(extendVar(VAR_datanodeSlaveServers, idx + 1, "none")  != 0) ||
 		(extendVar(VAR_datanodeSlavePorts, idx + 1, "none")  != 0) ||
@@ -1006,6 +1039,7 @@ int add_datanodeMaster(char *name, char *host, int port, int pooler, char *dir,
 	assign_arrayEl(VAR_datanodePorts, idx, port_s, "-1");
 	assign_arrayEl(VAR_datanodePoolerPorts, idx, pooler_s, "-1");
 	assign_arrayEl(VAR_datanodeMasterDirs, idx, dir, NULL);
+	assign_arrayEl(VAR_datanodeMasterWALDirs, idx, waldir, NULL);
 	assign_arrayEl(VAR_datanodeMaxWALSenders, idx, aval(VAR_datanodeMaxWALSenders)[0], NULL);	/* Could be vulnerable */
 	assign_arrayEl(VAR_datanodeSlaveServers, idx, "none", NULL);
 	assign_arrayEl(VAR_datanodeSlavePorts, idx, "-1", NULL);
@@ -1051,6 +1085,7 @@ int add_datanodeMaster(char *name, char *host, int port, int pooler, char *dir,
 	fprintAval(f, VAR_datanodePorts);
 	fprintAval(f, VAR_datanodePoolerPorts);
 	fprintAval(f, VAR_datanodeMasterDirs);
+	fprintAval(f, VAR_datanodeMasterWALDirs);
 	fprintAval(f, VAR_datanodeMaxWALSenders);
 	fprintAval(f, VAR_datanodeSlaveServers);
 	fprintAval(f, VAR_datanodeSlavePorts);
@@ -1070,7 +1105,10 @@ int add_datanodeMaster(char *name, char *host, int port, int pooler, char *dir,
 	gtmPort = (gtmPxyIdx > 0) ? aval(VAR_gtmProxyPorts)[gtmPxyIdx] : sval(VAR_gtmMasterPort);
 
 	/* initdb */
-	doImmediate(host, NULL, "initdb -D %s --nodename %s", dir, name);
+	doImmediate(host, NULL, "initdb -D %s %s %s --nodename %s", dir,
+			wal ? "-X" : "",
+			wal ? waldir : "",
+			name);
 
 	/* Edit configurations */
 	if ((f = pgxc_popen_w(host, "cat >> %s/postgresql.conf", dir)))
@@ -1221,13 +1259,21 @@ int add_datanodeMaster(char *name, char *host, int port, int pooler, char *dir,
 }
 
 
-int add_datanodeSlave(char *name, char *host, int port, int pooler, char *dir, char *archDir)
+int add_datanodeSlave(char *name, char *host, int port, int pooler, char *dir,
+		char *walDir, char *archDir)
 {
 	int idx;
 	FILE *f;
 	char port_s[MAXTOKEN+1];
     char pooler_s[MAXTOKEN+1];
 	int kk;
+	bool wal;
+
+	if (walDir && (strcasecmp(walDir, "none") != 0))
+		wal = true;
+	else
+		wal = false;
+
 
 	/* Check if the name is valid datanode */
 	if ((idx = datanodeIdx(name)) < 0)
@@ -1256,9 +1302,10 @@ int add_datanodeSlave(char *name, char *host, int port, int pooler, char *dir, c
 		elog(ERROR, "ERROR: the port %s has already been used in the host %s.\n",  aval(VAR_datanodePorts)[idx], host);
 		return 1;
 	}
-	if (checkDirConflict(host, dir) || checkDirConflict(host, archDir))
+	if (checkDirConflict(host, dir) || checkDirConflict(host, archDir) ||
+			checkDirConflict(host, walDir))
 	{
-		elog(ERROR, "ERROR: directory %s or %s has already been used by other node.\n", dir, archDir);
+		elog(ERROR, "ERROR: directory %s or %s or %s has already been used by other node.\n", dir, archDir, walDir);
 		return 1;
 	}
 	/* Check if the datanode master is running */
@@ -1270,6 +1317,8 @@ int add_datanodeSlave(char *name, char *host, int port, int pooler, char *dir, c
 	/* Prepare the resources (directories) */
 	doImmediate(host, NULL, "rm -rf %s; mkdir -p %s;chmod 0700 %s", dir, dir, dir);
 	doImmediate(host, NULL, "rm -rf %s; mkdir -p %s;chmod 0700 %s", archDir, archDir, archDir);
+	doImmediate(host, NULL, "rm -rf %s; mkdir -p %s;chmod 0700 %s", walDir,
+			walDir, walDir);
 	/* Reconfigure the master with WAL archive */
 	/* Update the configuration and backup the configuration file */
 	if ((f = pgxc_popen_w(aval(VAR_datanodeMasterServers)[idx], "cat >> %s/postgresql.conf", aval(VAR_datanodeMasterDirs)[idx])) == NULL)
@@ -1337,6 +1386,7 @@ int add_datanodeSlave(char *name, char *host, int port, int pooler, char *dir, c
 	assign_arrayEl(VAR_datanodeSlavePorts, idx, port_s, NULL);
 	assign_arrayEl(VAR_datanodeSlavePoolerPorts, idx, pooler_s, NULL);
 	assign_arrayEl(VAR_datanodeSlaveDirs, idx, dir, NULL);
+	assign_arrayEl(VAR_datanodeSlaveWALDirs, idx, walDir, NULL);
 	assign_arrayEl(VAR_datanodeArchLogDirs, idx, archDir, NULL);
 	/* Update the configuration file and backup it */
 	if ((f = fopen(pgxc_ctl_config_path, "a")) == NULL)
@@ -1356,6 +1406,7 @@ int add_datanodeSlave(char *name, char *host, int port, int pooler, char *dir, c
 	fprintAval(f, VAR_datanodeSlavePoolerPorts);
 	fprintAval(f, VAR_datanodeArchLogDirs);
 	fprintAval(f, VAR_datanodeSlaveDirs);
+	fprintAval(f, VAR_datanodeSlaveWALDirs);
 	fprintf(f, "%s", "#----End of reconfiguration -------------------------\n");
 	fclose(f);
 	backup_configuration();
@@ -1377,8 +1428,11 @@ int add_datanodeSlave(char *name, char *host, int port, int pooler, char *dir, c
 	doImmediate(aval(VAR_datanodeMasterServers)[idx], NULL, 
 				"pg_ctl start -w -Z datanode -D %s", aval(VAR_datanodeMasterDirs)[idx]);
 	/* pg_basebackup */
-	doImmediate(host, NULL, "pg_basebackup -p %s -h %s -D %s -x",
-				aval(VAR_datanodePorts)[idx], aval(VAR_datanodeMasterServers)[idx], dir);
+	doImmediate(host, NULL, "pg_basebackup -p %s -h %s -D %s -x %s %s",
+				aval(VAR_datanodePorts)[idx],
+				aval(VAR_datanodeMasterServers)[idx], dir,
+				wal ? "--xlogdir" : "",
+				wal ? walDir : "");
 	/* Update the slave configuration with hot standby and port */
 	if ((f = pgxc_popen_w(host, "cat >> %s/postgresql.conf", dir)) == NULL)
 	{
@@ -1565,12 +1619,14 @@ int remove_datanodeMaster(char *name, int clean_opt)
 	/* Update configuration and backup --> should cleanup "none" entries here */
 	replace_arrayEl(VAR_datanodeNames, idx, "none", NULL);
 	replace_arrayEl(VAR_datanodeMasterDirs, idx, "none", NULL);
+	replace_arrayEl(VAR_datanodeMasterWALDirs, idx, "none", NULL);
 	replace_arrayEl(VAR_datanodePorts, idx, "-1", "-1");
 	replace_arrayEl(VAR_datanodePoolerPorts, idx, "-1", "-1");
 	replace_arrayEl(VAR_datanodeMasterServers, idx, "none", NULL);
 	replace_arrayEl(VAR_datanodeMaxWALSenders, idx, "0", "0");
 	replace_arrayEl(VAR_datanodeSlaveServers, idx, "none", NULL);
 	replace_arrayEl(VAR_datanodeSlaveDirs, idx, "none", NULL);
+	replace_arrayEl(VAR_datanodeSlaveWALDirs, idx, "none", NULL);
 	replace_arrayEl(VAR_datanodeArchLogDirs, idx, "none", NULL);
 	replace_arrayEl(VAR_datanodeSpecificExtraConfig, idx, "none", NULL);
 	handle_no_slaves();
@@ -1591,6 +1647,7 @@ int remove_datanodeMaster(char *name, int clean_opt)
 	fprintSval(f, VAR_datanodeSlave);
 	fprintAval(f, VAR_datanodeNames);
 	fprintAval(f, VAR_datanodeMasterDirs);
+	fprintAval(f, VAR_datanodeMasterWALDirs);
 	fprintAval(f, VAR_datanodePorts);
 	fprintAval(f, VAR_datanodePoolerPorts);
 	fprintAval(f, VAR_datanodeMasterServers);
@@ -1598,6 +1655,7 @@ int remove_datanodeMaster(char *name, int clean_opt)
 	fprintAval(f, VAR_datanodeSlaveServers);
 	fprintAval(f, VAR_datanodeSlavePorts);
 	fprintAval(f, VAR_datanodeSlaveDirs);
+	fprintAval(f, VAR_datanodeSlaveWALDirs);
 	fprintAval(f, VAR_datanodeArchLogDirs);
 	fprintAval(f, VAR_datanodeSpecificExtraConfig);
 	fclose(f);
@@ -1658,6 +1716,7 @@ int remove_datanodeSlave(char *name, int clean_opt)
 	 */
 	replace_arrayEl(VAR_datanodeSlaveServers, idx, "none", NULL);
 	replace_arrayEl(VAR_datanodeSlaveDirs, idx, "none", NULL);
+	replace_arrayEl(VAR_datanodeSlaveWALDirs, idx, "none", NULL);
 	replace_arrayEl(VAR_datanodeArchLogDirs, idx, "none", NULL);
 	handle_no_slaves();
 	/*
@@ -1677,6 +1736,7 @@ int remove_datanodeSlave(char *name, int clean_opt)
 	fprintSval(f, VAR_datanodeSlave);
 	fprintAval(f, VAR_datanodeSlaveServers);
 	fprintAval(f, VAR_datanodeSlaveDirs);
+	fprintAval(f, VAR_datanodeSlaveWALDirs);
 	fprintAval(f, VAR_datanodeArchLogDirs);
 	fclose(f);
 	backup_configuration();
@@ -1692,16 +1752,29 @@ cmd_t *prepare_cleanDatanodeMaster(char *nodeName)
 {
 	cmd_t *cmd;
 	int idx;
-	
+	bool wal;
+
 	if ((idx = datanodeIdx(nodeName)) <  0)
 	{
 		elog(ERROR, "ERROR: %s is not a datanode\n", nodeName);
 		return(NULL);
 	}
+
+	if (doesExist(VAR_datanodeMasterWALDirs, idx) &&
+		!is_none(aval(VAR_datanodeMasterWALDirs)[idx]))
+		wal = true;
+	else
+		wal = false;
+	
 	cmd = initCmd(aval(VAR_datanodeMasterServers)[idx]);
 	snprintf(newCommand(cmd), MAXLINE,
-			 "rm -rf %s; mkdir -p %s; chmod 0700 %s; rm -f /tmp/.s.*%d*",
-			 aval(VAR_datanodeMasterDirs)[idx], aval(VAR_datanodeMasterDirs)[idx], aval(VAR_datanodeMasterDirs)[idx], atoi(aval(VAR_datanodePoolerPorts)[idx]));
+			 "rm -rf %s; %s %s ; mkdir -p %s; chmod 0700 %s; rm -f /tmp/.s.*%d*",
+			 aval(VAR_datanodeMasterDirs)[idx],
+			 wal ? "rm -rf " : "",
+			 wal ? aval(VAR_datanodeMasterWALDirs)[idx] : "",
+			 aval(VAR_datanodeMasterDirs)[idx],
+			 aval(VAR_datanodeMasterDirs)[idx],
+			 atoi(aval(VAR_datanodePoolerPorts)[idx]));
 	return(cmd);
 }
 
@@ -1740,6 +1813,7 @@ cmd_t *prepare_cleanDatanodeSlave(char *nodeName)
 {
 	cmd_t *cmd;
 	int idx;
+	bool wal;
 	
 	if ((idx = datanodeIdx(nodeName)) <  0)
 	{
@@ -1748,10 +1822,20 @@ cmd_t *prepare_cleanDatanodeSlave(char *nodeName)
 	}
 	if (!doesExist(VAR_datanodeSlaveServers, idx) || is_none(aval(VAR_datanodeSlaveServers)[idx]))
 		return NULL;
+
+	if (doesExist(VAR_datanodeSlaveWALDirs, idx) &&
+		!is_none(aval(VAR_datanodeSlaveWALDirs)[idx]))
+		wal = true;
+	else
+		wal = false;
+	
 	cmd = initCmd(aval(VAR_datanodeSlaveServers)[idx]);
 	snprintf(newCommand(cmd), MAXLINE,
-			 "rm -rf %s; mkdir -p %s; chmod 0700 %s",
-			 aval(VAR_datanodeSlaveDirs)[idx], aval(VAR_datanodeSlaveDirs)[idx], aval(VAR_datanodeSlaveDirs)[idx]);
+			 "rm -rf %s; %s %s ; mkdir -p %s; chmod 0700 %s",
+			 aval(VAR_datanodeSlaveDirs)[idx],
+			 wal ? " rm -rf " : "",
+			 wal ? aval(VAR_datanodeSlaveWALDirs)[idx] : "",
+			 aval(VAR_datanodeSlaveDirs)[idx], aval(VAR_datanodeSlaveDirs)[idx]);
 	return(cmd);
 }
 

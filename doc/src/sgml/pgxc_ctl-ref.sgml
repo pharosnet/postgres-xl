@@ -1388,6 +1388,15 @@ PGXC$ prepare config minimal my_minimal_config.conf
        </para>
       </listitem>
      </varlistentry>
+
+     <varlistentry>
+      <term><option>datanodeMasterWALDirs</option></term>
+      <listitem>
+       <para>
+        Array of Datanode masters' XLOG directories.
+       </para>
+      </listitem>
+     </varlistentry>
     
      <varlistentry>
       <term><option>datanodeMaterServers</option></term>
@@ -1489,6 +1498,15 @@ PGXC$ prepare config minimal my_minimal_config.conf
      </varlistentry>
     
      <varlistentry>
+      <term><option>datanodeSlaveWALDirs</option></term>
+      <listitem>
+       <para>
+        Array of XLOG directories for each Datanode slave.
+       </para>
+      </listitem>
+     </varlistentry>
+    
+     <varlistentry>
       <term><option>datanodeSlaveServers</option></term>
       <listitem>
        <para>
@@ -1580,8 +1598,8 @@ PGXC$ prepare config minimal my_minimal_config.conf
     <term><literal>add gtm_proxy <replaceable class="parameter">name</replaceable> <replaceable class="parameter">host</replaceable> <replaceable class="parameter">port</replaceable> <replaceable class="parameter">dir</replaceable></literal></term>
     <term><literal>add coordinator master <replaceable class="parameter">name</replaceable> <replaceable class="parameter">host</replaceable> <replaceable class="parameter">port</replaceable> <replaceable class="parameter">pooler</replaceable> <replaceable class="parameter">dir</replaceable>< <replaceable class="parameter">extraServerConf</replaceable> <replaceable class="parameter">extraPgHbaConf</replaceable></literal></term>
     <term><literal>add coordinator slave <replaceable class="parameter">name</replaceable> <replaceable class="parameter">host</replaceable> <replaceable class="parameter">port</replaceable> <replaceable class="parameter">pooler</replaceable> <replaceable class="parameter">dir</replaceable> <replaceable class="parameter">archDir</replaceable></literal></term>
-    <term><literal>add datanode master <replaceable class="parameter">name</replaceable> <replaceable class="parameter">host</replaceable>  <replaceable class="parameter">port</replaceable> <replaceable class="parameter">pooler</replaceable> <replaceable class="parameter">dir</replaceable>  <replaceable class="parameter">restoreDatanode</replaceable> <replaceable class="parameter">extraServerConf</replaceable> <replaceable class="parameter">extraPgHbaConf</replaceable></literal></term>
-    <term><literal>add datanode slave <replaceable class="parameter">name</replaceable> <replaceable class="parameter">host</replaceable>  <replaceable class="parameter">port</replaceable> <replaceable class="parameter">pooler</replaceable> <replaceable class="parameter">dir</replaceable> <replaceable class="parameter">archDir</replaceable></literal></term>
+    <term><literal>add datanode master <replaceable class="parameter">name</replaceable> <replaceable class="parameter">host</replaceable>  <replaceable class="parameter">port</replaceable> <replaceable class="parameter">pooler</replaceable>  <replaceable class="parameter">dir</replaceable> <replaceable class="parameter">xlogdir</replaceable>  <replaceable class="parameter">restoreDatanode</replaceable> <replaceable class="parameter">extraServerConf</replaceable> <replaceable class="parameter">extraPgHbaConf</replaceable></literal></term>
+    <term><literal>add datanode slave <replaceable class="parameter">name</replaceable> <replaceable class="parameter">host</replaceable>  <replaceable class="parameter">port</replaceable> <replaceable class="parameter">pooler</replaceable>  <replaceable class="parameter">dir</replaceable> <replaceable class="parameter">xlogdir</replaceable> <replaceable class="parameter">archDir</replaceable></literal></term>
     <listitem>
      <para>
       Add the specified node to your Postgres-XL cluster.  Each node needs a
@@ -1591,7 +1609,8 @@ PGXC$ prepare config minimal my_minimal_config.conf
       Datanodes.  Coordinator and Datanode slaves need a directory to receive
       WAL segments from their master. While adding a Coordinator master and a
       Datanode master, extra server configuration and extra pg_hba
-      configuration parameters can be specified in a file.
+      configuration parameters can be specified in a file. A separate XLOG
+      directory may also be specified for Datanode master and slave.
      </para>
      <para>
       When you add a Coordinator and Datanode master, node information at
