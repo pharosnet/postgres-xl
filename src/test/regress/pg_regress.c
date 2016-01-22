@@ -841,6 +841,11 @@ set_node_config_file(PGXCNodeTypeNum node)
 	 */
 	fputs("max_prepared_transactions = 50\n", pg_conf);
 
+	/*
+	 * Set sequence_range to 1 for deterministic results
+	 */
+	fputs("sequence_range = 1\n", pg_conf);
+
 	/* Set GTM connection information */
 	fputs("gtm_host = 'localhost'\n", pg_conf);
 	snprintf(buf, sizeof(buf), "gtm_port = %d\n", get_port_number(PGXC_GTM));
