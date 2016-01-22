@@ -273,6 +273,8 @@ int is_none(char *s)
 		return TRUE;
 	if (strcmp(s, "none") == 0)
 		return TRUE;
+	if (strcmp(s, "") == 0)
+		return TRUE;
 	if (strcmp(s, "N/A") == 0)
 		return TRUE;
 	return FALSE;
@@ -795,7 +797,12 @@ static void checkResourceConflict(char *srcNames, char *srcServers, char *srcPor
 						elog(ERROR, "ERROR: Conflict in port/pooler in %s and %s variable.\n", srcNames, destNames);
 					}
 					/* Dir Names */
-					if (srcDirs && destDirs && !is_none(aval(srcDirs)[ii]) && (strcmp(aval(srcDirs)[ii], aval(destDirs)[jj]) == 0))
+					if (srcDirs && destDirs &&
+							doesExist(srcDirs, ii) &&
+							!is_none(aval(srcDirs)[ii]) &&
+							doesExist(destDirs, jj) &&
+							!is_none(aval(destDirs)[jj]) &&
+							(strcmp(aval(srcDirs)[ii], aval(destDirs)[jj]) == 0))
 					{
 						anyConfigErrors = TRUE;
 						elog(ERROR, "ERROR: Conflict in directory names in %s and %s variable.\n", srcNames, destNames);
@@ -856,7 +863,6 @@ static void verifyResource(void)
 								  VAR_datanodePoolerPorts, 
 								  VAR_datanodeMasterServers,
 								  VAR_datanodeMasterDirs, 
-								  VAR_datanodeMasterWALDirs, 
 								  VAR_datanodeMaxWALSenders, 
 								  NULL};
 	char *datanodeSlaveVars[] = {VAR_datanodeNames,
@@ -864,7 +870,6 @@ static void verifyResource(void)
 								 VAR_datanodeSlavePorts,
 								 VAR_datanodeSlavePoolerPorts, 
 								 VAR_datanodeSlaveDirs,
-								 VAR_datanodeSlaveWALDirs,
 								 VAR_datanodeArchLogDirs,
 								 NULL};
 #if 0

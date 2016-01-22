@@ -71,6 +71,7 @@ cmd_t *prepare_initDatanodeMaster(char *nodeName)
 		return(NULL);
 
 	if (doesExist(VAR_datanodeMasterWALDirs, idx) &&
+			aval(VAR_datanodeMasterWALDirs)[idx] &&
 			!is_none(aval(VAR_datanodeMasterWALDirs)[idx]))
 		wal = true;
 	else
