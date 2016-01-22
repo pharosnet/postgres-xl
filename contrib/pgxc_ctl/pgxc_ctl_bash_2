@@ -120,6 +120,7 @@ function print_values
 	# Datanodes masters
 	print_array datanodeMasterServers
 	print_array datanodeMasterDirs
+	print_array datanodeMasterWALDirs
 	print_array datanodeMaxWALSenders
 	
 	# Datanodes slaves
@@ -131,6 +132,7 @@ function print_values
 	print_array datanodeSlavePoolerPorts
 #endif
 	print_array datanodeSlaveDirs
+	print_array datanodeSlaveWALDirs
 	print_array datanodeArchLogDirs
 
 	# Datanode configuration files
