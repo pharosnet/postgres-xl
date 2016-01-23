@@ -322,8 +322,8 @@ explain (costs off)
 -- let's try that as a mergejoin
 set enable_mergejoin = on;
 set enable_nestloop = off;
--- excluding as XL does not support complex queries 
--- with 'union all' 
+-- excluding as XL does not support complex queries
+-- with 'union all'
 -- check partially indexed scan
 set enable_nestloop = on;
 set enable_mergejoin = off;

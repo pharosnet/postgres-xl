@@ -779,19 +779,7 @@ insert into bar2 values(4,4,4);
 update bar set f2 = f2 + 100 where f1 in (select f1 from foo);
 ERROR:  could not plan this distributed update
 DETAIL:  correlated UPDATE or updating distribution column currently not supported in Postgres-XL.
-select tableoid::regclass::text as relname, bar.* from bar order by 1,2;
- relname | f1 | f2 
----------+----+----
- 42770   |  3 |  3
- 42770   |  4 |  4
- 42773   |  3 |  3
- 42773   |  4 |  4
- 43042   |  1 |  1
- 43042   |  2 |  2
- 43045   |  1 |  1
- 43045   |  2 |  2
-(8 rows)
-
+--select tableoid::regclass::text as relname, bar.* from bar order by 1,2;
 -- In Postgres-XL OIDs are not consistent across the cluster. Hence above
 -- queries do not show any result. Hence in order to ensure data consistency, we
 -- add following SQLs. In case above set of queries start producing valid
@@ -834,19 +822,7 @@ from
 where bar.f1 = ss.f1;
 ERROR:  could not plan this distributed update
 DETAIL:  correlated UPDATE or updating distribution column currently not supported in Postgres-XL.
-select tableoid::regclass::text as relname, bar.* from bar order by 1,2;
- relname | f1 | f2 
----------+----+----
- 42770   |  3 |  3
- 42770   |  4 |  4
- 42773   |  3 |  3
- 42773   |  4 |  4
- 43042   |  1 |  1
- 43042   |  2 |  2
- 43045   |  1 |  1
- 43045   |  2 |  2
-(8 rows)
-
+--select tableoid::regclass::text as relname, bar.* from bar order by 1,2;
 /* Test multiple inheritance of column defaults */
 CREATE TABLE firstparent (tomorrow date default now()::date + 1);
 CREATE TABLE secondparent (tomorrow date default  now() :: date  +  1);
@@ -1516,8 +1492,8 @@ select * from matest0 order by 1-id;
 ----+--------
   6 | Test 6
   5 | Test 5
-  4 | Test 3
-  3 | Test 4
+  4 | Test 4
+  3 | Test 3
   2 | Test 2
   1 | Test 1
 (6 rows)
@@ -1585,8 +1561,8 @@ select * from matest0 order by 1-id;
 ----+--------
   6 | Test 6
   5 | Test 5
-  4 | Test 3
-  3 | Test 4
+  4 | Test 4
+  3 | Test 3
   2 | Test 2
   1 | Test 1
 (6 rows)

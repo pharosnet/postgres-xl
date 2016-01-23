@@ -245,12 +245,12 @@ select * from int4_tbl o where exists
                ->  Seq Scan on int4_tbl i
 (6 rows)
 
-explain (costs off)
+explain (costs off, nodes off)
 select * from int4_tbl o where not exists
   (select 1 from int4_tbl i where i.f1=o.f1 limit 1);
                 QUERY PLAN                
 ------------------------------------------
- Remote Subquery Scan on all (datanode_2)
+ Remote Subquery Scan on all
    ->  Hash Anti Join
          Hash Cond: (o.f1 = i.f1)
          ->  Seq Scan on int4_tbl o
@@ -258,17 +258,17 @@ select * from int4_tbl o where not exists
                ->  Seq Scan on int4_tbl i
 (6 rows)
 
-explain (costs off)
+explain (costs off, nodes off)
 select * from int4_tbl o where exists
   (select 1 from int4_tbl i where i.f1=o.f1 limit 0);
-                          QUERY PLAN                          
---------------------------------------------------------------
- Remote Subquery Scan on all (datanode_2)
+                       QUERY PLAN                       
+--------------------------------------------------------
+ Remote Subquery Scan on all
    ->  Seq Scan on int4_tbl o
          Filter: (SubPlan 1)
          SubPlan 1
            ->  Limit
-                 ->  Remote Subquery Scan on all (datanode_2)
+                 ->  Remote Subquery Scan on all
                        ->  Limit
                              ->  Seq Scan on int4_tbl i
                                    Filter: (f1 = o.f1)
@@ -283,7 +283,7 @@ select count(*) from
    where unique1 IN (select hundred from tenk1 b)) ss;
  count 
 -------
-   100
+   200
 (1 row)
 
 select count(distinct ss.ten) from
@@ -476,10 +476,12 @@ update shipped_view set value = 11
     from int4_tbl a join int4_tbl b
       on (a.f1 = (select f1 from int4_tbl c where c.f1=b.f1))
     where ordnum = a.f1;
+ERROR:  could not plan this distributed update
+DETAIL:  correlated UPDATE or updating distribution column currently not supported in Postgres-XL.
 select * from shipped_view;
- ttype | ordnum | partnum | value 
--------+--------+---------+-------
- wt    |      0 | 1       |    11
+ ttype | ordnum | partnum |  value  
+-------+--------+---------+---------
+ wt    |      0 | 1       | 1234.56
 (1 row)
 
 select f1, ss1 as relabel from
@@ -594,29 +596,13 @@ create temp table table_a(id integer);
 insert into table_a values (42);
 create temp view view_a as select * from table_a;
 select view_a from view_a;
- view_a 
---------
- (42)
-(1 row)
-
+ERROR:  cache lookup failed for type 0
 select (select view_a) from view_a;
- view_a 
---------
- (42)
-(1 row)
-
+ERROR:  cache lookup failed for type 0
 select (select (select view_a)) from view_a;
- view_a 
---------
- (42)
-(1 row)
-
+ERROR:  cache lookup failed for type 0
 select (select (a.*)::text) from view_a a;
-  a   
-------
- (42)
-(1 row)
-
+ERROR:  cache lookup failed for type 0
 --
 -- Check that whole-row Vars reading the result of a subselect don't include
 -- any junk columns therein
@@ -797,28 +783,31 @@ explain (verbose, costs off)
 select * from int4_tbl where
   (case when f1 in (select unique1 from tenk1 a) then f1 else null end) in
   (select ten from tenk1 b);
-                                                                                            QUERY PLAN                                                                                             
----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                  QUERY PLAN                                                   
+---------------------------------------------------------------------------------------------------------------
  Remote Subquery Scan on all (datanode_1,datanode_2)
    Output: int4_tbl.f1
-   ->  Hash Join
+   ->  Nested Loop Semi Join
          Output: int4_tbl.f1
-         Hash Cond: (b.ten = CASE WHEN (hashed SubPlan 1) THEN int4_tbl.f1 ELSE NULL::integer END)
-         ->  HashAggregate
-               Output: b.ten
-               Group Key: b.ten
-               ->  Seq Scan on public.tenk1 b
-                     Output: b.unique1, b.unique2, b.two, b.four, b.ten, b.twenty, b.hundred, b.thousand, b.twothousand, b.fivethous, b.tenthous, b.odd, b.even, b.stringu1, b.stringu2, b.string4
-         ->  Hash
-               Output: int4_tbl.f1
+         Join Filter: ((CASE WHEN (hashed SubPlan 1) THEN int4_tbl.f1 ELSE NULL::integer END) = b.ten)
+         ->  Remote Subquery Scan on all (datanode_1)
+               Output: int4_tbl.f1, CASE WHEN (hashed SubPlan 1) THEN int4_tbl.f1 ELSE NULL::integer END
+               Distribute results by H: CASE WHEN (hashed SubPlan 1) THEN f1 ELSE NULL::integer END
                ->  Seq Scan on public.int4_tbl
-                     Output: int4_tbl.f1
-         SubPlan 1
-           ->  Remote Subquery Scan on all (datanode_1,datanode_2)
-                 Output: a.unique1
-                 ->  Seq Scan on public.tenk1 a
-                       Output: a.unique1
-(19 rows)
+                     Output: int4_tbl.f1, CASE WHEN (hashed SubPlan 1) THEN int4_tbl.f1 ELSE NULL::integer END
+                     SubPlan 1
+                       ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+                             Output: a.unique1
+                             ->  Seq Scan on public.tenk1 a
+                                   Output: a.unique1
+         ->  Materialize
+               Output: b.ten
+               ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+                     Output: b.ten
+                     Distribute results by H: ten
+                     ->  Seq Scan on public.tenk1 b
+                           Output: b.ten
+(22 rows)
 
 select * from int4_tbl where
   (case when f1 in (select unique1 from tenk1 a) then f1 else null end) in

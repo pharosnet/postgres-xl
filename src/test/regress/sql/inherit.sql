@@ -180,7 +180,7 @@ insert into bar2 values(4,4,4);
 
 update bar set f2 = f2 + 100 where f1 in (select f1 from foo);
 
-select tableoid::regclass::text as relname, bar.* from bar order by 1,2;
+--select tableoid::regclass::text as relname, bar.* from bar order by 1,2;
 -- In Postgres-XL OIDs are not consistent across the cluster. Hence above
 -- queries do not show any result. Hence in order to ensure data consistency, we
 -- add following SQLs. In case above set of queries start producing valid
@@ -195,7 +195,7 @@ from
   ( select f1 from foo union all select f1+3 from foo ) ss
 where bar.f1 = ss.f1;
 
-select tableoid::regclass::text as relname, bar.* from bar order by 1,2;
+--select tableoid::regclass::text as relname, bar.* from bar order by 1,2;
 
 /* Test multiple inheritance of column defaults */
 

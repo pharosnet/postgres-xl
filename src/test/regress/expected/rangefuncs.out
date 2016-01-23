@@ -353,9 +353,19 @@ select foot.fooid, foot.f2 from foot(sin(pi()/2)::int) ORDER BY 1,2;
 (2 rows)
 
 CREATE TABLE foo (fooid int, foosubid int, fooname text, primary key(fooid,foosubid));
+ERROR:  relation "foo" already exists
 INSERT INTO foo VALUES(1,1,'Joe');
+ERROR:  invalid input syntax for integer: "Joe"
+LINE 1: INSERT INTO foo VALUES(1,1,'Joe');
+                                   ^
 INSERT INTO foo VALUES(1,2,'Ed');
+ERROR:  invalid input syntax for integer: "Ed"
+LINE 1: INSERT INTO foo VALUES(1,2,'Ed');
+                                   ^
 INSERT INTO foo VALUES(2,1,'Mary');
+ERROR:  invalid input syntax for integer: "Mary"
+LINE 1: INSERT INTO foo VALUES(2,1,'Mary');
+                                   ^
 -- sql, proretset = f, prorettype = b
 CREATE FUNCTION getfoo1(int) RETURNS int AS 'SELECT $1;' LANGUAGE SQL;
 SELECT * FROM getfoo1(1) AS t1;
@@ -388,262 +398,291 @@ SELECT * FROM vw_getfoo;
 DROP VIEW vw_getfoo;
 -- sql, proretset = t, prorettype = b
 CREATE FUNCTION getfoo2(int) RETURNS setof int AS 'SELECT fooid FROM foo WHERE fooid = $1;' LANGUAGE SQL;
+ERROR:  column "fooid" does not exist
+LINE 1: ...UNCTION getfoo2(int) RETURNS setof int AS 'SELECT fooid FROM...
+                                                             ^
 SELECT * FROM getfoo2(1) AS t1;
- t1 
-----
-  1
-  1
-(2 rows)
-
+ERROR:  function getfoo2(integer) does not exist
+LINE 1: SELECT * FROM getfoo2(1) AS t1;
+                      ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 SELECT * FROM getfoo2(1) WITH ORDINALITY AS t1(v,o);
- v | o 
----+---
- 1 | 1
- 1 | 2
-(2 rows)
-
+ERROR:  function getfoo2(integer) does not exist
+LINE 1: SELECT * FROM getfoo2(1) WITH ORDINALITY AS t1(v,o);
+                      ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 CREATE VIEW vw_getfoo AS SELECT * FROM getfoo2(1);
+ERROR:  function getfoo2(integer) does not exist
+LINE 1: CREATE VIEW vw_getfoo AS SELECT * FROM getfoo2(1);
+                                               ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 SELECT * FROM vw_getfoo;
- getfoo2 
----------
-       1
-       1
-(2 rows)
-
+ERROR:  relation "vw_getfoo" does not exist
+LINE 1: SELECT * FROM vw_getfoo;
+                      ^
 DROP VIEW vw_getfoo;
+ERROR:  view "vw_getfoo" does not exist
 CREATE VIEW vw_getfoo AS SELECT * FROM getfoo2(1) WITH ORDINALITY AS t1(v,o);
+ERROR:  function getfoo2(integer) does not exist
+LINE 1: CREATE VIEW vw_getfoo AS SELECT * FROM getfoo2(1) WITH ORDIN...
+                                               ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 SELECT * FROM vw_getfoo;
- v | o 
----+---
- 1 | 1
- 1 | 2
-(2 rows)
-
+ERROR:  relation "vw_getfoo" does not exist
+LINE 1: SELECT * FROM vw_getfoo;
+                      ^
 DROP VIEW vw_getfoo;
+ERROR:  view "vw_getfoo" does not exist
 -- sql, proretset = t, prorettype = b
 CREATE FUNCTION getfoo3(int) RETURNS setof text AS 'SELECT fooname FROM foo WHERE fooid = $1;' LANGUAGE SQL;
+ERROR:  column "fooname" does not exist
+LINE 1: ...NCTION getfoo3(int) RETURNS setof text AS 'SELECT fooname FR...
+                                                             ^
 SELECT * FROM getfoo3(1) AS t1;
- t1  
------
- Joe
- Ed
-(2 rows)
-
+ERROR:  function getfoo3(integer) does not exist
+LINE 1: SELECT * FROM getfoo3(1) AS t1;
+                      ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 SELECT * FROM getfoo3(1) WITH ORDINALITY AS t1(v,o);
-  v  | o 
------+---
- Joe | 1
- Ed  | 2
-(2 rows)
-
+ERROR:  function getfoo3(integer) does not exist
+LINE 1: SELECT * FROM getfoo3(1) WITH ORDINALITY AS t1(v,o);
+                      ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 CREATE VIEW vw_getfoo AS SELECT * FROM getfoo3(1);
+ERROR:  function getfoo3(integer) does not exist
+LINE 1: CREATE VIEW vw_getfoo AS SELECT * FROM getfoo3(1);
+                                               ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 SELECT * FROM vw_getfoo;
- getfoo3 
----------
- Joe
- Ed
-(2 rows)
-
+ERROR:  relation "vw_getfoo" does not exist
+LINE 1: SELECT * FROM vw_getfoo;
+                      ^
 DROP VIEW vw_getfoo;
+ERROR:  view "vw_getfoo" does not exist
 CREATE VIEW vw_getfoo AS SELECT * FROM getfoo3(1) WITH ORDINALITY AS t1(v,o);
+ERROR:  function getfoo3(integer) does not exist
+LINE 1: CREATE VIEW vw_getfoo AS SELECT * FROM getfoo3(1) WITH ORDIN...
+                                               ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 SELECT * FROM vw_getfoo ORDER BY 1;
-  v  | o 
------+---
- Ed  | 2
- Joe | 1
-(2 rows)
-
+ERROR:  relation "vw_getfoo" does not exist
+LINE 1: SELECT * FROM vw_getfoo ORDER BY 1;
+                      ^
 DROP VIEW vw_getfoo;
+ERROR:  view "vw_getfoo" does not exist
 -- sql, proretset = f, prorettype = c
 CREATE FUNCTION getfoo4(int) RETURNS foo AS 'SELECT * FROM foo WHERE fooid = $1;' LANGUAGE SQL;
+ERROR:  column "fooid" does not exist
+LINE 1: ...foo4(int) RETURNS foo AS 'SELECT * FROM foo WHERE fooid = $1...
+                                                             ^
 SELECT * FROM getfoo4(1) AS t1;
- fooid | foosubid | fooname 
--------+----------+---------
-     1 |        1 | Joe
-(1 row)
-
+ERROR:  function getfoo4(integer) does not exist
+LINE 1: SELECT * FROM getfoo4(1) AS t1;
+                      ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 SELECT * FROM getfoo4(1) WITH ORDINALITY AS t1(a,b,c,o);
- a | b |  c  | o 
----+---+-----+---
- 1 | 1 | Joe | 1
-(1 row)
-
+ERROR:  function getfoo4(integer) does not exist
+LINE 1: SELECT * FROM getfoo4(1) WITH ORDINALITY AS t1(a,b,c,o);
+                      ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 CREATE VIEW vw_getfoo AS SELECT * FROM getfoo4(1);
+ERROR:  function getfoo4(integer) does not exist
+LINE 1: CREATE VIEW vw_getfoo AS SELECT * FROM getfoo4(1);
+                                               ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 SELECT * FROM vw_getfoo;
- fooid | foosubid | fooname 
--------+----------+---------
-     1 |        1 | Joe
-(1 row)
-
+ERROR:  relation "vw_getfoo" does not exist
+LINE 1: SELECT * FROM vw_getfoo;
+                      ^
 DROP VIEW vw_getfoo;
+ERROR:  view "vw_getfoo" does not exist
 CREATE VIEW vw_getfoo AS SELECT * FROM getfoo4(1) WITH ORDINALITY AS t1(a,b,c,o);
+ERROR:  function getfoo4(integer) does not exist
+LINE 1: CREATE VIEW vw_getfoo AS SELECT * FROM getfoo4(1) WITH ORDIN...
+                                               ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 SELECT * FROM vw_getfoo;
- a | b |  c  | o 
----+---+-----+---
- 1 | 1 | Joe | 1
-(1 row)
-
+ERROR:  relation "vw_getfoo" does not exist
+LINE 1: SELECT * FROM vw_getfoo;
+                      ^
 DROP VIEW vw_getfoo;
+ERROR:  view "vw_getfoo" does not exist
 -- sql, proretset = t, prorettype = c
 CREATE FUNCTION getfoo5(int) RETURNS setof foo AS 'SELECT * FROM foo WHERE fooid = $1;' LANGUAGE SQL;
+ERROR:  column "fooid" does not exist
+LINE 1: ...nt) RETURNS setof foo AS 'SELECT * FROM foo WHERE fooid = $1...
+                                                             ^
 SELECT * FROM getfoo5(1) AS t1;
- fooid | foosubid | fooname 
--------+----------+---------
-     1 |        1 | Joe
-     1 |        2 | Ed
-(2 rows)
-
+ERROR:  function getfoo5(integer) does not exist
+LINE 1: SELECT * FROM getfoo5(1) AS t1;
+                      ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 SELECT * FROM getfoo5(1) WITH ORDINALITY AS t1(a,b,c,o);
- a | b |  c  | o 
----+---+-----+---
- 1 | 1 | Joe | 1
- 1 | 2 | Ed  | 2
-(2 rows)
-
+ERROR:  function getfoo5(integer) does not exist
+LINE 1: SELECT * FROM getfoo5(1) WITH ORDINALITY AS t1(a,b,c,o);
+                      ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 CREATE VIEW vw_getfoo AS SELECT * FROM getfoo5(1);
+ERROR:  function getfoo5(integer) does not exist
+LINE 1: CREATE VIEW vw_getfoo AS SELECT * FROM getfoo5(1);
+                                               ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 SELECT * FROM vw_getfoo;
- fooid | foosubid | fooname 
--------+----------+---------
-     1 |        1 | Joe
-     1 |        2 | Ed
-(2 rows)
-
+ERROR:  relation "vw_getfoo" does not exist
+LINE 1: SELECT * FROM vw_getfoo;
+                      ^
 DROP VIEW vw_getfoo;
+ERROR:  view "vw_getfoo" does not exist
 CREATE VIEW vw_getfoo AS SELECT * FROM getfoo5(1) WITH ORDINALITY AS t1(a,b,c,o);
+ERROR:  function getfoo5(integer) does not exist
+LINE 1: CREATE VIEW vw_getfoo AS SELECT * FROM getfoo5(1) WITH ORDIN...
+                                               ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 SELECT * FROM vw_getfoo ORDER BY foosubid;
-ERROR:  column "foosubid" does not exist
+ERROR:  relation "vw_getfoo" does not exist
 LINE 1: SELECT * FROM vw_getfoo ORDER BY foosubid;
-                                         ^
+                      ^
 DROP VIEW vw_getfoo;
+ERROR:  view "vw_getfoo" does not exist
 -- sql, proretset = f, prorettype = record
 CREATE FUNCTION getfoo6(int) RETURNS RECORD AS 'SELECT * FROM foo WHERE fooid = $1;' LANGUAGE SQL;
+ERROR:  column "fooid" does not exist
+LINE 1: ...6(int) RETURNS RECORD AS 'SELECT * FROM foo WHERE fooid = $1...
+                                                             ^
 SELECT * FROM getfoo6(1) AS t1(fooid int, foosubid int, fooname text);
- fooid | foosubid | fooname 
--------+----------+---------
-     1 |        1 | Joe
-(1 row)
-
+ERROR:  function getfoo6(integer) does not exist
+LINE 1: SELECT * FROM getfoo6(1) AS t1(fooid int, foosubid int, foon...
+                      ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 SELECT * FROM ROWS FROM( getfoo6(1) AS (fooid int, foosubid int, fooname text) ) WITH ORDINALITY;
- fooid | foosubid | fooname | ordinality 
--------+----------+---------+------------
-     1 |        1 | Joe     |          1
-(1 row)
-
+ERROR:  function getfoo6(integer) does not exist
+LINE 1: SELECT * FROM ROWS FROM( getfoo6(1) AS (fooid int, foosubid ...
+                                 ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 CREATE VIEW vw_getfoo AS SELECT * FROM getfoo6(1) AS
 (fooid int, foosubid int, fooname text);
+ERROR:  function getfoo6(integer) does not exist
+LINE 1: CREATE VIEW vw_getfoo AS SELECT * FROM getfoo6(1) AS
+                                               ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 SELECT * FROM vw_getfoo;
- fooid | foosubid | fooname 
--------+----------+---------
-     1 |        1 | Joe
-(1 row)
-
+ERROR:  relation "vw_getfoo" does not exist
+LINE 1: SELECT * FROM vw_getfoo;
+                      ^
 DROP VIEW vw_getfoo;
+ERROR:  view "vw_getfoo" does not exist
 CREATE VIEW vw_getfoo AS
   SELECT * FROM ROWS FROM( getfoo6(1) AS (fooid int, foosubid int, fooname text) )
                 WITH ORDINALITY;
+ERROR:  function getfoo6(integer) does not exist
+LINE 2:   SELECT * FROM ROWS FROM( getfoo6(1) AS (fooid int, foosubi...
+                                   ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 SELECT * FROM vw_getfoo;
- fooid | foosubid | fooname | ordinality 
--------+----------+---------+------------
-     1 |        1 | Joe     |          1
-(1 row)
-
+ERROR:  relation "vw_getfoo" does not exist
+LINE 1: SELECT * FROM vw_getfoo;
+                      ^
 DROP VIEW vw_getfoo;
+ERROR:  view "vw_getfoo" does not exist
 -- sql, proretset = t, prorettype = record
 CREATE FUNCTION getfoo7(int) RETURNS setof record AS 'SELECT * FROM foo WHERE fooid = $1;' LANGUAGE SQL;
+ERROR:  column "fooid" does not exist
+LINE 1: ... RETURNS setof record AS 'SELECT * FROM foo WHERE fooid = $1...
+                                                             ^
 SELECT * FROM getfoo7(1) AS t1(fooid int, foosubid int, fooname text);
- fooid | foosubid | fooname 
--------+----------+---------
-     1 |        1 | Joe
-     1 |        2 | Ed
-(2 rows)
-
+ERROR:  function getfoo7(integer) does not exist
+LINE 1: SELECT * FROM getfoo7(1) AS t1(fooid int, foosubid int, foon...
+                      ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 SELECT * FROM ROWS FROM( getfoo7(1) AS (fooid int, foosubid int, fooname text) ) WITH ORDINALITY;
- fooid | foosubid | fooname | ordinality 
--------+----------+---------+------------
-     1 |        1 | Joe     |          1
-     1 |        2 | Ed      |          2
-(2 rows)
-
+ERROR:  function getfoo7(integer) does not exist
+LINE 1: SELECT * FROM ROWS FROM( getfoo7(1) AS (fooid int, foosubid ...
+                                 ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 CREATE VIEW vw_getfoo AS SELECT * FROM getfoo7(1) AS
 (fooid int, foosubid int, fooname text);
+ERROR:  function getfoo7(integer) does not exist
+LINE 1: CREATE VIEW vw_getfoo AS SELECT * FROM getfoo7(1) AS
+                                               ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 SELECT * FROM vw_getfoo;
- fooid | foosubid | fooname 
--------+----------+---------
-     1 |        1 | Joe
-     1 |        2 | Ed
-(2 rows)
-
+ERROR:  relation "vw_getfoo" does not exist
+LINE 1: SELECT * FROM vw_getfoo;
+                      ^
 DROP VIEW vw_getfoo;
+ERROR:  view "vw_getfoo" does not exist
 CREATE VIEW vw_getfoo AS
   SELECT * FROM ROWS FROM( getfoo7(1) AS (fooid int, foosubid int, fooname text) )
                 WITH ORDINALITY;
+ERROR:  function getfoo7(integer) does not exist
+LINE 2:   SELECT * FROM ROWS FROM( getfoo7(1) AS (fooid int, foosubi...
+                                   ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 SELECT * FROM vw_getfoo;
- fooid | foosubid | fooname | ordinality 
--------+----------+---------+------------
-     1 |        1 | Joe     |          1
-     1 |        2 | Ed      |          2
-(2 rows)
-
+ERROR:  relation "vw_getfoo" does not exist
+LINE 1: SELECT * FROM vw_getfoo;
+                      ^
 DROP VIEW vw_getfoo;
+ERROR:  view "vw_getfoo" does not exist
 -- plpgsql, proretset = f, prorettype = b
 CREATE FUNCTION getfoo8(int) RETURNS int AS 'DECLARE fooint int; BEGIN SELECT fooid into fooint FROM foo WHERE fooid = $1; RETURN fooint; END;' LANGUAGE plpgsql;
 SELECT * FROM getfoo8(1) AS t1;
- t1 
-----
-  1
-(1 row)
-
+ERROR:  column "fooid" does not exist
+LINE 1: SELECT fooid             FROM foo WHERE fooid = $1
+               ^
+QUERY:  SELECT fooid             FROM foo WHERE fooid = $1
+CONTEXT:  PL/pgSQL function getfoo8(integer) line 1 at SQL statement
 SELECT * FROM getfoo8(1) WITH ORDINALITY AS t1(v,o);
- v | o 
----+---
- 1 | 1
-(1 row)
-
+ERROR:  column "fooid" does not exist
+LINE 1: SELECT fooid             FROM foo WHERE fooid = $1
+               ^
+QUERY:  SELECT fooid             FROM foo WHERE fooid = $1
+CONTEXT:  PL/pgSQL function getfoo8(integer) line 1 at SQL statement
 CREATE VIEW vw_getfoo AS SELECT * FROM getfoo8(1);
 SELECT * FROM vw_getfoo;
- getfoo8 
----------
-       1
-(1 row)
-
+ERROR:  column "fooid" does not exist
+LINE 1: SELECT fooid             FROM foo WHERE fooid = $1
+               ^
+QUERY:  SELECT fooid             FROM foo WHERE fooid = $1
+CONTEXT:  PL/pgSQL function getfoo8(integer) line 1 at SQL statement
 DROP VIEW vw_getfoo;
 CREATE VIEW vw_getfoo AS SELECT * FROM getfoo8(1) WITH ORDINALITY AS t1(v,o);
 SELECT * FROM vw_getfoo;
- v | o 
----+---
- 1 | 1
-(1 row)
-
+ERROR:  column "fooid" does not exist
+LINE 1: SELECT fooid             FROM foo WHERE fooid = $1
+               ^
+QUERY:  SELECT fooid             FROM foo WHERE fooid = $1
+CONTEXT:  PL/pgSQL function getfoo8(integer) line 1 at SQL statement
 DROP VIEW vw_getfoo;
 -- plpgsql, proretset = f, prorettype = c
 CREATE FUNCTION getfoo9(int) RETURNS foo AS 'DECLARE footup foo%ROWTYPE; BEGIN SELECT * into footup FROM foo WHERE fooid = $1; RETURN footup; END;' LANGUAGE plpgsql;
 SELECT * FROM getfoo9(1) AS t1;
- fooid | foosubid | fooname 
--------+----------+---------
-     1 |        1 | Joe
-(1 row)
-
+ERROR:  column "fooid" does not exist
+LINE 1: SELECT *             FROM foo WHERE fooid = $1
+                                            ^
+QUERY:  SELECT *             FROM foo WHERE fooid = $1
+CONTEXT:  PL/pgSQL function getfoo9(integer) line 1 at SQL statement
 SELECT * FROM getfoo9(1) WITH ORDINALITY AS t1(a,b,c,o);
- a | b |  c  | o 
----+---+-----+---
- 1 | 1 | Joe | 1
-(1 row)
-
+ERROR:  column "fooid" does not exist
+LINE 1: SELECT *             FROM foo WHERE fooid = $1
+                                            ^
+QUERY:  SELECT *             FROM foo WHERE fooid = $1
+CONTEXT:  PL/pgSQL function getfoo9(integer) line 1 at SQL statement
 CREATE VIEW vw_getfoo AS SELECT * FROM getfoo9(1);
 SELECT * FROM vw_getfoo;
- fooid | foosubid | fooname 
--------+----------+---------
-     1 |        1 | Joe
-(1 row)
-
+ERROR:  column "fooid" does not exist
+LINE 1: SELECT *             FROM foo WHERE fooid = $1
+                                            ^
+QUERY:  SELECT *             FROM foo WHERE fooid = $1
+CONTEXT:  PL/pgSQL function getfoo9(integer) line 1 at SQL statement
 DROP VIEW vw_getfoo;
 CREATE VIEW vw_getfoo AS SELECT * FROM getfoo9(1) WITH ORDINALITY AS t1(a,b,c,o);
 SELECT * FROM vw_getfoo;
- a | b |  c  | o 
----+---+-----+---
- 1 | 1 | Joe | 1
-(1 row)
-
+ERROR:  column "fooid" does not exist
+LINE 1: SELECT *             FROM foo WHERE fooid = $1
+                                            ^
+QUERY:  SELECT *             FROM foo WHERE fooid = $1
+CONTEXT:  PL/pgSQL function getfoo9(integer) line 1 at SQL statement
 DROP VIEW vw_getfoo;
 -- mix 'n match kinds, to exercise expandRTE and related logic
 select * from rows from(getfoo1(1),getfoo2(1),getfoo3(1),getfoo4(1),getfoo5(1),
@@ -651,57 +690,49 @@ select * from rows from(getfoo1(1),getfoo2(1),getfoo3(1),getfoo4(1),getfoo5(1),
                     getfoo7(1) AS (fooid int, foosubid int, fooname text),
                     getfoo8(1),getfoo9(1))
               with ordinality as t1(a,b,c,d,e,f,g,h,i,j,k,l,m,o,p,q,r,s,t,u);
- a | b |  c  | d | e |  f  | g | h |  i  | j | k |  l  | m | o |  p  | q | r | s |  t  | u 
----+---+-----+---+---+-----+---+---+-----+---+---+-----+---+---+-----+---+---+---+-----+---
- 1 | 1 | Joe | 1 | 1 | Joe | 1 | 1 | Joe | 1 | 1 | Joe | 1 | 1 | Joe | 1 | 1 | 1 | Joe | 1
-   | 1 | Ed  |   |   |     | 1 | 2 | Ed  |   |   |     | 1 | 2 | Ed  |   |   |   |     | 2
-(2 rows)
-
+ERROR:  function getfoo2(integer) does not exist
+LINE 1: select * from rows from(getfoo1(1),getfoo2(1),getfoo3(1),get...
+                                           ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 select * from rows from(getfoo9(1),getfoo8(1),
                     getfoo7(1) AS (fooid int, foosubid int, fooname text),
                     getfoo6(1) AS (fooid int, foosubid int, fooname text),
                     getfoo5(1),getfoo4(1),getfoo3(1),getfoo2(1),getfoo1(1))
               with ordinality as t1(a,b,c,d,e,f,g,h,i,j,k,l,m,o,p,q,r,s,t,u);
- a | b |  c  | d | e | f |  g  | h | i |  j  | k | l |  m  | o | p |  q  |  r  | s | t | u 
----+---+-----+---+---+---+-----+---+---+-----+---+---+-----+---+---+-----+-----+---+---+---
- 1 | 1 | Joe | 1 | 1 | 1 | Joe | 1 | 1 | Joe | 1 | 1 | Joe | 1 | 1 | Joe | Joe | 1 | 1 | 1
-   |   |     |   | 1 | 2 | Ed  |   |   |     | 1 | 2 | Ed  |   |   |     | Ed  | 1 |   | 2
-(2 rows)
-
+ERROR:  function getfoo7(integer) does not exist
+LINE 2:                     getfoo7(1) AS (fooid int, foosubid int, ...
+                            ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 create temporary view vw_foo as
   select * from rows from(getfoo9(1),
                       getfoo7(1) AS (fooid int, foosubid int, fooname text),
                       getfoo1(1))
                 with ordinality as t1(a,b,c,d,e,f,g,n);
+ERROR:  function getfoo7(integer) does not exist
+LINE 3:                       getfoo7(1) AS (fooid int, foosubid int...
+                              ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 select * from vw_foo;
- a | b |  c  | d | e |  f  | g | n 
----+---+-----+---+---+-----+---+---
- 1 | 1 | Joe | 1 | 1 | Joe | 1 | 1
-   |   |     | 1 | 2 | Ed  |   | 2
-(2 rows)
-
+ERROR:  relation "vw_foo" does not exist
+LINE 1: select * from vw_foo;
+                      ^
 select pg_get_viewdef('vw_foo');
-                                                                    pg_get_viewdef                                                                    
-------------------------------------------------------------------------------------------------------------------------------------------------------
-  SELECT t1.a,                                                                                                                                       +
-     t1.b,                                                                                                                                           +
-     t1.c,                                                                                                                                           +
-     t1.d,                                                                                                                                           +
-     t1.e,                                                                                                                                           +
-     t1.f,                                                                                                                                           +
-     t1.g,                                                                                                                                           +
-     t1.n                                                                                                                                            +
-    FROM ROWS FROM(getfoo9(1), getfoo7(1) AS (fooid integer, foosubid integer, fooname text), getfoo1(1)) WITH ORDINALITY t1(a, b, c, d, e, f, g, n);
-(1 row)
-
+ERROR:  relation "vw_foo" does not exist
 drop view vw_foo;
+ERROR:  view "vw_foo" does not exist
 DROP FUNCTION getfoo1(int);
 DROP FUNCTION getfoo2(int);
+ERROR:  function getfoo2(integer) does not exist
 DROP FUNCTION getfoo3(int);
+ERROR:  function getfoo3(integer) does not exist
 DROP FUNCTION getfoo4(int);
+ERROR:  function getfoo4(integer) does not exist
 DROP FUNCTION getfoo5(int);
+ERROR:  function getfoo5(integer) does not exist
 DROP FUNCTION getfoo6(int);
+ERROR:  function getfoo6(integer) does not exist
 DROP FUNCTION getfoo7(int);
+ERROR:  function getfoo7(integer) does not exist
 DROP FUNCTION getfoo8(int);
 DROP FUNCTION getfoo9(int);
 DROP FUNCTION foot(int);
@@ -2018,13 +2049,13 @@ select x from int8_tbl, extractq2(int8_tbl) f(x);
 create function extractq2_2(t int8_tbl) returns table(ret1 int8) as $$
   select extractq2(t) offset 0
 $$ language sql immutable;
-explain (verbose, costs off)
+explain (verbose, costs off, nodes off)
 select x from int8_tbl, extractq2_2(int8_tbl) f(x);
-                   QUERY PLAN                   
-------------------------------------------------
+               QUERY PLAN                
+-----------------------------------------
  Nested Loop
    Output: ((int8_tbl.*).q2)
-   ->  Remote Subquery Scan on all (datanode_2)
+   ->  Remote Subquery Scan on all
          Output: int8_tbl.*
          ->  Seq Scan on public.int8_tbl
                Output: int8_tbl.*

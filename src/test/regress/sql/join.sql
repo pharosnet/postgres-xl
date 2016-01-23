@@ -404,7 +404,7 @@ select aa, bb, unique1, unique1
 --
 -- regression test: check handling of empty-FROM subquery underneath outer join
 --
-explain (costs off)
+explain (costs off, nodes off)
 select * from int8_tbl i1 left join (int8_tbl i2 join
   (select 123 as x) ss on i2.q1 = x) on i1.q2 = i2.q2
 order by 1, 2;
@@ -875,7 +875,7 @@ where thousand = a.q1 and tenthous = b.q1 and a.q2 = 1 and b.q2 = 2;
 -- test a corner case in which we shouldn't apply the star-schema optimization
 --
 
-explain (costs off)
+explain (costs off, nodes off)
 select t1.unique2, t1.stringu1, t2.unique1, t2.stringu2 from
   tenk1 t1
   inner join int4_tbl i1
@@ -1657,7 +1657,7 @@ select * from
   ) zz on zz.z = y.y;
 
 -- check we don't try to do a unique-ified semijoin with LATERAL
-explain (verbose, costs off)
+explain (verbose, costs off, nodes off)
 select * from
   (values (0,9998), (1,1000)) v(id,x),
   lateral (select f1 from int4_tbl

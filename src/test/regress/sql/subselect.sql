@@ -106,10 +106,10 @@ from int8_tbl group by q1 order by q1;
 explain (costs off)
 select * from int4_tbl o where exists
   (select 1 from int4_tbl i where i.f1=o.f1 limit null);
-explain (costs off)
+explain (costs off, nodes off)
 select * from int4_tbl o where not exists
   (select 1 from int4_tbl i where i.f1=o.f1 limit 1);
-explain (costs off)
+explain (costs off, nodes off)
 select * from int4_tbl o where exists
   (select 1 from int4_tbl i where i.f1=o.f1 limit 0);
 
