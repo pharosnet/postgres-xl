@@ -33,7 +33,7 @@ CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } | UNLOGGED ] TABLE [ IF NOT EXI
 [ TABLESPACE <replaceable class="PARAMETER">tablespace_name</replaceable> ]
 [ 
   DISTRIBUTE BY { REPLICATION | ROUNDROBIN | { [HASH | MODULO ] ( <replaceable class="PARAMETER">column_name</replaceable> ) } } |
-  DISTRIBUTED { BY ( <replaceable class="PARAMETER">column_name</replaceable> ) } |
+  DISTRIBUTED { { BY ( <replaceable class="PARAMETER">column_name</replaceable> ) } | { RANDOMLY } |
   DISTSTYLE { EVEN | KEY | ALL } DISTKEY ( <replaceable class="PARAMETER">column_name</replaceable> )
 ]
 [ TO { GROUP <replaceable class="PARAMETER">groupname</replaceable> | NODE ( <replaceable class="PARAMETER">nodename</replaceable> [, ... ] ) } ]
@@ -49,7 +49,7 @@ CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } | UNLOGGED ] TABLE [ IF NOT EXI
 [ TABLESPACE <replaceable class="PARAMETER">tablespace_name</replaceable> ]
 [ 
   DISTRIBUTE BY { REPLICATION | ROUNDROBIN | { [HASH | MODULO ] ( <replaceable class="PARAMETER">column_name</replaceable> ) } } |
-  DISTRIBUTED { BY ( <replaceable class="PARAMETER">column_name</replaceable> ) } |
+  DISTRIBUTED { { BY ( <replaceable class="PARAMETER">column_name</replaceable> ) } | { RANDOMLY } |
   DISTSTYLE { EVEN | KEY | ALL } DISTKEY ( <replaceable class="PARAMETER">column_name</replaceable> )
 ]
 [ TO { GROUP <replaceable class="PARAMETER">groupname</replaceable> | NODE ( <replaceable class="PARAMETER">nodename</replaceable> [, ... ] ) } ]
