@@ -1041,4 +1041,6 @@ DROP TABLE table_rep,table_hash,table_rb;
 -- Check of inheritance between temp and non-temp tables
 CREATE TEMP TABLE table_parent (a int);
 CREATE TABLE table_child (like table_parent, b int);
+ERROR:  relation "table_parent" does not exist
 DROP TABLE table_child;
+ERROR:  table "table_child" does not exist

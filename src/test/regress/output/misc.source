@@ -6,8 +6,12 @@
 --
 UPDATE onek
    SET unique1 = onek.unique1 + 1;
+ERROR:  could not plan this distributed update
+DETAIL:  correlated UPDATE or updating distribution column currently not supported in Postgres-XL.
 UPDATE onek
    SET unique1 = onek.unique1 - 1;
+ERROR:  could not plan this distributed update
+DETAIL:  correlated UPDATE or updating distribution column currently not supported in Postgres-XL.
 --
 -- BTREE partial
 --
@@ -27,11 +31,15 @@ UPDATE tmp
    FROM onek
    WHERE onek.stringu1 = 'JBAAAA' and
 	  onek.stringu1 = tmp.stringu1;
+ERROR:  could not plan this distributed update
+DETAIL:  correlated UPDATE or updating distribution column currently not supported in Postgres-XL.
 UPDATE tmp
    SET stringu1 = reverse_name(onek2.stringu1)
    FROM onek2
    WHERE onek2.stringu1 = 'JCAAAA' and
 	  onek2.stringu1 = tmp.stringu1;
+ERROR:  could not plan this distributed update
+DETAIL:  correlated UPDATE or updating distribution column currently not supported in Postgres-XL.
 DROP TABLE tmp;
 --UPDATE person*
 --   SET age = age + 1;
@@ -346,7 +354,7 @@ ALTER TABLE f_star ADD COLUMN f int4;
 UPDATE f_star SET f = 10;
 ALTER TABLE e_star* ADD COLUMN e int4;
 --UPDATE e_star* SET e = 42;
-SELECT * FROM e_star* ORDER BY 1,2;
+SELECT * FROM e_star* ORDER BY 1,2,3,4;
  class | aa |     cc      | ee  | e 
 -------+----+-------------+-----+---
  e     | 15 | hi carol    |  -1 |  
@@ -354,8 +362,8 @@ SELECT * FROM e_star* ORDER BY 1,2;
  e     | 17 |             |  -2 |  
  e     | 18 |             |     |  
  e     |    | hi elisa    |     |  
- e     |    |             |  -4 |  
  e     |    | hi michelle |  -3 |  
+ e     |    |             |  -4 |  
  f     | 19 | hi claire   |  -5 |  
  f     | 20 | hi mike     |  -6 |  
  f     | 21 | hi marcel   |     |  
@@ -364,13 +372,13 @@ SELECT * FROM e_star* ORDER BY 1,2;
  f     | 25 |             |  -9 |  
  f     | 26 |             |     |  
  f     | 27 |             |     |  
- f     |    |             |     |  
- f     |    | hi keith    |  -8 |  
  f     |    | hi allison  | -10 |  
- f     |    | hi jeff     |     |  
- f     |    |             | -11 |  
  f     |    | hi carl     |     |  
+ f     |    | hi jeff     |     |  
+ f     |    | hi keith    |  -8 |  
  f     |    |             | -12 |  
+ f     |    |             | -11 |  
+ f     |    |             |     |  
  f     |    |             |     |  
 (23 rows)
 
@@ -457,12 +465,10 @@ SELECT class, aa, a FROM a_star* ORDER BY 1,2;
 -- everyone else does nothing.
 --
 SELECT p.name, name(p.hobbies) FROM ONLY person p ORDER BY 1,2;
- name  |    name     
--------+-------------
- joe   | basketball
- mike  | posthacking
- sally | basketball
-(3 rows)
+ name |    name     
+------+-------------
+ mike | posthacking
+(1 row)
 
 --
 -- as above, but jeff also does post_hacking.
@@ -482,25 +488,14 @@ SELECT p.name, name(p.hobbies) FROM person* p ORDER BY 1,2;
 --
 SELECT DISTINCT hobbies_r.name, name(hobbies_r.equipment) FROM hobbies_r
   ORDER BY 1,2;
-    name     |     name      
--------------+---------------
- basketball  | hightops
- posthacking | advil
- posthacking | peet's coffee
- skywalking  | guts
-(4 rows)
+ name | name 
+------+------
+(0 rows)
 
 SELECT hobbies_r.name, (hobbies_r.equipment).name FROM hobbies_r ORDER BY 1,2;
-    name     |     name      
--------------+---------------
- basketball  | hightops
- basketball  | hightops
- posthacking | advil
- posthacking | advil
- posthacking | peet's coffee
- posthacking | peet's coffee
- skywalking  | guts
-(7 rows)
+ name | name 
+------+------
+(0 rows)
 
 --
 -- mike needs advil and peet's coffee,
@@ -508,13 +503,9 @@ SELECT hobbies_r.name, (hobbies_r.equipment).name FROM hobbies_r ORDER BY 1,2;
 -- everyone else is fine.
 --
 SELECT p.name, name(p.hobbies), name(equipment(p.hobbies)) FROM ONLY person p ORDER BY 1,2,3;
- name  |    name     |     name      
--------+-------------+---------------
- joe   | basketball  | hightops
- mike  | posthacking | advil
- mike  | posthacking | peet's coffee
- sally | basketball  | hightops
-(4 rows)
+ name | name | name 
+------+------+------
+(0 rows)
 
 --
 -- as above, but jeff needs advil and peet's coffee as well.
@@ -535,13 +526,9 @@ SELECT p.name, name(p.hobbies), name(equipment(p.hobbies)) FROM person* p ORDER 
 -- unflattening is being done correctly.
 --
 SELECT name(equipment(p.hobbies)), p.name, name(p.hobbies) FROM ONLY person p ORDER BY 1,2,3;
-     name      | name  |    name     
----------------+-------+-------------
- advil         | mike  | posthacking
- hightops      | joe   | basketball
- hightops      | sally | basketball
- peet's coffee | mike  | posthacking
-(4 rows)
+ name | name | name 
+------+------+------
+(0 rows)
 
 SELECT (p.hobbies).equipment.name, p.name, name(p.hobbies) FROM person* p ORDER BY 1,2,3;
      name      | name  |    name     
@@ -555,13 +542,9 @@ SELECT (p.hobbies).equipment.name, p.name, name(p.hobbies) FROM person* p ORDER 
 (6 rows)
 
 SELECT (p.hobbies).equipment.name, name(p.hobbies), p.name FROM ONLY person p ORDER BY 1,2,3;
-     name      |    name     | name  
----------------+-------------+-------
- advil         | posthacking | mike
- hightops      | basketball  | joe
- hightops      | basketball  | sally
- peet's coffee | posthacking | mike
-(4 rows)
+ name | name | name 
+------+------+------
+(0 rows)
 
 SELECT name(equipment(p.hobbies)), name(p.hobbies), p.name FROM person* p ORDER BY 1,2,3;
      name      |    name     | name  
@@ -622,6 +605,7 @@ SELECT user_relns() AS user_relns
  fast_emp4000
  float4_tbl
  float8_tbl
+ foobar
  func_index_heap
  gin_test_tbl
  gist_point_tbl
@@ -710,7 +694,7 @@ SELECT user_relns() AS user_relns
  tvvmv
  varchar_tbl
  xacttest
-(132 rows)
+(133 rows)
 
 SELECT name(equipment(hobby_construct(text 'skywalking', text 'mer')));
  name 
@@ -754,13 +738,13 @@ SELECT name(equipment_named_ambiguous_2a(text 'skywalking'));
  guts
 (1 row)
 
-SELECT name(equipment_named_ambiguous_2b(text 'skywalking'));
+SELECT name(equipment_named_ambiguous_2b(text 'skywalking')) ORDER BY 1;
      name      
 ---------------
  advil
- peet's coffee
- hightops
  guts
+ hightops
+ peet's coffee
 (4 rows)
 
 SELECT hobbies_by_name('basketball');
@@ -796,28 +780,14 @@ SELECT name(equipment(ROW('skywalking', 'mer')));
 (1 row)
 
 SELECT *, name(equipment(h.*)) FROM hobbies_r h ORDER BY 1,2,3;
-    name     | person |     name      
--------------+--------+---------------
- basketball  | joe    | hightops
- basketball  | sally  | hightops
- posthacking | jeff   | advil
- posthacking | jeff   | peet's coffee
- posthacking | mike   | advil
- posthacking | mike   | peet's coffee
- skywalking  |        | guts
-(7 rows)
+ name | person | name 
+------+--------+------
+(0 rows)
 
 SELECT *, (equipment(CAST((h.*) AS hobbies_r))).name FROM hobbies_r h ORDER BY 1,2,3;
-    name     | person |     name      
--------------+--------+---------------
- basketball  | joe    | hightops
- basketball  | sally  | hightops
- posthacking | jeff   | advil
- posthacking | jeff   | peet's coffee
- posthacking | mike   | advil
- posthacking | mike   | peet's coffee
- skywalking  |        | guts
-(7 rows)
+ name | person | name 
+------+--------+------
+(0 rows)
 
 --
 -- check that old-style C functions work properly with TOASTed values
