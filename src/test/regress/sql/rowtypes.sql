@@ -119,7 +119,7 @@ order by thousand, tenthous;
 -- Check row comparisons with IN
 select * from int8_tbl i8 where i8 in (row(123,456));  -- fail, type mismatch
 
-explain (costs off)
+explain (costs off, nodes off)
 select * from int8_tbl i8
 where i8 in (row(123,456)::int8_tbl, '(4567890123456789,123)');
 

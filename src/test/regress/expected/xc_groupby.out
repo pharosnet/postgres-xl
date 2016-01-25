@@ -2343,11 +2343,10 @@ select xc_groupby_tab1.val + xc_groupby_tab2.val2, xc_groupby_tab1.val, xc_group
 (6 rows)
 
 explain (verbose true, costs false, nodes false) select xc_groupby_tab1.val + xc_groupby_tab2.val2, xc_groupby_tab1.val, xc_groupby_tab2.val2 from xc_groupby_tab1, xc_groupby_tab2 where xc_groupby_tab1.val = xc_groupby_tab2.val group by xc_groupby_tab1.val, xc_groupby_tab2.val2;
-                                                                                                                        QUERY PLAN                                                                                                                         
------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Remote Fast Query Execution
+                                               QUERY PLAN                                                
+---------------------------------------------------------------------------------------------------------
+ Remote Subquery Scan on all
    Output: (xc_groupby_tab1.val + xc_groupby_tab2.val2), xc_groupby_tab1.val, xc_groupby_tab2.val2
-   Remote query: SELECT (xc_groupby_tab1.val + xc_groupby_tab2.val2), xc_groupby_tab1.val, xc_groupby_tab2.val2 FROM xc_groupby_tab1, xc_groupby_tab2 WHERE (xc_groupby_tab1.val = xc_groupby_tab2.val) GROUP BY xc_groupby_tab1.val, xc_groupby_tab2.val2
    ->  Group
          Output: (xc_groupby_tab1.val + xc_groupby_tab2.val2), xc_groupby_tab1.val, xc_groupby_tab2.val2
          Group Key: xc_groupby_tab1.val, xc_groupby_tab2.val2
@@ -2367,7 +2366,7 @@ explain (verbose true, costs false, nodes false) select xc_groupby_tab1.val + xc
                            Sort Key: xc_groupby_tab2.val
                            ->  Seq Scan on public.xc_groupby_tab2
                                  Output: xc_groupby_tab2.val2, xc_groupby_tab2.val
-(22 rows)
+(21 rows)
 
 select xc_groupby_tab1.val + xc_groupby_tab2.val2 from xc_groupby_tab1, xc_groupby_tab2 where xc_groupby_tab1.val = xc_groupby_tab2.val group by xc_groupby_tab1.val + xc_groupby_tab2.val2;
  ?column? 

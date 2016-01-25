@@ -748,11 +748,10 @@ select count(*), sum(xc_having_tab1.val * xc_having_tab2.val), avg(xc_having_tab
 (1 row)
 
 explain (verbose true, costs false, nodes false) select count(*), sum(xc_having_tab1.val * xc_having_tab2.val), avg(xc_having_tab1.val*xc_having_tab2.val), sum(xc_having_tab1.val*xc_having_tab2.val)::float8/count(*), xc_having_tab1.val2, xc_having_tab2.val2 from xc_having_tab1 full outer join xc_having_tab2 on xc_having_tab1.val2 = xc_having_tab2.val2 group by xc_having_tab1.val2, xc_having_tab2.val2 having xc_having_tab1.val2 + xc_having_tab2.val2 > 2;
-                                                                                                                                                                                                                                                    QUERY PLAN                                                                                                                                                                                                                                                    
-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Remote Fast Query Execution
+                                                                                                                               QUERY PLAN                                                                                                                                
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Remote Subquery Scan on all
    Output: count(*), sum((xc_having_tab1.val * xc_having_tab2.val)), avg((xc_having_tab1.val * xc_having_tab2.val)), ((sum((xc_having_tab1.val * xc_having_tab2.val)))::double precision / (count(*))::double precision), xc_having_tab1.val2, xc_having_tab2.val2
-   Remote query: SELECT count(*) AS count, sum((xc_having_tab1.val * xc_having_tab2.val)) AS sum, avg((xc_having_tab1.val * xc_having_tab2.val)) AS avg, ((sum((xc_having_tab1.val * xc_having_tab2.val)))::double precision / (count(*))::double precision), xc_having_tab1.val2, xc_having_tab2.val2 FROM (xc_having_tab1 FULL JOIN xc_having_tab2 ON ((xc_having_tab1.val2 = xc_having_tab2.val2))) GROUP BY xc_having_tab1.val2, xc_having_tab2.val2 HAVING ((xc_having_tab1.val2 + xc_having_tab2.val2) > 2)
    ->  GroupAggregate
          Output: count(*), sum((xc_having_tab1.val * xc_having_tab2.val)), avg((xc_having_tab1.val * xc_having_tab2.val)), ((sum((xc_having_tab1.val * xc_having_tab2.val)))::double precision / (count(*))::double precision), xc_having_tab1.val2, xc_having_tab2.val2
          Group Key: xc_having_tab1.val2, xc_having_tab2.val2
@@ -770,7 +769,7 @@ explain (verbose true, costs false, nodes false) select count(*), sum(xc_having_
                      Sort Key: xc_having_tab2.val2
                      ->  Seq Scan on public.xc_having_tab2
                            Output: xc_having_tab2.val2, xc_having_tab2.val
-(20 rows)
+(19 rows)
 
 -- group by and having, without aggregate in the target list
 select val2 from xc_having_tab1 group by val2 having sum(val) > 8;
