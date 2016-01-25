@@ -631,13 +631,15 @@ SELECT a, b, oid FROM t2 UNION ALL SELECT a, b, oid FROM t3;
 (5 rows)
 
 EXPLAIN (COSTS OFF) SELECT a, b, oid FROM t2 UNION ALL SELECT a, b, oid FROM t3;
-          QUERY PLAN           
--------------------------------
+                        QUERY PLAN                         
+-----------------------------------------------------------
  Append
-   ->  Seq Scan on t2
-         Filter: ((a % 2) = 1)
-   ->  Seq Scan on t3
-(4 rows)
+   ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+         ->  Seq Scan on t2
+               Filter: ((a % 2) = 1)
+   ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+         ->  Seq Scan on t3
+(6 rows)
 
 -- superuser is allowed to bypass RLS checks
 RESET SESSION AUTHORIZATION;
@@ -1483,43 +1485,48 @@ EXPLAIN (COSTS OFF) SELECT * FROM z1 WHERE f_leak(b);
 
 PREPARE plancache_test AS SELECT * FROM z1 WHERE f_leak(b);
 EXPLAIN (COSTS OFF) EXECUTE plancache_test;
-          QUERY PLAN           
--------------------------------
- Subquery Scan on z1
-   Filter: f_leak(z1.b)
-   ->  Seq Scan on z1 z1_1
-         Filter: ((a % 2) = 0)
-(4 rows)
+                     QUERY PLAN                      
+-----------------------------------------------------
+ Remote Subquery Scan on all (datanode_1,datanode_2)
+   ->  Subquery Scan on z1
+         Filter: f_leak(z1.b)
+         ->  Seq Scan on z1 z1_1
+               Filter: ((a % 2) = 0)
+(5 rows)
 
 PREPARE plancache_test2 AS WITH q AS (SELECT * FROM z1 WHERE f_leak(b)) SELECT * FROM q,z2;
 EXPLAIN (COSTS OFF) EXECUTE plancache_test2;
-              QUERY PLAN               
----------------------------------------
+                           QUERY PLAN                            
+-----------------------------------------------------------------
  Nested Loop
    CTE q
-     ->  Subquery Scan on z1
-           Filter: f_leak(z1.b)
-           ->  Seq Scan on z1 z1_1
-                 Filter: ((a % 2) = 0)
+     ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+           ->  Subquery Scan on z1
+                 Filter: f_leak(z1.b)
+                 ->  Seq Scan on z1 z1_1
+                       Filter: ((a % 2) = 0)
    ->  CTE Scan on q
    ->  Materialize
-         ->  Seq Scan on z2
-(9 rows)
+         ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+               ->  Seq Scan on z2
+(11 rows)
 
 PREPARE plancache_test3 AS WITH q AS (SELECT * FROM z2) SELECT * FROM q,z1 WHERE f_leak(z1.b);
 EXPLAIN (COSTS OFF) EXECUTE plancache_test3;
-                QUERY PLAN                 
--------------------------------------------
+                           QUERY PLAN                            
+-----------------------------------------------------------------
  Nested Loop
    CTE q
-     ->  Seq Scan on z2
+     ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+           ->  Seq Scan on z2
    ->  CTE Scan on q
    ->  Materialize
-         ->  Subquery Scan on z1
-               Filter: f_leak(z1.b)
-               ->  Seq Scan on z1 z1_1
-                     Filter: ((a % 2) = 0)
-(9 rows)
+         ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+               ->  Subquery Scan on z1
+                     Filter: f_leak(z1.b)
+                     ->  Seq Scan on z1 z1_1
+                           Filter: ((a % 2) = 0)
+(11 rows)
 
 SET ROLE rls_regress_group1;
 SELECT * FROM z1 WHERE f_leak(b);
@@ -1540,41 +1547,46 @@ EXPLAIN (COSTS OFF) SELECT * FROM z1 WHERE f_leak(b);
 (5 rows)
 
 EXPLAIN (COSTS OFF) EXECUTE plancache_test;
-          QUERY PLAN           
--------------------------------
- Subquery Scan on z1
-   Filter: f_leak(z1.b)
-   ->  Seq Scan on z1 z1_1
-         Filter: ((a % 2) = 0)
-(4 rows)
+                     QUERY PLAN                      
+-----------------------------------------------------
+ Remote Subquery Scan on all (datanode_1,datanode_2)
+   ->  Subquery Scan on z1
+         Filter: f_leak(z1.b)
+         ->  Seq Scan on z1 z1_1
+               Filter: ((a % 2) = 0)
+(5 rows)
 
 EXPLAIN (COSTS OFF) EXECUTE plancache_test2;
-              QUERY PLAN               
----------------------------------------
+                           QUERY PLAN                            
+-----------------------------------------------------------------
  Nested Loop
    CTE q
-     ->  Subquery Scan on z1
-           Filter: f_leak(z1.b)
-           ->  Seq Scan on z1 z1_1
-                 Filter: ((a % 2) = 0)
+     ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+           ->  Subquery Scan on z1
+                 Filter: f_leak(z1.b)
+                 ->  Seq Scan on z1 z1_1
+                       Filter: ((a % 2) = 0)
    ->  CTE Scan on q
    ->  Materialize
-         ->  Seq Scan on z2
-(9 rows)
+         ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+               ->  Seq Scan on z2
+(11 rows)
 
 EXPLAIN (COSTS OFF) EXECUTE plancache_test3;
-                QUERY PLAN                 
--------------------------------------------
+                           QUERY PLAN                            
+-----------------------------------------------------------------
  Nested Loop
    CTE q
-     ->  Seq Scan on z2
+     ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+           ->  Seq Scan on z2
    ->  CTE Scan on q
    ->  Materialize
-         ->  Subquery Scan on z1
-               Filter: f_leak(z1.b)
-               ->  Seq Scan on z1 z1_1
-                     Filter: ((a % 2) = 0)
-(9 rows)
+         ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+               ->  Subquery Scan on z1
+                     Filter: f_leak(z1.b)
+                     ->  Seq Scan on z1 z1_1
+                           Filter: ((a % 2) = 0)
+(11 rows)
 
 SET SESSION AUTHORIZATION rls_regress_user2;
 SELECT * FROM z1 WHERE f_leak(b);
@@ -1595,41 +1607,46 @@ EXPLAIN (COSTS OFF) SELECT * FROM z1 WHERE f_leak(b);
 (5 rows)
 
 EXPLAIN (COSTS OFF) EXECUTE plancache_test;
-          QUERY PLAN           
--------------------------------
- Subquery Scan on z1
-   Filter: f_leak(z1.b)
-   ->  Seq Scan on z1 z1_1
-         Filter: ((a % 2) = 1)
-(4 rows)
+                     QUERY PLAN                      
+-----------------------------------------------------
+ Remote Subquery Scan on all (datanode_1,datanode_2)
+   ->  Subquery Scan on z1
+         Filter: f_leak(z1.b)
+         ->  Seq Scan on z1 z1_1
+               Filter: ((a % 2) = 1)
+(5 rows)
 
 EXPLAIN (COSTS OFF) EXECUTE plancache_test2;
-              QUERY PLAN               
----------------------------------------
+                           QUERY PLAN                            
+-----------------------------------------------------------------
  Nested Loop
    CTE q
-     ->  Subquery Scan on z1
-           Filter: f_leak(z1.b)
-           ->  Seq Scan on z1 z1_1
-                 Filter: ((a % 2) = 1)
+     ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+           ->  Subquery Scan on z1
+                 Filter: f_leak(z1.b)
+                 ->  Seq Scan on z1 z1_1
+                       Filter: ((a % 2) = 1)
    ->  CTE Scan on q
    ->  Materialize
-         ->  Seq Scan on z2
-(9 rows)
+         ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+               ->  Seq Scan on z2
+(11 rows)
 
 EXPLAIN (COSTS OFF) EXECUTE plancache_test3;
-                QUERY PLAN                 
--------------------------------------------
+                           QUERY PLAN                            
+-----------------------------------------------------------------
  Nested Loop
    CTE q
-     ->  Seq Scan on z2
+     ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+           ->  Seq Scan on z2
    ->  CTE Scan on q
    ->  Materialize
-         ->  Subquery Scan on z1
-               Filter: f_leak(z1.b)
-               ->  Seq Scan on z1 z1_1
-                     Filter: ((a % 2) = 1)
-(9 rows)
+         ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+               ->  Subquery Scan on z1
+                     Filter: f_leak(z1.b)
+                     ->  Seq Scan on z1 z1_1
+                           Filter: ((a % 2) = 1)
+(11 rows)
 
 SET ROLE rls_regress_group2;
 SELECT * FROM z1 WHERE f_leak(b);
@@ -1650,41 +1667,46 @@ EXPLAIN (COSTS OFF) SELECT * FROM z1 WHERE f_leak(b);
 (5 rows)
 
 EXPLAIN (COSTS OFF) EXECUTE plancache_test;
-          QUERY PLAN           
--------------------------------
- Subquery Scan on z1
-   Filter: f_leak(z1.b)
-   ->  Seq Scan on z1 z1_1
-         Filter: ((a % 2) = 1)
-(4 rows)
+                     QUERY PLAN                      
+-----------------------------------------------------
+ Remote Subquery Scan on all (datanode_1,datanode_2)
+   ->  Subquery Scan on z1
+         Filter: f_leak(z1.b)
+         ->  Seq Scan on z1 z1_1
+               Filter: ((a % 2) = 1)
+(5 rows)
 
 EXPLAIN (COSTS OFF) EXECUTE plancache_test2;
-              QUERY PLAN               
----------------------------------------
+                           QUERY PLAN                            
+-----------------------------------------------------------------
  Nested Loop
    CTE q
-     ->  Subquery Scan on z1
-           Filter: f_leak(z1.b)
-           ->  Seq Scan on z1 z1_1
-                 Filter: ((a % 2) = 1)
+     ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+           ->  Subquery Scan on z1
+                 Filter: f_leak(z1.b)
+                 ->  Seq Scan on z1 z1_1
+                       Filter: ((a % 2) = 1)
    ->  CTE Scan on q
    ->  Materialize
-         ->  Seq Scan on z2
-(9 rows)
+         ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+               ->  Seq Scan on z2
+(11 rows)
 
 EXPLAIN (COSTS OFF) EXECUTE plancache_test3;
-                QUERY PLAN                 
--------------------------------------------
+                           QUERY PLAN                            
+-----------------------------------------------------------------
  Nested Loop
    CTE q
-     ->  Seq Scan on z2
+     ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+           ->  Seq Scan on z2
    ->  CTE Scan on q
    ->  Materialize
-         ->  Subquery Scan on z1
-               Filter: f_leak(z1.b)
-               ->  Seq Scan on z1 z1_1
-                     Filter: ((a % 2) = 1)
-(9 rows)
+         ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+               ->  Subquery Scan on z1
+                     Filter: f_leak(z1.b)
+                     ->  Seq Scan on z1 z1_1
+                           Filter: ((a % 2) = 1)
+(11 rows)
 
 --
 -- Views should follow policy for view owner.
