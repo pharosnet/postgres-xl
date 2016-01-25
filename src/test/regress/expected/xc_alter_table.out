@@ -121,22 +121,22 @@ SELECT a, b, c, d, e FROM xc_alter_table_2 ORDER BY a;
 
 -- Go through standard planner
 SET enable_fast_query_shipping TO false;
-ERROR:  unrecognized configuration parameter "enable_fast_query_shipping"
 -- Drop a couple of columns
 ALTER TABLE xc_alter_table_2 DROP COLUMN a;
 ALTER TABLE xc_alter_table_2 DROP COLUMN d;
 ALTER TABLE xc_alter_table_2 DROP COLUMN e;
 -- Check for query generation of remote INSERT
 EXPLAIN (VERBOSE true, COSTS false, NODES false) INSERT INTO xc_alter_table_2 VALUES ('Kodek', false);
-                                                QUERY PLAN                                                
-----------------------------------------------------------------------------------------------------------
- Remote Fast Query Execution
-   Output: 'Kodek'::character varying, false
-   Remote query: INSERT INTO xc_alter_table_2 (b, c) VALUES ('Kodek'::character varying, false)
+                                                   QUERY PLAN                                                   
+----------------------------------------------------------------------------------------------------------------
+ Remote Subquery Scan on any
    ->  Insert on public.xc_alter_table_2
-         ->  Result
+         ->  Remote Subquery Scan on all
                Output: NULL::integer, 'Kodek'::character varying(20), false, NULL::integer, NULL::integer
-(6 rows)
+               Distribute results by R
+               ->  Result
+                     Output: NULL::integer, 'Kodek'::character varying(20), false, NULL::integer, NULL::integer
+(7 rows)
 
 INSERT INTO xc_alter_table_2 VALUES ('Kodek', false);
 SELECT b, c FROM xc_alter_table_2 ORDER BY b;
@@ -150,16 +150,14 @@ SELECT b, c FROM xc_alter_table_2 ORDER BY b;
 
 -- Check for query generation of remote UPDATE
 EXPLAIN (VERBOSE true, COSTS false, NODES false) UPDATE xc_alter_table_2 SET b = 'Morphee', c = false WHERE b = 'Neo';
-                                                       QUERY PLAN                                                        
--------------------------------------------------------------------------------------------------------------------------
- Remote Fast Query Execution
-   Output: 'Morphee'::character varying, false, xc_alter_table_2.b, xc_alter_table_2.ctid
-   Remote query: UPDATE xc_alter_table_2 SET b = 'Morphee'::character varying, c = false WHERE ((b)::text = 'Neo'::text)
+                                                     QUERY PLAN                                                      
+---------------------------------------------------------------------------------------------------------------------
+ Remote Subquery Scan on any
    ->  Update on public.xc_alter_table_2
          ->  Seq Scan on public.xc_alter_table_2
-               Output: NULL::integer, 'Morphee'::character varying(20), false, NULL::integer, NULL::integer, ctid
+               Output: NULL::integer, 'Morphee'::character varying(20), false, NULL::integer, NULL::integer, b, ctid
                Filter: ((xc_alter_table_2.b)::text = 'Neo'::text)
-(7 rows)
+(5 rows)
 
 UPDATE xc_alter_table_2 SET b = 'Morphee', c = false WHERE b = 'Neo';
 SELECT b, c FROM xc_alter_table_2 ORDER BY b;
@@ -176,15 +174,16 @@ ALTER TABLE xc_alter_table_2 ADD COLUMN a int;
 ALTER TABLE xc_alter_table_2 ADD COLUMN a2 varchar(20);
 -- Check for query generation of remote INSERT
 EXPLAIN (VERBOSE true, COSTS false, NODES false) INSERT INTO xc_alter_table_2 (a, a2, b, c) VALUES (100, 'CEO', 'Gordon', true);
-                                                                 QUERY PLAN                                                                  
----------------------------------------------------------------------------------------------------------------------------------------------
- Remote Fast Query Execution
-   Output: 'Gordon'::character varying, true, 100, 'CEO'::character varying
-   Remote query: INSERT INTO xc_alter_table_2 (b, c, a, a2) VALUES ('Gordon'::character varying, true, 100, 'CEO'::character varying)
+                                                                    QUERY PLAN                                                                     
+---------------------------------------------------------------------------------------------------------------------------------------------------
+ Remote Subquery Scan on any
    ->  Insert on public.xc_alter_table_2
-         ->  Result
+         ->  Remote Subquery Scan on all
                Output: NULL::integer, 'Gordon'::character varying(20), true, NULL::integer, NULL::integer, 100, 'CEO'::character varying(20)
-(6 rows)
+               Distribute results by R
+               ->  Result
+                     Output: NULL::integer, 'Gordon'::character varying(20), true, NULL::integer, NULL::integer, 100, 'CEO'::character varying(20)
+(7 rows)
 
 INSERT INTO xc_alter_table_2 (a, a2, b, c) VALUES (100, 'CEO', 'Gordon', true);
 SELECT a, a2, b, c FROM xc_alter_table_2 ORDER BY b;
@@ -201,14 +200,12 @@ SELECT a, a2, b, c FROM xc_alter_table_2 ORDER BY b;
 EXPLAIN (VERBOSE true, COSTS false, NODES false) UPDATE xc_alter_table_2 SET a = 200, a2 = 'CTO' WHERE b = 'John';
                                                      QUERY PLAN                                                      
 ---------------------------------------------------------------------------------------------------------------------
- Remote Fast Query Execution
-   Output: 200, 'CTO'::character varying, xc_alter_table_2.b, xc_alter_table_2.ctid
-   Remote query: UPDATE xc_alter_table_2 SET a = 200, a2 = 'CTO'::character varying WHERE ((b)::text = 'John'::text)
+ Remote Subquery Scan on any
    ->  Update on public.xc_alter_table_2
          ->  Seq Scan on public.xc_alter_table_2
-               Output: NULL::integer, b, c, NULL::integer, NULL::integer, 200, 'CTO'::character varying(20), ctid
+               Output: NULL::integer, b, c, NULL::integer, NULL::integer, 200, 'CTO'::character varying(20), b, ctid
                Filter: ((xc_alter_table_2.b)::text = 'John'::text)
-(7 rows)
+(5 rows)
 
 UPDATE xc_alter_table_2 SET a = 200, a2 = 'CTO' WHERE b = 'John';
 SELECT a, a2, b, c FROM xc_alter_table_2 ORDER BY b;
