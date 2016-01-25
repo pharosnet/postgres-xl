@@ -1279,14 +1279,14 @@ INSERT INTO c VALUES (0), (1);
 INSERT INTO d VALUES (1,3), (2,2), (3,1);
 
 -- all three cases should be optimizable into a simple seqscan
-explain (verbose true, costs false, nodes false) SELECT a.* FROM a LEFT JOIN b ON a.b_id = b.id;
-explain (verbose true, costs false, nodes false) SELECT b.* FROM b LEFT JOIN c ON b.c_id = c.id;
-explain (verbose true, costs false, nodes false)
+explain (verbose false, costs false, nodes false) SELECT a.* FROM a LEFT JOIN b ON a.b_id = b.id;
+explain (verbose false, costs false, nodes false) SELECT b.* FROM b LEFT JOIN c ON b.c_id = c.id;
+explain (verbose false, costs false, nodes false)
   SELECT a.* FROM a LEFT JOIN (b left join c on b.c_id = c.id)
   ON (a.b_id = b.id);
 
 -- check optimization of outer join within another special join
-explain (verbose true, costs false, nodes false)
+explain (verbose false, costs false, nodes false)
 select id from a where id in (
 	select b.id from b left join c on b.id = c.id
 );
@@ -1335,14 +1335,14 @@ insert into child values (1, 100), (4, 400);
 
 -- this case is optimizable
 select p.* from parent p left join child c on (p.k = c.k) order by 1,2;
-explain (verbose true, costs false, nodes false)
+explain (verbose false, costs false, nodes false)
   select p.* from parent p left join child c on (p.k = c.k) order by 1,2;
 
 -- this case is not
 select p.*, linked from parent p
   left join (select c.*, true as linked from child c) as ss
   on (p.k = ss.k) order by p.k;
-explain (verbose true, costs false, nodes false)
+explain (verbose false, costs false, nodes false)
   select p.*, linked from parent p
     left join (select c.*, true as linked from child c) as ss
     on (p.k = ss.k) order by p.k;
@@ -1351,7 +1351,7 @@ explain (verbose true, costs false, nodes false)
 select p.* from
   parent p left join child c on (p.k = c.k)
   where p.k = 1 and p.k = 2;
-explain (verbose true, costs false, nodes false)
+explain (verbose false, costs false, nodes false)
 select p.* from
   parent p left join child c on (p.k = c.k)
   where p.k = 1 and p.k = 2;
@@ -1359,7 +1359,7 @@ select p.* from
 select p.* from
   (parent p left join child c on (p.k = c.k)) join parent x on p.k = x.k
   where p.k = 1 and p.k = 2;
-explain (verbose true, costs false, nodes false)
+explain (verbose false, costs false, nodes false)
 select p.* from
   (parent p left join child c on (p.k = c.k)) join parent x on p.k = x.k
   where p.k = 1 and p.k = 2;

@@ -2979,18 +2979,28 @@ explain (costs off)
 select * from
   tenk1, int8_tbl a, int8_tbl b
 where thousand = a.q1 and tenthous = b.q1 and a.q2 = 1 and b.q2 = 2;
-                                QUERY PLAN                                 
----------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode_1,datanode_2)
-   ->  Nested Loop
-         ->  Seq Scan on int8_tbl b
-               Filter: (q2 = 2)
-         ->  Nested Loop
+                       QUERY PLAN                        
+---------------------------------------------------------
+ Remote Fast Query Execution
+   Node/s: datanode_1, datanode_2
+   ->  Merge Join
+         Merge Cond: (tenk1.thousand = a.q1)
+         ->  Sort
+               Sort Key: tenk1.thousand
+               ->  Merge Join
+                     Merge Cond: (tenk1.tenthous = b.q1)
+                     ->  Sort
+                           Sort Key: tenk1.tenthous
+                           ->  Seq Scan on tenk1
+                     ->  Sort
+                           Sort Key: b.q1
+                           ->  Seq Scan on int8_tbl b
+                                 Filter: (q2 = 2)
+         ->  Sort
+               Sort Key: a.q1
                ->  Seq Scan on int8_tbl a
                      Filter: (q2 = 1)
-               ->  Index Scan using tenk1_thous_tenthous on tenk1
-                     Index Cond: ((thousand = a.q1) AND (tenthous = b.q1))
-(9 rows)
+(19 rows)
 
 --
 -- test a corner case in which we shouldn't apply the star-schema optimization
@@ -4027,10 +4037,12 @@ explain (verbose, costs off)
   select a.q2, b.q1
     from int8_tbl a left join int8_tbl b on a.q2 = coalesce(b.q1, 1)
     where coalesce(b.q1, 1) > 0;
-                          QUERY PLAN                           
----------------------------------------------------------------
- Remote Subquery Scan on all (datanode_1)
+                                                                         QUERY PLAN                                                                         
+------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Remote Fast Query Execution
    Output: a.q2, b.q1
+   Node/s: datanode_1
+   Remote query: SELECT a.q2, b.q1 FROM (int8_tbl a LEFT JOIN int8_tbl b ON ((a.q2 = COALESCE(b.q1, (1)::bigint)))) WHERE (COALESCE(b.q1, (1)::bigint) > 0)
    ->  Merge Left Join
          Output: a.q2, b.q1
          Merge Cond: (a.q2 = (COALESCE(b.q1, '1'::bigint)))
@@ -4045,7 +4057,7 @@ explain (verbose, costs off)
                Sort Key: (COALESCE(b.q1, '1'::bigint))
                ->  Seq Scan on public.int8_tbl b
                      Output: b.q1, COALESCE(b.q1, '1'::bigint)
-(16 rows)
+(18 rows)
 
 select a.q2, b.q1
   from int8_tbl a left join int8_tbl b on a.q2 = coalesce(b.q1, 1)
@@ -4079,54 +4091,43 @@ INSERT INTO b VALUES (0, 0), (1, NULL);
 INSERT INTO c VALUES (0), (1);
 INSERT INTO d VALUES (1,3), (2,2), (3,1);
 -- all three cases should be optimizable into a simple seqscan
-explain (verbose true, costs false, nodes false) SELECT a.* FROM a LEFT JOIN b ON a.b_id = b.id;
-          QUERY PLAN           
--------------------------------
+explain (verbose false, costs false, nodes false) SELECT a.* FROM a LEFT JOIN b ON a.b_id = b.id;
+         QUERY PLAN          
+-----------------------------
  Remote Subquery Scan on all
-   Output: a.id, a.b_id
-   ->  Seq Scan on pg_temp_5.a
-         Output: a.id, a.b_id
-(4 rows)
+   ->  Seq Scan on a
+(2 rows)
 
-explain (verbose true, costs false, nodes false) SELECT b.* FROM b LEFT JOIN c ON b.c_id = c.id;
-          QUERY PLAN           
--------------------------------
+explain (verbose false, costs false, nodes false) SELECT b.* FROM b LEFT JOIN c ON b.c_id = c.id;
+         QUERY PLAN          
+-----------------------------
  Remote Subquery Scan on all
-   Output: b.id, b.c_id
-   ->  Seq Scan on pg_temp_5.b
-         Output: b.id, b.c_id
-(4 rows)
+   ->  Seq Scan on b
+(2 rows)
 
-explain (verbose true, costs false, nodes false)
+explain (verbose false, costs false, nodes false)
   SELECT a.* FROM a LEFT JOIN (b left join c on b.c_id = c.id)
   ON (a.b_id = b.id);
-          QUERY PLAN           
--------------------------------
+         QUERY PLAN          
+-----------------------------
  Remote Subquery Scan on all
-   Output: a.id, a.b_id
-   ->  Seq Scan on pg_temp_5.a
-         Output: a.id, a.b_id
-(4 rows)
+   ->  Seq Scan on a
+(2 rows)
 
 -- check optimization of outer join within another special join
-explain (verbose true, costs false, nodes false)
+explain (verbose false, costs false, nodes false)
 select id from a where id in (
 	select b.id from b left join c on b.id = c.id
 );
-                QUERY PLAN                 
--------------------------------------------
+            QUERY PLAN            
+----------------------------------
  Remote Subquery Scan on all
-   Output: a.id
    ->  Hash Semi Join
-         Output: a.id
          Hash Cond: (a.id = b.id)
-         ->  Seq Scan on pg_temp_5.a
-               Output: a.id, a.b_id
+         ->  Seq Scan on a
          ->  Hash
-               Output: b.id
-               ->  Seq Scan on pg_temp_5.b
-                     Output: b.id
-(11 rows)
+               ->  Seq Scan on b
+(6 rows)
 
 -- check that join removal works for a left join when joining a subquery
 -- that is guaranteed to be unique by its GROUP BY clause
@@ -4221,18 +4222,15 @@ select p.* from parent p left join child c on (p.k = c.k) order by 1,2;
  3 | 30
 (3 rows)
 
-explain (verbose true, costs false, nodes false)
+explain (verbose false, costs false, nodes false)
   select p.* from parent p left join child c on (p.k = c.k) order by 1,2;
-                 QUERY PLAN                 
---------------------------------------------
+            QUERY PLAN            
+----------------------------------
  Remote Subquery Scan on all
-   Output: p.k, p.pd
    ->  Sort
-         Output: p.k, p.pd
          Sort Key: p.k, p.pd
-         ->  Seq Scan on pg_temp_5.parent p
-               Output: p.k, p.pd
-(7 rows)
+         ->  Seq Scan on parent p
+(4 rows)
 
 -- this case is not
 select p.*, linked from parent p
@@ -4245,22 +4243,18 @@ select p.*, linked from parent p
  3 | 30 | 
 (3 rows)
 
-explain (verbose true, costs false, nodes false)
+explain (verbose false, costs false, nodes false)
   select p.*, linked from parent p
     left join (select c.*, true as linked from child c) as ss
     on (p.k = ss.k) order by p.k;
-                             QUERY PLAN                             
---------------------------------------------------------------------
+                        QUERY PLAN                        
+----------------------------------------------------------
  Remote Subquery Scan on all
-   Output: p.k, p.pd, true
    ->  Merge Left Join
-         Output: p.k, p.pd, (true)
          Merge Cond: (p.k = c.k)
-         ->  Index Scan using parent_pkey on pg_temp_5.parent p
-               Output: p.k, p.pd
-         ->  Index Only Scan using child_k_key on pg_temp_5.child c
-               Output: c.k, true
-(9 rows)
+         ->  Index Scan using parent_pkey on parent p
+         ->  Index Only Scan using child_k_key on child c
+(5 rows)
 
 -- check for a 9.0rc1 bug: join removal breaks pseudoconstant qual handling
 select p.* from
@@ -4270,22 +4264,18 @@ select p.* from
 ---+----
 (0 rows)
 
-explain (verbose true, costs false, nodes false)
+explain (verbose false, costs false, nodes false)
 select p.* from
   parent p left join child c on (p.k = c.k)
   where p.k = 1 and p.k = 2;
-                                                     QUERY PLAN                                                      
----------------------------------------------------------------------------------------------------------------------
+                      QUERY PLAN                      
+------------------------------------------------------
  Remote Fast Query Execution
-   Output: p.k, p.pd
-   Remote query: SELECT p.k, p.pd FROM (parent p LEFT JOIN child c ON ((p.k = c.k))) WHERE ((p.k = 1) AND (p.k = 2))
    ->  Result
-         Output: p.k, p.pd
          One-Time Filter: false
-         ->  Index Scan using parent_pkey on pg_temp_12.parent p
-               Output: p.k, p.pd
-               Index Cond: (p.k = 1)
-(9 rows)
+         ->  Index Scan using parent_pkey on parent p
+               Index Cond: (k = 1)
+(5 rows)
 
 select p.* from
   (parent p left join child c on (p.k = c.k)) join parent x on p.k = x.k
@@ -4294,19 +4284,16 @@ select p.* from
 ---+----
 (0 rows)
 
-explain (verbose true, costs false, nodes false)
+explain (verbose false, costs false, nodes false)
 select p.* from
   (parent p left join child c on (p.k = c.k)) join parent x on p.k = x.k
   where p.k = 1 and p.k = 2;
-                                                                      QUERY PLAN                                                                      
-------------------------------------------------------------------------------------------------------------------------------------------------------
+           QUERY PLAN           
+--------------------------------
  Remote Fast Query Execution
-   Output: p.k, p.pd
-   Remote query: SELECT p.k, p.pd FROM ((parent p LEFT JOIN child c ON ((p.k = c.k))) JOIN parent x ON ((p.k = x.k))) WHERE ((p.k = 1) AND (p.k = 2))
    ->  Result
-         Output: p.k, p.pd
          One-Time Filter: false
-(6 rows)
+(3 rows)
 
 -- bug 5255: this is not optimizable by join removal
 begin;
