@@ -950,6 +950,15 @@ static struct config_bool ConfigureNamesBool[] =
 	},
 #ifdef PGXC
 	{
+		{"enable_fast_query_shipping", PGC_USERSET, QUERY_TUNING_METHOD,
+			gettext_noop("Enables the planner's use of fast query shipping to ship query directly to datanode."),
+			NULL
+		},
+		&enable_fast_query_shipping,
+		true,
+		NULL, NULL, NULL
+	},
+	{
 		{"loose_constraints", PGC_USERSET, COORDINATORS,
 			gettext_noop("Relax enforcing of constraints"),
 			gettext_noop("If enabled then constraints like foreign keys "
