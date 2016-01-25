@@ -406,7 +406,8 @@ pgxc_FQS_find_datanodes(Query *query)
 		 * preferred node choose that one, otherwise choose the first one.
 		 */
 		if (IsLocatorReplicated(exec_nodes->baselocatortype) &&
-			exec_nodes->accesstype == RELATION_ACCESS_READ)
+			(exec_nodes->accesstype == RELATION_ACCESS_READ ||
+			exec_nodes->accesstype == RELATION_ACCESS_READ_FQS))
 		{
 			List *tmp_list = exec_nodes->nodeList;
 			exec_nodes->nodeList = GetPreferredReplicationNode(exec_nodes->nodeList);
@@ -450,7 +451,7 @@ pgxc_FQS_get_relation_nodes(RangeTblEntry *rte, Index varno, Query *query)
 			if (for_update)
 				rel_access = RELATION_ACCESS_READ_FOR_UPDATE;
 			else
-				rel_access = RELATION_ACCESS_READ;
+				rel_access = RELATION_ACCESS_READ_FQS;
 			break;
 
 		case CMD_UPDATE:
@@ -1560,7 +1561,8 @@ pgxc_merge_exec_nodes(ExecNodes *en1, ExecNodes *en2)
 	if (en1->primarynodelist || en2->primarynodelist ||
 		en1->en_expr || en2->en_expr ||
 		OidIsValid(en1->en_relid) || OidIsValid(en2->en_relid) ||
-		en1->accesstype != RELATION_ACCESS_READ || en2->accesstype != RELATION_ACCESS_READ)
+		(en1->accesstype != RELATION_ACCESS_READ && en1->accesstype != RELATION_ACCESS_READ_FQS) ||
+		(en2->accesstype != RELATION_ACCESS_READ && en2->accesstype != RELATION_ACCESS_READ_FQS))
 		return NULL;
 
 	if (IsExecNodesReplicated(en1) &&

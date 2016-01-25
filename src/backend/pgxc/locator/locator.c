@@ -203,7 +203,8 @@ GetPreferredReplicationNode(List *relNodes)
 			break;
 	}
 	if (nodeid < 0)
-		return list_make1_int(linitial_int(relNodes));
+		return list_make1_int(list_nth_int(relNodes,
+					((unsigned int) random()) % list_length(relNodes)));
 
 	return list_make1_int(nodeid);
 }
@@ -1005,7 +1006,8 @@ createLocator(char locatorType, RelationAccessType accessType,
 	{
 		case LOCATOR_TYPE_REPLICATED:
 			if (accessType == RELATION_ACCESS_INSERT ||
-					accessType == RELATION_ACCESS_UPDATE)
+					accessType == RELATION_ACCESS_UPDATE ||
+					accessType == RELATION_ACCESS_READ_FQS)
 			{
 				locator->locatefunc = locate_static;
 				if (nodeMap == NULL)
