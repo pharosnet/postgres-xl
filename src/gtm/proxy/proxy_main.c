@@ -3007,8 +3007,7 @@ RegisterProxy(bool is_reconnect)
 		gtmpqPutnchar(proxyname, (int)strlen(proxyname), master_conn) ||
 		gtmpqPutInt((int)strlen(GTMProxyDataDir), 4, master_conn) ||
 		gtmpqPutnchar(GTMProxyDataDir, strlen(GTMProxyDataDir), master_conn)||
-		gtmpqPutInt(NODE_CONNECTED, sizeof(GTM_PGXCNodeStatus), master_conn) ||
-		gtmpqPutnchar((char *)&xmin, sizeof (GlobalTransactionId), master_conn))
+		gtmpqPutInt(NODE_CONNECTED, sizeof(GTM_PGXCNodeStatus), master_conn))
 		goto failed;
 
 	/* Finish the message. */
