@@ -974,7 +974,7 @@ pgxc_shippability_walker(Node *node, Shippability_context *sc_context)
 			 * participating in the query. All the rows of that relation with
 			 * the same value of distribution column reside on same node.
 			 */
-			if ((query->hasAggs || query->havingQual) &&
+			if ((query->hasAggs || query->havingQual || query->groupClause) &&
 				!pgxc_query_has_distcolgrouping(query))
 				pgxc_set_shippability_reason(sc_context, SS_NEED_SINGLENODE);
 
