@@ -19,6 +19,7 @@
 #include "nodes/makefuncs.h"
 #include "funcapi.h"
 #include "stormstats.h"
+#include "storage/fd.h"
 
 #include "pgxc/pgxc.h"
 #include "pgxc/pgxcnode.h"
@@ -110,8 +111,8 @@ static int max_tracked_dbs;
 static void
 ProcessUtility_callback(Node *parsetree,
 						const char *queryString,
+						ProcessUtilityContext context,
 						ParamListInfo params,
-						bool isTopLevel,
 						DestReceiver *dest,
 #ifdef PGXC
 						bool sentToRemote,
@@ -120,7 +121,7 @@ ProcessUtility_callback(Node *parsetree,
 {
 	elog( DEBUG1, "STORMSTATS: using plugin." );
 
-	standard_ProcessUtility(parsetree, queryString, params, isTopLevel, dest,
+	standard_ProcessUtility(parsetree, queryString, context, params, dest,
 #ifdef PGXC
 							sentToRemote,
 #endif /* PGXC */
