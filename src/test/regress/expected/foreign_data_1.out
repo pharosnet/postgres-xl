@@ -1411,15 +1411,15 @@ DROP FOREIGN TABLE IF EXISTS no_table;
 NOTICE:  foreign table "no_table" does not exist, skipping
 DROP FOREIGN TABLE foreign_schema.foreign_table_1;
 ERROR:  foreign table "foreign_table_1" does not exist
+-- REASSIGN OWNED/DROP OWNED of foreign objects
+REASSIGN OWNED BY regress_test_role TO regress_test_role2;
+DROP OWNED BY regress_test_role2;
+DROP OWNED BY regress_test_role2 CASCADE;
 -- Cleanup
 DROP SCHEMA foreign_schema CASCADE;
 DROP ROLE regress_test_role;                                -- ERROR
-DROP SERVER s5 CASCADE;
-ERROR:  server "s5" does not exist
 DROP SERVER t1 CASCADE;
 ERROR:  server "t1" does not exist
-DROP SERVER t2;
-ERROR:  server "t2" does not exist
 DROP USER MAPPING FOR regress_test_role SERVER s6;
 ERROR:  role "regress_test_role" does not exist
 -- This test causes some order dependent cascade detail output,

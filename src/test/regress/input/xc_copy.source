@@ -2,7 +2,7 @@
 -- XC_COPY
 --
 
--- COPY tests for a Postgres-XC cluster
+-- COPY tests for a Postgres-XL cluster
 
 create or replace function pgxc_nodetype() returns varchar as 
 $$
@@ -92,7 +92,7 @@ drop function deffunc_str();
 drop function deffunc_str_i();
 drop function deffunc_nullstring();
 
--- Tests related to COPY for a Postgres-XC cluster
+-- Tests related to COPY for a Postgres-XL cluster
 -- Create a table not using the first node of cluster
 SELECT create_table_nodes('xc_copy_1(a int, b int)', '{2}'::int[], 'replication', NULL);
 INSERT INTO xc_copy_1 VALUES (1,23),(34,5),(9,11);
