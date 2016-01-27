@@ -219,18 +219,20 @@ select val, val2 from tab1_rr where val2 = 8 group by val, val2;
 (1 row)
 
 explain (verbose on, nodes off, costs off) select val, val2 from tab1_rr where val2 = 8 group by val, val2;
-                                    QUERY PLAN                                     
------------------------------------------------------------------------------------
- Remote Fast Query Execution
-   Output: tab1_rr.val, tab1_rr.val2
-   Remote query: SELECT val, val2 FROM tab1_rr WHERE (val2 = 8) GROUP BY val, val2
-   ->  HashAggregate
+                     QUERY PLAN                     
+----------------------------------------------------
+ HashAggregate
+   Output: val, val2
+   Group Key: tab1_rr.val, tab1_rr.val2
+   ->  Remote Subquery Scan on all
          Output: val, val2
-         Group Key: tab1_rr.val, tab1_rr.val2
-         ->  Seq Scan on public.tab1_rr
+         ->  HashAggregate
                Output: val, val2
-               Filter: (tab1_rr.val2 = 8)
-(9 rows)
+               Group Key: tab1_rr.val, tab1_rr.val2
+               ->  Seq Scan on public.tab1_rr
+                     Output: val, val2
+                     Filter: (tab1_rr.val2 = 8)
+(11 rows)
 
 -- should not get FQSed because of HAVING clause
 select sum(val) from tab1_rr where val2 = 2 group by val2 having sum(val) > 1;
