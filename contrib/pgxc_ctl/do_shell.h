@@ -18,7 +18,10 @@ extern jmp_buf dcJmpBufMainLoop;
 
 extern void dcSigHandler(int signum);
 typedef enum FileType { STDIN, STDOUT, STDERR, GENERAL } FileType;
-typedef void (*pqsigfunc) (int);
+#ifndef PGSIGFUNC
+#define PGSIGFUNC
+typedef void (*pqsigfunc) (int signo);
+#endif
 extern char *createLocalFileName(FileType type, char *buf, int len);
 extern char *createRemoteFileName(FileType type, char *buf, int len);
 extern int doImmediate(char *host, char *stdIn, const char *cmd_fmt, ...) __attribute__((format(printf, 3, 4)));

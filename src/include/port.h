@@ -458,8 +458,12 @@ extern int	pg_check_dir(const char *dir);
 /* port/pgmkdirp.c */
 extern int	pg_mkdir_p(char *path, int omode);
 
+#ifndef PGSIGFUNC
+#define PGSIGFUNC
 /* port/pqsignal.c */
 typedef void (*pqsigfunc) (int signo);
+#endif
+
 extern pqsigfunc pqsignal(int signo, pqsigfunc func);
 
 /* port/quotes.c */
