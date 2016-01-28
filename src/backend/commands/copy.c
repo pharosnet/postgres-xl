@@ -846,9 +846,6 @@ DoCopy(const CopyStmt *stmt, const char *queryString, uint64 *processed)
 	bool		is_from = stmt->is_from;
 	bool		pipe = (stmt->filename == NULL);
 	Relation	rel;
-#ifdef XCP
-	int oldSeqRangeVal = SequenceRangeVal;
-#endif
 	Oid			relid;
 	Node	   *query = NULL;
 	List	   *range_table = NIL;
@@ -983,26 +980,6 @@ DoCopy(const CopyStmt *stmt, const char *queryString, uint64 *processed)
 		rel = NULL;
 	}
 
-#ifdef XCP
-	/*
-	 * The COPY might involve sequences. We want to cache a range of
-	 * sequence values to avoid contacting the GTM repeatedly. This
-	 * improves the COPY performance by quite a margin. We set the
-	 * SequenceRangeVal GUC parameter to bring about this effect.
-	 * Note that we could have checked the attribute list to ascertain
-	 * if this GUC is really needed or not. However since this GUC
-	 * only affects nextval calculations, if sequences are not present
-	 * no harm is done..
-	 *
-	 * The user might have set the GUC value himself. Honor that if so
-	 */
-
-#define MAX_CACHEVAL	1024
-	if (rel && getOwnedSequences(RelationGetRelid(rel)) != NIL &&
-				SequenceRangeVal == DEFAULT_CACHEVAL)
-		SequenceRangeVal = MAX_CACHEVAL;
-#endif
-
 	if (is_from)
 	{
 		Assert(rel);
@@ -1035,11 +1012,6 @@ DoCopy(const CopyStmt *stmt, const char *queryString, uint64 *processed)
 		*processed = DoCopyTo(cstate);	/* copy from database to file */
 		EndCopyTo(cstate);
 	}
-
-#ifdef XCP
-	/* Set the SequenceRangeVal GUC to its earlier value */
-	SequenceRangeVal = oldSeqRangeVal;
-#endif
 
 	/*
 	 * Close the relation. If reading, we can release the AccessShareLock we
