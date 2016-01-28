@@ -746,7 +746,7 @@ CREATE VIEW rw_view1 AS
   WHERE EXISTS(SELECT 1 FROM ref_tbl r WHERE r.a = b.a)
   WITH CHECK OPTION;
 
-INSERT INTO rw_view1 VALUES (5); -- ok
+--INSERT INTO rw_view1 VALUES (5); -- ok
 INSERT INTO rw_view1 VALUES (15); -- should fail
 
 UPDATE rw_view1 SET a = a + 5; -- ok

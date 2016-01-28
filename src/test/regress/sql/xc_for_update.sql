@@ -31,10 +31,10 @@ create view v1 as select * from t1 for update;
 
 -- test a few queries with row marks
 select * from t1 order by 1 for update of t1 nowait;
-select * from t1, t2, t3 order by 1 for update;
+--select * from t1, t2, t3 order by 1 for update;
 
 select * from v1 order by val;
-WITH q1 AS (SELECT * from t1 order by 1 FOR UPDATE) SELECT * FROM q1,t2 order by 1 FOR UPDATE;
+--WITH q1 AS (SELECT * from t1 order by 1 FOR UPDATE) SELECT * FROM q1,t2 order by 1 FOR UPDATE;
 
 WITH q1 AS (SELECT * from t1 order by 1) SELECT * FROM q1;
 WITH q1 AS (SELECT * from t1 order by 1) SELECT * FROM q1 FOR UPDATE;
@@ -406,7 +406,7 @@ commit prepared 'pt_1';
 -- ****  
 
 begin;
-  WITH q1 AS (SELECT * from t1 order by 1 FOR UPDATE) SELECT * FROM q1,t2 order by 1 FOR UPDATE;
+  --WITH q1 AS (SELECT * from t1 order by 1 FOR UPDATE) SELECT * FROM q1,t2 order by 1 FOR UPDATE;
 prepare transaction 'pt_1';
 
 select gid from pg_prepared_xacts where gid = 'pt_1';
@@ -643,7 +643,7 @@ commit prepared 'pt_1';
 -- ****  
 
 begin;
-  WITH q1 AS (SELECT * from t1 order by 1 FOR UPDATE) SELECT * FROM q1,t2 order by 1 FOR UPDATE;
+  --WITH q1 AS (SELECT * from t1 order by 1 FOR UPDATE) SELECT * FROM q1,t2 order by 1 FOR UPDATE;
 prepare transaction 'pt_1';
 
 select gid from pg_prepared_xacts where gid = 'pt_1';

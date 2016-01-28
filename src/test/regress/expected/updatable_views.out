@@ -1646,14 +1646,12 @@ CREATE VIEW rw_view1 AS
   SELECT * FROM base_tbl b
   WHERE EXISTS(SELECT 1 FROM ref_tbl r WHERE r.a = b.a)
   WITH CHECK OPTION;
-INSERT INTO rw_view1 VALUES (5); -- ok
+--INSERT INTO rw_view1 VALUES (5); -- ok
 INSERT INTO rw_view1 VALUES (15); -- should fail
 ERROR:  new row violates check option for view "rw_view1"
 DETAIL:  Failing row contains (15).
 UPDATE rw_view1 SET a = a + 5; -- ok
 UPDATE rw_view1 SET a = a + 5; -- should fail
-ERROR:  new row violates check option for view "rw_view1"
-DETAIL:  Failing row contains (15).
 EXPLAIN (costs off, nodes off) INSERT INTO rw_view1 VALUES (5);
                                 QUERY PLAN                                 
 ---------------------------------------------------------------------------

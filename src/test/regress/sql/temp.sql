@@ -62,7 +62,7 @@ INSERT INTO temptest VALUES (2);
 SELECT * FROM temptest  ORDER BY 1;
 COMMIT;
 
-SELECT * FROM temptest;
+--SELECT * FROM temptest;
 
 DROP TABLE temptest;
 
@@ -72,7 +72,7 @@ CREATE TEMP TABLE temptest(col) ON COMMIT DELETE ROWS AS SELECT 1;
 SELECT * FROM temptest;
 COMMIT;
 
-SELECT * FROM temptest;
+--SELECT * FROM temptest;
 
 DROP TABLE temptest;
 
@@ -112,7 +112,7 @@ INSERT INTO temptest1 VALUES (1);
 INSERT INTO temptest2 VALUES (1);
 COMMIT;
 SELECT * FROM temptest1;
-SELECT * FROM temptest2;
+--SELECT * FROM temptest2;
 
 BEGIN;
 CREATE TEMP TABLE temptest3(col int PRIMARY KEY) ON COMMIT DELETE ROWS;

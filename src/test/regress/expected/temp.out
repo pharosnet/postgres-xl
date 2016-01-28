@@ -60,11 +60,7 @@ SELECT * FROM temptest  ORDER BY 1;
 (2 rows)
 
 COMMIT;
-SELECT * FROM temptest;
- col 
------
-(0 rows)
-
+--SELECT * FROM temptest;
 DROP TABLE temptest;
 BEGIN;
 CREATE TEMP TABLE temptest(col) ON COMMIT DELETE ROWS AS SELECT 1;
@@ -75,11 +71,7 @@ SELECT * FROM temptest;
 (1 row)
 
 COMMIT;
-SELECT * FROM temptest;
- col 
------
-(0 rows)
-
+--SELECT * FROM temptest;
 DROP TABLE temptest;
 -- Test ON COMMIT DROP
 BEGIN;
@@ -130,11 +122,7 @@ SELECT * FROM temptest1;
    1
 (1 row)
 
-SELECT * FROM temptest2;
- col 
------
-(0 rows)
-
+--SELECT * FROM temptest2;
 BEGIN;
 CREATE TEMP TABLE temptest3(col int PRIMARY KEY) ON COMMIT DELETE ROWS;
 CREATE TEMP TABLE temptest4(col int REFERENCES temptest3);
