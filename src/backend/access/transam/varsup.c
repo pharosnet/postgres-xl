@@ -206,11 +206,7 @@ GetNewTransactionId(bool isSubXact)
 		}
 		*timestamp_received = true;
 	}
-#endif /* PGXC */
 
-	LWLockAcquire(XidGenLock, LW_EXCLUSIVE);
-
-#ifdef PGXC
 	/*
 	 * Unless we are running initdb (which sets useLocalXid to true), we must
 	 * have either got a valid global XID, either from the coordinator/datanode
@@ -222,8 +218,6 @@ GetNewTransactionId(bool isSubXact)
 		{
 			xid = next_xid;
 			next_xid = InvalidTransactionId;
-			if (TransactionIdFollowsOrEquals(xid, ShmemVariableCache->nextXid))
-				ShmemVariableCache->nextXid = xid;
 		}
 		else if ((IsConnFromCoord() || IsConnFromDatanode()) &&
 			MyCoordId != InvalidOid && MyCoordPid != 0 &&
@@ -279,10 +273,17 @@ GetNewTransactionId(bool isSubXact)
 				}
 			}
 		}
+		LWLockAcquire(XidGenLock, LW_EXCLUSIVE);
+		if (TransactionIdFollowsOrEquals(xid, ShmemVariableCache->nextXid))
+				ShmemVariableCache->nextXid = xid;
 	}
 	else
+	{
+		LWLockAcquire(XidGenLock, LW_EXCLUSIVE);
 		xid = ShmemVariableCache->nextXid;
+	}
 #else
+	LWLockAcquire(XidGenLock, LW_EXCLUSIVE);
 	xid = ShmemVariableCache->nextXid;
 #endif /* PGXC */
 
@@ -442,8 +443,11 @@ GetNewTransactionId(bool isSubXact)
 	 */
 	if (increment_xid || !IsPostmasterEnvironment)
 	{
-		ShmemVariableCache->nextXid = xid;
-		TransactionIdAdvance(ShmemVariableCache->nextXid);
+		if (TransactionIdFollowsOrEquals(xid, ShmemVariableCache->nextXid))
+		{
+			ShmemVariableCache->nextXid = xid;
+			TransactionIdAdvance(ShmemVariableCache->nextXid);
+		}
 	}
 #else
 	TransactionIdAdvance(ShmemVariableCache->nextXid);
