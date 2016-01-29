@@ -1277,13 +1277,13 @@ create_remotescan_plan(PlannerInfo *root,
 
 
 static RemoteSubplan *
-find_push_down_plan_int(PlannerInfo *root, Plan *plan, bool force, Plan **parent)
+find_push_down_plan_int(PlannerInfo *root, Plan *plan, bool force, bool delete, Plan **parent)
 {
 	if (IsA(plan, RemoteSubplan) &&
 			(force || (list_length(((RemoteSubplan *) plan)->nodeList) > 1 &&
 					   ((RemoteSubplan *) plan)->execOnAll)))
 	{
-		if (parent)
+		if (delete && (parent))
 			*parent = plan->lefttree;
 		return (RemoteSubplan *) plan;
 	}
@@ -1292,7 +1292,7 @@ find_push_down_plan_int(PlannerInfo *root, Plan *plan, bool force, Plan **parent
 			IsA(plan, Material) ||
 			IsA(plan, Unique) ||
 			IsA(plan, Limit))
-		return find_push_down_plan_int(root, plan->lefttree, force, &plan->lefttree);
+		return find_push_down_plan_int(root, plan->lefttree, force, delete, &plan->lefttree);
 
 	/*
 	 * If its a subquery scan and we are looking to replace RemoteSubplan then
@@ -1301,7 +1301,8 @@ find_push_down_plan_int(PlannerInfo *root, Plan *plan, bool force, Plan **parent
 	if (parent && IsA(plan, SubqueryScan))
 	{
 		Plan *subplan = ((SubqueryScan *)plan)->subplan;
-		RemoteSubplan *remote_plan = find_push_down_plan_int(root, ((SubqueryScan *)plan)->subplan, force,
+		RemoteSubplan *remote_plan = find_push_down_plan_int(root,
+				((SubqueryScan *)plan)->subplan, force, delete,
 				&((SubqueryScan *)plan)->subplan);
 
 		/*
@@ -1323,7 +1324,7 @@ find_push_down_plan_int(PlannerInfo *root, Plan *plan, bool force, Plan **parent
 RemoteSubplan *
 find_push_down_plan(Plan *plan, bool force)
 {
-	return find_push_down_plan_int(NULL, plan, force, NULL);
+	return find_push_down_plan_int(NULL, plan, force, false, NULL);
 }
 
 RemoteSubplan *
@@ -1332,7 +1333,7 @@ find_delete_push_down_plan(PlannerInfo *root,
 		bool force,
 		Plan **parent)
 {
-	return find_push_down_plan_int(root, plan, force, parent);
+	return find_push_down_plan_int(root, plan, force, true, parent);
 }
 #endif
 
