@@ -41,15 +41,7 @@ select get_unified_node_name(xc_node_id),* from t1_misc order by a;
  NODE_1                | 8 | 44
 (8 rows)
 
-select get_unified_node_name(xc_node_id),* from t1_misc where xc_node_id > 0 order by a;
- get_unified_node_name | a | b  
------------------------+---+----
- NODE_2                | 1 | 11
- NODE_2                | 3 | 11
- NODE_2                | 5 | 22
- NODE_2                | 7 | 44
-(4 rows)
-
+--select get_unified_node_name(xc_node_id),* from t1_misc where xc_node_id > 0 order by a;
 create table t2_misc(a int , xc_node_id int) distribute by modulo(a);
 ERROR:  column name "xc_node_id" conflicts with a system column name
 create table t2_misc(a int , b int) distribute by modulo(xc_node_id);
@@ -59,12 +51,11 @@ drop table t1_misc;
 create table my_tab1 (a int);
 insert into my_tab1 values(1);
 create function f1 () returns setof my_tab1 as $$ create table my_tab2 (a int); select * from my_tab1; $$ language sql;
-ERROR:  In XC, SQL functions cannot contain utility statements
-CONTEXT:  SQL function "f1"
 SET check_function_bodies = false;
 create function f1 () returns setof my_tab1 as $$ create table my_tab2 (a int); select * from my_tab1; $$ language sql;
+ERROR:  function "f1" already exists with same argument types
 select f1();
-ERROR:  Unexpected response from the Datanodes for 'T' message, current request type 1
+ERROR:  Unexpected response from Datanode
 CONTEXT:  SQL function "f1" statement 1
 SET check_function_bodies = true;
 drop function f1();
@@ -145,11 +136,11 @@ select cmin, cmax, * from my_tbl order by f1; -- command id should be in sequenc
  cmin | cmax | f1  
 ------+------+-----
     0 |    0 | 100
-    1 |    1 | 101
-    2 |    2 | 102
-    3 |    3 | 103
-    4 |    4 | 104
-    5 |    5 | 105
+    0 |    0 | 101
+    0 |    0 | 102
+    0 |    0 | 103
+    0 |    0 | 104
+    0 |    0 | 105
 (6 rows)
 
 ---------------------------------

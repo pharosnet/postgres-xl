@@ -2911,16 +2911,8 @@ TABLE r1;
 ERROR:  query would be affected by row-level security policy for table "r1"
 HINT:  To disable the policy for the table's owner, use ALTER TABLE NO FORCE ROW LEVEL SECURITY.
 UPDATE r1 SET a = 1;
-ERROR:  could not plan this distributed update
-DETAIL:  correlated UPDATE or updating distribution column currently not supported in Postgres-XL.
-TABLE r1;
- a  
-----
- 10
- 20
-(2 rows)
-
--- Delete all rows
+ERROR:  query would be affected by row-level security policy for table "r1"
+HINT:  To disable the policy for the table's owner, use ALTER TABLE NO FORCE ROW LEVEL SECURITY.
 DELETE FROM r1;
 ERROR:  query would be affected by row-level security policy for table "r1"
 HINT:  To disable the policy for the table's owner, use ALTER TABLE NO FORCE ROW LEVEL SECURITY.

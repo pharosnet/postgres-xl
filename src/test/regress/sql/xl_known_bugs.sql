@@ -78,3 +78,93 @@ SELECT * FROM temptest;
 
 DROP TABLE temptest;
 ---------------------------------------------------
+
+-- from xc_remote test
+
+-- Test for remote DML on different tables
+CREATE TABLE rel_rep (a int, b int) DISTRIBUTE BY REPLICATION;
+CREATE TABLE rel_hash (a int, b int) DISTRIBUTE BY HASH (a);
+CREATE TABLE rel_rr (a int, b int) DISTRIBUTE BY ROUNDROBIN;
+CREATE SEQUENCE seqtest START 10;
+CREATE SEQUENCE seqtest2 START 100;
+
+-- INSERT cases
+INSERT INTO rel_rep VALUES (1,1);
+INSERT INTO rel_hash VALUES (1,1);
+INSERT INTO rel_rr VALUES (1,1);
+
+-- Multiple entries with non-shippable expressions
+INSERT INTO rel_rep VALUES (nextval('seqtest'), nextval('seqtest')), (1, nextval('seqtest'));
+INSERT INTO rel_rep VALUES (nextval('seqtest'), 1), (nextval('seqtest'), nextval('seqtest2'));
+INSERT INTO rel_hash VALUES (nextval('seqtest'), nextval('seqtest')), (1, nextval('seqtest'));
+INSERT INTO rel_hash VALUES (nextval('seqtest'), 1), (nextval('seqtest'), nextval('seqtest2'));
+INSERT INTO rel_rr VALUES (nextval('seqtest'), nextval('seqtest')), (1, nextval('seqtest'));
+INSERT INTO rel_rr VALUES (nextval('seqtest'), 1), (nextval('seqtest'), nextval('seqtest2'));
+
+-- Global check
+SELECT a, b FROM rel_rep ORDER BY 1,2;
+SELECT a, b FROM rel_hash ORDER BY 1,2;
+SELECT a, b FROM rel_rr ORDER BY 1,2;
+
+-- Some SELECT queries with some quals
+-- Coordinator quals first
+SELECT a, b FROM rel_rep WHERE a <= currval('seqtest') - 15 ORDER BY 1,2;
+
+DROP TABLE rel_rep;
+DROP TABLE rel_hash;
+DROP TABLE rel_rr ;
+DROP SEQUENCE seqtest;
+DROP SEQUENCE seqtest2;
+
+--------------------------------
+
+-- from plpgsql test
+
+
+create temp table foo (f1 int);
+
+create function subxact_rollback_semantics() returns int as $$
+declare x int;
+begin
+  x := 1;
+  insert into foo values(x);
+  begin
+    x := x + 1;
+    insert into foo values(x);
+    raise exception 'inner';
+  exception
+    when others then
+      x := x * 10;
+  end;
+  insert into foo values(x);
+  return x;
+end$$ language plpgsql;
+
+select subxact_rollback_semantics();
+
+drop function subxact_rollback_semantics();
+
+------------------------------------------
+
+-- from xc_misc
+
+-- Test an SQL function with multiple statements in it including a utility statement.
+
+create table my_tab1 (a int);
+
+insert into my_tab1 values(1);
+
+create function f1 () returns setof my_tab1 as $$ create table my_tab2 (a int); select * from my_tab1; $$ language sql;
+
+SET check_function_bodies = false;
+
+create function f1 () returns setof my_tab1 as $$ create table my_tab2 (a int); select * from my_tab1; $$ language sql;
+
+select f1();
+
+SET check_function_bodies = true;
+
+drop function f1();
+drop table my_tab1;
+
+--------------------------------------------------
