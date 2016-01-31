@@ -3177,11 +3177,7 @@ GetPGXCSnapshotData(Snapshot snapshot, bool latest)
 		if (globalSnapshot.snapshot_source == SNAPSHOT_COORDINATOR)
 			GetSnapshotFromGlobalSnapshot(snapshot);
 		else
-		{
-			elog(WARNING, "Expected to see a snapshot sent by the coordinator "
-					" - now taking a direct snapshot from GTM");
 			GetSnapshotDataFromGTM(snapshot);
-		}
 		return true;
 	}
 	else if (IsPostmasterEnvironment)
