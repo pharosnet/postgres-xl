@@ -41,7 +41,7 @@ extern void SharedQueuesInit(void);
 extern void SharedQueueAcquire(const char *sqname, int ncons);
 extern SharedQueue SharedQueueBind(const char *sqname, List *consNodes,
 				List *distNodes, int *myindex, int *consMap);
-extern void SharedQueueUnBind(SharedQueue squeue);
+extern void SharedQueueUnBind(SharedQueue squeue, bool failed);
 extern void SharedQueueRelease(const char *sqname);
 extern void SharedQueuesCleanup(int code, Datum arg);
 

@@ -322,7 +322,7 @@ PortalCleanup(Portal portal)
 							 * consumers.
 							 */
 							if (queryDesc->squeue)
-								SharedQueueUnBind(queryDesc->squeue);
+								SharedQueueUnBind(queryDesc->squeue, true);
 							FreeQueryDesc(queryDesc);
 						}
 					}

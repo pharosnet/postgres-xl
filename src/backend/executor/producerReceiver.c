@@ -174,7 +174,7 @@ producerDestroyReceiver(DestReceiver *self)
 
 	/* wait while consumer are finishing and release shared resources */
 	if (myState->squeue)
-		SharedQueueUnBind(myState->squeue);
+		SharedQueueUnBind(myState->squeue, false);
 	myState->squeue = NULL;
 
 	/* Release workspace if any */

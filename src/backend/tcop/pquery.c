@@ -714,7 +714,7 @@ PortalStart(Portal portal, ParamListInfo params,
 						PG_CATCH();
 						{
 							/* Ensure SharedQueue is released */
-							SharedQueueUnBind(queryDesc->squeue);
+							SharedQueueUnBind(queryDesc->squeue, true);
 							queryDesc->squeue = NULL;
 							PG_RE_THROW();
 						}
