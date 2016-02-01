@@ -604,7 +604,7 @@ end$$ language plpgsql volatile;
 create table revalidate_bug (c float8 unique);
 insert into revalidate_bug values (1);
 insert into revalidate_bug values (inverse(0));
-ERROR:  Failed to receive more data from data node 11819
+ERROR:  Internal subtransactions not supported in Postgres-XL
 drop table revalidate_bug;
 drop function inverse(int);
 -- verify that cursors created during an aborted subtransaction are
