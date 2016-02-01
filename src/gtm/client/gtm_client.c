@@ -26,6 +26,7 @@
 #define CLIENT_GTM_TIMEOUT 20
 #endif
 #endif
+#define MAX_RETRY_SLEEP_MICRO 1000000
 
 #include <time.h>
 #include "gtm/gtm_c.h"
@@ -652,6 +653,7 @@ commit_transaction_internal(GTM_Conn *conn, GlobalTransactionId gxid,
 {
 	GTM_Result *res = NULL;
 	time_t finish_time;
+	long   retry_sleep = 1000;
 
 retry:
 	 /* Start the message. */
@@ -712,7 +714,13 @@ retry:
 					 * might make sense to flash a warning and proceed after
 					 * certain number of retries
 					 */
-					pg_usleep(1000);
+					if (retry_sleep <= MAX_RETRY_SLEEP_MICRO)
+					{
+						retry_sleep = retry_sleep * 2;
+						if (retry_sleep > MAX_RETRY_SLEEP_MICRO)
+							retry_sleep = MAX_RETRY_SLEEP_MICRO;
+					}
+					pg_usleep(retry_sleep);
 					goto retry;
 				}
 			}
@@ -757,6 +765,7 @@ commit_prepared_transaction_internal(GTM_Conn *conn,
 {
 	GTM_Result *res = NULL;
 	time_t finish_time;
+	long   retry_sleep = 1000;
 
 retry:
 	/* Start the message */
@@ -800,7 +809,13 @@ retry:
 				if (res->gr_resdata.grd_eof_txn.status == STATUS_DELAYED)
 				{
 					/* See comments in commit_transaction_internal() */
-					pg_usleep(1000);
+					if (retry_sleep <= MAX_RETRY_SLEEP_MICRO)
+					{
+						retry_sleep = retry_sleep * 2;
+						if (retry_sleep > MAX_RETRY_SLEEP_MICRO)
+							retry_sleep = MAX_RETRY_SLEEP_MICRO;
+					}
+					pg_usleep(retry_sleep);
 					goto retry;
 				}
 			}
