@@ -96,8 +96,8 @@ UPDATE rel_rr SET b = now(), c = true WHERE a < func_immutable(4);
 SELECT a FROM rel_rr WHERE c = true ORDER BY 1;
 UPDATE rel_rr SET c = false;
 -- Coordinator qual
-UPDATE rel_rr SET b = now(), c = true WHERE a < currval('seqtest4') - 3 AND b < now();
-SELECT a FROM rel_rr WHERE c = true ORDER BY 1;
+--UPDATE rel_rr SET b = now(), c = true WHERE a < currval('seqtest4') - 3 AND b < now();
+--SELECT a FROM rel_rr WHERE c = true ORDER BY 1;
 DROP SEQUENCE seqtest4;
 
 -- UPDATE cases for hash table
