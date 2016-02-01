@@ -161,7 +161,7 @@ WITH RECURSIVE foo(x) AS
 SELECT * FROM foo;
 
 SELECT a, b, a < b as lt FROM
-  (VALUES ('a', 'B'), ('A', 'b' COLLATE "C")) v(a,b) ORDER BY a;
+  (VALUES ('a', 'B'), ('A', 'b' COLLATE "C")) v(a,b);
 
 
 -- casting
