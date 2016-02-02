@@ -140,4 +140,5 @@ test: xc_notrans_block
 test: xl_primary_key xl_foreign_key xl_distribution_column_types xl_alter_table xl_distribution_column_types_modulo xl_plan_pushdown xl_functions xl_limitations xl_user_defined_functions xl_join
 
 #known bugs
+test: xl_bugs
 test: xl_known_bugs

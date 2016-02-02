@@ -601,7 +601,7 @@ explain (verbose on, nodes off, costs off) select * from tab1_hash order by val;
                Output: val, val2
 (7 rows)
 
--- should not get FQSed because of DISTINCT clause
+-- should get FQSed because DISTINCT clause contains distkey
 select distinct val, val2 from tab1_hash where val2 = 8;
  val | val2 
 -----+------
@@ -622,7 +622,7 @@ explain (verbose on, nodes off, costs off) select distinct val, val2 from tab1_h
                Filter: (tab1_hash.val2 = 8)
 (9 rows)
 
--- should not get FQSed because of GROUP clause
+-- should get FQSed because GROUP BY clause uses distkey
 select val, val2 from tab1_hash where val2 = 8 group by val, val2;
  val | val2 
 -----+------
@@ -1010,7 +1010,7 @@ explain (verbose on, nodes off, costs off) select * from tab1_modulo order by va
                Output: val, val2
 (7 rows)
 
--- should not get FQSed because of DISTINCT clause
+-- should get FQSed because DISTINCT clause contains distkey
 select distinct val, val2 from tab1_modulo where val2 = 8;
  val | val2 
 -----+------
@@ -1031,7 +1031,7 @@ explain (verbose on, nodes off, costs off) select distinct val, val2 from tab1_m
                Filter: (tab1_modulo.val2 = 8)
 (9 rows)
 
--- should not get FQSed because of GROUP clause
+-- should get FQSed because GROUP BY clause uses distkey
 select val, val2 from tab1_modulo where val2 = 8 group by val, val2;
  val | val2 
 -----+------

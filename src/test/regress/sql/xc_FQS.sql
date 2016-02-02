@@ -133,10 +133,10 @@ explain (verbose on, nodes off, costs off) select * from tab1_hash where val2 = 
 -- should not get FQSed because of SORT clause
 select * from tab1_hash order by val;
 explain (verbose on, nodes off, costs off) select * from tab1_hash order by val;
--- should not get FQSed because of DISTINCT clause
+-- should get FQSed because DISTINCT clause contains distkey
 select distinct val, val2 from tab1_hash where val2 = 8;
 explain (verbose on, nodes off, costs off) select distinct val, val2 from tab1_hash where val2 = 8;
--- should not get FQSed because of GROUP clause
+-- should get FQSed because GROUP BY clause uses distkey
 select val, val2 from tab1_hash where val2 = 8 group by val, val2;
 explain (verbose on, nodes off, costs off) select val, val2 from tab1_hash where val2 = 8 group by val, val2;
 -- should not get FQSed because of HAVING clause
@@ -198,10 +198,10 @@ explain (verbose on, nodes off, costs off) select * from tab1_modulo where val2 
 -- should not get FQSed because of SORT clause
 select * from tab1_modulo order by val;
 explain (verbose on, nodes off, costs off) select * from tab1_modulo order by val;
--- should not get FQSed because of DISTINCT clause
+-- should get FQSed because DISTINCT clause contains distkey
 select distinct val, val2 from tab1_modulo where val2 = 8;
 explain (verbose on, nodes off, costs off) select distinct val, val2 from tab1_modulo where val2 = 8;
--- should not get FQSed because of GROUP clause
+-- should get FQSed because GROUP BY clause uses distkey
 select val, val2 from tab1_modulo where val2 = 8 group by val, val2;
 explain (verbose on, nodes off, costs off) select val, val2 from tab1_modulo where val2 = 8 group by val, val2;
 -- should not get FQSed because of HAVING clause
