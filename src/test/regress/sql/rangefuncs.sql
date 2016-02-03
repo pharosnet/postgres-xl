@@ -141,7 +141,7 @@ CREATE VIEW vw_getfoo AS SELECT * FROM getfoo5(1);
 SELECT * FROM vw_getfoo;
 DROP VIEW vw_getfoo;
 CREATE VIEW vw_getfoo AS SELECT * FROM getfoo5(1) WITH ORDINALITY AS t1(a,b,c,o);
-SELECT * FROM vw_getfoo ORDER BY foosubid;
+SELECT * FROM vw_getfoo ORDER BY b;
 DROP VIEW vw_getfoo;
 
 -- sql, proretset = f, prorettype = record
