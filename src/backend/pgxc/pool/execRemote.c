@@ -4952,6 +4952,18 @@ determine_param_types(Plan *plan,  struct find_params_context *context)
 			}
 			break;
 
+		case T_MergeAppend:
+			{
+				ListCell   *l;
+
+				foreach(l, ((MergeAppend *) plan)->mergeplans)
+				{
+					if (determine_param_types((Plan *) lfirst(l), context))
+						return true;
+				}
+			}
+			break;
+
 		case T_BitmapAnd:
 			{
 				ListCell   *l;
