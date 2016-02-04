@@ -92,7 +92,7 @@ GTM_ThreadInfo *GTM_ThreadCreate(GTM_ConnectionInfo *conninfo,
 GTM_ThreadInfo * GTM_GetThreadInfo(GTM_ThreadID thrid);
 #ifdef XCP
 extern void SaveControlInfo(void);
-#define CONTROL_INTERVAL		1000
+#define CONTROL_INTERVAL		50000
 #endif
 
 /*
@@ -145,4 +145,7 @@ extern GTM_ThreadID						TopMostThreadID;
 	(!GTM_CLIENT_ID_LT(a, b) && !GTM_CLIENT_ID_EQ(a, b))
 #define GTM_CLIENT_ID_NEXT(a)	\
 	((((a) + 1) == UINT32_MAX) ? 1 : ((a) + 1))
+
+#define GTM_CONTROL_FILE		"gtm.control"
+
 #endif

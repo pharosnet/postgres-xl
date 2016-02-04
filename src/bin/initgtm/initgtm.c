@@ -35,6 +35,7 @@
 #include "miscadmin.h"
 
 #include "postgres.h"
+#include "gtm/gtm.h"
 
 /*
  * these values are passed in by makefile defines
@@ -87,6 +88,7 @@ static void set_input(char **dest, char *filename);
 static void check_input(char *path);
 static void set_null_conf(void);
 static void setup_config(void);
+static void setup_control(void);
 static void trapsig(int signum);
 static void check_ok(void);
 static void usage(const char *progname);
@@ -547,6 +549,27 @@ setup_config(void)
 	check_ok();
 }
 
+/*
+ * set up all the control file
+ */
+static void
+setup_control(void)
+{
+	char		path[MAXPGPATH];
+	char		*controlline = NULL;
+
+	if (!is_gtm)
+		return;
+
+	fputs(_("creating control file ... "), stdout);
+	fflush(stdout);
+
+	snprintf(path, sizeof(path), "%s/gtm.control", pg_data);
+	writefile(path, &controlline);
+	chmod(path, S_IRUSR | S_IWUSR);
+
+	check_ok();
+}
 
 /*
  * signal handler in case we are interrupted.
@@ -1083,6 +1106,9 @@ main(int argc, char *argv[])
 
 	/* Now create all the text config files */
 	setup_config();
+
+	/* Now create the control file */
+	setup_control();
 
 	/* Get directory specification used to start this executable */
 	strcpy(bin_dir, argv[0]);

@@ -59,7 +59,6 @@ extern char *optarg;
 #define GTM_MAX_PATH			1024
 #define GTM_DEFAULT_HOSTNAME	"*"
 #define GTM_DEFAULT_PORT		6666
-#define GTM_CONTROL_FILE		"gtm.control"
 #define GTM_PID_FILE			"gtm.pid"
 #define GTM_LOG_FILE			"gtm.log"
 
@@ -658,6 +657,47 @@ main(int argc, char *argv[])
 		GTM_MutexLockAcquire(&control_lock);
 
 		ctlf = fopen(GTMControlFile, "r");
+
+		/*
+		 * When the GTMControlFile file is updated, we first write the updated
+		 * contents to a GTMControlFileTmp, delete the original GTMControlFile
+		 * and then rename the GTMControlFileTmp file to GTMControlFile
+		 *
+		 * In a rare situation, the GTMControlFile may get deleted, but the
+		 * GTMControlFileTmp may not get renamed. If we don't find the
+		 * GTMControlFile file, then look for the GTMControlFileTmp file. If
+		 * none exists, then its an error condition and we must not start.
+		 */
+		if (ctlf == NULL)
+		{
+			switch (errno)
+			{
+				case ENOENT:
+					elog(WARNING, "%s not found, now looking for %s",
+							GTMControlFile, GTMControlFileTmp);
+					break;
+				default:
+					elog(ERROR, "Could not open %s, errno %d - aborting GTM start",
+							GTMControlFile, errno);
+			}
+			ctlf = fopen(GTMControlFileTmp, "r");
+			if (ctlf == NULL)
+				elog(ERROR, "Could not open %s, errno %d - aborting GTM start",
+						GTMControlFileTmp, errno);
+
+			/*
+			 * Ok, so the GTMControlFileTmp exists. Just rename it to the
+			 * GTMControlFile and open again with the new name
+			 */
+			elog(WARNING, "Renaming %s to %s", GTMControlFileTmp,
+					GTMControlFile);
+			fclose(ctlf);
+			rename(GTMControlFileTmp, GTMControlFile);
+			ctlf = fopen(GTMControlFile, "r");
+			if (ctlf == NULL)
+				elog(ERROR, "Could not open %s, errno %d - aborting GTM start",
+						GTMControlFile, errno);
+		}
 		GTM_RestoreTxnInfo(ctlf, next_gxid);
 		GTM_RestoreSeqInfo(ctlf);
 		if (ctlf)
