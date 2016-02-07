@@ -1138,7 +1138,20 @@ int add_coordinatorMaster(char *name, char *host, int port, int pooler,
 	/* find any available coordinator */
 	connCordIndx = get_any_available_coord(-1);
 	if (connCordIndx == -1)
-		return 1;
+	{
+		/*
+		 * This is the FIRST coordinator being added into
+		 * the cluster. Just start it and be done with it.
+		 *
+		 * Start the new coordinator with --coordinator option
+		 */
+		AddMember(nodelist, name);
+		start_coordinator_master(nodelist);
+		CleanArray(nodelist);
+
+		/* ALTER our own definition appropriately */
+		goto selfadd;
+	}
 
 	/* Lock ddl */
 	if ((lockf = pgxc_popen_wRaw("psql -h %s -p %s %s",
@@ -1214,6 +1227,8 @@ int add_coordinatorMaster(char *name, char *host, int port, int pooler,
 	/* Quit DDL lokkup session */
 	fprintf(lockf, "\\q\n");
 	pclose(lockf);
+
+selfadd:
 	if ((f = pgxc_popen_wRaw("psql -h %s -p %d %s", host, port, sval(VAR_defaultDatabase))) == NULL)
 		elog(ERROR, "ERROR: cannot connect to the coordinator master %s.\n", name);
 	else

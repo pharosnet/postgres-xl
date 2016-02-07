@@ -47,13 +47,12 @@ static char date[MAXTOKEN+1];
 /*
  * Init gtm master -----------------------------------------------------------------
  */
-cmd_t *prepare_initGtmMaster(void)
+cmd_t *prepare_initGtmMaster(bool stop)
 {
 	cmd_t *cmdInitGtmMaster, *cmdGtmConf, *cmdGxid;
 	char date[MAXTOKEN+1];
 	FILE *f;
 	char **fileList = NULL;
-	int result;
 	char remoteDirCheck[MAXPATH * 2 + 128];
 
 	remoteDirCheck[0] = '\0';
@@ -111,13 +110,19 @@ cmd_t *prepare_initGtmMaster(void)
 	/* Setup GTM with appropriate GXID value */
 	
 	appendCmdEl(cmdGtmConf, (cmdGxid = initCmd(sval(VAR_gtmMasterServer))));
-	snprintf(newCommand(cmdGxid), MAXLINE,
+ 	if (stop)
+		snprintf(newCommand(cmdGxid), MAXLINE,
 			 "(gtm -x 2000 -D %s &); sleep 1; gtm_ctl stop -Z gtm -D %s",
 			 sval(VAR_gtmMasterDir), sval(VAR_gtmMasterDir));
+ 	else
+ 		snprintf(newCommand(cmdGxid), MAXLINE,
+ 			 "(gtm -x 2000 -D %s &); sleep 1;",
+ 			 sval(VAR_gtmMasterDir));
 
 	return cmdInitGtmMaster;
 }
-int init_gtm_master(void)
+ 
+int init_gtm_master(bool stop)
 {
 	int rc;
 	cmdList_t *cmdList;
@@ -128,13 +133,74 @@ int init_gtm_master(void)
 
 	/* Kill current gtm, build work directory and run initgtm */
 
-	if ((cmd = prepare_initGtmMaster()))
+	if ((cmd = prepare_initGtmMaster(stop)))
 		addCmd(cmdList, cmd);
 
 	rc = doCmdList(cmdList);
 	cleanCmdList(cmdList);
 	elog(INFO, "Done.\n");
 	return(rc);
+}
+
+/*
+ * Add gtm master
+ *
+ */
+int add_gtmMaster(char *name, char *host, int port, char *dir)
+{
+	char port_s[MAXTOKEN+1];
+	char date[MAXTOKEN+1];
+	FILE *f;
+	int	rc;
+
+	if (is_none(name))
+	{
+		elog(ERROR, "ERROR: Cannot add gtm master with the name \"none\".\n");
+		return 1;
+	}
+	if (is_none(host))
+	{
+		elog(ERROR, "ERROR: Cannot add gtm master with the name \"none\".\n");
+		return 1;
+	}
+	if (is_none(dir))
+	{
+		elog(ERROR, "ERROR: Cannot add gtm master with the directory \"none\".\n");
+		return 1;
+	}
+	if (checkSpecificResourceConflict(name, host, port, dir, TRUE))
+	{
+		elog(ERROR, "ERROR: New specified name:%s, host:%s, port:%d and dir:\"%s\" conflicts with existing node.\n",
+			 name, host, port, dir);
+		return 1;
+	}
+	assign_sval(VAR_gtmName, Strdup(name));
+	assign_sval(VAR_gtmMasterServer, Strdup(host));
+	snprintf(port_s, MAXTOKEN, "%d", port);
+	assign_sval(VAR_gtmMasterPort, Strdup(port_s));
+	assign_sval(VAR_gtmMasterDir, Strdup(dir));
+	makeServerList();
+	if ((f = fopen(pgxc_ctl_config_path, "a")) == NULL)
+	{
+		/* Should it be panic? */
+		elog(ERROR, "ERROR: cannot open configuration file \"%s\", %s\n", pgxc_ctl_config_path, strerror(errno));
+		return 1;
+	}
+	fprintf(f, 
+			"#===================================================\n"
+			"# pgxc configuration file updated due to GTM master addition\n"
+			"#        %s\n", 
+			timeStampString(date, MAXTOKEN+1));
+	fprintSval(f, VAR_gtmName);
+	fprintSval(f, VAR_gtmMasterServer);
+	fprintSval(f, VAR_gtmMasterPort);
+	fprintSval(f, VAR_gtmMasterDir);
+	fprintf(f, "%s","#----End of reconfiguration -------------------------\n");
+	fclose(f);
+	backup_configuration();
+	if ((rc = init_gtm_master(false)) != 0)
+		return rc;
+	return(start_gtm_master());
 }
 
 /*
@@ -206,6 +272,57 @@ int add_gtmSlave(char *name, char *host, int port, char *dir)
 	if ((rc = init_gtm_slave()) != 0)
 		return rc;
 	return(start_gtm_slave());
+}
+
+int remove_gtmMaster(bool clean_opt)
+{
+	FILE *f;
+
+	/* Check if gtm_slave is configured */
+	if (!sval(VAR_gtmMasterServer) || is_none(sval(VAR_gtmMasterServer)))
+	{
+		elog(ERROR, "ERROR: GTM master is not configured.\n");
+		return 1;
+	}
+
+	/* Check if gtm_master is running and stop if yes */
+	if (do_gtm_ping(sval(VAR_gtmMasterServer), atoi(sval(VAR_gtmMasterPort))) == 0)
+		stop_gtm_master();
+
+	elog(NOTICE, "Removing gtm master.\n");
+	/* Clean */
+	if (clean_opt)
+		clean_gtm_master();
+	/* Reconfigure */
+	reset_var(VAR_gtmName);
+	assign_sval(VAR_gtmName, Strdup("none"));
+	reset_var(VAR_gtmMasterServer);
+	assign_sval(VAR_gtmMasterServer, Strdup("none"));
+	reset_var(VAR_gtmMasterPort);
+	assign_sval(VAR_gtmMasterPort, Strdup("-1"));
+	reset_var(VAR_gtmMasterDir);
+	assign_sval(VAR_gtmMasterDir, Strdup("none"));
+	/* Write the configuration file and bakup it */
+	if ((f = fopen(pgxc_ctl_config_path, "a")) == NULL)
+	{
+		/* Should it be panic? */
+		elog(ERROR, "ERROR: cannot open configuration file \"%s\", %s\n", pgxc_ctl_config_path, strerror(errno));
+		return 1;
+	}
+	fprintf(f, 
+			"#===================================================\n"
+			"# pgxc configuration file updated due to GTM master removal\n"
+			"#        %s\n",
+			timeStampString(date, MAXTOKEN+1));
+	fprintSval(f, VAR_gtmName);
+	fprintSval(f, VAR_gtmMasterServer);
+	fprintSval(f, VAR_gtmMasterPort);
+	fprintSval(f, VAR_gtmMasterDir);
+	fprintf(f, "%s", "#----End of reconfiguration -------------------------\n");
+	fclose(f);
+	backup_configuration();
+	elog(NOTICE, "Done.\n");
+	return 0;
 }
 
 int remove_gtmSlave(bool clean_opt)

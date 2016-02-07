@@ -169,3 +169,34 @@ NULL
 EOF
 
 rm pgxc_ctl_conf_part.wk
+
+cp pgxc_ctl_conf_part_empty pgxc_ctl_conf_empty.wk
+
+ex pgxc_ctl_conf_empty.wk <<EOF
+%s/"/\\\"/ge
+w
+%s/^\(.*\)$/"\1",/e
+%s/^"#ifdef XCP",$/#ifdef XCP/e
+%s/^"#endif",$/#endif/e
+wq
+EOF
+
+cat >> pgxc_ctl_bash.c <<EOF
+/*
+ * Prototype of pgxc_ctl configuration file.
+ *
+ * It should be self descripting.   Can be extracted to your pgxc_ctl
+ * work directory with 'prepare empty' command.
+ */
+
+char *pgxc_ctl_conf_prototype_empty[] = {
+EOF
+
+cat pgxc_ctl_conf_empty.wk >> pgxc_ctl_bash.c
+
+cat >> pgxc_ctl_bash.c <<EOF
+NULL
+};
+EOF
+
+rm pgxc_ctl_conf_empty.wk

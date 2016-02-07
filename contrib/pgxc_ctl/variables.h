@@ -74,6 +74,8 @@ void var_assign(char **dest, char *src);
 char  *listValue(char *name);
 int extendVar(char *name, int newSize, char *def_value);
 int doesExist(char *name, int idx);
+void assign_arrayEl_internal(char *name, int idx, char *val, char *pad,
+		int extend);
 
 #define AddMember(a, b) do{if((a) == NULL) (a) = Malloc0(sizeof(char *)); (a) = add_member((a), (b));}while(0)
 void clean_array(char **array);

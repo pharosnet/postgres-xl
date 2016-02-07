@@ -141,7 +141,7 @@ static void parse_line(char *line)
 	reset_value(newv);
 	while((line = get_word(line, &val)))
 	{
-		if (val)
+		if (val && (strcmp(val, "") != 0))
 		{
 			add_val(newv, val);
 		}
@@ -502,7 +502,8 @@ static int anyConfigErrors = FALSE;
 
 static void checkIfVarIsConfigured(char *name)
 {
-	if (!find_var(name) || !sval(name))
+	/* var could be just defined without valid contents */
+	if (!find_var(name))
 	{
 		anyConfigErrors = TRUE;
 		reportMissingVar(name);
@@ -589,7 +590,8 @@ int checkPortConflict(char *host, int port)
 	int ii;
 
 	/* GTM Master */
-	if ((strcasecmp(host, sval(VAR_gtmMasterServer)) == 0) && (atoi(sval(VAR_gtmMasterPort)) == port))
+	if (doesExist(VAR_gtmMasterServer, 0) && doesExist(VAR_gtmMasterPort, 0) &&
+	(strcasecmp(host, sval(VAR_gtmMasterServer)) == 0) && (atoi(sval(VAR_gtmMasterPort)) == port))
 		return 1;
 	/* GTM Slave */
 	if (isVarYes(VAR_gtmSlave) && (strcasecmp(host, sval(VAR_gtmSlaveServer)) == 0) && (atoi(sval(VAR_gtmSlavePort)) == port))
@@ -631,7 +633,8 @@ int checkDirConflict(char *host, char *dir)
 	if (strcasecmp(dir, "none") == 0)
 		return 0;
 	/* GTM Master */
-	if ((strcasecmp(host, sval(VAR_gtmMasterServer)) == 0) && (strcmp(dir, sval(VAR_gtmMasterDir)) == 0))
+	if (doesExist(VAR_gtmMasterServer, 0) && doesExist(VAR_gtmMasterDir, 0) &&
+	(strcasecmp(host, sval(VAR_gtmMasterServer)) == 0) && (strcmp(dir, sval(VAR_gtmMasterDir)) == 0))
 		return 1;
 	/* GTM Slave */
 	if (isVarYes(VAR_gtmSlave) && (strcasecmp(host, sval(VAR_gtmSlaveServer)) == 0) && (strcmp(dir, sval(VAR_gtmSlaveDir)) == 0))

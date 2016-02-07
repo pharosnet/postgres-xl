@@ -36,7 +36,7 @@ include $(top_builddir)/src/Makefile.global
 include $(top_srcdir)/contrib/contrib-global.mk
 endif
 
-pgxc_ctl_bash.c: pgxc_ctl_conf_part_full pgxc_ctl_conf_part_minimal pgxc_ctl_bash_2
+pgxc_ctl_bash.c: pgxc_ctl_conf_part_full pgxc_ctl_conf_part_minimal pgxc_ctl_conf_part_empty pgxc_ctl_bash_2
 	./make_signature
 
 clean: clean-script

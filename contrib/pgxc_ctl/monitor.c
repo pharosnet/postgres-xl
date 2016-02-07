@@ -59,7 +59,10 @@ static void printResult(int res, char *what, char *name)
 
 static void monitor_gtm_master(void)
 {
-	return(printResult(do_gtm_ping(sval(VAR_gtmMasterServer), atoi(sval(VAR_gtmMasterPort))), "gtm master", NULL));
+	if (doesExist(VAR_gtmMasterServer, 0) && doesExist(VAR_gtmMasterPort, 0))
+		return(printResult(do_gtm_ping(sval(VAR_gtmMasterServer), atoi(sval(VAR_gtmMasterPort))), "gtm master", NULL));
+	else
+		elog(NOTICE, "GTM master not running\n");
 }
 
 static void monitor_gtm_slave(void)

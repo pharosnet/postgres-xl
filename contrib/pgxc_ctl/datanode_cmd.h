@@ -53,8 +53,7 @@ extern cmd_t *prepare_cleanDatanodeSlave(char *nodeName);
 
 #ifdef XCP
 extern int add_datanodeMaster(char *name, char *host, int port, int pooler,
-		char *dir, char *walDir, char *restore_dname, char *extraConf,
-		char *extraPgHbaConf);
+		char *dir, char *walDir, char *extraConf, char *extraPgHbaConf);
 #else
 extern int add_datanodeMaster(char *name, char *host, int port, char *dir,
 		char *restore_dname, char *extraConf, char *extraPgHbaConf);

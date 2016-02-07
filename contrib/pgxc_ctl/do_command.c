@@ -40,6 +40,7 @@
 
 extern char *pgxc_ctl_conf_prototype[];
 extern char *pgxc_ctl_conf_prototype_minimal[];
+extern char *pgxc_ctl_conf_prototype_empty[];
 
 int forceInit = false;
 
@@ -67,6 +68,7 @@ static void do_show_help(char *line);
 
 typedef enum ConfigType
 {
+	CONFIG_EMPTY,
 	CONFIG_MINIMAL,
 	CONFIG_COMPLETE
 } ConfigType;
@@ -102,7 +104,9 @@ static void do_prepareConfFile(char *Path, ConfigType config_type)
 		return;
 	}
 
-	if (config_type == CONFIG_MINIMAL)
+	if (config_type == CONFIG_EMPTY)
+		my_pgxc_conf_prototype = pgxc_ctl_conf_prototype_empty;
+	else if (config_type == CONFIG_MINIMAL)
 		my_pgxc_conf_prototype = pgxc_ctl_conf_prototype_minimal;
 	else
 		my_pgxc_conf_prototype = pgxc_ctl_conf_prototype;
@@ -517,7 +521,7 @@ static void do_kill_command(char *line)
 
 static void init_all(void)
 {
-	init_gtm_master();
+	init_gtm_master(true);
 	start_gtm_master();
 	if (isVarYes(VAR_gtmSlave))
 	{
@@ -574,12 +578,12 @@ static void do_init_command(char *line)
 	{
 		if (!GetToken() || (TestToken("all")))
 		{
-			init_gtm_master();
+			init_gtm_master(true);
 			if (isVarYes(VAR_gtmSlave))
 				init_gtm_slave();
 		}
 		else if (TestToken("master"))
-			init_gtm_master();
+			init_gtm_master(true);
 		else if (TestToken("slave"))
 			init_gtm_slave();
 		else
@@ -868,7 +872,6 @@ static void do_add_command(char *line)
 	char *dir;
 	char *walDir;
 	char *archDir;
-	char *dnode;
 	char *extraConf;
 	char *extraPgHbaConf;
 
@@ -880,7 +883,7 @@ static void do_add_command(char *line)
 	if (TestToken("gtm"))
 	{
 		/*
-		 * add gtm slave name host port dir
+		 * add gtm master name host port dir
 		 */
 
 		if (!GetToken())
@@ -888,16 +891,27 @@ static void do_add_command(char *line)
 			elog(ERROR, "ERROR: Specify option for add gtm command.\n");
 			return;
 		}
-		if (!TestToken("slave"))
+ 		if (TestToken("master"))
+ 		{
+ 			GetAndSet(name, "ERROR: please specify the name of gtm master\n");
+ 			GetAndSet(host, "ERROR: please specify the host name for gtm master\n");
+ 			GetAndSet(port, "ERROR: please specify the port number for gtm master\n");
+ 			GetAndSet(dir, "ERROR: please specify the working director for gtm master\n");
+ 			add_gtmMaster(name, host, atoi(port), dir);
+ 		}
+ 		else if (TestToken("slave"))
 		{
-			elog(ERROR, "ERROR: you can specify only slave to add gtm command. %s is invalid.\n", token);
-			return;
+			GetAndSet(name, "ERROR: please specify the name of gtm slave\n");
+			GetAndSet(host, "ERROR: please specify the host name for gtm slave\n");
+			GetAndSet(port, "ERROR: please specify the port number for gtm slave\n");
+			GetAndSet(dir, "ERROR: please specify the working director for gtm slave\n");
+			add_gtmSlave(name, host, atoi(port), dir);
 		}
-		GetAndSet(name, "ERROR: please specify the name of gtm slave\n");
-		GetAndSet(host, "ERROR: please specify the host name for gtm slave\n");
-		GetAndSet(port, "ERROR: please specify the port number for gtm slave\n");
-		GetAndSet(dir, "ERROR: please specify the working director for gtm slave\n");
-		add_gtmSlave(name, host, atoi(port), dir);
+ 		else
+ 		{
+ 			elog(ERROR, "ERROR: you can specify only master/slave to add gtm command. %s is invalid.\n", token);
+ 			return;
+ 		}
 		freeAndReset(name);
 		freeAndReset(host);
 		freeAndReset(port);
@@ -935,9 +949,9 @@ static void do_add_command(char *line)
 			GetAndSet(host, "ERROR: please specify the host for the coordinator masetr\n");
 			GetAndSet(port, "ERROR: please specify the port number for the coordinator master\n");
 			GetAndSet(pooler, "ERROR: please specify the pooler port number for the coordinator master.\n");
-			GetAndSet(dir, "ERROR: please specify the working director for the coordinator master\n");
-			GetAndSet(extraConf, "ERROR: please specify file to read extra configuration. Specify 'none' if nothig extra to be added.\n");
-			GetAndSet(extraPgHbaConf, "ERROR: please specify file to read extra pg_hba configuration. Specify 'none' if nothig extra to be added.\n");
+			GetAndSet(dir, "ERROR: please specify the working directory for the coordinator master\n");
+			GetAndSet(extraConf, "ERROR: please specify file to read extra configuration. Specify 'none' if nothing extra to be added.\n");
+			GetAndSet(extraPgHbaConf, "ERROR: please specify file to read extra pg_hba configuration. Specify 'none' if nothing extra to be added.\n");
 			add_coordinatorMaster(name, host, atoi(port), atoi(pooler), dir,
 					extraConf, extraPgHbaConf);
 			freeAndReset(name);
@@ -975,11 +989,10 @@ static void do_add_command(char *line)
 			GetAndSet(pooler, "ERROR: please specify the pooler port number for the datanode master.\n");
 			GetAndSet(dir, "ERROR: please specify the working director for the datanode master\n");
 			GetAndSet(walDir, "ERROR: please specify the WAL directory for the datanode master WAL. Specify 'none' for default\n");
-			GetAndSet(dnode, "ERROR: please specify name of existing datanode of which this will be a copy of. Specify 'none' for a bare datanode\n");
 			GetAndSet(extraConf, "ERROR: please specify file to read extra configuration. Specify 'none' if nothig extra to be added.\n");
 			GetAndSet(extraPgHbaConf, "ERROR: please specify file to read extra pg_hba configuration. Specify 'none' if nothig extra to be added.\n");
 			add_datanodeMaster(name, host, atoi(port), atoi(pooler), dir,
-					walDir, dnode, extraConf, extraPgHbaConf);
+					walDir, extraConf, extraPgHbaConf);
 			freeAndReset(name);
 			freeAndReset(host);
 			freeAndReset(port);
@@ -1023,24 +1036,34 @@ static void do_remove_command(char *line)
 	}
 	if (TestToken("gtm"))
 	{
-		if (!GetToken() || !TestToken("slave"))
+		if (!GetToken())
 		{
-			elog(ERROR, "ERROR: Please speciy slave to add gtm command\n");
+			elog(ERROR, "ERROR: Specify option to remove gtm command\n");
 			return;
 		}
-		if (GetToken() && TestToken("clean"))
-			clean_opt = TRUE;
-		remove_gtmSlave(clean_opt);
+		if (TestToken("master"))
+		{
+			if (GetToken() && TestToken("clean"))
+				clean_opt = TRUE;
+			remove_gtmMaster(clean_opt);
+		}
+		else if (TestToken("slave"))
+		{
+			if (GetToken() && TestToken("clean"))
+				clean_opt = TRUE;
+			remove_gtmSlave(clean_opt);
+		}
+		else 
+		{
+			elog(ERROR, "ERROR: you can specify only master/slave to remove gtm command. %s is invalid.\n", token);
+			return;
+		}
 	}
 	else if (TestToken("gtm_proxy"))
 	{
 		GetAndSet(name, "ERROR: please specify gtm proxy name to remove.\n");
-		if (TestToken("clean"))
-		{
+ 		if (GetToken() && TestToken("clean"))
 			clean_opt = TRUE;
-			freeAndReset(name);
-			GetAndSet(name, "ERROR: please specify gtm proxy name to remove.\n");
-		}
 		remove_gtmProxy(name, clean_opt	);
 		freeAndReset(name);
 	}
@@ -1054,24 +1077,16 @@ static void do_remove_command(char *line)
 		if (TestToken("master"))
 		{
 			GetAndSet(name, "ERROR: please specify the name of the coordinator master\n");
-			if (TestToken("clean"))
-			{
+			if (GetToken() && TestToken("clean"))
 				clean_opt = TRUE;
-				freeAndReset(name);
-				GetAndSet(name, "ERROR: please specify the name of the coordinator master\n");
-			}
 			remove_coordinatorMaster(name, clean_opt);
 			freeAndReset(name);
 		}
 		else
 		{
 			GetAndSet(name, "ERROR: please specify the name of the coordinator slave\n");
-			if (TestToken("clean"))
-			{
+			if (GetToken() && TestToken("clean"))
 				clean_opt = TRUE;
-				freeAndReset(name);
-				GetAndSet(name, "ERROR: please specify the name of the coordinator master\n");
-			}
 			remove_coordinatorSlave(name, clean_opt);
 			freeAndReset(name);
 		}
@@ -1086,24 +1101,16 @@ static void do_remove_command(char *line)
 		if (TestToken("master"))
 		{
 			GetAndSet(name, "ERROR: please specify the name of the datanode master\n");
-			if (TestToken("clean"))
-			{
+			if (GetToken() && TestToken("clean"))
 				clean_opt = TRUE;
-				freeAndReset(name);
-				GetAndSet(name, "ERROR: please specify the name of the coordinator master\n");
-			}
 			remove_datanodeMaster(name, clean_opt);
 			freeAndReset(name);
 		}
 		else
 		{
 			GetAndSet(name, "ERROR: please specify the name of the datanode slave\n");
-			if (TestToken("clean"))
-			{
+			if (GetToken() && TestToken("clean"))
 				clean_opt = TRUE;
-				freeAndReset(name);
-				GetAndSet(name, "ERROR: please specify the name of the coordinator master\n");
-			}
 			remove_datanodeSlave(name, clean_opt);
 			freeAndReset(name);
 		}
@@ -1113,13 +1120,6 @@ static void do_remove_command(char *line)
 	return;
 }
 		
-
-
-
-
-			
-
-
 static char *m_Option;
 
 static char *handle_m_option(char *line, char **m_option)
@@ -2336,7 +2336,9 @@ int do_singleLine(char *buf, char *wkline)
 			if (TestToken("config"))
 				GetToken();
 
-			if (TestToken("minimal"))
+			if (TestToken("empty"))
+				config_type = CONFIG_EMPTY;
+			else if (TestToken("minimal"))
 				config_type = CONFIG_MINIMAL;
 			else if (TestToken("complete"))
 				config_type = CONFIG_COMPLETE;
@@ -2974,11 +2976,64 @@ get_any_available_coord(int except)
 		if (!is_none(aval(VAR_coordMasterServers)[ii]))
 		{
 			if (pingNode(aval(VAR_coordMasterServers)[ii],
-						aval(VAR_coordPorts)[ii]) == 0)
+						 aval(VAR_coordPorts)[ii]) == 0)
 				return ii;
 		}
 	}
 
-	elog(ERROR, "ERROR: failed to find any running coordinator");
+	/*
+	 * this could be the first coordinator that is being added.
+	 * This call would happen *after* expanding the array to
+	 * accomodate the new coordinator. Hence we check for size
+	 * being more than 1
+	 */
+	if (arraySizeName(VAR_coordNames) > 1)
+	{
+		for (ii = 0; aval(VAR_coordNames)[ii]; ii++)
+		{
+			if (!is_none(aval(VAR_coordNames)[ii]))
+			{
+				elog(ERROR, "ERROR: failed to find any running coordinator");
+				return -1;
+			}
+		}
+	}
+	return -1;
+}
+ 
+int
+get_any_available_datanode(int except)
+{
+	int ii;
+	for (ii = 0; aval(VAR_datanodeMasterServers)[ii]; ii++)
+	{
+		if (ii == except)
+			continue;
+
+		if (!is_none(aval(VAR_datanodeMasterServers)[ii]))
+		{
+			if (pingNode(aval(VAR_datanodeMasterServers)[ii],
+						 aval(VAR_datanodePorts)[ii]) == 0)
+				return ii;
+		}
+	}
+
+	/*
+	 * this could be the first datanode that is being added.
+	 * This call would happen *after* expanding the array to
+	 * accomodate the new datanode. Hence we check for size
+	 * being more than 1
+	 */
+	if (arraySizeName(VAR_datanodeNames) > 1)
+	{
+		for (ii = 0; aval(VAR_datanodeNames)[ii]; ii++)
+		{
+			if (!is_none(aval(VAR_datanodeNames)[ii]))
+			{
+				elog(ERROR, "ERROR: failed to find any running datanode");
+				return -1;
+			}
+		}
+	}
 	return -1;
 }
