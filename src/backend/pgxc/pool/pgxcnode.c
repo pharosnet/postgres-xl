@@ -213,12 +213,16 @@ InitMultinodeExecutor(bool is_force)
 		init_pgxc_handle(&dn_handles[count]);
 		dn_handles[count].nodeoid = dnOids[count];
 		dn_handles[count].nodeid = get_pgxc_node_id(dnOids[count]);
+		strncpy(dn_handles[count].nodename, get_pgxc_nodename(dnOids[count]),
+				NAMEDATALEN);
 	}
 	for (count = 0; count < NumCoords; count++)
 	{
 		init_pgxc_handle(&co_handles[count]);
 		co_handles[count].nodeoid = coOids[count];
 		co_handles[count].nodeid = get_pgxc_node_id(coOids[count]);
+		strncpy(co_handles[count].nodename, get_pgxc_nodename(coOids[count]),
+				NAMEDATALEN);
 	}
 
 	datanode_count = 0;
@@ -1885,7 +1889,8 @@ pgxc_node_send_timestamp(PGXCNodeHandle *handle, TimestampTz timestamp)
 void
 add_error_message(PGXCNodeHandle *handle, const char *message)
 {
-	elog(LOG, "Connection error %s", message);
+	elog(LOG, "Remote node \"%s\", running with pid %d returned an error: %s",
+			handle->nodename, handle->backend_pid, message);
 	handle->transaction_status = 'E';
 	if (handle->error)
 	{
@@ -1962,6 +1967,7 @@ get_any_handle(List *datanodelist)
 					int	   *pids;
 					int    *fds = PoolManagerGetConnections(allocate, NIL,
 							&pids);
+					PGXCNodeHandle		*node_handle;
 
 					if (!fds)
 					{
@@ -1978,8 +1984,13 @@ get_any_handle(List *datanodelist)
 									 "max_connections and max_pool_size configuration "
 									 "parameters")));
 					}
-					pgxc_node_init(&dn_handles[node], fds[0], true, pids[0]);
+					node_handle = &dn_handles[node];
+					pgxc_node_init(node_handle, fds[0], true, pids[0]);
 					datanode_count++;
+
+					elog(DEBUG1, "Established a connection with datanode \"%s\","
+							"remote backend PID %d, socket fd %d, global session %c",
+							node_handle->nodename, (int) pids[0], fds[0], 'T');
 
 					/*
 					 * set load_balancer for next time and return the handle
@@ -2227,6 +2238,11 @@ get_handles(List *datanodelist, List *coordlist, bool is_coord_only_query, bool 
 				pgxc_node_init(node_handle, fdsock, is_global_session, be_pid);
 				dn_handles[node] = *node_handle;
 				datanode_count++;
+
+				elog(DEBUG1, "Established a connection with datanode \"%s\","
+						"remote backend PID %d, socket fd %d, global session %c",
+						node_handle->nodename, (int) be_pid, fdsock,
+						is_global_session ? 'T' : 'F');
 			}
 		}
 		/* Initialisation for Coordinators */
@@ -2249,6 +2265,11 @@ get_handles(List *datanodelist, List *coordlist, bool is_coord_only_query, bool 
 				pgxc_node_init(node_handle, fdsock, is_global_session, be_pid);
 				co_handles[node] = *node_handle;
 				coord_count++;
+
+				elog(DEBUG1, "Established a connection with coordinator \"%s\","
+						"remote backend PID %d, socket fd %d, global session %c",
+						node_handle->nodename, (int) be_pid, fdsock,
+						is_global_session ? 'T' : 'F');
 			}
 		}
 

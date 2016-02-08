@@ -63,6 +63,7 @@ struct pgxc_node_handle
 {
 	Oid			nodeoid;
 	int			nodeid;
+	char		nodename[NAMEDATALEN];
 
 	/* fd of the connection */
 	int		sock;

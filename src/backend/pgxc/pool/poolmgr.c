@@ -561,6 +561,9 @@ PoolManagerConnect(const char *database, const char *user_name,
 				(errcode(ERRCODE_INTERNAL_ERROR),
 				 errmsg("failed to connect to the pooler process")));
 
+	elog(DEBUG1, "Connecting to PoolManager (user_name %s, database %s, "
+			"pgoptions %s", user_name, database, pgoptions);
+
 	/*
 	 * Special handling for db_user_namespace=on
 	 * We need to handle per-db users and global users. The per-db users will
@@ -632,6 +635,8 @@ PoolManagerConnect(const char *database, const char *user_name,
 void
 PoolManagerReconnect(void)
 {
+	elog(DEBUG1, "Reconnecting to PoolManager");
+
 	/* Connected, disconnect */
 	if (poolHandle)
 		PoolManagerDisconnect();
@@ -654,6 +659,8 @@ PoolManagerLock(bool is_lock)
 	if (poolHandle == NULL)
 		PoolManagerConnect(get_database_name(MyDatabaseId),
 						   GetClusterUserName(), "");
+
+	elog(DEBUG1, "Locking PoolManager");
 
 	/* Message type */
 	pool_putbytes(&poolHandle->port, &msgtype, 1);
@@ -1420,7 +1427,14 @@ agent_acquire_connections(PoolAgent *agent, List *datanodelist,
 	/* Check if pooler can accept those requests */
 	if (list_length(datanodelist) > agent->num_dn_connections ||
 			list_length(coordlist) > agent->num_coord_connections)
+	{
+		elog(LOG, "agent_acquire_connections called with invalid arguments -"
+				"list_length(datanodelist) %d, num_dn_connections %d,"
+				"list_length(coordlist) %d, num_coord_connections %d",
+				list_length(datanodelist), agent->num_dn_connections,
+				list_length(coordlist), agent->num_coord_connections);
 		return NULL;
+	}
 
 	/*
 	 * Allocate memory
@@ -1471,6 +1485,8 @@ agent_acquire_connections(PoolAgent *agent, List *datanodelist,
 			{
 				pfree(result);
 				MemoryContextSwitchTo(oldcontext);
+				elog(LOG, "Pooler could not open a connection to node %d",
+						agent->dn_conn_oids[node]);
 				return NULL;
 			}
 
@@ -1503,6 +1519,8 @@ agent_acquire_connections(PoolAgent *agent, List *datanodelist,
 			{
 				pfree(result);
 				MemoryContextSwitchTo(oldcontext);
+				elog(LOG, "Pooler could not open a connection to node %d",
+						agent->coord_conn_oids[node]);
 				return NULL;
 			}
 
@@ -1555,9 +1573,15 @@ cancel_query_on_connections(PoolAgent *agent, List *datanodelist, List *coordlis
 		if (!agent->dn_connections[node])
 			continue;
 
+		elog(DEBUG1, "Canceling query on connection to remote node %d, remote pid %d",
+				agent->dn_conn_oids[node],
+				((PGconn *) agent->dn_connections[node]->conn)->be_pid);
 		bRet = PQcancel((PGcancel *) agent->dn_connections[node]->xc_cancelConn, errbuf, sizeof(errbuf));
 		if (bRet != false)
 		{
+			elog(DEBUG1, "Cancelled query on connection to remote node %d, remote pid %d",
+					agent->dn_conn_oids[node],
+					((PGconn *) agent->dn_connections[node]->conn)->be_pid);
 			nCount++;
 		}
 	}
@@ -1576,9 +1600,15 @@ cancel_query_on_connections(PoolAgent *agent, List *datanodelist, List *coordlis
 		if (!agent->coord_connections[node])
 			continue;
 
+		elog(DEBUG1, "Canceling query on connection to remote node %d, remote pid %d",
+				agent->coord_conn_oids[node],
+				((PGconn *) agent->coord_connections[node]->conn)->be_pid);
 		bRet = PQcancel((PGcancel *) agent->coord_connections[node]->xc_cancelConn, errbuf, sizeof(errbuf));
 		if (bRet != false)
 		{
+			elog(DEBUG1, "Cancelled query on connection to remote node %d, remote pid %d",
+					agent->coord_conn_oids[node],
+					((PGconn *) agent->coord_connections[node]->conn)->be_pid);
 			nCount++;
 		}
 	}
@@ -1599,6 +1629,8 @@ PoolManagerReleaseConnections(bool force)
 	/* If disconnected from pooler all the connections already released */
 	if (!poolHandle)
 		return;
+
+	elog(DEBUG1, "Returning connections back to the pool");
 
 	/* Message type */
 	pool_putbytes(&poolHandle->port, &msgtype, 1);
@@ -1710,6 +1742,7 @@ agent_release_connections(PoolAgent *agent, bool force_destroy)
 		if (slot)
 			release_connection(agent->pool, slot, agent->dn_conn_oids[i], force_destroy);
 		agent->dn_connections[i] = NULL;
+		elog(DEBUG1, "Released connection to node %d", agent->dn_conn_oids[i]);
 	}
 	/* Then clean up for Coordinator connections */
 	for (i = 0; i < agent->num_coord_connections; i++)
@@ -1723,6 +1756,7 @@ agent_release_connections(PoolAgent *agent, bool force_destroy)
 		if (slot)
 			release_connection(agent->pool, slot, agent->coord_conn_oids[i], force_destroy);
 		agent->coord_connections[i] = NULL;
+		elog(DEBUG1, "Released connection to node %d", agent->coord_conn_oids[i]);
 	}
 
 	/*
@@ -1752,6 +1786,9 @@ create_database_pool(const char *database, const char *user_name, const char *pg
 	DatabasePool   *databasePool;
 	HASHCTL			hinfo;
 	int				hflags;
+
+	elog(DEBUG1, "Creating a connection pool for database %s, user %s,"
+			" with pgoptions %s", database, user_name, pgoptions);
 
 	dbcontext = AllocSetContextCreate(PoolerCoreContext,
 									  "DB Context",
@@ -1824,6 +1861,9 @@ destroy_database_pool(const char *database, const char *user_name)
 {
 	DatabasePool *databasePool;
 
+	elog(DEBUG1, "Destroy a connection pool to database %s, user %s",
+			database, user_name);
+
 	/* Delete from the list */
 	databasePool = remove_database_pool(database, user_name);
 	if (databasePool)
@@ -1869,6 +1909,8 @@ static void
 reload_database_pools(PoolAgent *agent)
 {
 	DatabasePool *databasePool;
+
+	elog(DEBUG1, "Reloading database pools");
 
 	/*
 	 * Release node connections if any held. It is not guaranteed client session
