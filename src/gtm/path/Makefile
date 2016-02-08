@@ -9,7 +9,7 @@
 #-----------------------------------------------------------------------------
 top_builddir=../../..
 include $(top_builddir)/src/Makefile.global
-subdir=src/gtm/path
+subdir = src/gtm/path
 
 NAME=gtmpath
 SO_MAJOR_VERSION= 1

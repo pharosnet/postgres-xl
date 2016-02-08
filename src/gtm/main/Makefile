@@ -9,7 +9,7 @@
 #-----------------------------------------------------------------------------
 top_builddir=../../..
 include $(top_builddir)/src/Makefile.global
-subdir=src/gtm/main
+subdir = src/gtm/main
 
 ifneq ($(PORTNAME), win32)
 override CFLAGS += $(PTHREAD_CFLAGS)

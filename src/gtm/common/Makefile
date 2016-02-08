@@ -8,7 +8,7 @@
 #
 #-----------------------------------------------------------------------------
 top_builddir=../../..
-subdir=src/gtm/common
+subdir = src/gtm/common
 
 include $(top_builddir)/src/Makefile.global
 

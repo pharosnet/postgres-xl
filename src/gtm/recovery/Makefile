@@ -9,7 +9,7 @@
 #-----------------------------------------------------------------------------
 top_builddir=../../..
 include $(top_builddir)/src/Makefile.global
-subdir=src/gtm/recovery
+subdir = src/gtm/recovery
 
 NAME=gtmrecovery
 SO_MAJOR_VERSION= 1

@@ -609,7 +609,8 @@ elog_finish(int elevel, const char *fmt,...)
 	 */
 	errordata_stack_depth--;
 	errno = edata->saved_errno;
-	if (!errstart(elevel, edata->filename, edata->lineno, edata->funcname, NULL))
+	if (!errstart(elevel, edata->filename, edata->lineno, edata->funcname,
+				NULL))
 		return;					/* nothing to do */
 
 	/*

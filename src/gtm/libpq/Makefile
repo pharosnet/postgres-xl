@@ -9,7 +9,7 @@
 #-----------------------------------------------------------------------------
 top_builddir=../../..
 include $(top_builddir)/src/Makefile.global
-subdir=src/gtm/libpq
+subdir = src/gtm/libpq
 
 NAME=pqcomm
 SO_MAJOR_VERSION= 1

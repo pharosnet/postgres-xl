@@ -9,7 +9,7 @@
 #-----------------------------------------------------------------------------
 top_builddir=../../..
 include $(top_builddir)/src/Makefile.global
-subdir=src/gtm/config
+subdir = src/gtm/config
 
 override CPPFLAGS := -I. -I$(libpq_srcdir) $(CPPFLAGS)
 LIBS += $(PTHREAD_LIBS)
