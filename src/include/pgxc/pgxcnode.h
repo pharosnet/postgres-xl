@@ -66,6 +66,9 @@ struct pgxc_node_handle
 
 	/* fd of the connection */
 	int		sock;
+	/* pid of the remote backend process */
+	int		backend_pid;
+
 	/* Connection state */
 	char		transaction_status;
 	DNConnectionState state;

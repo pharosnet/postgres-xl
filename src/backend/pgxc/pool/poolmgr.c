@@ -132,7 +132,8 @@ static int	destroy_database_pool(const char *database, const char *user_name);
 static void reload_database_pools(PoolAgent *agent);
 static DatabasePool *find_database_pool(const char *database, const char *user_name, const char *pgoptions);
 static DatabasePool *remove_database_pool(const char *database, const char *user_name);
-static int *agent_acquire_connections(PoolAgent *agent, List *datanodelist, List *coordlist);
+static int *agent_acquire_connections(PoolAgent *agent, List *datanodelist,
+		List *coordlist, int **connectionpids);
 static int cancel_query_on_connections(PoolAgent *agent, List *datanodelist, List *coordlist);
 static PGXCNodePoolSlot *acquire_connection(DatabasePool *dbPool, Oid node);
 static void agent_release_connections(PoolAgent *agent, bool force_destroy);
@@ -905,7 +906,7 @@ PoolManagerDisconnect(void)
  * Get pooled connections
  */
 int *
-PoolManagerGetConnections(List *datanodelist, List *coordlist)
+PoolManagerGetConnections(List *datanodelist, List *coordlist, int **pids)
 {
 	int			i;
 	ListCell   *nodelist_item;
@@ -956,6 +957,13 @@ PoolManagerGetConnections(List *datanodelist, List *coordlist)
 	if (pool_recvfds(&poolHandle->port, fds, totlen))
 	{
 		pfree(fds);
+		return NULL;
+	}
+
+	if (pool_recvpids(&poolHandle->port, pids) != totlen)
+	{
+		pfree(*pids);
+		*pids = NULL;
 		return NULL;
 	}
 
@@ -1276,13 +1284,22 @@ agent_handle_input(PoolAgent * agent, StringInfo s)
 				 * In case of error agent_acquire_connections will log
 				 * the error and return NULL
 				 */
-				fds = agent_acquire_connections(agent, datanodelist, coordlist);
+				fds = agent_acquire_connections(agent, datanodelist, coordlist,
+						&pids);
 				list_free(datanodelist);
 				list_free(coordlist);
 
 				pool_sendfds(&agent->port, fds, fds ? datanodecount + coordcount : 0);
 				if (fds)
 					pfree(fds);
+
+				/*
+				 * Also send the PIDs of the remote backend processes serving
+				 * these connections
+				 */
+				pool_sendpids(&agent->port, pids, pids ? datanodecount + coordcount : 0);
+				if (pids)
+					pfree(pids);
 				break;
 
 			case 'h':			/* Cancel SQL Command in progress on specified connections */
@@ -1390,7 +1407,8 @@ agent_handle_input(PoolAgent * agent, StringInfo s)
  * acquire connection
  */
 static int *
-agent_acquire_connections(PoolAgent *agent, List *datanodelist, List *coordlist)
+agent_acquire_connections(PoolAgent *agent, List *datanodelist,
+		List *coordlist, int **pids)
 {
 	int			i;
 	int		   *result;
@@ -1414,6 +1432,14 @@ agent_acquire_connections(PoolAgent *agent, List *datanodelist, List *coordlist)
 	 */
 	result = (int *) palloc((list_length(datanodelist) + list_length(coordlist)) * sizeof(int));
 	if (result == NULL)
+	{
+		ereport(ERROR,
+				(errcode(ERRCODE_OUT_OF_MEMORY),
+				 errmsg("out of memory")));
+	}
+
+	*pids = (int *) palloc((list_length(datanodelist) + list_length(coordlist)) * sizeof(int));
+	if (*pids == NULL)
 	{
 		ereport(ERROR,
 				(errcode(ERRCODE_OUT_OF_MEMORY),
@@ -1458,7 +1484,8 @@ agent_acquire_connections(PoolAgent *agent, List *datanodelist, List *coordlist)
 			 */
 		}
 
-		result[i++] = PQsocket((PGconn *) agent->dn_connections[node]->conn);
+		result[i] = PQsocket((PGconn *) agent->dn_connections[node]->conn);
+		(*pids)[i++] = ((PGconn *) agent->dn_connections[node]->conn)->be_pid;
 	}
 
 	/* Save then in the array fds for Coordinators */
@@ -1489,7 +1516,8 @@ agent_acquire_connections(PoolAgent *agent, List *datanodelist, List *coordlist)
 			 */
 		}
 
-		result[i++] = PQsocket((PGconn *) agent->coord_connections[node]->conn);
+		result[i] = PQsocket((PGconn *) agent->coord_connections[node]->conn);
+		(*pids)[i++] = ((PGconn *) agent->coord_connections[node]->conn)->be_pid;
 	}
 
 	MemoryContextSwitchTo(oldcontext);

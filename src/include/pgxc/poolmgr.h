@@ -117,7 +117,8 @@ extern char *session_options(void);
 extern void PoolManagerReconnect(void);
 
 /* Get pooled connections */
-extern int *PoolManagerGetConnections(List *datanodelist, List *coordlist);
+extern int *PoolManagerGetConnections(List *datanodelist, List *coordlist,
+		int **pids);
 
 /* Clean pool connections */
 extern void PoolManagerCleanConnection(List *datanodelist, List *coordlist, char *dbname, char *username);

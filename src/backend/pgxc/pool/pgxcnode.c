@@ -111,7 +111,8 @@ static bool DoInvalidateRemoteHandles(void);
 #endif
 
 #ifdef XCP
-static void pgxc_node_init(PGXCNodeHandle *handle, int sock, bool global_session);
+static void pgxc_node_init(PGXCNodeHandle *handle, int sock,
+		bool global_session, int pid);
 #else
 static void pgxc_node_init(PGXCNodeHandle *handle, int sock);
 #endif
@@ -395,11 +396,12 @@ pgxc_node_all_free(void)
  * Structure stores state info and I/O buffers
  */
 static void
-pgxc_node_init(PGXCNodeHandle *handle, int sock, bool global_session)
+pgxc_node_init(PGXCNodeHandle *handle, int sock, bool global_session, int pid)
 {
 	char *init_str;
 
 	handle->sock = sock;
+	handle->backend_pid = pid;
 	handle->transaction_status = 'I';
 	handle->state = DN_CONNECTION_STATE_IDLE;
 	handle->read_only = true;
@@ -1957,10 +1959,13 @@ get_any_handle(List *datanodelist)
 				{
 					/* The node is requested */
 					List   *allocate = list_make1_int(node);
-					int    *fds = PoolManagerGetConnections(allocate, NIL);
+					int	   *pids;
+					int    *fds = PoolManagerGetConnections(allocate, NIL,
+							&pids);
 
 					if (!fds)
 					{
+						Assert(pids != NULL);
 						ereport(ERROR,
 								(errcode(ERRCODE_INSUFFICIENT_RESOURCES),
 								 errmsg("Failed to get pooled connections"),
@@ -1973,7 +1978,7 @@ get_any_handle(List *datanodelist)
 									 "max_connections and max_pool_size configuration "
 									 "parameters")));
 					}
-					pgxc_node_init(&dn_handles[node], fds[0], true);
+					pgxc_node_init(&dn_handles[node], fds[0], true, pids[0]);
 					datanode_count++;
 
 					/*
@@ -2173,7 +2178,8 @@ get_handles(List *datanodelist, List *coordlist, bool is_coord_only_query, bool 
 	if (dn_allocate || co_allocate)
 	{
 		int	j = 0;
-		int	*fds = PoolManagerGetConnections(dn_allocate, co_allocate);
+		int *pids;
+		int	*fds = PoolManagerGetConnections(dn_allocate, co_allocate, &pids);
 
 		if (!fds)
 		{
@@ -2207,7 +2213,8 @@ get_handles(List *datanodelist, List *coordlist, bool is_coord_only_query, bool 
 			foreach(node_list_item, dn_allocate)
 			{
 				int			node = lfirst_int(node_list_item);
-				int			fdsock = fds[j++];
+				int			fdsock = fds[j];
+				int			be_pid = pids[j++];
 
 				if (node < 0 || node >= NumDataNodes)
 				{
@@ -2217,7 +2224,7 @@ get_handles(List *datanodelist, List *coordlist, bool is_coord_only_query, bool 
 				}
 
 				node_handle = &dn_handles[node];
-				pgxc_node_init(node_handle, fdsock, is_global_session);
+				pgxc_node_init(node_handle, fdsock, is_global_session, be_pid);
 				dn_handles[node] = *node_handle;
 				datanode_count++;
 			}
@@ -2228,6 +2235,7 @@ get_handles(List *datanodelist, List *coordlist, bool is_coord_only_query, bool 
 			foreach(node_list_item, co_allocate)
 			{
 				int			node = lfirst_int(node_list_item);
+				int			be_pid = pids[j];
 				int			fdsock = fds[j++];
 
 				if (node < 0 || node >= NumCoords)
@@ -2238,7 +2246,7 @@ get_handles(List *datanodelist, List *coordlist, bool is_coord_only_query, bool 
 				}
 
 				node_handle = &co_handles[node];
-				pgxc_node_init(node_handle, fdsock, is_global_session);
+				pgxc_node_init(node_handle, fdsock, is_global_session, be_pid);
 				co_handles[node] = *node_handle;
 				coord_count++;
 			}
