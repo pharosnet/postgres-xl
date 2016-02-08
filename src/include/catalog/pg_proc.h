@@ -5380,6 +5380,11 @@ DESCR("get an individual replication origin's replication progress");
 DATA(insert OID = 6014 ( pg_show_replication_origin_status PGNSP PGUID 12 1 100 0 0 f f f f f t v 0 0 2249 "" "{26,25,3220,3220}" "{o,o,o,o}" "{local_id, external_id, remote_lsn, local_lsn}" _null_ _null_ pg_show_replication_origin_status _null_ _null_ _null_ ));
 DESCR("get progress for all replication origins");
 
+#ifdef USE_MODULE_MSGIDS
+DATA(insert OID = 6015 ( pg_msgmodule_set PGNSP PGUID 12 1 1 0 0 f f f f t t i 4 0 16 "20 20 20 2275" _null_ _null_ _null_ _null_ _null_ pg_msgmodule_set _null_ _null_ _null_ ));
+DESCR("set debugging level for module/file/msg");
+#endif
+
 /*
  * Symbolic values for provolatile column: these indicate whether the result
  * of a function is dependent *only* on the values of its explicit arguments,

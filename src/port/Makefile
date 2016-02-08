@@ -76,8 +76,15 @@ libpgport_srv.a: $(OBJS_SRV)
 # a hack that might fail someday if there is a *_srv.o without a
 # corresponding *.o, but it works for now (and those would probably go
 # into src/backend/port/ anyway).
+ifeq ($(genmsgids), yes)
+PGXL_MSG_FILEID := 1
+%_srv.o: %.c %.o
+	$(CC) $(CFLAGS) -DPGXL_MSG_MODULE=$(PGXL_MSG_MODULE) -DPGXL_MSG_FILEID=$(PGXL_MSG_FILEID) $(subst -DFRONTEND,, $(CPPFLAGS)) -c $< -o $@
+	$(eval PGXL_MSG_FILEID := $(shell echo $(PGXL_MSG_FILEID) + 1 | bc))
+else
 %_srv.o: %.c %.o
 	$(CC) $(CFLAGS) $(subst -DFRONTEND,, $(CPPFLAGS)) -c $< -o $@
+endif
 
 $(OBJS_SRV): | submake-errcodes
 

@@ -742,7 +742,6 @@ recurse = $(foreach target,$(if $1,$1,$(standard_targets)),$(foreach subdir,$(if
 # $3: target to run in subdir (defaults to current element of $1)
 recurse_always = $(foreach target,$(if $1,$1,$(standard_always_targets)),$(foreach subdir,$(if $2,$2,$(ALWAYS_SUBDIRS)),$(eval $(call _create_recursive_target,$(target),$(subdir),$(if $3,$3,$(target))))))
 
-
 ##########################################################################
 #
 # Automatic dependency generation
@@ -859,3 +858,37 @@ coverage-clean:
 	rm -f `find . -name '*.gcda' -print`
 
 endif # enable_coverage
+
+genmsgids = @genmsgids@
+
+ifeq ($(genmsgids), yes)
+PREPROCESS.c = $(CC) $(CFLAGS) $(CPPFLAGS) -E
+
+PGXL_MSG_FILEID := 1
+PGXL_MSG_MODULE := $(shell cat $(top_builddir)/MSGMODULES | grep -E "^subdir = $(subdir):" | cut -d ':' -f 2)
+
+ifeq ($(autodepend), yes)
+ifeq ($(GCC), yes)
+
+# GCC allows us to create object and dependency file in one invocation.
+%.o : %.c
+	@if test ! -d $(DEPDIR); then mkdir -p $(DEPDIR); fi
+	$(PREPROCESS.c) -DPGXL_MSG_MODULE=$(PGXL_MSG_MODULE) -DPGXL_MSG_FILEID=$(PGXL_MSG_FILEID)  -o $@.E $< -MMD -MP -MF $(DEPDIR)/$(*F).Po
+	-cat $@.E | grep -E "do \{ if \(errstart|do \{ if \(elog_start" >> $(top_srcdir)/MSGIDS
+	-rm -f $@.E
+	$(COMPILE.c) -DPGXL_MSG_MODULE=$(PGXL_MSG_MODULE) -DPGXL_MSG_FILEID=$(PGXL_MSG_FILEID) -o $@ $< -MMD -MP -MF $(DEPDIR)/$(*F).Po
+	$(eval PGXL_MSG_FILEID := $(shell echo $(PGXL_MSG_FILEID) + 1 | bc))
+endif # GCC
+else
+ifeq ($(GCC), yes)
+%.o : %.c
+	$(PREPROCESS.c) -DPGXL_MSG_MODULE=$(PGXL_MSG_MODULE) -DPGXL_MSG_FILEID=$(PGXL_MSG_FILEID)  -o $@.E $<
+	-cat $@.E | grep -E "do \{ if \(errstart|do \{ if \(elog_start" >> $(top_srcdir)/MSGIDS
+	-rm -f $@.E
+	$(COMPILE.c) -DPGXL_MSG_MODULE=$(PGXL_MSG_MODULE) -DPGXL_MSG_FILEID=$(PGXL_MSG_FILEID) -o $@ $<
+	$(eval PGXL_MSG_FILEID := $(shell echo $(PGXL_MSG_FILEID) + 1 | bc))
+endif # GCC
+
+endif # autodepend
+
+endif # enable_genmsgids

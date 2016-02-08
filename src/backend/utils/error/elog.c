@@ -176,12 +176,21 @@ static const char *useful_strerror(int errnum);
 static const char *get_errno_symbol(int errnum);
 static const char *error_severity(int elevel);
 static void append_with_tabs(StringInfo buf, const char *str);
-static bool is_log_level_output(int elevel, int log_min_level);
+static bool is_log_level_output(int elevel,
+#ifdef USE_MODULE_MSGIDS
+		int moduleid,
+		int fileid,
+		int msgid,
+#endif
+		int log_min_level);
 static void write_pipe_chunks(char *data, int len, int dest);
 static void write_csvlog(ErrorData *edata);
 static void setup_formatted_log_time(void);
 static void setup_formatted_start_time(void);
 
+#ifdef USE_MODULE_MSGIDS
+char *MsgModuleCtl;
+#endif
 
 /*
  * in_error_recursion_trouble --- are we at risk of infinite error recursion?
@@ -229,6 +238,9 @@ err_gettext(const char *str)
  */
 bool
 errstart(int elevel, const char *filename, int lineno,
+#ifdef USE_MODULE_MSGIDS
+		int moduleid, int fileid, int msgid,
+#endif
 		 const char *funcname, const char *domain)
 {
 	ErrorData  *edata;
@@ -288,7 +300,13 @@ errstart(int elevel, const char *filename, int lineno,
 	 */
 
 	/* Determine whether message is enabled for server log output */
-	output_to_server = is_log_level_output(elevel, log_min_messages);
+	output_to_server = is_log_level_output(elevel,
+#ifdef USE_MODULE_MSGIDS
+			moduleid,
+			fileid,
+			msgid,
+#endif
+			log_min_messages);
 
 	/* Determine whether message is enabled for client output */
 	if (whereToSendOutput == DestRemote && elevel != COMMERROR)
@@ -1290,7 +1308,11 @@ getinternalerrposition(void)
  * evaluating the format arguments if we do that.)
  */
 void
-elog_start(const char *filename, int lineno, const char *funcname)
+elog_start(const char *filename, int lineno,
+#ifdef USE_MODULE_MSGIDS
+		int moduleid, int fileid, int msgid,
+#endif
+		const char *funcname)
 {
 	ErrorData  *edata;
 
@@ -1329,6 +1351,11 @@ elog_start(const char *filename, int lineno, const char *funcname)
 	edata->filename = filename;
 	edata->lineno = lineno;
 	edata->funcname = funcname;
+#ifdef USE_MODULE_MSGIDS
+	edata->moduleid = moduleid;
+	edata->fileid = fileid;
+	edata->msgid = msgid;
+#endif
 	/* errno is saved now so that error parameter eval can't change it */
 	edata->saved_errno = errno;
 
@@ -1352,7 +1379,12 @@ elog_finish(int elevel, const char *fmt,...)
 	 */
 	errordata_stack_depth--;
 	errno = edata->saved_errno;
-	if (!errstart(elevel, edata->filename, edata->lineno, edata->funcname, NULL))
+	if (!errstart(elevel, edata->filename, edata->lineno,
+#ifdef USE_MODULE_MSGIDS
+				edata->moduleid,
+				edata->fileid, edata->msgid,
+#endif
+				edata->funcname, NULL))
 		return;					/* nothing to do */
 
 	/*
@@ -1600,6 +1632,10 @@ ThrowErrorData(ErrorData *edata)
 	MemoryContext oldcontext;
 
 	if (!errstart(edata->elevel, edata->filename, edata->lineno,
+#ifdef USE_MODULE_MSGIDS
+				edata->moduleid,
+				edata->fileid, edata->msgid,
+#endif
 				  edata->funcname, NULL))
 		return;
 
@@ -1733,7 +1769,12 @@ pg_re_throw(void)
 		 */
 		if (IsPostmasterEnvironment)
 			edata->output_to_server = is_log_level_output(FATAL,
-														  log_min_messages);
+#ifdef USE_MODULE_MSGIDS
+					0,
+					0,
+					0,
+#endif
+					log_min_messages);
 		else
 			edata->output_to_server = (FATAL >= log_min_messages);
 		if (whereToSendOutput == DestRemote)
@@ -2767,7 +2808,13 @@ write_csvlog(ErrorData *edata)
 	appendStringInfoChar(&buf, ',');
 
 	/* user query --- only reported if not disabled by the caller */
-	if (is_log_level_output(edata->elevel, log_min_error_statement) &&
+	if (is_log_level_output(edata->elevel,
+#ifdef USE_MODULE_MSGIDS
+				edata->moduleid,
+				edata->fileid,
+				edata->msgid,
+#endif
+				log_min_error_statement) &&
 		debug_query_string != NULL &&
 		!edata->hide_stmt)
 		print_stmt = true;
@@ -2924,7 +2971,13 @@ send_message_to_server_log(ErrorData *edata)
 	/*
 	 * If the user wants the query that generated this error logged, do it.
 	 */
-	if (is_log_level_output(edata->elevel, log_min_error_statement) &&
+	if (is_log_level_output(edata->elevel,
+#ifdef USE_MODULE_MSGIDS
+				edata->moduleid,
+				edata->fileid,
+				edata->msgid,
+#endif
+				log_min_error_statement) &&
 		debug_query_string != NULL &&
 		!edata->hide_stmt)
 	{
@@ -3672,6 +3725,37 @@ write_stderr(const char *fmt,...)
 	va_end(ap);
 }
 
+#ifdef USE_MODULE_MSGIDS
+static int
+get_overriden_log_level(int moduleid, int fileid, int msgid, int origlevel)
+{
+	uint32 position;
+
+	/*
+	 * The shared memory may not set during init processing or in a stand alone
+	 * backend.
+	 */
+	if (!IsPostmasterEnvironment || IsInitProcessingMode())
+		return origlevel;
+
+	/*
+	 * Reject invalid bounds
+	 */
+	if ((moduleid <= 0 || moduleid >= PGXL_MSG_MAX_MODULES) ||
+		(fileid <= 0 || fileid >= PGXL_MSG_MAX_FILEIDS_PER_MODULE) ||
+		(msgid <= 0 || msgid >= PGXL_MSG_MAX_MSGIDS_PER_FILE))
+		return origlevel;
+
+	/*
+	 * Get the overridden log level and return it back
+	 */
+	position = (moduleid - 1) * PGXL_MSG_MAX_FILEIDS_PER_MODULE *
+			PGXL_MSG_MAX_MSGIDS_PER_FILE +
+			(fileid - 1) * PGXL_MSG_MAX_MSGIDS_PER_FILE +
+			(msgid - 1);
+	return MsgModuleCtl[position] ? MsgModuleCtl[position] : origlevel;
+}
+#endif
 
 /*
  * is_log_level_output -- is elevel logically >= log_min_level?
@@ -3682,7 +3766,13 @@ write_stderr(const char *fmt,...)
  * test is correct for testing whether the message should go to the client.
  */
 static bool
-is_log_level_output(int elevel, int log_min_level)
+is_log_level_output(int elevel,
+#ifdef USE_MODULE_MSGIDS
+		int moduleid,
+		int fileid,
+		int msgid,
+#endif
+		int log_min_level)
 {
 	if (elevel == LOG || elevel == COMMERROR)
 	{
@@ -3698,6 +3788,34 @@ is_log_level_output(int elevel, int log_min_level)
 	/* Neither is LOG */
 	else if (elevel >= log_min_level)
 		return true;
+#ifdef USE_MODULE_MSGIDS
+	/* 
+	 * Check if the message's compile time value has been changed during the
+	 * run time.
+	 *
+	 * Currently, we only support increasing the log level of messages and that
+	 * too only for deciding whether the message should go to the server log or
+	 * not. A message which would otherwise not qualify to go to the server
+	 * log, thus can be forced to be logged. 
+	 *
+	 * In future, we may also want to go otherway round i.e. supressing a log
+	 * message or also change severity of log messages. The latter may
+	 * especially be useful to turn some specific ERROR messages into FATAL or
+	 * PANIC to be able to get a core dump for analysis.
+	 */
+	else
+	{
+		int newlevel = get_overriden_log_level(moduleid, fileid, msgid,
+				elevel);
+		if (newlevel == LOG)
+		{
+			if (log_min_level == LOG || log_min_level <= ERROR)
+				return true;
+		}
+		else if (newlevel >= log_min_level)
+			return true;
+	}
+#endif
 
 	return false;
 }
@@ -3726,3 +3844,141 @@ trace_recovery(int trace_level)
 
 	return trace_level;
 }
+
+#ifdef USE_MODULE_MSGIDS
+Size
+MsgModuleShmemSize(void)
+{
+	Size mm_size;
+
+	/*
+	 * One byte per message to store overridden log level.
+	 * !!TODO We don't really need a byte and a few bits would be enough. So
+	 * look for improving this/
+	 *
+	 * What we have done is a very simplisitic representation of msg-ids. The
+	 * overall memory requirement of this representation is too large as
+	 * compared to the actual number of msgs. For example, both
+	 * PGXL_MSG_MAX_MSGIDS_PER_FILE and PGXL_MSG_MAX_FILEIDS_PER_MODULE are set
+	 * to the largest value that any one module uses, but the actual values are
+	 * much smaller
+	 *
+	 * In theory, we could also have separate area for each backend so that
+	 * logging can be controlled at a backend level. But the current
+	 * representation is not at all efficient to do that.
+	 */
+	mm_size = mul_size(PGXL_MSG_MAX_MODULES, PGXL_MSG_MAX_FILEIDS_PER_MODULE);
+	mm_size = mul_size(mm_size, PGXL_MSG_MAX_MSGIDS_PER_FILE);
+
+	return mm_size;
+}
+
+void
+MsgModuleShmemInit(void)
+{
+	bool found;
+
+	MsgModuleCtl = ShmemInitStruct("Message Module Struct",
+								   (PGXL_MSG_MAX_MODULES *
+								    PGXL_MSG_MAX_FILEIDS_PER_MODULE *
+								    PGXL_MSG_MAX_MSGIDS_PER_FILE),
+								   &found);
+}
+
+Datum
+pg_msgmodule_set(PG_FUNCTION_ARGS)
+{
+	int32 moduleid = PG_GETARG_INT32(0);
+	int32 fileid = PG_GETARG_INT32(1);
+	int32 msgid = PG_GETARG_INT32(2);
+	const char *levelstr = PG_GETARG_CSTRING(3);
+	int32 level;
+	uint32 start_position;
+	uint32 len;
+
+	if (!superuser())
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+			 (errmsg("must be superuser to change elog message level"))));
+
+	/*
+	 * The only accepted values for the log levels are - LOG, DEBUG[1-5] and
+	 * DEFAULT
+	 */
+	if (strcasecmp(levelstr, "LOG") == 0)
+		level = LOG;
+	else if (strcasecmp(levelstr, "DEFAULT") == 0)
+		level = 0;
+	else if (strcasecmp(levelstr, "DEBUG1") == 0)
+		level = DEBUG1;
+	else if (strcasecmp(levelstr, "DEBUG2") == 0)
+		level = DEBUG2;
+	else if (strcasecmp(levelstr, "DEBUG3") == 0)
+		level = DEBUG3;
+	else if (strcasecmp(levelstr, "DEBUG4") == 0)
+		level = DEBUG4;
+	else if (strcasecmp(levelstr, "DEBUG5") == 0)
+		level = DEBUG5;
+	else
+		ereport(ERROR,
+				(errcode(ERRCODE_INTERNAL_ERROR),
+				 (errmsg("Invalid value \"%s\" for log level", levelstr))));
+
+	if (moduleid <= 0 || moduleid >= PGXL_MSG_MAX_MODULES)
+		ereport(ERROR, (errmsg_internal("Invalid module id %d, allowed values 1-%d",
+						moduleid, PGXL_MSG_MAX_MODULES)));
+
+	if (fileid == -1)
+	{
+		/*
+		 * All messages in the given module to be overridden with the given
+		 * level
+		 */
+		len = PGXL_MSG_MAX_FILEIDS_PER_MODULE * PGXL_MSG_MAX_MSGIDS_PER_FILE;
+		start_position = (moduleid - 1) * len;
+		memset(MsgModuleCtl + start_position, level, len);
+		PG_RETURN_BOOL(true);
+	}
+	else
+	{
+		if (fileid <= 0 || fileid >= PGXL_MSG_MAX_FILEIDS_PER_MODULE)
+			ereport(ERROR, (errmsg_internal("Invalid file id %d, allowed values 1-%d",
+							fileid, PGXL_MSG_MAX_FILEIDS_PER_MODULE)));
+		
+		/*
+		 * All messages in the given <module, file> to be overridden with the
+		 * given level
+		 */
+		if (msgid == -1)
+		{
+			len = PGXL_MSG_MAX_MSGIDS_PER_FILE;
+			start_position = ((moduleid - 1) * PGXL_MSG_MAX_FILEIDS_PER_MODULE * PGXL_MSG_MAX_MSGIDS_PER_FILE) +
+						(fileid - 1) * PGXL_MSG_MAX_MSGIDS_PER_FILE;
+			memset(MsgModuleCtl + start_position, level, len);
+			PG_RETURN_BOOL(true);
+		}
+
+		if (msgid <= 0 || msgid >= PGXL_MSG_MAX_MSGIDS_PER_FILE)
+			ereport(ERROR, (errmsg_internal("Invalid msg id %d, allowed values 1-%d",
+							fileid, PGXL_MSG_MAX_MSGIDS_PER_FILE)));
+
+		/*
+		 * Deal with a specific <module, file, msg>
+		 */
+		len = sizeof (char);
+		start_position = ((moduleid - 1) * PGXL_MSG_MAX_FILEIDS_PER_MODULE * PGXL_MSG_MAX_MSGIDS_PER_FILE) +
+			((fileid - 1) * PGXL_MSG_MAX_MSGIDS_PER_FILE) +
+			(msgid - 1);
+		memset(MsgModuleCtl + start_position, level, len);
+		PG_RETURN_BOOL(true);
+	}
+	PG_RETURN_BOOL(true);
+}
+#else
+Datum
+pg_msgmodule_set(PG_FUNCTION_ARGS)
+{
+	ereport(ERROR, (errmsg_internal("Module msgid support not available. "
+					"Please recompile with --enable-genmsgids")));
+}
+#endif

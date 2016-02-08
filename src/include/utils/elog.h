@@ -110,6 +110,26 @@
  * prevents gcc from making the unreachability deduction at optlevel -O0.
  *----------
  */
+#ifdef USE_MODULE_MSGIDS
+#ifdef HAVE__BUILTIN_CONSTANT_P
+#define ereport_domain(elevel, domain, rest)	\
+	do { \
+		if (errstart(elevel, __FILE__, __LINE__, PGXL_MSG_MODULE, PGXL_MSG_FILEID, __COUNTER__, PG_FUNCNAME_MACRO, domain)) \
+			errfinish rest; \
+		if (__builtin_constant_p(elevel) && (elevel) >= ERROR) \
+			pg_unreachable(); \
+	} while(0)
+#else							/* !HAVE__BUILTIN_CONSTANT_P */
+#define ereport_domain(elevel, domain, rest)	\
+	do { \
+		const int elevel_ = (elevel); \
+		if (errstart(elevel, __FILE__, __LINE__, PGXL_MSG_MODULE, PGXL_MSG_FILEID, __COUNTER__, PG_FUNCNAME_MACRO, domain)) \
+			errfinish rest; \
+		if (elevel_ >= ERROR) \
+			pg_unreachable(); \
+	} while(0)
+#endif   /* HAVE__BUILTIN_CONSTANT_P */
+#else
 #ifdef HAVE__BUILTIN_CONSTANT_P
 #define ereport_domain(elevel, domain, rest)	\
 	do { \
@@ -122,12 +142,13 @@
 #define ereport_domain(elevel, domain, rest)	\
 	do { \
 		const int elevel_ = (elevel); \
-		if (errstart(elevel_, __FILE__, __LINE__, PG_FUNCNAME_MACRO, domain)) \
+		if (errstart(elevel, __FILE__, __LINE__, PG_FUNCNAME_MACRO, domain)) \
 			errfinish rest; \
 		if (elevel_ >= ERROR) \
 			pg_unreachable(); \
 	} while(0)
 #endif   /* HAVE__BUILTIN_CONSTANT_P */
+#endif
 
 #define ereport(elevel, rest)	\
 	ereport_domain(elevel, TEXTDOMAIN, rest)
@@ -135,7 +156,11 @@
 #define TEXTDOMAIN NULL
 
 extern bool errstart(int elevel, const char *filename, int lineno,
-		 const char *funcname, const char *domain);
+#ifdef USE_MODULE_MSGIDS
+		 int moduleid, int fileid, int msgid,
+#endif
+		 const char *funcname, const char *domain
+		 );
 extern void errfinish(int dummy,...);
 
 extern int	errcode(int sqlerrcode);
@@ -198,6 +223,7 @@ extern int	getinternalerrposition(void);
  *		elog(ERROR, "portal \"%s\" not found", stmt->portalname);
  *----------
  */
+#ifdef USE_MODULE_MSGIDS
 #ifdef HAVE__VA_ARGS
 /*
  * If we have variadic macros, we can give the compiler a hint about the
@@ -205,6 +231,32 @@ extern int	getinternalerrposition(void);
  * Note that historically elog() has called elog_start (which saves errno)
  * before evaluating "elevel", so we preserve that behavior here.
  */
+#ifdef HAVE__BUILTIN_CONSTANT_P
+#define elog(elevel, ...)  \
+	do { \
+		elog_start(__FILE__, __LINE__, PGXL_MSG_MODULE, PGXL_MSG_FILEID, __COUNTER__, PG_FUNCNAME_MACRO); \
+		elog_finish(elevel, __VA_ARGS__); \
+		if (__builtin_constant_p(elevel) && (elevel) >= ERROR) \
+			pg_unreachable(); \
+	} while(0)
+#else							/* !HAVE__BUILTIN_CONSTANT_P */
+#define elog(elevel, ...)  \
+	do { \
+		int		elevel_; \
+		elog_start(__FILE__, __LINE__, PGXL_MSG_MODULE, PGXL_MSG_FILEID, __COUNTER__, PG_FUNCNAME_MACRO); \
+		elevel_ = (elevel); \
+		elog_finish(elevel_, __VA_ARGS__); \
+		if (elevel_ >= ERROR) \
+			pg_unreachable(); \
+	} while(0)
+#endif   /* HAVE__BUILTIN_CONSTANT_P */
+#else							/* !HAVE__VA_ARGS */
+#define elog  \
+	elog_start(__FILE__, __LINE__, PGXL_MSG_MODULE, PGXL_MSG_FILEID, __COUNTER__, PG_FUNCNAME_MACRO); \
+	elog_finish
+#endif   /* HAVE__VA_ARGS */
+#else
+#ifdef HAVE__VA_ARGS
 #ifdef HAVE__BUILTIN_CONSTANT_P
 #define elog(elevel, ...)  \
 	do { \
@@ -226,11 +278,17 @@ extern int	getinternalerrposition(void);
 #endif   /* HAVE__BUILTIN_CONSTANT_P */
 #else							/* !HAVE__VA_ARGS */
 #define elog  \
-	elog_start(__FILE__, __LINE__, PG_FUNCNAME_MACRO), \
+	elog_start(__FILE__, __LINE__, PG_FUNCNAME_MACRO); \
 	elog_finish
 #endif   /* HAVE__VA_ARGS */
+#endif
 
-extern void elog_start(const char *filename, int lineno, const char *funcname);
+extern void elog_start(const char *filename, int lineno,
+#ifdef USE_MODULE_MSGIDS
+		int moduleid, int flieid, int msgid,
+#endif
+		const char *funcname
+		);
 extern void elog_finish(int elevel, const char *fmt,...) pg_attribute_printf(2, 3);
 
 
@@ -363,10 +421,25 @@ typedef struct ErrorData
 	int			internalpos;	/* cursor index into internalquery */
 	char	   *internalquery;	/* text of internally-generated query */
 	int			saved_errno;	/* errno at entry */
+#ifdef USE_MODULE_MSGIDS
+	int			moduleid;
+	int			fileid;
+	int			msgid;			/* msgid */
+#endif
 
 	/* context containing associated non-constant strings */
 	struct MemoryContextData *assoc_context;
 } ErrorData;
+
+#ifdef USE_MODULE_MSGIDS
+#define PGXL_MSG_MAX_MODULES			256
+#define PGXL_MSG_MAX_FILEIDS_PER_MODULE	100
+#define PGXL_MSG_MAX_MSGIDS_PER_FILE	300
+
+extern char *MsgModuleCtl;
+extern Size MsgModuleShmemSize(void);
+extern void MsgModuleShmemInit(void);
+#endif
 
 extern void EmitErrorReport(void);
 extern ErrorData *CopyErrorData(void);

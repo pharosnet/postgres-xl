@@ -719,6 +719,7 @@ with_tcl
 enable_thread_safety
 INCLUDES
 autodepend
+genmsgids
 TAS
 GCC
 CPP
@@ -819,6 +820,7 @@ with_wal_blocksize
 with_wal_segsize
 with_CC
 enable_depend
+enable_genmsgids
 enable_cassert
 enable_thread_safety
 with_tcl
@@ -5238,6 +5240,35 @@ else
 
 fi
 
+#
+# Automatic msgids generation
+#
+
+
+# Check whether --enable-genmsgids was given.
+if test "${enable_genmsgids+set}" = set; then :
+  enableval=$enable_genmsgids;
+  case $enableval in
+    yes)
+
+$as_echo "#define USE_MODULE_MSGIDS 1" >>confdefs.h
+     
+      genmsgids=yes
+	  $srcdir/config/create_msgids.sh > MSGMODULES 2>&1
+
+      ;;
+    no)
+      :
+      ;;
+    *)
+      as_fn_error $? "no argument expected for --enable-genmsgids option" "$LINENO" 5
+      ;;
+  esac
+
+else
+  enable_genmsgids=no
+
+fi
 
 
 

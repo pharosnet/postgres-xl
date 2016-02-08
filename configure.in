@@ -544,7 +544,6 @@ PGAC_ARG_BOOL(enable, depend, no, [turn on automatic dependency tracking],
               [autodepend=yes])
 AC_SUBST(autodepend)
 
-
 #
 # Enable assert checks
 #
@@ -552,6 +551,14 @@ PGAC_ARG_BOOL(enable, cassert, no, [enable assertion checks (for debugging)],
               [AC_DEFINE([USE_ASSERT_CHECKING], 1,
                          [Define to 1 to build with assertion checks. (--enable-cassert)])])
 
+
+#
+# Enable module msgids
+#
+PGAC_ARG_BOOL(enable, genmsgids, no, [enable module msgids (for debugging)],
+              [AC_DEFINE([USE_MODULE_MSGIDS], 1,
+                         [Define to 1 to build with module msgids.  (--enable-genmsgids)])])
+AC_SUBST(genmsgids)
 
 #
 # Include directories

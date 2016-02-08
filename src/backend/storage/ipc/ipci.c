@@ -166,6 +166,10 @@ CreateSharedMemoryAndSemaphores(bool makePrivate, int port)
 		size = add_size(size, ShmemBackendArraySize());
 #endif
 
+#ifdef USE_MODULE_MSGIDS
+		size = add_size(size, MsgModuleShmemSize());
+#endif
+
 		/* freeze the addin request size and include it */
 		addin_request_allowed = false;
 		size = add_size(size, total_addin_request);
@@ -297,6 +301,10 @@ CreateSharedMemoryAndSemaphores(bool makePrivate, int port)
 	 */
 	if (!IsUnderPostmaster)
 		ShmemBackendArrayAllocation();
+#endif
+
+#ifdef USE_MODULE_MSGIDS
+	MsgModuleShmemInit();
 #endif
 
 	/* Initialize dynamic shared memory facilities. */
