@@ -37,6 +37,7 @@ extern PGDLLIMPORT BackendId MyBackendId;		/* backend id of this backend */
  * of other backends under the same postmaster.
  */
 extern PGDLLIMPORT Oid MyCoordId;
+extern PGDLLIMPORT char MyCoordName[NAMEDATALEN];
 
 extern PGDLLIMPORT int MyCoordPid;
 extern PGDLLIMPORT LocalTransactionId MyCoordLxid;

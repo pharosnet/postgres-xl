@@ -2597,32 +2597,52 @@ log_line_prefix(StringInfo buf, ErrorData *edata)
 					appendStringInfoString(buf, unpack_sql_state(edata->sqlerrcode));
 				break;
 #ifdef XCP
+			case 'R':
+				if (padding != 0)
+				{
+					char		strfbuf[128];
+
+					snprintf(strfbuf, sizeof(strfbuf) - 1, "(%c/%s/%d)",
+							remoteConnType == REMOTE_CONN_APP ? 'A' : 
+							remoteConnType == REMOTE_CONN_DATANODE ? 'D' :
+							remoteConnType == REMOTE_CONN_COORD ? 'C' : 'U',
+							parentPGXCNode, parentPGXCPid);
+					appendStringInfo(buf, "%*s", padding, strfbuf);
+				}
+				else
+					appendStringInfo(buf, "(%c/%s/%d)",
+							remoteConnType == REMOTE_CONN_APP ? 'A' : 
+							remoteConnType == REMOTE_CONN_DATANODE ? 'D' :
+							remoteConnType == REMOTE_CONN_COORD ? 'C' : 'U',
+							parentPGXCNode, parentPGXCPid);
+				break;
+
 			case 'C':
 				if (MyProc != NULL)
 				{
 					if (padding != 0)
-						appendStringInfo(buf, "%*u", padding, MyProc->coordId);
+					{
+						char		strfbuf[128];
+
+						snprintf(strfbuf, sizeof(strfbuf) - 1, "(%s/%u)",
+								 MyCoordName, MyProc->coordPid);
+						appendStringInfo(buf, "%*s", padding, strfbuf);
+					}
 					else
-						appendStringInfo(buf, "%u", MyProc->coordId);
+						appendStringInfo(buf, "(%s/%u)", MyCoordName, MyProc->coordPid);
 				}
 				else if (padding != 0)
 					appendStringInfoSpaces(buf,
 										   padding > 0 ? padding : -padding);
 				break;
 
-			case 'R':
-				if (MyProc != NULL)
-				{
-					if (padding != 0)
-						appendStringInfo(buf, "%*u", padding, MyProc->coordPid);
-					else
-						appendStringInfo(buf, "%u", MyProc->coordPid);
-				}
-				else if (padding != 0)
-					appendStringInfoSpaces(buf,
-										   padding > 0 ? padding : -padding);
-				break;
+			case 'S':
+				if (padding != NULL)
+					appendStringInfo(buf, "%*s", padding, global_session_string);
+				else
+					appendStringInfo(buf, "%s", global_session_string);
 
+				break;
 #endif				
 			default:
 				/* format error - ignore it */

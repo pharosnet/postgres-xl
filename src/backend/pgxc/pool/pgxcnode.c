@@ -2658,6 +2658,8 @@ PGXCNodeGetSessionParamStr(void)
 			appendStringInfo(session_params, "SET global_session TO %s_%d;",
 							 PGXCNodeName, MyProcPid);
 		get_set_command(session_param_list, session_params, false);
+		appendStringInfo(session_params, "SET parentPGXCPid TO %d;",
+							 MyProcPid);
 	}
 	return session_params->len == 0 ? NULL : session_params->data;
 }

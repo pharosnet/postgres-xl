@@ -29,7 +29,7 @@
 #include "utils/pg_rusage.h"
 
 /* To access sequences */
-#define MyCoordName \
+#define GetMyCoordName \
 	OidIsValid(MyCoordId) ? get_pgxc_nodename(MyCoordId) : ""
 /* Configuration variables */
 char *GtmHost = "localhost";
@@ -497,7 +497,7 @@ GetCurrentValGTM(char *seqname)
 {
 	GTM_Sequence ret = -1;
 	GTM_SequenceKeyData seqkey;
-	char   *coordName = IS_PGXC_COORDINATOR ? PGXCNodeName : MyCoordName;
+	char   *coordName = IS_PGXC_COORDINATOR ? PGXCNodeName : GetMyCoordName;
 	int		coordPid = IS_PGXC_COORDINATOR ? MyProcPid : MyCoordPid;
 	int		status;
 
@@ -533,7 +533,7 @@ GetNextValGTM(char *seqname, GTM_Sequence range, GTM_Sequence *rangemax)
 {
 	GTM_Sequence ret = -1;
 	GTM_SequenceKeyData seqkey;
-	char   *coordName = IS_PGXC_COORDINATOR ? PGXCNodeName : MyCoordName;
+	char   *coordName = IS_PGXC_COORDINATOR ? PGXCNodeName : GetMyCoordName;
 	int		coordPid = IS_PGXC_COORDINATOR ? MyProcPid : MyCoordPid;
 	int		status;
 
@@ -570,7 +570,7 @@ int
 SetValGTM(char *seqname, GTM_Sequence nextval, bool iscalled)
 {
 	GTM_SequenceKeyData seqkey;
-	char   *coordName = IS_PGXC_COORDINATOR ? PGXCNodeName : MyCoordName;
+	char   *coordName = IS_PGXC_COORDINATOR ? PGXCNodeName : GetMyCoordName;
 	int		coordPid = IS_PGXC_COORDINATOR ? MyProcPid : MyCoordPid;
 
 	CheckConnection();

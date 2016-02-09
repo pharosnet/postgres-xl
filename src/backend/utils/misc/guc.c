@@ -544,7 +544,7 @@ static char *XactIsoLevel_string;
 static char *data_directory;
 static char *session_authorization_string;
 #ifdef XCP
-static char *global_session_string;
+char *global_session_string;
 #endif
 static int	max_function_args;
 static int	max_index_keys;
@@ -2974,6 +2974,18 @@ static struct config_int ConfigureNamesInt[] =
 		},
 		&MyCoordLxid,
 		0, 0, INT_MAX,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"parentPGXCPid", PGC_USERSET, UNGROUPED,
+			gettext_noop("PID of the remote process attached to this session."),
+			gettext_noop("This GUC only makes sense when a coordinator or a "
+					"datanode has opened the session"),
+			GUC_NOT_IN_SAMPLE | GUC_DISALLOW_IN_AUTO_FILE | GUC_DISALLOW_IN_FILE | GUC_NO_SHOW_ALL
+		},
+		&parentPGXCPid,
+		-1, -1, INT_MAX,
 		NULL, NULL, NULL
 	},
 

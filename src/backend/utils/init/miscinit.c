@@ -61,6 +61,7 @@
 #include "utils/snapmgr.h"
 #endif
 #include "utils/syscache.h"
+#include "utils/lsyscache.h"
 
 
 #define DIRECTORY_LOCK_FILE		"postmaster.pid"

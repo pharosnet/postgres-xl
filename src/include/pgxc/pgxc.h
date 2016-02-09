@@ -26,6 +26,7 @@ extern bool isPGXCCoordinator;
 extern bool isPGXCDataNode;
 extern bool isRestoreMode;
 extern char *parentPGXCNode;
+extern int parentPGXCPid;
 extern int	parentPGXCNodeId;
 extern char	parentPGXCNodeType;
 

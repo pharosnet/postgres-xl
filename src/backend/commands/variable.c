@@ -941,6 +941,14 @@ check_global_session(char **newval, void **extra, GucSource source)
 
 		coordid = HeapTupleGetOid(coordTup);
 
+		/*
+		 * Save the coordinator name is a global variable so that we don't need
+		 * to do catalog lookups later, especially if we running outside a
+		 * transaction block or in an aborted transaction
+		 */
+		if (OidIsValid(coordid))
+			strncpy(MyCoordName, *newval, NAMEDATALEN);
+
 		*separatorPos = '_';
 		ReleaseSysCache(coordTup);
 	}
@@ -949,6 +957,7 @@ check_global_session(char **newval, void **extra, GucSource source)
 	myextra = (global_session_extra *) malloc(sizeof(global_session_extra));
 	if (!myextra)
 		return false;
+
 	myextra->coordid = coordid;
 	myextra->coordpid = coordpid;
 	*extra = (void *) myextra;

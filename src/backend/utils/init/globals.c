@@ -75,6 +75,7 @@ char		postgres_exec_path[MAXPGPATH];		/* full path to backend */
 
 #ifdef XCP
 Oid			MyCoordId = InvalidOid;
+char		MyCoordName[NAMEDATALEN];
 
 int 		MyCoordPid = 0;
 LocalTransactionId	MyCoordLxid = 0;
