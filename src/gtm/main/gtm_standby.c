@@ -221,7 +221,7 @@ gtm_standby_restore_node(void)
 		if (Recovery_PGXCNodeRegister(data[i].type, data[i].nodename, data[i].port,
 					 data[i].proxyname, data[i].status,
 					 data[i].ipaddress, data[i].datafolder, true,
-					 -1 /* dummy socket */) != 0)
+					 -1 /* dummy socket */, false) != 0)
 		{
 			rc = 0;
 			goto finished;

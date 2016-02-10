@@ -257,12 +257,35 @@ pgxcnode_add_info(GTM_PGXCNodeInfo *nodeinfo)
 		{
 			if (curr_nodeinfo->status == NODE_CONNECTED)
 			{
-				GTM_RWLockRelease(&PGXCNodesLock);
-				ereport(LOG,
+				/*
+				 * There are two ways nodes get registered on the GTM, either
+				 * via ClusterMonitor or when a distribution session is
+				 * started. We differentiate between them. While its okay to
+				 * see duplicate messages for session registration or a session
+				 * registration message when the node is already registered by
+				 * the ClusterMonitor. Otherwise, return an error.
+				 *
+				 * The session registration is also converted into node
+				 * registration if the second message comes late
+				 */
+				if (!curr_nodeinfo->is_session && !nodeinfo->is_session)
+					ereport(LOG,
 						(EEXIST,
 						 errmsg("Node with the given ID number already exists - %s %d:%d",
 							nodeinfo->nodename, nodeinfo->status,
 							nodeinfo->type )));
+				else if (curr_nodeinfo->is_session && !nodeinfo->is_session)
+				{
+					curr_nodeinfo->is_session = false;
+					GTM_RWLockRelease(&PGXCNodesLock);
+					return 0;
+				}
+				else if (!curr_nodeinfo->is_session && nodeinfo->is_session)
+				{
+					GTM_RWLockRelease(&PGXCNodesLock);
+					return 0;
+				}
+				GTM_RWLockRelease(&PGXCNodesLock);
 				return EEXIST;
 			}
 			else
@@ -391,7 +414,8 @@ Recovery_PGXCNodeRegister(GTM_PGXCNodeType	type,
 						  char			*ipaddress,
 						  char			*datafolder,
 						  bool			in_recovery,
-						  int			socket)
+						  int			socket,
+						  bool			is_session)
 {
 	GTM_PGXCNodeInfo *nodeinfo = NULL;
 	int errcode = 0;
@@ -418,6 +442,7 @@ Recovery_PGXCNodeRegister(GTM_PGXCNodeType	type,
 	nodeinfo->socket = socket;
 	nodeinfo->reported_xmin = InvalidGlobalTransactionId;
 	nodeinfo->reported_xmin_time = GTM_TimestampGetCurrent();
+	nodeinfo->is_session = is_session;
 
 	elog(DEBUG1, "Recovery_PGXCNodeRegister Request info: type=%d, nodename=%s, port=%d," \
 			  "datafolder=%s, ipaddress=%s, status=%d",
@@ -757,7 +782,7 @@ Recovery_PGXCNodeRegisterCoordProcess(char *coord_node, int coord_procid,
 	{
 		int errcode = Recovery_PGXCNodeRegister(GTM_NODE_COORDINATOR, coord_node, 0, NULL,
 									  NODE_CONNECTED,
-									  NULL, NULL, false, 0);
+									  NULL, NULL, false, 0, true);
 
 		/*
 		 * If another thread registers before we get a chance, just look for

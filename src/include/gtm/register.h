@@ -73,6 +73,11 @@ typedef struct GTM_PGXCNodeInfo
 	GTM_PGXCSession	*sessions;
 	GTM_RWLock		node_lock;	/* Lock on this structure */
 	int			socket;		/* socket number used for registration */
+	bool			is_session;	/* 
+									 * entry added by node registration (false
+									 * if it was added because of session
+									 * registration
+									 */
 } GTM_PGXCNodeInfo;
 
 
@@ -90,7 +95,8 @@ int Recovery_PGXCNodeRegister(GTM_PGXCNodeType	type,
 				char			*ipaddress,
 				char			*datafolder,
 				bool			in_recovery,
-				int			socket);
+				int			socket,
+				bool		is_session);
 int Recovery_PGXCNodeUnregister(GTM_PGXCNodeType type,
 								char *node_name,
 								bool in_recovery,

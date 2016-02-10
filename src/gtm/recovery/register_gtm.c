@@ -163,7 +163,8 @@ ProcessPGXCNodeRegister(Port *myport, StringInfo message, bool is_backup)
 
 	if (Recovery_PGXCNodeRegister(type, node_name, port,
 								  proxyname, status,
-								  ipaddress, datafolder, false, myport->sock))
+								  ipaddress, datafolder, false, myport->sock,
+								  false))
 	{
 		ereport(ERROR,
 				(EINVAL,
