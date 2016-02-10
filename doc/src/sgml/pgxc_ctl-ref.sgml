@@ -214,6 +214,14 @@ PGXC$ prepare config minimal
 PGXC$ prepare config minimal my_minimal_pgxc.conf
 </programlisting>
 
+If you want, you may want to start off with a completely empty cluster to
+add all the nodes one-by-one. Use option <literal>empty</literal> to generate
+an empty template configuration file.
+<programlisting>
+PGXC$ prepare config empty 
+PGXC$ prepare config empty my_empty_pgxc.conf
+</programlisting>
+
    A more detailed syntax of the command will be described in a later section.
   </para>
 
@@ -221,6 +229,16 @@ PGXC$ prepare config minimal my_minimal_pgxc.conf
 
  <sect2>
   <title>Make your configuration</title>
+
+  <para>
+  If you are starting with an <literal>empty</literal> configuration file, then
+  there is no real need to provide values for most of the variables. However, if
+  you want to provide custom values for <filename>pg_hba.conf</filename> entries
+  or additional parameters to be added to your <filename>postgresql.conf</filename>
+  file, then you will need to do so before going ahead with your cluster creation.
+  You can skip the rest of this section if you are going ahead with an
+  <literal>empty</literal> configuration.
+  </para>
 
   <para>
    Please take a look at the template of the configuration file you
@@ -726,36 +744,45 @@ $
    As described in the previous section, you can configure your
    <application>Postgres-XL</application> cluster by editing
    <filename>pgxc_ctl.conf</filename> or other configuration files manually.
-   But editing the file from the scratch can be a mess.  It is much better to
-   have a separate configuration file.  You can create a configuration file
-   template by typing
+   But editing the file can be a bit of work. A better way would be to
+   start off with an empty configuration file. The pgxc_ctl utility supports
+   three types of templates as shown below.
 
+<programlisting>
+PGXC$ prepare config empty
+</programlisting>
+or
+<programlisting>
+PGXC$ prepare config minimal 
+</programlisting>
+or
 <programlisting>
 PGXC$ prepare config
-PGXC$ 
 </programlisting>
   </para>
 
   <para>
-   You have your <filename>pgxc_ctl.conf</filename> file at
-   <filename>$HOME/pgxc_ctl</filename>.
+   The default <filename>pgxc_ctl.conf</filename> file can be found inside the 
+   <filename>$HOME/pgxc_ctl</filename> location.
    You can edit it to configure your
-   <application>Postgres-XL</application> cluster.
-   When it messes up, you can again create the template with
+   <application>Postgres-XL</application> cluster or you can choose
+   to start with an empty cluster and add components one-by-one.
+   When the configuration is messed up, you can again create a specific template
+   of your choice with the proper 
    <command>prepare config</command> command.
-   If you want to use other file name, specify the names
-   <command>prepare config</command> command option like:
+   You can choose to specify your own custom name for the configuration file
+   like below:
 
 <programlisting>
-PGXC$ prepare config my_config.conf
+PGXC$ prepare config empty my_config.conf
 </programlisting>
   </para>
   <para>
-   Then you can edit this file to configure your
-   <application>postgres-XL</application> cluster.  This file is actually a
-   bash script file defining many variables to define the cluster
-   configuration.  With template values and comments, it will be easy to
-   understand what they mean.
+   Then you can edit this file to configure and customize your
+   <application>postgres-XL</application> cluster. This configuration file is basically a
+   bash script file which declares many variables to define the cluster
+   configuration. Although it might seem confusing, but With template values and comments,
+   one can easily understand what each of these variables mean.
    </para>
    <para>
    You can also generate a minimal configuration file, good enough to test
@@ -766,8 +793,8 @@ PGXC$ prepare config minimal
 PGXC$ prepare config minimal my_minimal_config.conf
 </programlisting>
 
-   The following describes each variable in the order you find in the
-   configuration template. 
+   Given below is the description of the various variables in the order that they
+   appear in the configuration file.
   </para>
 
   <sect3>
@@ -1431,7 +1458,7 @@ PGXC$ prepare config minimal my_minimal_config.conf
       <term><option>datanodeNames</option></term>
       <listitem>
        <para>
-        Array to specify Coordinator names.
+        Array to specify Datanode names.
        </para>
       </listitem>
      </varlistentry>
@@ -1594,16 +1621,17 @@ PGXC$ prepare config minimal my_minimal_config.conf
    <variablelist>
 
    <varlistentry>
+    <term><literal>add gtm master <replaceable class="parameter">name</replaceable> <replaceable class="parameter">host</replaceable> <replaceable class="parameter">port</replaceable> <replaceable class="parameter">dir</replaceable></literal></term>
     <term><literal>add gtm slave <replaceable class="parameter">name</replaceable> <replaceable class="parameter">host</replaceable> <replaceable class="parameter">port</replaceable> <replaceable class="parameter">dir</replaceable></literal></term>
     <term><literal>add gtm_proxy <replaceable class="parameter">name</replaceable> <replaceable class="parameter">host</replaceable> <replaceable class="parameter">port</replaceable> <replaceable class="parameter">dir</replaceable></literal></term>
     <term><literal>add coordinator master <replaceable class="parameter">name</replaceable> <replaceable class="parameter">host</replaceable> <replaceable class="parameter">port</replaceable> <replaceable class="parameter">pooler</replaceable> <replaceable class="parameter">dir</replaceable>< <replaceable class="parameter">extraServerConf</replaceable> <replaceable class="parameter">extraPgHbaConf</replaceable></literal></term>
     <term><literal>add coordinator slave <replaceable class="parameter">name</replaceable> <replaceable class="parameter">host</replaceable> <replaceable class="parameter">port</replaceable> <replaceable class="parameter">pooler</replaceable> <replaceable class="parameter">dir</replaceable> <replaceable class="parameter">archDir</replaceable></literal></term>
-    <term><literal>add datanode master <replaceable class="parameter">name</replaceable> <replaceable class="parameter">host</replaceable>  <replaceable class="parameter">port</replaceable> <replaceable class="parameter">pooler</replaceable>  <replaceable class="parameter">dir</replaceable> <replaceable class="parameter">xlogdir</replaceable>  <replaceable class="parameter">restoreDatanode</replaceable> <replaceable class="parameter">extraServerConf</replaceable> <replaceable class="parameter">extraPgHbaConf</replaceable></literal></term>
+    <term><literal>add datanode master <replaceable class="parameter">name</replaceable> <replaceable class="parameter">host</replaceable>  <replaceable class="parameter">port</replaceable> <replaceable class="parameter">pooler</replaceable>  <replaceable class="parameter">dir</replaceable> <replaceable class="parameter">xlogdir</replaceable>  <replaceable class="parameter">extraServerConf</replaceable> <replaceable class="parameter">extraPgHbaConf</replaceable></literal></term>
     <term><literal>add datanode slave <replaceable class="parameter">name</replaceable> <replaceable class="parameter">host</replaceable>  <replaceable class="parameter">port</replaceable> <replaceable class="parameter">pooler</replaceable>  <replaceable class="parameter">dir</replaceable> <replaceable class="parameter">xlogdir</replaceable> <replaceable class="parameter">archDir</replaceable></literal></term>
     <listitem>
      <para>
       Add the specified node to your Postgres-XL cluster.  Each node needs a
-      host name and its work directory.  GTM slave, GTM proxy, Coordinator
+      host name and its work directory. GTM master, GTM slave, GTM proxy, Coordinator
       master/slave and Datanode master/slave need its own port to listen to.
       Coordinators and Datanodes also need a pooler port to pool connections to
       Datanodes.  Coordinator and Datanode slaves need a directory to receive
@@ -1619,6 +1647,16 @@ PGXC$ prepare config minimal my_minimal_config.conf
      </para>
      <para>
       You cannot add slaves without master.
+     </para>
+     <para>
+     Typically, when you start with an empty configuration file, first you will add your
+     GTM node. Then you will add your first Coordinator master and then the first Datanode master.
+     When you add a Coordinator master and it is the first Coordinator in the cluster, then it
+     starts up on its own with empty node metadata. Otherwise the new Coordinator master connects to any
+     existing Coordinator and gets the existing node metadata of the cluster.
+     When you add a Datanode master and it is the first Datanode, then it connects
+     to any existing Coordinator to get the node metadata. Otherwise the Datanode master
+     connects to any existing Datanode and gets the current metadata from it.
      </para>
     </listitem>
    </varlistentry>
@@ -1789,7 +1827,8 @@ PGXC$ prepare config minimal my_minimal_config.conf
    </varlistentry>
 
    <varlistentry>
-    <term><literal>remove gtm slave</literal></term>
+    <term><literal>remove gtm master [ clean ]</literal></term>
+    <term><literal>remove gtm slave [ clean ]</literal></term>
     <term><literal>remove gtm_proxy <replaceable class="parameter">nodename</replaceable> [ clean ]</literal></term>
     <term><literal>remove coordinator [ master| slave ] <replaceable class="parameter">nodename</replaceable> [ clean ]</literal></term>
     <term><literal>remove datanode [ master| slave ] <replaceable class="parameter">nodename</replaceable> [ clean ]</literal></term>

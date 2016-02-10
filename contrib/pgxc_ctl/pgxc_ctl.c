@@ -266,7 +266,7 @@ static void read_configuration(void)
 	read_vars(conf);
 	pclose(conf);
 	uninstall_pgxc_ctl_bash(pgxc_ctl_bash_path);
-	elog(INFO, "Finished to read configuration.\n");
+	elog(INFO, "Finished reading configuration.\n");
 }
 
 static void prepare_pgxc_ctl_bash(char *path)

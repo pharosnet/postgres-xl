@@ -715,7 +715,7 @@ void dump_cmdList(cmdList_t *cmdList)
 		 "allocated = %d, used = %d\n", cmdList->allocated, cmdList->used);
 	if (cmdList->cmds == NULL)
 	{
-		elog(DEBUG1, "=== No command dfined. ===\n");
+		elog(DEBUG1, "=== No command defined. ===\n");
 		return;
 	}
 	for (ii = 0; cmdList->cmds[ii]; ii++)

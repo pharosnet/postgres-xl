@@ -124,11 +124,17 @@ cmd_t *prepare_initGtmMaster(bool stop)
  
 int init_gtm_master(bool stop)
 {
-	int rc;
+	int rc = 0;
 	cmdList_t *cmdList;
 	cmd_t *cmd;
 
 	elog(INFO, "Initialize GTM master\n");
+	if (is_none(sval(VAR_gtmMasterServer)))
+	{
+		elog(INFO, "No GTM master specified, exiting!\n");
+		return rc;
+	}
+
 	cmdList = initCmdList();
 
 	/* Kill current gtm, build work directory and run initgtm */
@@ -482,9 +488,14 @@ cmd_t *prepare_startGtmMaster(void)
 int start_gtm_master(void)
 {
 	cmdList_t *cmdList;
-	int rc;
+	int rc = 0;
 
 	elog(INFO, "Start GTM master\n");
+	if (is_none(sval(VAR_gtmMasterServer)))
+	{
+		elog(INFO, "No GTM master specified, cannot start. Exiting!\n");
+		return rc;
+	}
 	cmdList = initCmdList();
 	addCmd(cmdList, prepare_startGtmMaster());
 	rc = doCmdList(cmdList);

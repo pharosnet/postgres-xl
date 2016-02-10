@@ -1208,5 +1208,6 @@ int getDefaultWalSender(int isCoord)
 		if (doesExist(names, ii) && !is_none(aval(names)[ii]) && (atoi(aval(walSender)[ii]) >= 0))
 			return atoi(aval(walSender)[ii]);
 	}
-	return 0;
+	/* If none found, return 5 as the default value.. */
+	return 5;
 }

@@ -90,7 +90,7 @@ pgxc_pool_check(PG_FUNCTION_ARGS)
  *    to remote nodes. This results in losing prepared and temporary objects
  *    in all the sessions of server. All the existing transactions are aborted
  *    and a WARNING message is sent back to client.
- *    Session that invocated the reload does the same process, but no WARNING
+ *    Session that invoked the reload does the same process, but no WARNING
  *    message is sent back to client.
  */
 Datum

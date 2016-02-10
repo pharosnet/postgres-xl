@@ -1772,7 +1772,7 @@ int remove_datanodeSlave(char *name, int clean_opt)
 	}
 	fprintf(f, 
 			"#================================================================\n"
-			"# pgxc configuration file updated due to coodinator slave removal\n"
+			"# pgxc configuration file updated due to datanode slave removal\n"
 			"#        %s\n",
 			timeStampString(date, MAXTOKEN+1));
 	fprintSval(f, VAR_datanodeSlave);
