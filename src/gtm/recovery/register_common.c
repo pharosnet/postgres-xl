@@ -241,8 +241,6 @@ pgxcnode_add_info(GTM_PGXCNodeInfo *nodeinfo)
 
 	GTM_RWLockAcquire(&PGXCNodesLock, GTM_LOCKMODE_WRITE);
 
-	elog(LOG, "Nodeinfo->reported_xmin - %d:%d", nodeinfo->reported_xmin,
-			GTM_GlobalXmin);
 	if (!GlobalTransactionIdIsValid(nodeinfo->reported_xmin))
 		nodeinfo->reported_xmin = GTM_GlobalXmin;
 
@@ -441,7 +439,7 @@ Recovery_PGXCNodeRegister(GTM_PGXCNodeType	type,
 	nodeinfo->status = status;
 	nodeinfo->socket = socket;
 	nodeinfo->reported_xmin = InvalidGlobalTransactionId;
-	nodeinfo->reported_xmin_time = GTM_TimestampGetCurrent();
+	nodeinfo->reported_xmin_time = 0;
 	nodeinfo->is_session = is_session;
 
 	elog(DEBUG1, "Recovery_PGXCNodeRegister Request info: type=%d, nodename=%s, port=%d," \
@@ -1002,7 +1000,11 @@ GTM_HandleGlobalXmin(GTM_PGXCNodeType type, char *node_name,
 	{
 		*errcode = GTM_ERRCODE_NODE_EXCLUDED;
 		GTM_RWLockRelease(&mynodeinfo->node_lock);
-		elog(LOG, "GTM_ERRCODE_NODE_EXCLUDED - node_name %s", node_name);
+		elog(LOG, "GTM_ERRCODE_NODE_EXCLUDED - node_name %s, reported_xmin %d "
+				"previously reported_xmin, GTM_GlobalXmin %d", node_name,
+				reported_xmin,
+				mynodeinfo->reported_xmin,
+				GTM_GlobalXmin);
 		return InvalidGlobalTransactionId;
 	}
 
@@ -1015,7 +1017,19 @@ GTM_HandleGlobalXmin(GTM_PGXCNodeType type, char *node_name,
 	{
 		*errcode = GTM_ERRCODE_TOO_OLD_XMIN;
 		GTM_RWLockRelease(&mynodeinfo->node_lock);
-		elog(LOG, "GTM_ERRCODE_TOO_OLD_XMIN - node_name %s", node_name);
+
+		/*
+		 * When node registers from the first time, the reported_xmin is set
+		 * to GTM_GlobalXmin and what we receive from the node would most
+		 * likely precedes that, especially because nodes' latestCompletedXid
+		 * could precede our GTM_GlobalXmin. The node is prepared to handle
+		 * that case, but we should avoid logging an useless and often
+		 * confusing log message.
+		 */
+		if (mynodeinfo->reported_xmin_time)
+			elog(LOG, "GTM_ERRCODE_TOO_OLD_XMIN - node_name %s, reported_xmin %d, "
+					"previously reported_xmin %d", node_name,
+					reported_xmin, mynodeinfo->reported_xmin);
 		return InvalidGlobalTransactionId;
 	}
 
@@ -1042,8 +1056,6 @@ GTM_HandleGlobalXmin(GTM_PGXCNodeType type, char *node_name,
 	GTM_RWLockAcquire(&PGXCNodesLock, GTM_LOCKMODE_READ);
 	num_nodes = pgxcnode_get_all(all_nodes, MAX_NODES, true);
 
-	elog(DEBUG1, "num_nodes - %d", num_nodes);
-
 	for (ii = 0; ii < num_nodes; ii++)
 	{
 		GTM_PGXCNodeInfo *nodeinfo = all_nodes[ii];
@@ -1059,12 +1071,16 @@ GTM_HandleGlobalXmin(GTM_PGXCNodeType type, char *node_name,
 				GTM_NODE_DATANODE)
 			continue;
 
-		if (GTM_TimestampDifferenceExceeds(nodeinfo->reported_xmin_time,
+		if (nodeinfo->reported_xmin_time &&
+			GTM_TimestampDifferenceExceeds(nodeinfo->reported_xmin_time,
 					current_time, GTM_REPORT_XMIN_DELAY_THRESHOLD))
 		{
-			elog(LOG, "Timediff exceeds threshold - %ld:%ld - excluding the "
-					"node from GlobalXmin calculation",
-					nodeinfo->reported_xmin_time, current_time);
+			elog(LOG, "Timediff exceeds threshold - last reporting time %ld, "
+					"current time %ld, last reported_xmin %d, reported_xmin %d,"
+					" - excluding the node %s from GlobalXmin calculation",
+					nodeinfo->reported_xmin_time, current_time,
+					reported_xmin, nodeinfo->reported_xmin,
+					nodeinfo->nodename);
 
 			GTM_RWLockAcquire(&nodeinfo->node_lock, GTM_LOCKMODE_WRITE);
 			if (GTM_TimestampDifferenceExceeds(nodeinfo->reported_xmin_time,
@@ -1139,7 +1155,14 @@ GTM_HandleGlobalXmin(GTM_PGXCNodeType type, char *node_name,
 		GTM_PGXCNodeInfo *nodeinfo = all_nodes[ii];
 
 		if (nodeinfo->excluded)
+		{
+			elog(DEBUG1, "Node %s is excluded (last reported time %ld, current"
+				" time %ld, last reported_xmin %d. This node won't be included in "
+				"GTM_GlobalXmin computation",
+				nodeinfo->nodename, nodeinfo->reported_xmin_time,
+				GTM_TimestampGetCurrent(), nodeinfo->reported_xmin);
 			continue;
+		}
 
 		if (nodeinfo->type != GTM_NODE_COORDINATOR && nodeinfo->type !=
 				GTM_NODE_DATANODE)
@@ -1165,15 +1188,21 @@ GTM_HandleGlobalXmin(GTM_PGXCNodeType type, char *node_name,
 		GTM_RWLockAcquire(&PGXCNodesLock, GTM_LOCKMODE_WRITE);
 		if (GlobalTransactionIdPrecedes(GTM_GlobalXmin, global_xmin))
 		{
+			elog(DEBUG1, "Computed new GTM_GlobalXmin %d, old value was %d",
+					global_xmin, GTM_GlobalXmin);
 			GTM_GlobalXmin = global_xmin;
 			GTM_GlobalXminComputedTime = current_time;
 		}
-		else
+		else if (GlobalTransactionIdFollows(GTM_GlobalXmin, global_xmin))
+		{
+			elog(LOG, "The current (old) GTM_GlobalXmin %d is newer than what "
+					"we just computed %d - keeping the current value",
+					GTM_GlobalXmin, global_xmin);
 			global_xmin = GTM_GlobalXmin;
+		}
 		GTM_RWLockRelease(&PGXCNodesLock);
 	}
 
 
-	elog(DEBUG1, "GTM_HandleGlobalXmin - %d", global_xmin);
 	return global_xmin;
 }
