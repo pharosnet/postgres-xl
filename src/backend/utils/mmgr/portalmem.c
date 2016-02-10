@@ -144,6 +144,10 @@ GetPortalByName(const char *name)
 {
 	Portal		portal;
 
+#ifdef XCP
+	elog(DEBUG3, "Looking up portal %s in the hash table", name);
+#endif
+
 	if (PointerIsValid(name))
 		PortalHashTableLookup(name, portal);
 	else
@@ -224,6 +228,11 @@ CreatePortal(const char *name, bool allowDup, bool dupSilent)
 					(errcode(ERRCODE_DUPLICATE_CURSOR),
 					 errmsg("closing existing cursor \"%s\"",
 							name)));
+#ifdef XCP
+		elog(DEBUG3, "cursor \"%s\" already exists, closing existing cursor",
+				name);
+#endif
+
 		PortalDrop(portal, false);
 	}
 
@@ -257,6 +266,8 @@ CreatePortal(const char *name, bool allowDup, bool dupSilent)
 	PortalHashTableInsert(portal, name);
 
 #ifdef PGXC
+	elog(DEBUG3, "Created portal %s and inserted an entry in the has table");
+
 	if (PGXCNodeIdentifier == 0)
 	{
 		char *node_name;
@@ -592,6 +603,11 @@ PortalDrop(Portal portal, bool isTopCommit)
 	 */
 	PortalHashTableDelete(portal);
 
+#ifdef XCP
+	elog(DEBUG3, "Dropped portal %s (prepared statement %s) and removed entry from the hash table",
+			portal->name, portal->prepStmtName ? portal->prepStmtName : "(null)");
+#endif
+
 	/* drop cached plan reference, if any */
 	PortalReleaseCachedPlan(portal);
 
@@ -695,6 +711,10 @@ PortalHashTableDeleteAll(void)
 
 	if (PortalHashTable == NULL)
 		return;
+
+#ifdef XCP
+	elog(DEBUG3, "Deleting all entries from the PortalHashTable");
+#endif
 
 	hash_seq_init(&status, PortalHashTable);
 	while ((hentry = hash_seq_search(&status)) != NULL)

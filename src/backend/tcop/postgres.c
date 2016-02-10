@@ -4780,6 +4780,10 @@ PostgresMain(int argc, char *argv[],
 					close_target = pq_getmsgstring(&input_message);
 					pq_getmsgend(&input_message);
 
+					elog(DEBUG3, "Received a 'C' (close) command for %s, type %c",
+							close_target[0] ? close_target : "unnamed_stmt",
+							close_type);
+
 					switch (close_type)
 					{
 						case 'S':

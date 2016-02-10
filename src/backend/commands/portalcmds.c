@@ -239,6 +239,9 @@ PerformPortalClose(const char *name)
 		return;					/* keep compiler happy */
 	}
 
+#ifdef XCP
+	elog(DEBUG3, "PerformPortalClose for portal %s", name);
+#endif
 	/*
 	 * Note: PortalCleanup is called as a side-effect, if not already done.
 	 */
