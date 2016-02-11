@@ -2637,7 +2637,7 @@ log_line_prefix(StringInfo buf, ErrorData *edata)
 				break;
 
 			case 'S':
-				if (padding != NULL)
+				if (padding != 0)
 					appendStringInfo(buf, "%*s", padding, global_session_string);
 				else
 					appendStringInfo(buf, "%s", global_session_string);
@@ -3750,6 +3750,7 @@ static int
 get_overriden_log_level(int moduleid, int fileid, int msgid, int origlevel)
 {
 	uint32 position;
+	int value, relative, change, elevel;
 
 	/*
 	 * The shared memory may not set during init processing or in a stand alone
@@ -3766,6 +3767,11 @@ get_overriden_log_level(int moduleid, int fileid, int msgid, int origlevel)
 		(msgid <= 0 || msgid >= PGXL_MSG_MAX_MSGIDS_PER_FILE))
 		return origlevel;
 
+	if (origlevel < DEBUG5 || origlevel >= LOG)
+		return origlevel;
+
+	elevel = origlevel;
+
 	/*
 	 * Get the overridden log level and return it back
 	 */
@@ -3773,7 +3779,28 @@ get_overriden_log_level(int moduleid, int fileid, int msgid, int origlevel)
 			PGXL_MSG_MAX_MSGIDS_PER_FILE +
 			(fileid - 1) * PGXL_MSG_MAX_MSGIDS_PER_FILE +
 			(msgid - 1);
-	return MsgModuleCtl[position] ? MsgModuleCtl[position] : origlevel;
+	
+	/* Read once */
+	value = MsgModuleCtl[position];
+
+	relative = value & 0x80;
+	change = value & 0x7f;
+
+	if (value)
+	{
+		if (relative)
+		{
+			elevel = elevel + change;
+			if (elevel < DEBUG5)
+				elevel = DEBUG5;
+			else if (elevel >= LOG)
+				elevel = LOG;
+		}
+		else
+			elevel = change;
+		return elevel;
+	}
+	return origlevel;
 }
 #endif
 
@@ -3794,20 +3821,6 @@ is_log_level_output(int elevel,
 #endif
 		int log_min_level)
 {
-	if (elevel == LOG || elevel == COMMERROR)
-	{
-		if (log_min_level == LOG || log_min_level <= ERROR)
-			return true;
-	}
-	else if (log_min_level == LOG)
-	{
-		/* elevel != LOG */
-		if (elevel >= FATAL)
-			return true;
-	}
-	/* Neither is LOG */
-	else if (elevel >= log_min_level)
-		return true;
 #ifdef USE_MODULE_MSGIDS
 	/* 
 	 * Check if the message's compile time value has been changed during the
@@ -3823,19 +3836,24 @@ is_log_level_output(int elevel,
 	 * especially be useful to turn some specific ERROR messages into FATAL or
 	 * PANIC to be able to get a core dump for analysis.
 	 */
-	else
+	elevel = get_overriden_log_level(moduleid, fileid, msgid,
+			elevel);
+#endif
+
+	if (elevel == LOG || elevel == COMMERROR)
 	{
-		int newlevel = get_overriden_log_level(moduleid, fileid, msgid,
-				elevel);
-		if (newlevel == LOG)
-		{
-			if (log_min_level == LOG || log_min_level <= ERROR)
-				return true;
-		}
-		else if (newlevel >= log_min_level)
+		if (log_min_level == LOG || log_min_level <= ERROR)
 			return true;
 	}
-#endif
+	else if (log_min_level == LOG)
+	{
+		/* elevel != LOG */
+		if (elevel >= FATAL)
+			return true;
+	}
+	/* Neither is LOG */
+	else if (elevel >= log_min_level)
+		return true;
 
 	return false;
 }
@@ -3905,6 +3923,69 @@ MsgModuleShmemInit(void)
 								   &found);
 }
 
+static bool
+pg_msgmodule_internal(int32 moduleid, int32 fileid, int32 msgid, char value)
+{
+	uint32 start_position;
+	uint32 len;
+
+	if (!superuser())
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+			 (errmsg("must be superuser to change elog message level"))));
+
+
+	if (moduleid <= 0 || moduleid >= PGXL_MSG_MAX_MODULES)
+		ereport(ERROR, (errmsg_internal("Invalid module id %d, allowed values 1-%d",
+						moduleid, PGXL_MSG_MAX_MODULES)));
+
+	if (fileid == -1)
+	{
+		/*
+		 * All messages in the given module to be overridden with the given
+		 * level
+		 */
+		len = PGXL_MSG_MAX_FILEIDS_PER_MODULE * PGXL_MSG_MAX_MSGIDS_PER_FILE;
+		start_position = (moduleid - 1) * len;
+		memset(MsgModuleCtl + start_position, value, len);
+		return true;
+	}
+	else
+	{
+		if (fileid <= 0 || fileid >= PGXL_MSG_MAX_FILEIDS_PER_MODULE)
+			ereport(ERROR, (errmsg_internal("Invalid file id %d, allowed values 1-%d",
+							fileid, PGXL_MSG_MAX_FILEIDS_PER_MODULE)));
+		
+		/*
+		 * All messages in the given <module, file> to be overridden with the
+		 * given level
+		 */
+		if (msgid == -1)
+		{
+			len = PGXL_MSG_MAX_MSGIDS_PER_FILE;
+			start_position = ((moduleid - 1) * PGXL_MSG_MAX_FILEIDS_PER_MODULE * PGXL_MSG_MAX_MSGIDS_PER_FILE) +
+						(fileid - 1) * PGXL_MSG_MAX_MSGIDS_PER_FILE;
+			memset(MsgModuleCtl + start_position, value, len);
+			return true;
+		}
+
+		if (msgid <= 0 || msgid >= PGXL_MSG_MAX_MSGIDS_PER_FILE)
+			ereport(ERROR, (errmsg_internal("Invalid msg id %d, allowed values 1-%d",
+							fileid, PGXL_MSG_MAX_MSGIDS_PER_FILE)));
+
+		/*
+		 * Deal with a specific <module, file, msg>
+		 */
+		len = sizeof (char);
+		start_position = ((moduleid - 1) * PGXL_MSG_MAX_FILEIDS_PER_MODULE * PGXL_MSG_MAX_MSGIDS_PER_FILE) +
+			((fileid - 1) * PGXL_MSG_MAX_MSGIDS_PER_FILE) +
+			(msgid - 1);
+		memset(MsgModuleCtl + start_position, value, len);
+		return true;
+	}
+	return true;
+}
+
 Datum
 pg_msgmodule_set(PG_FUNCTION_ARGS)
 {
@@ -3913,8 +3994,6 @@ pg_msgmodule_set(PG_FUNCTION_ARGS)
 	int32 msgid = PG_GETARG_INT32(2);
 	const char *levelstr = PG_GETARG_CSTRING(3);
 	int32 level;
-	uint32 start_position;
-	uint32 len;
 
 	if (!superuser())
 		ereport(ERROR,
@@ -3944,59 +4023,42 @@ pg_msgmodule_set(PG_FUNCTION_ARGS)
 				(errcode(ERRCODE_INTERNAL_ERROR),
 				 (errmsg("Invalid value \"%s\" for log level", levelstr))));
 
-	if (moduleid <= 0 || moduleid >= PGXL_MSG_MAX_MODULES)
-		ereport(ERROR, (errmsg_internal("Invalid module id %d, allowed values 1-%d",
-						moduleid, PGXL_MSG_MAX_MODULES)));
+	PG_RETURN_BOOL(pg_msgmodule_internal(moduleid, fileid, msgid, level));
+}
 
-	if (fileid == -1)
-	{
-		/*
-		 * All messages in the given module to be overridden with the given
-		 * level
-		 */
-		len = PGXL_MSG_MAX_FILEIDS_PER_MODULE * PGXL_MSG_MAX_MSGIDS_PER_FILE;
-		start_position = (moduleid - 1) * len;
-		memset(MsgModuleCtl + start_position, level, len);
-		PG_RETURN_BOOL(true);
-	}
-	else
-	{
-		if (fileid <= 0 || fileid >= PGXL_MSG_MAX_FILEIDS_PER_MODULE)
-			ereport(ERROR, (errmsg_internal("Invalid file id %d, allowed values 1-%d",
-							fileid, PGXL_MSG_MAX_FILEIDS_PER_MODULE)));
-		
-		/*
-		 * All messages in the given <module, file> to be overridden with the
-		 * given level
-		 */
-		if (msgid == -1)
-		{
-			len = PGXL_MSG_MAX_MSGIDS_PER_FILE;
-			start_position = ((moduleid - 1) * PGXL_MSG_MAX_FILEIDS_PER_MODULE * PGXL_MSG_MAX_MSGIDS_PER_FILE) +
-						(fileid - 1) * PGXL_MSG_MAX_MSGIDS_PER_FILE;
-			memset(MsgModuleCtl + start_position, level, len);
-			PG_RETURN_BOOL(true);
-		}
+Datum
+pg_msgmodule_change(PG_FUNCTION_ARGS)
+{
+	int32 moduleid = PG_GETARG_INT32(0);
+	int32 fileid = PG_GETARG_INT32(1);
+	int32 msgid = PG_GETARG_INT32(2);
+	int32 change = PG_GETARG_INT32(3);
+	int level;
 
-		if (msgid <= 0 || msgid >= PGXL_MSG_MAX_MSGIDS_PER_FILE)
-			ereport(ERROR, (errmsg_internal("Invalid msg id %d, allowed values 1-%d",
-							fileid, PGXL_MSG_MAX_MSGIDS_PER_FILE)));
+	if (!superuser())
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+			 (errmsg("must be superuser to change elog message level"))));
+	
+	if ((change < (DEBUG5 - LOG)) || (change > (LOG - DEBUG5)))
+		ereport(ERROR,
+				(errcode(ERRCODE_INTERNAL_ERROR),
+			 (errmsg("accepted values are between %d and +%d", DEBUG5 - LOG, LOG -
+					 DEBUG5))));
 
-		/*
-		 * Deal with a specific <module, file, msg>
-		 */
-		len = sizeof (char);
-		start_position = ((moduleid - 1) * PGXL_MSG_MAX_FILEIDS_PER_MODULE * PGXL_MSG_MAX_MSGIDS_PER_FILE) +
-			((fileid - 1) * PGXL_MSG_MAX_MSGIDS_PER_FILE) +
-			(msgid - 1);
-		memset(MsgModuleCtl + start_position, level, len);
-		PG_RETURN_BOOL(true);
-	}
-	PG_RETURN_BOOL(true);
+	level = 0x80 | change;
+
+	PG_RETURN_BOOL(pg_msgmodule_internal(moduleid, fileid, msgid, level));
 }
 #else
 Datum
 pg_msgmodule_set(PG_FUNCTION_ARGS)
+{
+	ereport(ERROR, (errmsg_internal("Module msgid support not available. "
+					"Please recompile with --enable-genmsgids")));
+}
+Datum
+pg_msgmodule_change(PG_FUNCTION_ARGS)
 {
 	ereport(ERROR, (errmsg_internal("Module msgid support not available. "
 					"Please recompile with --enable-genmsgids")));

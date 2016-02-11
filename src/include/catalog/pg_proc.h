@@ -5383,6 +5383,8 @@ DESCR("get progress for all replication origins");
 #ifdef USE_MODULE_MSGIDS
 DATA(insert OID = 6015 ( pg_msgmodule_set PGNSP PGUID 12 1 1 0 0 f f f f t t i 4 0 16 "20 20 20 2275" _null_ _null_ _null_ _null_ _null_ pg_msgmodule_set _null_ _null_ _null_ ));
 DESCR("set debugging level for module/file/msg");
+DATA(insert OID = 6016 ( pg_msgmodule_change PGNSP PGUID 12 1 1 0 0 f f f f t t i 4 0 16 "20 20 20 20" _null_ _null_ _null_ _null_ _null_ pg_msgmodule_change _null_ _null_ _null_ ));
+DESCR("change debugging level for module/file/msg");
 #endif
 
 /*
