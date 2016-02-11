@@ -565,7 +565,7 @@ GTM_GetGlobalTransactionIdMulti(GTM_TransactionHandle handle[], int txn_count,
 		if (GlobalTransactionIdIsValid(gtm_txninfo->gti_gxid))
 		{
 			gxid[ii] = gtm_txninfo->gti_gxid;
-			elog(DEBUG2, "GTM_TransactionInfo has XID already assgined - %s:%d",
+			elog(DEBUG1, "GTM_TransactionInfo has XID already assgined - %s:%d",
 					gtm_txninfo->gti_global_session_id, gxid[ii]);
 			continue;
 		}
@@ -604,7 +604,7 @@ GTM_GetGlobalTransactionIdMulti(GTM_TransactionHandle handle[], int txn_count,
 
 		GlobalTransactionIdAdvance(GTMTransactions.gt_nextXid);
 
-		elog(DEBUG2, "Assigning new transaction ID = %s:%d",
+		elog(DEBUG1, "Assigning new transaction ID = %s:%d",
 				gtm_txninfo->gti_global_session_id, xid);
 		gxid[ii] = gtm_txninfo->gti_gxid = xid;
 		new_handle[*new_txn_count] = gtm_txninfo->gti_handle;
@@ -725,7 +725,7 @@ GTM_BeginTransactionMulti(GTM_IsolationLevel isolevel[],
 		if (txn != InvalidTransactionHandle)
 		{
 			gtm_txninfo[kk] = GTM_HandleToTransactionInfo(txn);
-			elog(DEBUG2, "Existing transaction found: %s:%d",
+			elog(DEBUG1, "Existing transaction found: %s:%d",
 					gtm_txninfo[kk]->gti_global_session_id,
 					gtm_txninfo[kk]->gti_gxid);
 			txns[kk] = txn;

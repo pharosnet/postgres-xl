@@ -941,9 +941,9 @@ GTM_InitNodeManager(void)
 }
 
 /* 
- * Set to 120 seconds, but should be a few multiple for cluster monitor naptime
+ * Set to 600 seconds, but should be a few multiple for cluster monitor naptime
  */ 
-#define GTM_REPORT_XMIN_DELAY_THRESHOLD (120 * 1000)
+#define GTM_REPORT_XMIN_DELAY_THRESHOLD (600 * 1000)
 
 GlobalTransactionId
 GTM_HandleGlobalXmin(GTM_PGXCNodeType type, char *node_name,
@@ -988,20 +988,31 @@ GTM_HandleGlobalXmin(GTM_PGXCNodeType type, char *node_name,
 	 * get opportunity to report xmin in a timely fashion, we shouldn't get
 	 * into this situation often.
 	 *
-	 * The exception to this rule is that if the remote node is idle, then we
-	 * actually ignore the xmin reported by it and instead calculate a new xmin
-	 * for it and send it back in respone. The remote node will still done
-	 * final sanity check and either accept that xmin or kill itself via PANIC
-	 * mechanism.
 	 */
 	if ((mynodeinfo->excluded) &&
-			GlobalTransactionIdPrecedes(mynodeinfo->reported_xmin,
-				GTM_GlobalXmin))
+			GlobalTransactionIdPrecedes(reported_xmin, GTM_GlobalXmin))
 	{
 		*errcode = GTM_ERRCODE_NODE_EXCLUDED;
+
+		/*
+		 * This node is joining back the cluster after being excluded from the
+		 * GTM_GlobalXmin calculation because of timeout, disconnection or node
+		 * failure. In such cases, we send appropriate error back to the node
+		 * and let it handle the situation. To ensure that our GTM_GlobalXmin
+		 * does not keep advancing while the node is trying to join back the
+		 * cluster, we temporarily set reported_xmin to the current
+		 * GTM_GlobalXmin and wait to see if the node finally catches up.
+		 *
+		 * Note: If the node had old transaction running while it was excluded
+		 * by the GTM, it will fail the consistency checks and restart itself.
+		 */
+		mynodeinfo->joining = true;
+		mynodeinfo->reported_xmin_time = GTM_TimestampGetCurrent();
+		mynodeinfo->reported_xmin = GTM_GlobalXmin;
+
 		GTM_RWLockRelease(&mynodeinfo->node_lock);
 		elog(LOG, "GTM_ERRCODE_NODE_EXCLUDED - node_name %s, reported_xmin %d "
-				"previously reported_xmin, GTM_GlobalXmin %d", node_name,
+				"previously reported_xmin %d, GTM_GlobalXmin %d", node_name,
 				reported_xmin,
 				mynodeinfo->reported_xmin,
 				GTM_GlobalXmin);
@@ -1009,13 +1020,18 @@ GTM_HandleGlobalXmin(GTM_PGXCNodeType type, char *node_name,
 	}
 
 	/*
-	 * The remote node must not report a xmin which precedes the xmin it had
-	 * reported in the past. If it ever happens, send an error back and let the
-	 * remote node restart itself
+	 * The remote node must not report a xmin which precedes the GTM_GlobalXmin
+	 * we have already computed. If it ever happens, send an error back and let
+	 * the remote node handle it, possibly restarting itself
 	 */
-	if (GlobalTransactionIdPrecedes(reported_xmin, mynodeinfo->reported_xmin))
+	if (GlobalTransactionIdPrecedes(reported_xmin, GTM_GlobalXmin))
 	{
 		*errcode = GTM_ERRCODE_TOO_OLD_XMIN;
+
+		mynodeinfo->joining = true;
+		mynodeinfo->reported_xmin_time = GTM_TimestampGetCurrent();
+		mynodeinfo->reported_xmin = GTM_GlobalXmin;
+
 		GTM_RWLockRelease(&mynodeinfo->node_lock);
 
 		/*
@@ -1028,8 +1044,8 @@ GTM_HandleGlobalXmin(GTM_PGXCNodeType type, char *node_name,
 		 */
 		if (mynodeinfo->reported_xmin_time)
 			elog(LOG, "GTM_ERRCODE_TOO_OLD_XMIN - node_name %s, reported_xmin %d, "
-					"previously reported_xmin %d", node_name,
-					reported_xmin, mynodeinfo->reported_xmin);
+					"previously reported_xmin %d, GTM_GlobalXmin %d", node_name,
+					reported_xmin, mynodeinfo->reported_xmin, GTM_GlobalXmin);
 		return InvalidGlobalTransactionId;
 	}
 
@@ -1038,7 +1054,15 @@ GTM_HandleGlobalXmin(GTM_PGXCNodeType type, char *node_name,
 			mynodeinfo->reported_xmin);
 
 	mynodeinfo->reported_xmin = reported_xmin;
-	mynodeinfo->excluded = false;
+
+	/*
+	 * Node joined back, set both excluded and joining to false
+	 */
+	if (mynodeinfo->excluded)
+	{
+		mynodeinfo->excluded = false;
+		mynodeinfo->joining = false;
+	}
 	mynodeinfo->reported_xmin_time = current_time = GTM_TimestampGetCurrent();
 
 	GTM_RWLockRelease(&mynodeinfo->node_lock);
@@ -1060,13 +1084,22 @@ GTM_HandleGlobalXmin(GTM_PGXCNodeType type, char *node_name,
 	{
 		GTM_PGXCNodeInfo *nodeinfo = all_nodes[ii];
 
-		elog(DEBUG1, "nodeinfo %p, type: %d, exclude %c, xmin %d, time %lld",
+		elog(DEBUG1, "nodeinfo %p, type: %d, exclude %c, xmin %d, time %ld",
 				nodeinfo, nodeinfo->type, nodeinfo->excluded ? 'T' : 'F',
 				nodeinfo->reported_xmin, nodeinfo->reported_xmin_time);
 
-		if (nodeinfo->excluded)
+		/*
+		 * If a node has not reported its status for
+		 * GTM_REPORT_XMIN_DELAY_THRESHOLD and neither in the process of
+		 * rejoining the cluster, don't include it in the GTM_GlobalXmin
+		 * calculation
+		 */
+		if (nodeinfo->excluded && !nodeinfo->joining)
 			continue;
 
+		/*
+		 * Care only for datanodes and coordinators
+		 */
 		if (nodeinfo->type != GTM_NODE_COORDINATOR && nodeinfo->type !=
 				GTM_NODE_DATANODE)
 			continue;
@@ -1087,6 +1120,7 @@ GTM_HandleGlobalXmin(GTM_PGXCNodeType type, char *node_name,
 						current_time, GTM_REPORT_XMIN_DELAY_THRESHOLD))
 			{
 				nodeinfo->excluded = true;
+				nodeinfo->joining = false;
 				GTM_RWLockRelease(&nodeinfo->node_lock);
 				continue;
 			}

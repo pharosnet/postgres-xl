@@ -704,10 +704,8 @@ ReportGlobalXmin(GlobalTransactionId gxid, GlobalTransactionId *global_xmin,
 	if (!conn)
 		return EOF;
 
-	if (report_global_xmin(conn, PGXCNodeName,
+	report_global_xmin(conn, PGXCNodeName,
 			IS_PGXC_COORDINATOR ?  GTM_NODE_COORDINATOR : GTM_NODE_DATANODE,
-			gxid, global_xmin, latest_completed_xid, &errcode))
-		return errcode;
-	else
-		return 0;
+			gxid, global_xmin, latest_completed_xid, &errcode);
+	return errcode;
 }

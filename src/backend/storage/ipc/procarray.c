@@ -1302,6 +1302,9 @@ GetOldestXminInternal(Relation rel, bool ignoreVacuum, bool computeLocal,
 	TransactionIdAdvance(result);
 #endif
 
+	elog(DEBUG1, "GetOldestXminInternal - Starting computation with"
+			"latestCompletedXid %d + 1", result);
+
 	for (index = 0; index < arrayP->numProcs; index++)
 	{
 		int			pgprocno = arrayP->pgprocnos[index];
@@ -1342,7 +1345,7 @@ GetOldestXminInternal(Relation rel, bool ignoreVacuum, bool computeLocal,
 			 */
 #ifdef XCP
 
-			elog(DEBUG3, "proc: pid:%d, xmin: %d, xid: %d", proc->pid,
+			elog(DEBUG1, "proc: pid:%d, xmin: %d, xid: %d", proc->pid,
 					xmin, xid);
 
 			if (TransactionIdIsNormal(xmin) &&

@@ -62,6 +62,7 @@ typedef struct GTM_PGXCNodeInfo
 											 *  Has the node timed out and be
 											 * excluded from xmin computation?
 											 */
+	bool				joining;	/* Is the node joining back */
 	bool				idle;				/* Has the node been idle since
 											 * last report
 											 */

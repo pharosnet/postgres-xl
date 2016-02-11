@@ -212,8 +212,11 @@ ClusterMonitorInit(void)
 		if ((status = ReportGlobalXmin(oldestXmin, &newOldestXmin,
 						&latestCompletedXid)))
 		{
-			elog(DEBUG2, "Failed to report RecentGlobalXmin to GTM - %d:%d",
-					status, newOldestXmin);
+			elog(DEBUG1, "Failed (status %d) to report RecentGlobalXmin "
+					"- reported RecentGlobalXmin %d, received "
+					"RecentGlobalXmin %d, " "received latestCompletedXid",
+					status, oldestXmin, newOldestXmin,
+					latestCompletedXid);
 			if (status == GTM_ERRCODE_TOO_OLD_XMIN ||
 				status == GTM_ERRCODE_NODE_EXCLUDED)
 			{
@@ -238,14 +241,17 @@ ClusterMonitorInit(void)
 					SetLatestCompletedXid(latestCompletedXid);
 					continue;
 				}
-				elog(PANIC, "Global xmin computation mismatch");
 			}
 		}
 		else
 		{
+			elog(DEBUG1, "Successfully reported xmin to GTM - reported_xmin %d,"
+					"received RecentGlobalXmin %d, "
+					"received latestCompletedXid %d", oldestXmin,
+					newOldestXmin, latestCompletedXid);
+
 			SetLatestCompletedXid(latestCompletedXid);
 			ClusterMonitorSetReportedGlobalXmin(oldestXmin);
-			elog(DEBUG2, "Updating global_xmin to %d", newOldestXmin);
 			if (GlobalTransactionIdIsValid(newOldestXmin))
 				ClusterMonitorSetGlobalXmin(newOldestXmin);
 		}
@@ -373,14 +379,19 @@ void
 ClusterMonitorSetGlobalXmin(GlobalTransactionId xmin)
 {
 	LWLockAcquire(ProcArrayLock, LW_EXCLUSIVE);
+
+	/*
+	 * Do a consistency check to ensure that we NEVER have running transactions
+	 * with xmin less than what the GTM has already computed. While during
+	 * normal execution, this should never happen, if we ever been excluded
+	 * from the xmin calculation by the GTM while we are still running old
+	 * transactions, PANIC is our best bet to avoid corruption
+	 */ 
 	ProcArrayCheckXminConsistency(xmin);
 
 	SpinLockAcquire(&ClusterMonitorCtl->mutex);
 	ClusterMonitorCtl->gtm_recent_global_xmin = xmin;
 	SpinLockRelease(&ClusterMonitorCtl->mutex);
-
-	if (TransactionIdPrecedes(ShmemVariableCache->latestCompletedXid, xmin))
-		ShmemVariableCache->latestCompletedXid = xmin;
 
 	LWLockRelease(ProcArrayLock);
 }
