@@ -4,7 +4,7 @@
 # Run this script when configuring with --enable-genmsgids
 #
 # Recurse through all subdiectories, collecting information about all subdirs
-# which has a Makefile/GNUMakefile with "subdir = <subdir_name>" entry and
+# which has a Makefile/GNUmakefile with "subdir = <subdir_name>" entry and
 # assign a module_id for all such subdirs. The Makefile.global then looks up
 # this catalog and uses the module_id configured.
 #
@@ -22,7 +22,7 @@ handle_dir()
 	for subdir in `ls $1`; do
 		if [ -d $1/$subdir ]; then
 			makefile1=$1/$subdir/Makefile
-			makefile2=$1/$subdir/GNUMakefile
+			makefile2=$1/$subdir/GNUmakefile
 			if [ -f $makefile1 ]; then
 				cat $makefile1 | grep -E "^subdir = " > /dev/null
 				if [ $? -ne 0 ]; then
