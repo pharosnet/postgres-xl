@@ -874,7 +874,7 @@ ifeq ($(GCC), yes)
 %.o : %.c
 	@if test ! -d $(DEPDIR); then mkdir -p $(DEPDIR); fi
 	$(PREPROCESS.c) -DPGXL_MSG_MODULE=$(PGXL_MSG_MODULE) -DPGXL_MSG_FILEID=$(PGXL_MSG_FILEID)  -o $@.E $< -MMD -MP -MF $(DEPDIR)/$(*F).Po
-	-cat $@.E | grep -E "do \{ if \(errstart|do \{ if \(elog_start" >> $(top_srcdir)/MSGIDS
+	-cat $@.E | grep -E "do .*errstart|do .*elog_start" >> $(top_srcdir)/MSGIDS
 	-rm -f $@.E
 	$(COMPILE.c) -DPGXL_MSG_MODULE=$(PGXL_MSG_MODULE) -DPGXL_MSG_FILEID=$(PGXL_MSG_FILEID) -o $@ $< -MMD -MP -MF $(DEPDIR)/$(*F).Po
 	$(eval PGXL_MSG_FILEID := $(shell echo $(PGXL_MSG_FILEID) + 1 | bc))
@@ -883,7 +883,7 @@ else
 ifeq ($(GCC), yes)
 %.o : %.c
 	$(PREPROCESS.c) -DPGXL_MSG_MODULE=$(PGXL_MSG_MODULE) -DPGXL_MSG_FILEID=$(PGXL_MSG_FILEID)  -o $@.E $<
-	-cat $@.E | grep -E "do \{ if \(errstart|do \{ if \(elog_start" >> $(top_srcdir)/MSGIDS
+	-cat $@.E | grep -E "do .*errstart|do .*elog_start" >> $(top_srcdir)/MSGIDS
 	-rm -f $@.E
 	$(COMPILE.c) -DPGXL_MSG_MODULE=$(PGXL_MSG_MODULE) -DPGXL_MSG_FILEID=$(PGXL_MSG_FILEID) -o $@ $<
 	$(eval PGXL_MSG_FILEID := $(shell echo $(PGXL_MSG_FILEID) + 1 | bc))

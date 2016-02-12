@@ -252,7 +252,9 @@ extern int	getinternalerrposition(void);
 #endif   /* HAVE__BUILTIN_CONSTANT_P */
 #else							/* !HAVE__VA_ARGS */
 #define elog  \
-	elog_start(__FILE__, __LINE__, PGXL_MSG_MODULE, PGXL_MSG_FILEID, __COUNTER__, PG_FUNCNAME_MACRO); \
+	do { \
+		elog_start(__FILE__, __LINE__, PGXL_MSG_MODULE, PGXL_MSG_FILEID, __COUNTER__, PG_FUNCNAME_MACRO); \
+	} while (0); \
 	elog_finish
 #endif   /* HAVE__VA_ARGS */
 #else
@@ -278,7 +280,9 @@ extern int	getinternalerrposition(void);
 #endif   /* HAVE__BUILTIN_CONSTANT_P */
 #else							/* !HAVE__VA_ARGS */
 #define elog  \
-	elog_start(__FILE__, __LINE__, PG_FUNCNAME_MACRO); \
+	do { \
+		elog_start(__FILE__, __LINE__, PG_FUNCNAME_MACRO); \
+	} while (0); \
 	elog_finish
 #endif   /* HAVE__VA_ARGS */
 #endif
