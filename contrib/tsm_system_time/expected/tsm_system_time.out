@@ -21,11 +21,13 @@ SELECT count(*) FROM test_tablesample TABLESAMPLE system_time (100000);
 -- bad parameters should get through planning, but not execution:
 EXPLAIN (COSTS OFF)
 SELECT id FROM test_tablesample TABLESAMPLE system_time (-1);
-                    QUERY PLAN                    
---------------------------------------------------
- Sample Scan on test_tablesample
-   Sampling: system_time ('-1'::double precision)
-(2 rows)
+                       QUERY PLAN                       
+--------------------------------------------------------
+ Remote Fast Query Execution
+   Node/s: datanode_1, datanode_2
+   ->  Sample Scan on test_tablesample
+         Sampling: system_time ('-1'::double precision)
+(4 rows)
 
 SELECT id FROM test_tablesample TABLESAMPLE system_time (-1);
 ERROR:  sample collection time must not be negative
@@ -40,15 +42,17 @@ SELECT * FROM
   (VALUES (0),(100000)) v(time),
   LATERAL (SELECT COUNT(*) FROM test_tablesample
            TABLESAMPLE system_time (100000)) ss;
-                               QUERY PLAN                               
-------------------------------------------------------------------------
+                                     QUERY PLAN                                     
+------------------------------------------------------------------------------------
  Nested Loop
    ->  Aggregate
-         ->  Materialize
-               ->  Sample Scan on test_tablesample
-                     Sampling: system_time ('100000'::double precision)
+         ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+               ->  Aggregate
+                     ->  Materialize
+                           ->  Sample Scan on test_tablesample
+                                 Sampling: system_time ('100000'::double precision)
    ->  Values Scan on "*VALUES*"
-(6 rows)
+(8 rows)
 
 SELECT * FROM
   (VALUES (0),(100000)) v(time),
@@ -65,36 +69,32 @@ SELECT * FROM
   (VALUES (0),(100000)) v(time),
   LATERAL (SELECT COUNT(*) FROM test_tablesample
            TABLESAMPLE system_time (time)) ss;
-                           QUERY PLAN                           
-----------------------------------------------------------------
+                                 QUERY PLAN                                 
+----------------------------------------------------------------------------
  Nested Loop
    ->  Values Scan on "*VALUES*"
    ->  Aggregate
-         ->  Materialize
-               ->  Sample Scan on test_tablesample
-                     Sampling: system_time ("*VALUES*".column1)
-(6 rows)
-
-SELECT * FROM
-  (VALUES (0),(100000)) v(time),
-  LATERAL (SELECT COUNT(*) FROM test_tablesample
-           TABLESAMPLE system_time (time)) ss;
-  time  | count 
---------+-------
-      0 |     0
- 100000 |    31
-(2 rows)
+         ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+               ->  Aggregate
+                     ->  Materialize
+                           ->  Sample Scan on test_tablesample
+                                 Sampling: system_time ("*VALUES*".column1)
+(8 rows)
 
 CREATE VIEW vv AS
   SELECT * FROM test_tablesample TABLESAMPLE system_time (20);
 EXPLAIN (COSTS OFF) SELECT * FROM vv;
-                    QUERY PLAN                    
---------------------------------------------------
- Sample Scan on test_tablesample
-   Sampling: system_time ('20'::double precision)
-(2 rows)
+                       QUERY PLAN                       
+--------------------------------------------------------
+ Remote Subquery Scan on all (datanode_1,datanode_2)
+   ->  Sample Scan on test_tablesample
+         Sampling: system_time ('20'::double precision)
+(3 rows)
 
 DROP EXTENSION tsm_system_time;  -- fail, view depends on extension
 ERROR:  cannot drop extension tsm_system_time because other objects depend on it
 DETAIL:  view vv depends on function system_time(internal)
 HINT:  Use DROP ... CASCADE to drop the dependent objects too.
+DROP VIEW vv;
+DROP TABLE test_tablesample;
+DROP EXTENSION tsm_system_time;
