@@ -193,9 +193,6 @@ InitGTMProcess()
 	MyThreadID = pthread_self();
 	MemoryContextInit();
 
-	/* Backup the restore point */
-	GTM_WriteRestorePoint();
-
 	/*
 	 * The memory context is now set up.
 	 * Add the thrinfo structure in the global array
@@ -705,6 +702,10 @@ main(int argc, char *argv[])
 
 		GTM_MutexLockRelease(&control_lock);
 	}
+
+	/* Backup the restore point */
+	GTM_SetNeedBackup();
+	GTM_WriteRestorePoint();
 
 	if (Recovery_IsStandby())
 	{
@@ -2230,6 +2231,8 @@ PromoteToActive(void)
 					 errmsg("could not close GTM configuration file \"%s\": %m",
 							conf_file)));
 	}
+	GTM_SetNeedBackup();
+	GTM_WriteRestorePoint();
 	return;
 }
 
