@@ -80,7 +80,7 @@ ifeq ($(genmsgids), yes)
 PGXL_MSG_FILEID := 1
 %_srv.o: %.c %.o
 	$(CC) $(CFLAGS) -DPGXL_MSG_MODULE=$(PGXL_MSG_MODULE) -DPGXL_MSG_FILEID=$(PGXL_MSG_FILEID) $(subst -DFRONTEND,, $(CPPFLAGS)) -c $< -o $@
-	$(eval PGXL_MSG_FILEID := $(shell echo $(PGXL_MSG_FILEID) + 1 | bc))
+	$(eval PGXL_MSG_FILEID := $(shell expr $(PGXL_MSG_FILEID) + 1))
 else
 %_srv.o: %.c %.o
 	$(CC) $(CFLAGS) $(subst -DFRONTEND,, $(CPPFLAGS)) -c $< -o $@

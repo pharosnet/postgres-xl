@@ -877,7 +877,7 @@ ifeq ($(GCC), yes)
 	-cat $@.E | grep -E "do .*errstart|do .*elog_start" >> $(top_srcdir)/MSGIDS
 	-rm -f $@.E
 	$(COMPILE.c) -DPGXL_MSG_MODULE=$(PGXL_MSG_MODULE) -DPGXL_MSG_FILEID=$(PGXL_MSG_FILEID) -o $@ $< -MMD -MP -MF $(DEPDIR)/$(*F).Po
-	$(eval PGXL_MSG_FILEID := $(shell echo $(PGXL_MSG_FILEID) + 1 | bc))
+	$(eval PGXL_MSG_FILEID := $(shell expr $(PGXL_MSG_FILEID) + 1))
 endif # GCC
 else
 ifeq ($(GCC), yes)
@@ -886,7 +886,7 @@ ifeq ($(GCC), yes)
 	-cat $@.E | grep -E "do .*errstart|do .*elog_start" >> $(top_srcdir)/MSGIDS
 	-rm -f $@.E
 	$(COMPILE.c) -DPGXL_MSG_MODULE=$(PGXL_MSG_MODULE) -DPGXL_MSG_FILEID=$(PGXL_MSG_FILEID) -o $@ $<
-	$(eval PGXL_MSG_FILEID := $(shell echo $(PGXL_MSG_FILEID) + 1 | bc))
+	$(eval PGXL_MSG_FILEID := $(shell expr $(PGXL_MSG_FILEID) + 1))
 endif # GCC
 
 endif # autodepend
