@@ -3322,6 +3322,7 @@ SELECT * FROM ltreetest WHERE t ? '{23.*.1,23.*.2}' order by t asc;
 (4 rows)
 
 create unique index tstidx on ltreetest (t);
+ERROR:  Cannot locally enforce a unique index on round robin distributed table.
 set enable_seqscan=off;
 SELECT * FROM ltreetest WHERE t <  '12.3' order by t asc;
                 t                 
@@ -5362,6 +5363,7 @@ SELECT * FROM ltreetest WHERE t >  '12.3' order by t asc;
 (882 rows)
 
 drop index tstidx;
+ERROR:  index "tstidx" does not exist
 create index tstidx on ltreetest using gist (t);
 set enable_seqscan=off;
 SELECT * FROM ltreetest WHERE t <  '12.3' order by t asc;

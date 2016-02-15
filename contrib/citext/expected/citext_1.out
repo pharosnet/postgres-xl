@@ -519,14 +519,14 @@ SELECT name FROM srt WHERE name !~ 'A$' ORDER BY name;
 (3 rows)
 
 -- SIMILAR TO should be case-insensitive.
-SELECT name FROM srt WHERE name SIMILAR TO '%a.*';
+SELECT name FROM srt WHERE name SIMILAR TO '%a.*' order by name;
  name 
 ------
  AAA
  aba
 (2 rows)
 
-SELECT name FROM srt WHERE name SIMILAR TO '%A.*';
+SELECT name FROM srt WHERE name SIMILAR TO '%A.*' order by name;
  name 
 ------
  AAA
@@ -2314,11 +2314,13 @@ SELECT *
 (2 rows)
 
 REFRESH MATERIALIZED VIEW CONCURRENTLY citext_matview;
+ERROR:  schema "pg_temp_2" does not exist
+CONTEXT:  SQL statement "ANALYZE pg_temp_2.pg_temp_16514_2"
 SELECT * FROM citext_matview ORDER BY id;
  id | name  
 ----+-------
   1 | one
-  2 | Two
+  2 | two
   3 | three
   4 | 
   5 | 

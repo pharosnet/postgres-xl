@@ -173,8 +173,8 @@ SELECT name FROM srt WHERE name ~  '^A' ORDER BY name;
 SELECT name FROM srt WHERE name !~ 'A$' ORDER BY name;
 
 -- SIMILAR TO should be case-insensitive.
-SELECT name FROM srt WHERE name SIMILAR TO '%a.*';
-SELECT name FROM srt WHERE name SIMILAR TO '%A.*';
+SELECT name FROM srt WHERE name SIMILAR TO '%a.*' order by name;
+SELECT name FROM srt WHERE name SIMILAR TO '%A.*' order by name;
 
 -- Explicit casts.
 SELECT true::citext = 'true' AS t;
