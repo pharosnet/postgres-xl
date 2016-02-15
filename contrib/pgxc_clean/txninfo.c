@@ -439,11 +439,6 @@ static int check_xid_is_implicit(char *xid)
 {
 	if (strncmp(xid, XIDPREFIX, strlen(XIDPREFIX)) != 0)
 		return 0;
-	for(xid += strlen(XIDPREFIX); *xid; xid++)
-	{
-		if (*xid < '0' || *xid > '9')
-			return 0;
-	}
 	return 1;
 }
 
