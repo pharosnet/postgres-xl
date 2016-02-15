@@ -54,6 +54,10 @@ OBJS = $(SUBDIROBJS) $(LOCALOBJS) \
 	$(top_builddir)/src/gtm/common/libgtm.a \
 	$(top_builddir)/src/gtm/libpq/libpqcomm.a
 
+ifeq ($(with_openssl), yes)
+OBJS += $(top_builddir)/src/interfaces/libpq/fe-secure-openssl.o
+endif
+
 # We put libpgport and libpgcommon into OBJS, so remove it from LIBS; also add
 # libldap
 LIBS := $(filter-out -lpgport -lpgcommon, $(LIBS)) $(LDAP_LIBS_BE)
