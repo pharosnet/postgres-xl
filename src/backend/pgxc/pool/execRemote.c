@@ -2319,9 +2319,20 @@ prepare_err:
 		if (conn->ck_resp_rollback)
 		{
 			conn->ck_resp_rollback = false;
+
+			if (conn->state != DN_CONNECTION_STATE_IDLE)
+			{
+				ereport(WARNING,
+						(errcode(ERRCODE_INTERNAL_ERROR),
+						 errmsg("Error while PREPARING transaction %s on "
+							 "node %s. Administrative action may be required "
+							 "to abort this transaction on the node",
+							 prepareGID, conn->nodename)));
+				continue;
+			}
+
 			/* sanity checks */
 			Assert(conn->sock != NO_SOCKET);
-			Assert(conn->state == DN_CONNECTION_STATE_IDLE);
 			/* Send down abort prepared command */
 			if (pgxc_node_send_gxid(conn, auxXid))
 			{
@@ -2359,9 +2370,20 @@ prepare_err:
 		if (conn->ck_resp_rollback)
 		{
 			conn->ck_resp_rollback = false;
+
+			if (conn->state != DN_CONNECTION_STATE_IDLE)
+			{
+				ereport(WARNING,
+						(errcode(ERRCODE_INTERNAL_ERROR),
+						 errmsg("Error while PREPARING transaction %s on "
+							 "node %s. Administrative action may be required "
+							 "to abort this transaction on the node",
+							 prepareGID, conn->nodename)));
+				continue;
+			}
+
 			/* sanity checks */
 			Assert(conn->sock != NO_SOCKET);
-			Assert(conn->state == DN_CONNECTION_STATE_IDLE);
 			/* Send down abort prepared command */
 			if (pgxc_node_send_gxid(conn, auxXid))
 			{

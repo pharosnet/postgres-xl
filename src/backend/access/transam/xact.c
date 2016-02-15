@@ -2477,7 +2477,10 @@ CommitTransaction(void)
 		 * We need to mark our XIDs as committed in pg_clog.  This is where we
 		 * durably commit.
 		 */
-		latestXid = RecordTransactionCommit();
+#ifdef XCP
+		if (!IsConnFromDatanode())
+#endif
+			latestXid = RecordTransactionCommit();
 	}
 	else
 	{
@@ -3250,7 +3253,12 @@ AbortTransaction(void)
 	 * record.
 	 */
 	if (!is_parallel_worker)
-		latestXid = RecordTransactionAbort(false);
+	{
+#ifdef XCP
+		if (!IsConnFromDatanode())
+#endif
+			latestXid = RecordTransactionAbort(false);
+	}
 	else
 	{
 		latestXid = InvalidTransactionId;
@@ -6784,8 +6792,18 @@ SetTopTransactionId(GlobalTransactionId xid)
 	TransactionState s = CurrentTransactionState;
 	Assert(!GlobalTransactionIdIsValid(s->transactionId) ||
 			GlobalTransactionIdEquals(s->transactionId, xid));
-	XactTopTransactionId = s->transactionId = xid;
-	elog(DEBUG2, "Assigning XID received from the remote node - %d", xid);
+
+	if (!IsConnFromDatanode())
+	{
+		XactTopTransactionId = s->transactionId = xid;
+		elog(DEBUG2, "Assigning XID received from the remote node - %d", xid);
+	}
+	else if (!TransactionIdIsValid(GetNextTransactionId()))
+	{
+		SetNextTransactionId(xid);
+		if (whereToSendOutput == DestRemote)
+			pq_putmessage('x', (const char *) &xid, sizeof (GlobalTransactionId));
+	}
 }
 #endif
 #endif

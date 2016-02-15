@@ -496,6 +496,10 @@ ProcArrayEndTransaction(PGPROC *proc, TransactionId latestXid)
 		 * anyone else's calculation of a snapshot.  We might change their
 		 * estimate of global xmin, but that's OK.
 		 */
+#ifdef XCP
+		if (IsConnFromDatanode())
+			allPgXact[proc->pgprocno].xid = InvalidTransactionId;
+#endif
 		Assert(!TransactionIdIsValid(allPgXact[proc->pgprocno].xid));
 
 		proc->lxid = InvalidLocalTransactionId;
@@ -4371,7 +4375,7 @@ KnownAssignedXidsReset(void)
 void
 ProcArrayCheckXminConsistency(TransactionId global_xmin)
 {
-	ProcArrayStruct *arrayP = procArray;
+	volatile ProcArrayStruct *arrayP = procArray;
 	int			index;
 
 	for (index = 0; index < arrayP->numProcs; index++)
