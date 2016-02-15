@@ -378,6 +378,14 @@ ClusterMonitorGetGlobalXmin(void)
 void
 ClusterMonitorSetGlobalXmin(GlobalTransactionId xmin)
 {
+	/*
+	 * First extend the commit logs. Even though we may not have actually
+	 * started any transactions in the new range, we must still extend the logs
+	 * so that later operations which rely on the RecentGlobalXmin to truncate
+	 * the logs work correctly.
+	 */
+	ExtendLogs(xmin);
+
 	LWLockAcquire(ProcArrayLock, LW_EXCLUSIVE);
 
 	/*

@@ -188,6 +188,7 @@ extern TransactionId GetNewTransactionId(bool isSubXact);
 #ifdef XCP
 extern bool TransactionIdIsCurrentGlobalTransactionId(TransactionId xid);
 extern TransactionId GetNextTransactionId(void);
+extern void ExtendLogs(TransactionId xid);
 #endif
 extern TransactionId ReadNewTransactionId(void);
 extern void SetTransactionIdLimit(TransactionId oldest_datfrozenxid,

@@ -4408,6 +4408,13 @@ SetLatestCompletedXid(TransactionId latestCompletedXid)
 
 	if (!TransactionIdIsValid(latestCompletedXid))
 		return;
+	/*
+	 * First extend the commit logs. Even though we may not have actually
+	 * started any transactions in the new range, we must still extend the logs
+	 * so that later operations which may try to query them based on the new
+	 * value of latestCompletedXid do not throw errors
+	 */
+	ExtendLogs(latestCompletedXid);
 
 	LWLockAcquire(ProcArrayLock, LW_EXCLUSIVE);
 

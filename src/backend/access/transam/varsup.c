@@ -777,3 +777,15 @@ GetNewObjectId(void)
 
 	return result;
 }
+
+#ifdef XCP
+void
+ExtendLogs(TransactionId xid)
+{
+	LWLockAcquire(XidGenLock, LW_EXCLUSIVE);
+	ExtendCLOG(xid);
+	ExtendCommitTs(xid);
+	ExtendSUBTRANS(xid);
+	LWLockRelease(XidGenLock);
+}
+#endif
