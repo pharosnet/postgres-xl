@@ -266,7 +266,8 @@ CreatePortal(const char *name, bool allowDup, bool dupSilent)
 	PortalHashTableInsert(portal, name);
 
 #ifdef PGXC
-	elog(DEBUG3, "Created portal %s and inserted an entry in the has table");
+	elog(DEBUG3, "Created portal %s and inserted an entry in the has table",
+			name);
 
 	if (PGXCNodeIdentifier == 0)
 	{
