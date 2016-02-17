@@ -7,7 +7,7 @@ PGFILEDESC = "tsm_system_time - TABLESAMPLE method which accepts time in millise
 EXTENSION = tsm_system_time
 DATA = tsm_system_time--1.0.sql
 
-REGRESS = tsm_system_time xl_known_bugs
+REGRESS = tsm_system_time
 
 SHLIB_LINK += $(filter -lm, $(LIBS))
 
