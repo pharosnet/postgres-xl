@@ -867,6 +867,10 @@ PREPROCESS.c = $(CC) $(CFLAGS) $(CPPFLAGS) -E
 PGXL_MSG_FILEID := 1
 PGXL_MSG_MODULE := $(shell cat $(top_builddir)/MSGMODULES | grep -E "^subdir = $(subdir):" | cut -d ':' -f 2)
 
+ifeq ($(PGXL_MSG_MODULE)no, no)
+PGXL_MSG_MODULE := 255
+endif
+
 ifeq ($(autodepend), yes)
 ifeq ($(GCC), yes)
 
