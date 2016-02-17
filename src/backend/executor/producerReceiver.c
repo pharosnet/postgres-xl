@@ -156,11 +156,13 @@ producerDestroyReceiver(DestReceiver *self)
 		if (SharedQueueFinish(myState->squeue, myState->typeinfo,
 							  myState->tstores) == 0)
 		{
+			elog(DEBUG3, "SharedQueueFinish returned 0 - freeing tstores");
 			pfree(myState->tstores);
 			myState->tstores = NULL;
 		}
 		else
 		{
+			elog(DEBUG2, "producerDestroyReceiver - sleeping for 10 seconds waiting for consumers to connect");
 			pg_usleep(10*1000*1000l);
 			/*
 			 * Do not wait for consumers that was not even connected after 10
@@ -279,11 +281,15 @@ ProducerReceiverPushBuffers(DestReceiver *self)
 		if (SharedQueueFinish(myState->squeue, myState->typeinfo,
 							  myState->tstores) == 0)
 		{
+			elog(DEBUG3, "SharedQueueFinish returned 0, freeing tstores");
 			pfree(myState->tstores);
 			myState->tstores = NULL;
 		}
 		else
+		{
+			elog(DEBUG3, "SharedQueueFinish returned non-zero value");
 			return false;
+		}
 	}
 	return true;
 }
