@@ -33,14 +33,6 @@
 #ifdef HAVE_SYS_SELECT_H
 #include <sys/select.h>
 #endif
-#ifdef HAVE_SYS_RESOURCE_H
-#include <sys/time.h>
-#include <sys/resource.h>
-#endif
-
-#ifndef HAVE_GETRUSAGE
-#include "rusagestub.h"
-#endif
 
 #include "access/parallel.h"
 #include "access/printtup.h"

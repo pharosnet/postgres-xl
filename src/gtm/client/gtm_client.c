@@ -422,7 +422,7 @@ send_failed:
 int
 bkup_begin_transaction(GTM_Conn *conn, GTM_IsolationLevel isolevel,
 					   bool read_only,
-					   char *global_sessionid,
+					   const char *global_sessionid,
 					   uint32 client_id, GTM_Timestamp timestamp)
 {
 	uint32 global_sessionid_len = global_sessionid ?
@@ -459,7 +459,7 @@ send_failed:
 int
 bkup_begin_transaction_gxid(GTM_Conn *conn, GlobalTransactionId gxid,
 							GTM_IsolationLevel isolevel, bool read_only,
-							char *global_sessionid,
+							const char *global_sessionid,
 							uint32 client_id, GTM_Timestamp timestamp)
 {
 	uint32 global_sessionid_len = global_sessionid ?
@@ -495,7 +495,7 @@ send_failed:
 
 GlobalTransactionId
 begin_transaction(GTM_Conn *conn, GTM_IsolationLevel isolevel,
-		char *global_sessionid,
+		const char *global_sessionid,
 		GTM_Timestamp *timestamp)
 {
 	bool txn_read_only = false;
@@ -1996,7 +1996,7 @@ int
 bkup_begin_transaction_multi(GTM_Conn *conn, int txn_count,
 							 GlobalTransactionId *gxid, GTM_IsolationLevel *isolevel,
 							 bool *read_only,
-							 char *txn_global_sessionid[], 
+							 const char *txn_global_sessionid[], 
 							 uint32 *client_id,
 							 GTMProxy_ConnID *txn_connid)
 {

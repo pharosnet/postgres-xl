@@ -681,7 +681,7 @@ UnregisterGTM(GTM_PGXCNodeType type)
  * Report BARRIER
  */
 int
-ReportBarrierGTM(char *barrier_id)
+ReportBarrierGTM(const char *barrier_id)
 {
 	if (!gtm_backup_barrier)
 		return EINVAL;

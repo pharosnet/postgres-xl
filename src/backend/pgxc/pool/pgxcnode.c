@@ -525,7 +525,7 @@ retry:
 	if (poll_val == 0)
 	{
 		/* Handle timeout */
-		elog(DEBUG1, "timeout %d while waiting for any response from %d connections", timeout_ms,conn_count);
+		elog(DEBUG1, "timeout %ld while waiting for any response from %d connections", timeout_ms,conn_count);
 		for (i = 0; i < conn_count; i++)
 			connections[i]->state = DN_CONNECTION_STATE_ERROR_FATAL;
 		return NO_ERROR_OCCURED;

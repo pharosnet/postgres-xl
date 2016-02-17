@@ -4407,9 +4407,6 @@ ProcArrayCheckXminConsistency(TransactionId global_xmin)
 void
 SetLatestCompletedXid(TransactionId latestCompletedXid)
 {
-	int index;
-	ProcArrayStruct *arrayP = procArray;
-
 	if (!TransactionIdIsValid(latestCompletedXid))
 		return;
 	/*

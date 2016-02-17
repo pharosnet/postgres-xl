@@ -1184,7 +1184,7 @@ FetchTuple(ResponseCombiner *combiner)
 		for (;;)
 		{
 			Datum 	value = (Datum) 0;
-			bool 	isnull;
+			bool 	isnull = false;
 			int 	numnodes;
 			int		i;
 
@@ -4139,6 +4139,25 @@ FinishRemotePreparedTransaction(char *prepareGID, bool commit)
 	bool					prepared_local = false;
 
 	/*
+	 * Get the list of nodes involved in this transaction.
+	 *
+	 * This function returns the GXID of the prepared transaction. It also
+	 * returns a fresh GXID which can be used for running COMMIT PREPARED
+	 * commands on the remote nodes. Both these GXIDs can then be either
+	 * committed or aborted together.
+	 *
+	 * XXX While I understand that we get the prepared and a new GXID with a
+	 * single call, it doesn't look nicer and create confusion. We should
+	 * probably split them into two parts. This is used only for explicit 2PC
+	 * which should not be very common in XC
+	 */
+	if (GetGIDDataGTM(prepareGID, &gxid, &prepare_gxid, &nodestring) < 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_INTERNAL_ERROR),
+				 errmsg("prepared transaction with identifier \"%s\" does not exist",
+						prepareGID)));
+
+	/*
 	 * Please note that with xc_maintenance_mode = on, COMMIT/ROLLBACK PREPARED will not
 	 * propagate to remote nodes. Only GTM status is cleaned up.
 	 */
@@ -4158,24 +4177,6 @@ FinishRemotePreparedTransaction(char *prepareGID, bool commit)
 		return false;
 	}
 
-	/*
-	 * Get the list of nodes involved in this transaction.
-	 *
-	 * This function returns the GXID of the prepared transaction. It also
-	 * returns a fresh GXID which can be used for running COMMIT PREPARED
-	 * commands on the remote nodes. Both these GXIDs can then be either
-	 * committed or aborted together.
-	 *
-	 * XXX While I understand that we get the prepared and a new GXID with a
-	 * single call, it doesn't look nicer and create confusion. We should
-	 * probably split them into two parts. This is used only for explicit 2PC
-	 * which should not be very common in XC
-	 */
-	if (GetGIDDataGTM(prepareGID, &gxid, &prepare_gxid, &nodestring) < 0)
-		ereport(ERROR,
-				(errcode(ERRCODE_INTERNAL_ERROR),
-				 errmsg("prepared transaction with identifier \"%s\" does not exist",
-						prepareGID)));
 	prepared_local = pgxc_node_remote_finish(prepareGID, commit, nodestring,
 											 gxid, prepare_gxid);
 

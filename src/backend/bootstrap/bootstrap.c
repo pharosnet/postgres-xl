@@ -33,6 +33,7 @@
 #include "nodes/makefuncs.h"
 #include "pg_getopt.h"
 #include "postmaster/bgwriter.h"
+#include "postmaster/clustermon.h"
 #include "postmaster/startup.h"
 #include "postmaster/walwriter.h"
 #include "replication/walreceiver.h"

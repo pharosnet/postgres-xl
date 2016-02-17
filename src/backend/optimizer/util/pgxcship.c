@@ -1458,7 +1458,7 @@ pgxc_find_dist_equijoin_qual(Relids varnos_1,
 
 	/* If no quals, no equijoin */
 	if (!quals)
-		return false;
+		return NULL;
 	/*
 	 * Make a copy of the argument bitmaps, it will be modified by
 	 * bms_first_member().

@@ -16,6 +16,8 @@
 #ifndef CLUSTERMON_H
 #define CLUSTERMON_H
 
+#include "gtm/gtm_c.h"
+
 typedef struct
 {
 	slock_t				mutex;
@@ -33,7 +35,10 @@ extern bool IsClusterMonitorProcess(void);
 extern int	StartClusterMonitor(void);
 GlobalTransactionId ClusterMonitorGetGlobalXmin(void);
 void ClusterMonitorSetGlobalXmin(GlobalTransactionId xmin);
-GlobalTransactionId ClusterMonitorGetReportingXmin(void);
+extern GlobalTransactionId ClusterMonitorGetReportingGlobalXmin(void);
+
+Size ClusterMonitorShmemSize(void);
+void ClusterMonitorShmemInit(void);
 
 #ifdef EXEC_BACKEND
 extern void ClusterMonitorIAm(void);

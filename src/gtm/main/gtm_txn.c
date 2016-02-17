@@ -1611,7 +1611,7 @@ ProcessBeginTransactionGetGXIDCommandMulti(Port *myport, StringInfo message)
 	GTM_IsolationLevel txn_isolation_level[GTM_MAX_GLOBAL_TRANSACTIONS];
 	bool txn_read_only[GTM_MAX_GLOBAL_TRANSACTIONS];
 	uint32 txn_global_sessionid_len;
-	char *txn_global_sessionid[GTM_MAX_GLOBAL_TRANSACTIONS];
+	const char *txn_global_sessionid[GTM_MAX_GLOBAL_TRANSACTIONS];
 	int txn_count, new_txn_count;
 	StringInfoData buf;
 	GTM_TransactionHandle txn[GTM_MAX_GLOBAL_TRANSACTIONS];
@@ -1729,7 +1729,7 @@ ProcessBkupBeginTransactionGetGXIDCommandMulti(Port *myport, StringInfo message)
 	GTM_IsolationLevel txn_isolation_level[GTM_MAX_GLOBAL_TRANSACTIONS];
 	bool txn_read_only[GTM_MAX_GLOBAL_TRANSACTIONS];
 	uint32 txn_global_sessionid_len;
-	char *txn_global_sessionid[GTM_MAX_GLOBAL_TRANSACTIONS];
+	const char *txn_global_sessionid[GTM_MAX_GLOBAL_TRANSACTIONS];
 	GTMProxy_ConnID txn_connid[GTM_MAX_GLOBAL_TRANSACTIONS];
 	uint32 txn_client_id[GTM_MAX_GLOBAL_TRANSACTIONS];
 	int ii;
@@ -1769,7 +1769,7 @@ ProcessCommitTransactionCommand(Port *myport, StringInfo message, bool is_backup
 	MemoryContext oldContext;
 	int status = STATUS_OK;
 	int waited_xid_count;
-	GlobalTransactionId *waited_xids;
+	GlobalTransactionId *waited_xids = NULL;
 
 	const char *data = pq_getmsgbytes(message, sizeof (gxid));
 
@@ -1783,7 +1783,7 @@ ProcessCommitTransactionCommand(Port *myport, StringInfo message, bool is_backup
 	waited_xid_count = pq_getmsgint(message, sizeof (int));
 	if (waited_xid_count > 0)
 	{
-		waited_xids = pq_getmsgbytes(message,
+		waited_xids = (GlobalTransactionId *) pq_getmsgbytes(message,
 				waited_xid_count * sizeof (GlobalTransactionId));
 	}
 
@@ -1870,7 +1870,7 @@ ProcessCommitPreparedTransactionCommand(Port *myport, StringInfo message, bool i
 	int status[txn_count];
 	int ii;
 	int waited_xid_count;
-	GlobalTransactionId *waited_xids;
+	GlobalTransactionId *waited_xids = NULL;
 
 	for (ii = 0; ii < txn_count; ii++)
 	{
@@ -1887,7 +1887,7 @@ ProcessCommitPreparedTransactionCommand(Port *myport, StringInfo message, bool i
 	waited_xid_count = pq_getmsgint(message, sizeof (int));
 	if (waited_xid_count > 0)
 	{
-		waited_xids = pq_getmsgbytes(message,
+		waited_xids = (GlobalTransactionId *) pq_getmsgbytes(message,
 				waited_xid_count * sizeof (GlobalTransactionId));
 	}
 

@@ -1469,7 +1469,6 @@ SharedQueueRelease(const char *sqname)
 	{
 		volatile SQueueSync    *sqsync = sq->sq_sync;
 		int						i;
-		char					ntype = PGXC_NODE_DATANODE;
 
 		Assert(sqsync && sqsync->queue == sq);
 

@@ -26,6 +26,7 @@
 #include <sys/time.h>
 #include <unistd.h>
 
+#include "access/gtm.h"
 #include "access/transam.h"
 #include "access/xact.h"
 #include "gtm/gtm_c.h"
@@ -36,7 +37,9 @@
 #include "postmaster/clustermon.h"
 #include "postmaster/fork_process.h"
 #include "postmaster/postmaster.h"
+#include "storage/ipc.h"
 #include "storage/proc.h"
+#include "storage/procarray.h"
 #include "storage/spin.h"
 #include "tcop/tcopprot.h"
 #include "utils/memutils.h"
@@ -49,7 +52,6 @@ static bool am_clustermon = false;
 
 /* Flags set by signal handlers */
 static volatile sig_atomic_t got_SIGHUP = false;
-static volatile sig_atomic_t got_SIGUSR2 = false;
 static volatile sig_atomic_t got_SIGTERM = false;
 
 /* Memory context for long-lived data */
@@ -59,7 +61,6 @@ static ClusterMonitorCtlData *ClusterMonitorCtl = NULL;
 static void cm_sighup_handler(SIGNAL_ARGS);
 static void cm_sigterm_handler(SIGNAL_ARGS);
 static void ClusterMonitorSetReportedGlobalXmin(GlobalTransactionId xmin);
-static GlobalTransactionId ClusterMonitorGetReportedGlobalXmin(void);
 static void ClusterMonitorSetReportingGlobalXmin(GlobalTransactionId xmin);
 
 /* PID of clustser monitoring process */
@@ -214,7 +215,7 @@ ClusterMonitorInit(void)
 		{
 			elog(DEBUG1, "Failed (status %d) to report RecentGlobalXmin "
 					"- reported RecentGlobalXmin %d, received "
-					"RecentGlobalXmin %d, " "received latestCompletedXid",
+					"RecentGlobalXmin %d, " "received latestCompletedXid %d",
 					status, oldestXmin, newOldestXmin,
 					latestCompletedXid);
 			if (status == GTM_ERRCODE_TOO_OLD_XMIN ||
@@ -413,18 +414,6 @@ ClusterMonitorSetReportedGlobalXmin(GlobalTransactionId xmin)
 	SpinLockAcquire(&ClusterMonitorCtl->mutex);
 	ClusterMonitorCtl->reported_recent_global_xmin = xmin;
 	SpinLockRelease(&ClusterMonitorCtl->mutex);
-}
-
-static GlobalTransactionId
-ClusterMonitorGetReportedGlobalXmin(void)
-{
-	GlobalTransactionId reported_xmin;
-
-	SpinLockAcquire(&ClusterMonitorCtl->mutex);
-	reported_xmin = ClusterMonitorCtl->reported_recent_global_xmin;
-	SpinLockRelease(&ClusterMonitorCtl->mutex);
-
-	return reported_xmin;
 }
 
 static void

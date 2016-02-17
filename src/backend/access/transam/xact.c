@@ -2478,6 +2478,7 @@ CommitTransaction(void)
 		 * durably commit.
 		 */
 #ifdef XCP
+		latestXid = InvalidTransactionId;
 		if (!IsConnFromDatanode())
 #endif
 			latestXid = RecordTransactionCommit();

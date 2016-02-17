@@ -61,7 +61,7 @@ extern int AlterSequenceGTM(char *seqname, GTM_Sequence increment,
 extern int DropSequenceGTM(char *name, GTM_SequenceKeyType type);
 extern int RenameSequenceGTM(char *seqname, const char *newseqname);
 /* Barrier */
-extern int ReportBarrierGTM(char *barrier_id);
+extern int ReportBarrierGTM(const char *barrier_id);
 extern int ReportGlobalXmin(GlobalTransactionId gxid,
 		GlobalTransactionId *global_xmin,
 		GlobalTransactionId *latest_completed_xid);

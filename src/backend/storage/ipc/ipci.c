@@ -33,6 +33,7 @@
 #include "pgxc/nodemgr.h"
 #endif
 #include "postmaster/autovacuum.h"
+#include "postmaster/clustermon.h"
 #include "postmaster/bgworker_internals.h"
 #include "postmaster/bgwriter.h"
 #include "postmaster/postmaster.h"

@@ -15,6 +15,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 
+#include "postgres.h"
 #include "mb/pg_wchar.h"
 #include "gtm/path.h"
 #include "gtm/assert.h"

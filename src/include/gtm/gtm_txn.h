@@ -188,6 +188,7 @@ GTM_TransactionStates GTM_GetStatus(GTM_TransactionHandle txn);
 GTM_TransactionStates GTM_GetStatusGXID(GlobalTransactionId gxid);
 int GTM_GetAllTransactions(GTM_TransactionInfo txninfo[], uint32 txncnt);
 void GTM_RemoveAllTransInfos(uint32 client_id, int backend_id);
+uint32 GTMGetFirstClientIdentifier(void);
 uint32 GTMGetLastClientIdentifier(void);
 
 GTM_Snapshot GTM_GetSnapshotData(GTM_TransactionInfo *my_txninfo,

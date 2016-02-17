@@ -45,6 +45,7 @@
 #include "pgxc/pgxc.h"
 #endif
 #include "postmaster/autovacuum.h"
+#include "postmaster/clustermon.h"
 #include "postmaster/postmaster.h"
 #include "replication/walsender.h"
 #include "storage/bufmgr.h"

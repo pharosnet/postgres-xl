@@ -25,6 +25,7 @@
 #include "utils/snapmgr.h"
 
 #ifdef PGXC
+#include "storage/procarray.h"
 #include "utils/builtins.h"
 #endif
 
