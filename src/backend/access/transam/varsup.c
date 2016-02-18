@@ -3,10 +3,6 @@
  * varsup.c
  *	  postgres OID & XID variables support routines
  *
- * This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
- *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
  * Portions Copyright (c) 2010-2012 Postgres-XC Development Group
  * Copyright (c) 2000-2015, PostgreSQL Global Development Group

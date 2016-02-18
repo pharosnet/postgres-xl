@@ -88,10 +88,6 @@
  *	  need some fallback logic to use this, since there's no Aggref node
  *	  for a window function.)
  *
- * This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
- *
  *	  Grouping sets:
  *
  *	  A list of grouping sets which is structurally equivalent to a ROLLUP

@@ -11,10 +11,6 @@
  *			- Add a pgstat config column to pg_database, so this
  *			  entire thing can be enabled/disabled on a per db basis.
  *
- * This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
- *
  * Portions Copyright (c) 2012-2014, TransLattice, Inc.
  *	Copyright (c) 2001-2015, PostgreSQL Global Development Group
  *
