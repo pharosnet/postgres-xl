@@ -719,4 +719,128 @@ or removed from distribution or when distribution key is changed.
    </listitem>
   </itemizedlist> 
  </sect2>
+ <sect2>
+  <title>Known Limitation</title>
+  <para>
+   While <productname>Postgres-XL</productname> strives hard to stay compatible
+with <productname>PostgreSQL</productname> so that applications running on
+<productname>PostgreSQL</productname> can be easily ported to
+<productname>Postgres-XL</productname>, there are certain known limitations of
+the product. Many of these can be addressed as and when sufficient development
+funding and resources become available.
+  <itemizedlist>
+   <listitem>
+    <para>
+    Hot Standby is not supported
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+    Distributed deadlock detection is not supported yet. Deadlock detection exists
+    on each node, just not across nodes.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+    Materialised views are currently maintained only on the coordinator.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+    EXCLUSION CONSTRAINTS are enforced when both rows map to the same datanode.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+    User defined functions have several limitations.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+    There are restrictions on complex UPDATE/DELETE queries and updating
+distribution column values.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+    TRIGGERs are not supported.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+    EVENT TRIGGERs are not supported.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+    SERIALIZABLE TRANSACTIONs are not supported.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+    CREATE INDEX CONCURRENTLY is not supported.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+    SAVEPOINTs are not supported.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+    Large objects are not supported.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+    Recursive queries work only in certain conditions.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+    GROUPING SETS, ROLLUP or CUBE are not yet supported.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+    Foreign Data Wrappers are not supported.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+    INSENSITIVE/SCROLL/WITH HOLD cursors are not supported.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+    LISTEN/NOTIFY is not supported.
+    </para>
+   </listitem>
+  </itemizedlist>
+  </para>
+ </sect2>
+ <sect2>
+  <title>Contributing to Postgres-XL</title>
+  <para>
+   Contributions to <productname>Postgres-XL</productname> are welcome. The
+code will be accepted under the same open source license that governs this
+released version of <productname>Postgres-XL</productname>. The authors of the
+patches will be credited appropriately in the release notes of the future
+releases.   
+  </para>
+ </sect2>
+ <sect2>
+  <title>Credits</title>
+  <para>
+   <productname>Postgres-XL</productname> has been evolving over many years,
+originating with the <productname>GridSQL</productname>
+project and <productname>Postgres-XC</productname>, later combined as TransLattice Storm (StormDB).
+TransLattice open sourced the project, resulting in Postgres-XL 9.2. More
+recently, the EU-funded Big Data project AXLE funded the main work to bring the
+code up to date as <productname>Postgres-XL</productname> 9.5, allowing
+<productname>Postgres-XL</productname> to take advantage of the
+rapidly increasing BI features plugged into the core of
+<productname>PostgreSQL</productname>.  
+  </para>
+ </sect2>
 </sect1>
