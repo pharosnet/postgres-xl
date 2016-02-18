@@ -68,7 +68,7 @@ bool EnforceTwoPhaseCommit = true;
  * It is better to drop and recreate datanode connection then wait for several
  * seconds while it being cleaned up when, for example, cancelling query.
  */
-#define END_QUERY_TIMEOUT	20
+#define END_QUERY_TIMEOUT	1000
 
 typedef struct
 {
