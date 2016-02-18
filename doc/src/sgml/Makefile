@@ -141,7 +141,7 @@ endif
 # changes.
 version.sgml: $(top_srcdir)/configure
 	{ \
-	  echo "<!ENTITY version \"$(VERSION)\">"; \
+	  echo "<!ENTITY version \"$(XLVERSION)\">"; \
 	  echo "<!ENTITY majorversion \"$(MAJORVERSION)\">"; \
 	} > $@
 
