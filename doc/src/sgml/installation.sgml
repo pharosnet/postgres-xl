@@ -2040,13 +2040,13 @@ postgres$ <userinput>/usr/local/pgsql/bin/initdb -D /usr/local/pgsql/data</>
     <varlistentry>
      <term><envar>min_pool_size</envar><term>
      <listitem>
-      <par>
+      <para>
        A Coordinator is associated with a connection pooler which takes care of
        connections with other Coordinators and Datanodes.  This parameter
        specifies minimum number of connection to pool.  If you're not
        configuring the <productname>Postgres-XL</> cluster in an unbalanced
        way, you should specify the same value to all the Coordinators.
-      </par>
+      </para>
      </listitem>
     </varlistentry>
 
@@ -2125,9 +2125,7 @@ postgres$ <userinput>/usr/local/pgsql/bin/initdb -D /usr/local/pgsql/data</>
        will not use this entire amount at once, but will increase the request
        size over time if many requests are done in a short time frame in the
        same session.  After a short time without any sequence requests, the
-       number of sequences decreases back down to 1.  Note that any settings
-       here are overriden if the CACHE clause was used in <xref
-       linkend='sql-createsequence'> or <xref linkend='sql-altersequence'>.
+       number of sequences decreases back down to 1.
       </para> 
      </listitem>
     </varlistentry>
@@ -2158,9 +2156,7 @@ postgres$ <userinput>/usr/local/pgsql/bin/initdb -D /usr/local/pgsql/data</>
      <term><envar>pgxc_node_name</envar></term>
      <listitem>
       <para>
-       Specify the name of this cluster node. This name index refers to the
-       element of <link linkend="catalog-pgxc-node"><structname>pgxc_node
-       </structname></link>.node_name value, to identify the node self.
+       Specify the name of this cluster node.
       </para>
      </listitem>
     </varlistentry>
@@ -2244,6 +2240,7 @@ postgres$ <userinput>/usr/local/pgsql/bin/initdb -D /usr/local/pgsql/data</>
      </listitem>
     </varlistentry>
 
+    <varlistentry>
      <term><envar>gtm_port</envar></term>
      <listitem>
       <para>
@@ -2353,20 +2350,22 @@ postgres --datanode -D /usr/local/pgsql/Datanode
     </para>
    </step>
 
-   <para>
-    Finally, you can start a Coordinator like:
-<programlisting>
-postgres --coordinator -D /usr/local/pgsql/Coordinator
-</programlisting>
-    This will start the Coordinator.  <option>--coordinator</> specifies
-    <command>postgres</> to start as a Coordinator.  <option>-D</> specifies
-    the data directory of the Coordinator.  You can specify other options of
-    standalone <command>postgres</>.
-   </para>
-   <para>
-    Please note that you should issue <command>postgres</> commands at
-    all the servers you're running Coordinators.
-   </para>
+   <step>
+    <para>
+     Finally, you can start a Coordinator like:
+ <programlisting>
+ postgres --coordinator -D /usr/local/pgsql/Coordinator
+ </programlisting>
+     This will start the Coordinator.  <option>--coordinator</> specifies
+     <command>postgres</> to start as a Coordinator.  <option>-D</> specifies
+     the data directory of the Coordinator.  You can specify other options of
+     standalone <command>postgres</>.
+    </para>
+    <para>
+     Please note that you should issue <command>postgres</> commands at
+     all the servers you're running Coordinators.
+    </para>
+   </step>
    <step>
     <para>
      The previous step should have told you how to start up the whole database

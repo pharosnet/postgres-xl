@@ -77,7 +77,7 @@ GNUmakefile: GNUmakefile.in $(top_builddir)/config.status
 
 ##########################################################################
 
-distdir	= postgresql-$(VERSION)
+distdir	= postgres-xl-$(XLVERSION)
 dummy	= =install=
 garbage = =*  "#"*  ."#"*  *~*  *.orig  *.rej  core  postgresql-*
 
