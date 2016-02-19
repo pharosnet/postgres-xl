@@ -1580,10 +1580,14 @@ pgxc_node_receive_responses(const int conn_count, PGXCNodeHandle ** connections,
 				case RESPONSE_ASSIGN_GXID:
 					break;
 
+				case RESPONSE_TUPDESC:
+				case RESPONSE_DATAROW:
+					break;
+
 				default:
 					/* Inconsistent responses */
 					add_error_message(to_receive[i], "Unexpected response from the Datanodes");
-					elog(ERROR, "Unexpected response from the Datanodes, result = %d, request type %d", result, combiner->request_type);
+					elog(DEBUG1, "Unexpected response from the Datanodes, result = %d, request type %d", result, combiner->request_type);
 					/* Stop tracking and move last connection in place */
 					count--;
 					if (i < count)

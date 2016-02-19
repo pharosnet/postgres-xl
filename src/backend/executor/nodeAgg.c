@@ -604,29 +604,32 @@ initialize_aggregate(AggState *aggstate, AggStatePerAgg peraggstate,
 	 * (into the aggcontext) since we will pfree the collectValue later.
 	 * collection type is same as transition type.
 	 */
-	if (peraggstate->initCollectValueIsNull)
-		pergroupstate->collectValue = peraggstate->initCollectValue;
-	else
+	if (OidIsValid(peraggstate->collectfn_oid))
 	{
-		MemoryContext oldContext;
+		if (peraggstate->initCollectValueIsNull)
+			pergroupstate->collectValue = peraggstate->initCollectValue;
+		else
+		{
+			MemoryContext oldContext;
 
-		oldContext = MemoryContextSwitchTo(
-		aggstate->aggcontexts[aggstate->current_set]->ecxt_per_tuple_memory);
-		pergroupstate->collectValue = datumCopy(peraggstate->initCollectValue,
-				peraggstate->transtypeByVal,
-				peraggstate->transtypeLen);
-		MemoryContextSwitchTo(oldContext);
+			oldContext = MemoryContextSwitchTo(
+					aggstate->aggcontexts[aggstate->current_set]->ecxt_per_tuple_memory);
+			pergroupstate->collectValue = datumCopy(peraggstate->initCollectValue,
+					peraggstate->transtypeByVal,
+					peraggstate->transtypeLen);
+			MemoryContextSwitchTo(oldContext);
+		}
+		pergroupstate->collectValueIsNull = peraggstate->initCollectValueIsNull;
+
+		/*
+		 * If the initial value for the transition state doesn't exist in the
+		 * pg_aggregate table then we will let the first non-NULL value
+		 * returned from the outer procNode become the initial value. (This is
+		 * useful for aggregates like max() and min().) The noTransValue flag
+		 * signals that we still need to do this.
+		 */
+		pergroupstate->noCollectValue = peraggstate->initCollectValueIsNull;
 	}
-	pergroupstate->collectValueIsNull = peraggstate->initCollectValueIsNull;
-
-	/*
-	 * If the initial value for the transition state doesn't exist in the
-	 * pg_aggregate table then we will let the first non-NULL value
-	 * returned from the outer procNode become the initial value. (This is
-	 * useful for aggregates like max() and min().) The noTransValue flag
-	 * signals that we still need to do this.
-	 */
-	pergroupstate->noCollectValue = peraggstate->initCollectValueIsNull;
 #endif /* PGXC */
 }
 
