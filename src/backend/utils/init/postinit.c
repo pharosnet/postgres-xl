@@ -39,6 +39,7 @@
 #include "pgstat.h"
 #ifdef XCP
 #include "pgxc/pgxc.h"
+#include "postmaster/clustermon.h"
 #endif
 #include "postmaster/autovacuum.h"
 #include "postmaster/clustermon.h"

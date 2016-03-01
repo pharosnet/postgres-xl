@@ -14,6 +14,7 @@
 #include "postgres.h"
 
 #include "access/sysattr.h"
+#include "catalog/namespace.h"
 #include "catalog/pg_type.h"
 #include "commands/trigger.h"
 #include "foreign/fdwapi.h"

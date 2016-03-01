@@ -49,6 +49,7 @@
 #ifdef PGXC
 #include "nodes/nodes.h"
 #include "pgxc/poolmgr.h"
+#include "postmaster/clustermon.h"
 #endif
 
 uint32		bootstrap_data_checksum_version = 0;		/* No checksum */
