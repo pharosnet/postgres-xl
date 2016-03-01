@@ -318,7 +318,7 @@ int bkup_reset_sequence(GTM_Conn *conn, GTM_SequenceKey key);
 /*
  * Barrier
  */
-int report_barrier(GTM_Conn *conn, char *barier_id);
+int report_barrier(GTM_Conn *conn, const char *barier_id);
 int bkup_report_barrier(GTM_Conn *conn, char *barrier_id);
 
 /*
