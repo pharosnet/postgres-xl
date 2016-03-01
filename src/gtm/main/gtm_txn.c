@@ -889,7 +889,6 @@ GTM_BkupBeginTransactionMulti(GTM_IsolationLevel *isolevel,
 {
 	GTM_TransactionHandle txn[GTM_MAX_GLOBAL_TRANSACTIONS];;
 	MemoryContext oldContext;
-	int kk;
 	int count;
 
 	oldContext = MemoryContextSwitchTo(TopMostMemoryContext);

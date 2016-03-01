@@ -952,7 +952,6 @@ GTM_HandleGlobalXmin(GTM_PGXCNodeType type, char *node_name,
 	GTM_PGXCNodeInfo *mynodeinfo;
 	int ii;
 	GlobalTransactionId global_xmin;
-	bool excludeSelf = false;
 	gtm_ListCell *elem;
 
 	*errcode = 0;

@@ -113,8 +113,6 @@ transformAggregateCall(ParseState *pstate, Aggref *agg,
 	AttrNumber	attno = 1;
 	int			save_next_resno;
 	ListCell   *lc;
-	const char *err;
-	bool		errkind;
 
 	if (AGGKIND_IS_ORDERED_SET(agg->aggkind))
 	{
