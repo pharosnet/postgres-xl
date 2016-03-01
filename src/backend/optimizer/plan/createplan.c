@@ -1308,8 +1308,11 @@ find_push_down_plan_int(PlannerInfo *root, Plan *plan, bool force, bool delete, 
 		 */
 		if ((((Plan *)remote_plan) == subplan) && parent)
 		{
+			RelOptInfo *rel = NULL;
+
 			Assert(root);
-			RelOptInfo *rel = find_base_rel(root, ((SubqueryScan *)plan)->scan.scanrelid);
+
+			rel = find_base_rel(root, ((SubqueryScan *)plan)->scan.scanrelid);
 			rel->subplan = ((SubqueryScan *)plan)->subplan;
 		}
 		return remote_plan;

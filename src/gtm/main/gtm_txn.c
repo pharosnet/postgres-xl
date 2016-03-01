@@ -887,7 +887,7 @@ GTM_BkupBeginTransactionMulti(GTM_IsolationLevel *isolevel,
 							  GTMProxy_ConnID *connid,
 							  int	txn_count)
 {
-	GTM_TransactionHandle txn[GTM_MAX_GLOBAL_TRANSACTIONS];;
+	GTM_TransactionHandle txn[GTM_MAX_GLOBAL_TRANSACTIONS];
 	MemoryContext oldContext;
 	int count;
 
@@ -1393,7 +1393,7 @@ GTM_BkupBeginTransactionGetGXIDMulti(GlobalTransactionId *gxid,
 									 GTMProxy_ConnID *connid,
 									 int txn_count)
 {
-	GTM_TransactionHandle txn[GTM_MAX_GLOBAL_TRANSACTIONS];;
+	GTM_TransactionHandle txn[GTM_MAX_GLOBAL_TRANSACTIONS];
 	GTM_TransactionInfo *gtm_txninfo;
 	int ii;
 	int count;
