@@ -18,5 +18,10 @@
 
 extern bool assert_enabled;
 
+void ExceptionalCondition(const char *conditionName,
+						 const char *errorType,
+						 const char *fileName,
+						 int lineNumber);
+
 #endif
 

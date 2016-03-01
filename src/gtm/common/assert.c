@@ -25,11 +25,8 @@ bool assert_enabled = false;
 
 /*
  * ExceptionalCondition - Handles the failure of an Assert()
- *
- * Note: this can't actually return, but we declare it as returning int
- * because the TrapMacro() macro might get wonky otherwise.
  */
-int
+void
 ExceptionalCondition(const char *conditionName,
 					 const char *errorType,
 					 const char *fileName,
@@ -50,5 +47,4 @@ ExceptionalCondition(const char *conditionName,
 	fflush(stderr);
 
 	abort();
-	return 0;
 }
