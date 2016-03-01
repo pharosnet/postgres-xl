@@ -270,9 +270,6 @@ static void setup_dictionary(void);
 static void setup_privileges(void);
 static void set_info_version(void);
 static void setup_schema(void);
-#ifdef XCP
-static void setup_storm(void);
-#endif
 static void load_plpgsql(void);
 static void vacuum_db(void);
 static void make_template0(void);
@@ -2311,46 +2308,6 @@ setup_schema(void)
 
 	check_ok();
 }
-
-#ifdef XCP
-/*
- * load storm catalog and populate from features file
- */
-static void
-setup_storm(void)
-{
-        PG_CMD_DECL;
-        char      **line;
-        char      **lines;
-
-        fputs(_("creating storm catalog... "), stdout);
-        fflush(stdout);
-
-        lines = readfile(storm_cat_file);
-
-        /*
-         * We use -j here to avoid backslashing stuff in storm_catalog.sql
-         */
-        snprintf(cmd, sizeof(cmd),
-                         "\"%s\" %s -j template1 >%s",
-                         backend_exec, backend_options,
-                         DEVNULL);
-
-        PG_CMD_OPEN;
-
-        for (line = lines; *line != NULL; line++)
-        {
-                PG_CMD_PUTS(*line);
-                free(*line);
-        }
-
-        free(lines);
-
-        PG_CMD_CLOSE;
-
-        check_ok();
-}
-#endif
 
 /*
  * load PL/pgsql server-side language

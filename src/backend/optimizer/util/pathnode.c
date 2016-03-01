@@ -1046,32 +1046,6 @@ redistribute_path(Path *subpath, char distributionType,
 }
 
 
-static JoinPath *
-flatCopyJoinPath(JoinPath *pathnode)
-{
-	JoinPath   *newnode;
-	size_t 		size = 0;
-	switch(nodeTag(pathnode))
-	{
-		case T_NestPath:
-			size = sizeof(NestPath);
-			break;
-		case T_MergePath:
-			size = sizeof(MergePath);
-			break;
-		case T_HashPath:
-			size = sizeof(HashPath);
-			break;
-		default:
-			elog(ERROR, "unrecognized node type: %d", (int) nodeTag(pathnode));
-			break;
-	}
-	newnode = (JoinPath *) palloc(size);
-	memcpy(newnode, pathnode, size);
-	return newnode;
-}
-
-
 /*
  * Analyze join parameters and set distribution of the join node.
  * If there are possible alternate distributions the respective pathes are

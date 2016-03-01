@@ -64,7 +64,6 @@
 /* Forbid unsafe SQL statements */
 bool		StrictStatementChecking = true;
 
-static void validate_part_col_updatable(const Query *query);
 static bool contains_temp_tables(List *rtable);
 static PlannedStmt *pgxc_FQS_planner(Query *query, ParamListInfo boundParams);
 static RemoteQuery *pgxc_FQS_create_remote_plan(Query *query,
@@ -428,56 +427,3 @@ pgxc_FQS_create_remote_plan(Query *query, ExecNodes *exec_nodes, bool is_exec_di
 
 	return query_step;
 }
-
-/*
- * validate whether partition column of a table is being updated
- */
-static void
-validate_part_col_updatable(const Query *query)
-{
-	RangeTblEntry *rte;
-	RelationLocInfo *rel_loc_info;
-	ListCell *lc;
-
-	/* Make sure there is one table at least */
-	if (query->rtable == NULL)
-		return;
-
-	rte = (RangeTblEntry *) list_nth(query->rtable, query->resultRelation - 1);
-
-
-	if (rte != NULL && rte->relkind != RELKIND_RELATION)
-		/* Bad relation type */
-		return;
-
-	/* See if we have the partitioned case. */
-	rel_loc_info = GetRelationLocInfo(rte->relid);
-
-	/* Any column updation on local relations is fine */
-	if (!rel_loc_info)
-		return;
-
-	/* Only relations distributed by value can be checked */
-	if (IsRelationDistributedByValue(rel_loc_info))
-	{
-		/* It is a partitioned table, check partition column in targetList */
-		foreach(lc, query->targetList)
-		{
-			TargetEntry *tle = (TargetEntry *) lfirst(lc);
-
-			/* Nothing to do for a junk entry */
-			if (tle->resjunk)
-				continue;
-
-			/*
-			 * See if we have a constant expression comparing against the
-			 * designated partitioned column
-			 */
-			if (strcmp(tle->resname, GetRelationDistribColumn(rel_loc_info)) == 0)
-				ereport(ERROR,
-						(errcode(ERRCODE_INVALID_COLUMN_REFERENCE),
-						(errmsg("Partition column can't be updated in current version"))));
-		}
-	}
-}
-

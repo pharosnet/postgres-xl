@@ -144,8 +144,6 @@ static void GTMProxy_HandleDisconnect(GTMProxy_ConnectionInfo *conninfo, GTM_Con
 
 static void GTMProxy_ProxyCommand(GTMProxy_ConnectionInfo *conninfo,
 		GTM_Conn *gtm_conn, GTM_MessageType mtype, StringInfo message);
-static void GTMProxy_ProxyPGXCNodeCommand(GTMProxy_ConnectionInfo *conninfo,
-		GTM_Conn *gtm_conn, GTM_MessageType mtype, GTMProxy_CommandData cmd_data);
 
 static void ProcessCommand(GTMProxy_ConnectionInfo *conninfo,
 		GTM_Conn *gtm_conn, StringInfo input_message);
