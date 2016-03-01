@@ -197,6 +197,42 @@ ClusterMonitorInit(void)
 		int			rc;
 
 		/*
+		 * Repeat at CLUSTER_MONITOR_NAPTIME seconds interval
+		 */
+		nap.tv_sec = CLUSTER_MONITOR_NAPTIME;
+		nap.tv_usec = 0;
+
+		/*
+		 * Wait until naptime expires or we get some type of signal (all the
+		 * signal handlers will wake us by calling SetLatch).
+		 */
+		rc = WaitLatch(MyLatch,
+					   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
+					   (nap.tv_sec * 1000L) + (nap.tv_usec / 1000L));
+
+		ResetLatch(MyLatch);
+
+		/* Process sinval catchup interrupts that happened while sleeping */
+		ProcessCatchupInterrupt();
+
+		/*
+		 * Emergency bailout if postmaster has died.  This is to avoid the
+		 * necessity for manual cleanup of all postmaster children.
+		 */
+		if (rc & WL_POSTMASTER_DEATH)
+			proc_exit(1);
+
+		/* the normal shutdown case */
+		if (got_SIGTERM)
+			break;
+
+		if (got_SIGHUP)
+		{
+			got_SIGHUP = false;
+			ProcessConfigFile(PGC_SIGHUP);
+		}
+
+		/*
 		 * Compute RecentGlobalXmin, report it to the GTM and sleep for the set
 		 * interval. Keep doing this forever
 		 */
@@ -255,41 +291,6 @@ ClusterMonitorInit(void)
 
 		ClusterMonitorSetReportingGlobalXmin(InvalidGlobalTransactionId);
 
-		/*
-		 * Repeat at every 30 seconds
-		 */
-		nap.tv_sec = CLUSTER_MONITOR_NAPTIME;
-		nap.tv_usec = 0;
-
-		/*
-		 * Wait until naptime expires or we get some type of signal (all the
-		 * signal handlers will wake us by calling SetLatch).
-		 */
-		rc = WaitLatch(MyLatch,
-					   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
-					   (nap.tv_sec * 1000L) + (nap.tv_usec / 1000L));
-
-		ResetLatch(MyLatch);
-
-		/* Process sinval catchup interrupts that happened while sleeping */
-		ProcessCatchupInterrupt();
-
-		/*
-		 * Emergency bailout if postmaster has died.  This is to avoid the
-		 * necessity for manual cleanup of all postmaster children.
-		 */
-		if (rc & WL_POSTMASTER_DEATH)
-			proc_exit(1);
-
-		/* the normal shutdown case */
-		if (got_SIGTERM)
-			break;
-
-		if (got_SIGHUP)
-		{
-			got_SIGHUP = false;
-			ProcessConfigFile(PGC_SIGHUP);
-		}
 	}
 
 	/* Normal exit from the cluster monitor is here */
