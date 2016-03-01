@@ -424,34 +424,6 @@ GTMGetLastClientIdentifier(void)
 }
 
 /*
- * Get the oldest client identifier issued to the currently open transactions.
- */
-uint32
-GTMGetFirstClientIdentifier(void)
-{
-	gtm_ListCell *cell;
-	uint32 first_client_id = UINT32_MAX;
-
-	/*
-	 * Scan the global list of open transactions
-	 */
-	GTM_RWLockAcquire(&GTMTransactions.gt_TransArrayLock, GTM_LOCKMODE_WRITE);
-
-	cell = gtm_list_head(GTMTransactions.gt_open_transactions);
-	while (cell != NULL)
-	{
-		GTM_TransactionInfo *gtm_txninfo = gtm_lfirst(cell);
-
-		if (GTM_CLIENT_ID_LT(gtm_txninfo->gti_client_id, first_client_id))
-			first_client_id = gtm_txninfo->gti_client_id;
-		cell = gtm_lnext(cell);
-	}
-
-	GTM_RWLockRelease(&GTMTransactions.gt_TransArrayLock);
-	return first_client_id;
-}
-
-/*
  * GlobalTransactionIdDidCommit
  *		True iff transaction associated with the identifier did commit.
  *
