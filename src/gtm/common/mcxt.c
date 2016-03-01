@@ -66,8 +66,6 @@ MemoryContext	TopMostMemoryContext;
 void
 MemoryContextInit(void)
 {
-	void *thrinfo;
-
 	AssertState(TopMemoryContext == NULL);
 
 	/*
@@ -92,7 +90,6 @@ MemoryContextInit(void)
 	 * Not having any other place to point CurrentMemoryContext, make it point
 	 * to TopMemoryContext.  Caller should change this soon!
 	 */
-	thrinfo = GetMyThreadInfo;
 	CurrentMemoryContext = TopMemoryContext;
 
 	/*
