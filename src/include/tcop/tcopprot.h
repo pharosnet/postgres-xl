@@ -25,6 +25,9 @@
 #include "storage/procsignal.h"
 #include "utils/guc.h"
 
+/* needed because of 'struct timeval' and 'struct rusage' */
+#include <sys/time.h>
+#include <sys/resource.h>
 
 /* Required daylight between max_stack_depth and the kernel limit, in bytes */
 #define STACK_DEPTH_SLOP (512 * 1024L)
