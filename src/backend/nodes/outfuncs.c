@@ -768,11 +768,11 @@ _outRemoteQuery(StringInfo str, const RemoteQuery *node)
 	WRITE_BOOL_FIELD(force_autocommit);
 	WRITE_STRING_FIELD(statement);
 	WRITE_STRING_FIELD(cursor);
-	WRITE_INT_FIELD(remote_num_params);
+	WRITE_INT_FIELD(rq_num_params);
 
-	appendStringInfo(str, " :remote_param_types");
-	for (i = 0; i < node->remote_num_params; i++)
-		appendStringInfo(str, " %d", node->remote_param_types[i]);
+	appendStringInfo(str, " :rq_param_types");
+	for (i = 0; i < node->rq_num_params; i++)
+		appendStringInfo(str, " %d", node->rq_param_types[i]);
 
 	WRITE_ENUM_FIELD(exec_type, RemoteQueryExecType);
 	WRITE_BOOL_FIELD(has_row_marks);

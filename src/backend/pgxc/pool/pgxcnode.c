@@ -403,7 +403,7 @@ pgxc_node_init(PGXCNodeHandle *handle, int sock, bool global_session, int pid)
 	handle->sock = sock;
 	handle->backend_pid = pid;
 	handle->transaction_status = 'I';
-	handle->state = DN_CONNECTION_STATE_IDLE;
+	PGXCNodeSetConnectionState(handle, DN_CONNECTION_STATE_IDLE);
 	handle->read_only = true;
 	handle->ck_resp_rollback = false;
 	handle->combiner = NULL;
@@ -481,7 +481,8 @@ pgxc_node_receive(const int conn_count,
 		else
 		{
 			/* flag as bad, it will be removed from the list */
-			connections[i]->state = DN_CONNECTION_STATE_ERROR_FATAL;
+			PGXCNodeSetConnectionState(connections[i],
+					DN_CONNECTION_STATE_ERROR_FATAL);
 			pool_fd[i].fd = -1;
 			pool_fd[i].events = 0;
 		}
@@ -523,7 +524,8 @@ retry:
 		/* Handle timeout */
 		elog(DEBUG1, "timeout %ld while waiting for any response from %d connections", timeout_ms,conn_count);
 		for (i = 0; i < conn_count; i++)
-			connections[i]->state = DN_CONNECTION_STATE_ERROR_FATAL;
+			PGXCNodeSetConnectionState(connections[i],
+					DN_CONNECTION_STATE_ERROR_FATAL);
 		return NO_ERROR_OCCURED;
 	}
 
@@ -543,7 +545,8 @@ retry:
 				if ( read_status == EOF || read_status < 0 )
 				{
 					/* Can not read - no more actions, just discard connection */
-					conn->state = DN_CONNECTION_STATE_ERROR_FATAL;
+					PGXCNodeSetConnectionState(conn,
+							DN_CONNECTION_STATE_ERROR_FATAL);
 					add_error_message(conn, "unexpected EOF on datanode connection.");
 					elog(WARNING, "unexpected EOF on datanode oid connection: %d", conn->nodeoid);
 
@@ -570,7 +573,8 @@ retry:
 					(pool_fd[i].revents & POLLNVAL)
 					)
 			{
-				connections[i]->state = DN_CONNECTION_STATE_ERROR_FATAL;
+				PGXCNodeSetConnectionState(connections[i],
+						DN_CONNECTION_STATE_ERROR_FATAL);
 				add_error_message(conn, "unexpected network error on datanode connection");
 				elog(WARNING, "unexpected EOF on datanode oid connection: %d with event %d", conn->nodeoid,pool_fd[i].revents);
 				/* Should we check/read from the other connections before returning? */
@@ -690,7 +694,8 @@ retry:
 								"Datanode closed the connection unexpectedly\n"
 					"\tThis probably means the Datanode terminated abnormally\n"
 								"\tbefore or while processing the request.\n");
-				conn->state = DN_CONNECTION_STATE_ERROR_FATAL;	/* No more connection to
+				PGXCNodeSetConnectionState(conn,
+						DN_CONNECTION_STATE_ERROR_FATAL);	/* No more connection to
 															* backend */
 				closesocket(conn->sock);
 				conn->sock = NO_SOCKET;
@@ -1528,7 +1533,7 @@ pgxc_node_send_execute(PGXCNodeHandle * handle, const char *portal, int fetch)
 	memcpy(handle->outBuffer + handle->outEnd, &fetch, 4);
 	handle->outEnd += 4;
 
-	handle->state = DN_CONNECTION_STATE_QUERY;
+	PGXCNodeSetConnectionState(handle, DN_CONNECTION_STATE_QUERY);
 
 	return 0;
 }
@@ -1679,14 +1684,21 @@ pgxc_node_flush_read(PGXCNodeHandle *handle)
 /*
  * Send specified statement down to the PGXC node
  */
-int
-pgxc_node_send_query(PGXCNodeHandle * handle, const char *query)
+static int
+pgxc_node_send_query_internal(PGXCNodeHandle * handle, const char *query,
+		bool rollback)
 {
 	int			strLen;
 	int			msgLen;
 
-	/* Invalid connection state, return error */
-	if (handle->state != DN_CONNECTION_STATE_IDLE)
+	/*
+	 * Its appropriate to send ROLLBACK commands on a failed connection, but
+	 * for everything else we expect the connection to be in a sane state
+	 */
+	elog(DEBUG5, "pgxc_node_send_query - handle->state %d, node %s, query %s",
+			handle->state, handle->nodename, query);
+	if ((handle->state != DN_CONNECTION_STATE_IDLE) &&
+		!(handle->state == DN_CONNECTION_STATE_ERROR_FATAL && rollback))
 		return EOF;
 
 	strLen = strlen(query) + 1;
@@ -1707,9 +1719,21 @@ pgxc_node_send_query(PGXCNodeHandle * handle, const char *query)
 	memcpy(handle->outBuffer + handle->outEnd, query, strLen);
 	handle->outEnd += strLen;
 
-	handle->state = DN_CONNECTION_STATE_QUERY;
+	PGXCNodeSetConnectionState(handle, DN_CONNECTION_STATE_QUERY);
 
  	return pgxc_node_flush(handle);
+}
+
+int
+pgxc_node_send_rollback(PGXCNodeHandle *handle, const char *query)
+{
+	return pgxc_node_send_query_internal(handle, query, true);
+}
+
+int
+pgxc_node_send_query(PGXCNodeHandle *handle, const char *query)
+{
+	return pgxc_node_send_query_internal(handle, query, false);
 }
 
 
@@ -2717,7 +2741,7 @@ pgxc_node_set_query(PGXCNodeHandle *handle, const char *set_query)
 		 * as well as an error stack overflow.
 		 */
 		if (proc_exit_inprogress)
-			handle->state = DN_CONNECTION_STATE_ERROR_FATAL;
+			PGXCNodeSetConnectionState(handle, DN_CONNECTION_STATE_ERROR_FATAL);
 
 		/* don't read from from the connection if there is a fatal error */
 		if (handle->state == DN_CONNECTION_STATE_ERROR_FATAL)
@@ -2738,14 +2762,14 @@ pgxc_node_set_query(PGXCNodeHandle *handle, const char *set_query)
 		if (msgtype == 'E')	/* ErrorResponse */
 		{
 			handle->error = pstrdup(msg);
-			handle->state = DN_CONNECTION_STATE_ERROR_FATAL;
+			PGXCNodeSetConnectionState(handle, DN_CONNECTION_STATE_ERROR_FATAL);
 			break;
 		}
 
 		if (msgtype == 'Z') /* ReadyForQuery */
 		{
 			handle->transaction_status = msg[0];
-			handle->state = DN_CONNECTION_STATE_IDLE;
+			PGXCNodeSetConnectionState(handle, DN_CONNECTION_STATE_IDLE);
 			handle->combiner = NULL;
 			break;
 		}
@@ -2794,4 +2818,12 @@ DoInvalidateRemoteHandles(void)
 	InitMultinodeExecutor(true);
 
 	return result;
+}
+
+void
+PGXCNodeSetConnectionState(PGXCNodeHandle *handle, DNConnectionState new_state)
+{
+	elog(DEBUG5, "Changing connection state for node %s, old state %d, "
+			"new state %d", handle->nodename, handle->state, new_state);
+	handle->state = new_state;
 }

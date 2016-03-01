@@ -200,7 +200,7 @@ SendBarrierPrepareRequest(List *coords, const char *id)
 		memcpy(handle->outBuffer + handle->outEnd, id, barrier_idlen);
 		handle->outEnd += barrier_idlen;
 
-		handle->state = DN_CONNECTION_STATE_QUERY;
+		PGXCNodeSetConnectionState(handle, DN_CONNECTION_STATE_QUERY);
 
 		pgxc_node_flush(handle);
 	}
@@ -286,7 +286,7 @@ SendBarrierEndRequest(PGXCNodeAllHandles *coord_handles, const char *id)
 		memcpy(handle->outBuffer + handle->outEnd, id, barrier_idlen);
 		handle->outEnd += barrier_idlen;
 
-		handle->state = DN_CONNECTION_STATE_QUERY;
+		PGXCNodeSetConnectionState(handle, DN_CONNECTION_STATE_QUERY);
 		pgxc_node_flush(handle);
 	}
 
@@ -398,7 +398,7 @@ ExecuteBarrier(const char *id)
 		memcpy(handle->outBuffer + handle->outEnd, id, barrier_idlen);
 		handle->outEnd += barrier_idlen;
 
-		handle->state = DN_CONNECTION_STATE_QUERY;
+		PGXCNodeSetConnectionState(handle, DN_CONNECTION_STATE_QUERY);
 		pgxc_node_flush(handle);
 	}
 

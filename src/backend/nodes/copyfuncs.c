@@ -1112,9 +1112,12 @@ _copyRemoteQuery(const RemoteQuery *from)
 	COPY_SCALAR_FIELD(force_autocommit);
 	COPY_STRING_FIELD(statement);
 	COPY_STRING_FIELD(cursor);
-	COPY_SCALAR_FIELD(remote_num_params);
-	COPY_POINTER_FIELD(remote_param_types,
-	   sizeof(from->remote_param_types[0]) * from->remote_num_params);
+	COPY_SCALAR_FIELD(rq_num_params);
+	if (from->rq_param_types)
+		COPY_POINTER_FIELD(rq_param_types,
+			sizeof(from->rq_param_types[0]) * from->rq_num_params);
+	else
+		newnode->rq_param_types = NULL;
 	COPY_SCALAR_FIELD(exec_type);
 
 	COPY_SCALAR_FIELD(reduce_level);

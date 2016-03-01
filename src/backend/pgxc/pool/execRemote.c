@@ -1045,7 +1045,8 @@ BufferConnection(PGXCNodeHandle *conn)
 		{
 			if (pgxc_node_receive(1, &conn, NULL))
 			{
-				conn->state = DN_CONNECTION_STATE_ERROR_FATAL;
+				PGXCNodeSetConnectionState(conn,
+						DN_CONNECTION_STATE_ERROR_FATAL);
 				add_error_message(conn, "Failed to fetch from data node");
 			}
 		}
@@ -1551,6 +1552,8 @@ pgxc_node_receive_responses(const int conn_count, PGXCNodeHandle ** connections,
 		while (i < count)
 		{
 			int result =  handle_response(to_receive[i], combiner);
+			elog(DEBUG5, "Received response %d on connection to node %s",
+					result, to_receive[i]->nodename);
 			switch (result)
 			{
 				case RESPONSE_EOF: /* have something to read, keep receiving */
@@ -1575,13 +1578,12 @@ pgxc_node_receive_responses(const int conn_count, PGXCNodeHandle ** connections,
 					break;
 
 				case RESPONSE_WAITXIDS:
-					break;
-
 				case RESPONSE_ASSIGN_GXID:
+				case RESPONSE_TUPDESC:
 					break;
 
-				case RESPONSE_TUPDESC:
 				case RESPONSE_DATAROW:
+					combiner->currentRow = NULL;
 					break;
 
 				default:
@@ -1633,7 +1635,7 @@ handle_response(PGXCNodeHandle *conn, ResponseCombiner *combiner)
 		 * as well as an error stack overflow.
 		 */
 		if (proc_exit_inprogress)
-			conn->state = DN_CONNECTION_STATE_ERROR_FATAL;
+			PGXCNodeSetConnectionState(conn, DN_CONNECTION_STATE_ERROR_FATAL);
 
 		/*
 		 * Don't read from from the connection if there is a fatal error.
@@ -1653,6 +1655,8 @@ handle_response(PGXCNodeHandle *conn, ResponseCombiner *combiner)
 
 		/* TODO handle other possible responses */
 		msg_type = get_message(conn, &msg_len, &msg);
+		elog(DEBUG5, "handle_response - received message %c, node %s, "
+				"current_state %d", msg_type, conn->nodename, conn->state);
 		switch (msg_type)
 		{
 			case '\0':			/* Not enough data in the buffer */
@@ -1663,8 +1667,13 @@ handle_response(PGXCNodeHandle *conn, ResponseCombiner *combiner)
 			case 'C':			/* CommandComplete */
 				HandleCommandComplete(combiner, msg, msg_len, conn);
 				conn->combiner = NULL;
-				if (conn->state == DN_CONNECTION_STATE_QUERY)
-					conn->state = DN_CONNECTION_STATE_IDLE;
+				/* 
+				 * In case of simple query protocol, wait for the ReadyForQuery
+				 * before marking connection as Idle
+				 */
+				if (combiner->extended_query &&
+					conn->state == DN_CONNECTION_STATE_QUERY)
+					PGXCNodeSetConnectionState(conn, DN_CONNECTION_STATE_IDLE);
 				return RESPONSE_COMPLETE;
 			case 'T':			/* RowDescription */
 #ifdef DN_CONNECTION_DEBUG
@@ -1684,7 +1693,7 @@ handle_response(PGXCNodeHandle *conn, ResponseCombiner *combiner)
 				break;
 			case 's':			/* PortalSuspended */
 				/* No activity is expected on the connection until next query */
-				conn->state = DN_CONNECTION_STATE_IDLE;
+				PGXCNodeSetConnectionState(conn, DN_CONNECTION_STATE_IDLE);
 				conn->combiner = NULL;
 				return RESPONSE_SUSPENDED;
 			case '1': /* ParseComplete */
@@ -1694,16 +1703,16 @@ handle_response(PGXCNodeHandle *conn, ResponseCombiner *combiner)
 				/* simple notifications, continue reading */
 				break;
 			case 'G': /* CopyInResponse */
-				conn->state = DN_CONNECTION_STATE_COPY_IN;
+				PGXCNodeSetConnectionState(conn, DN_CONNECTION_STATE_COPY_IN);
 				HandleCopyIn(combiner);
 				/* Done, return to caller to let it know the data can be passed in */
 				return RESPONSE_COPY;
 			case 'H': /* CopyOutResponse */
-				conn->state = DN_CONNECTION_STATE_COPY_OUT;
+				PGXCNodeSetConnectionState(conn, DN_CONNECTION_STATE_COPY_OUT);
 				HandleCopyOut(combiner);
 				return RESPONSE_COPY;
 			case 'd': /* CopyOutDataRow */
-				conn->state = DN_CONNECTION_STATE_COPY_OUT;
+				PGXCNodeSetConnectionState(conn, DN_CONNECTION_STATE_COPY_OUT);
 				HandleCopyDataRow(combiner, msg, msg_len);
 				break;
 			case 'E':			/* ErrorResponse */
@@ -1727,7 +1736,7 @@ handle_response(PGXCNodeHandle *conn, ResponseCombiner *combiner)
 				 * with the connection
 				 */
 				conn->transaction_status = msg[0];
-				conn->state = DN_CONNECTION_STATE_IDLE;
+				PGXCNodeSetConnectionState(conn, DN_CONNECTION_STATE_IDLE);
 				conn->combiner = NULL;
 #ifdef DN_CONNECTION_DEBUG
 				conn->have_row_desc = false;
@@ -1738,7 +1747,7 @@ handle_response(PGXCNodeHandle *conn, ResponseCombiner *combiner)
 				HandleDatanodeCommandId(combiner, msg, msg_len);
 				break;
 			case 'b':
-				conn->state = DN_CONNECTION_STATE_IDLE;
+				PGXCNodeSetConnectionState(conn, DN_CONNECTION_STATE_IDLE);
 				return RESPONSE_BARRIER_OK;
 			case 'I':			/* EmptyQuery */
 				return RESPONSE_COMPLETE;
@@ -1751,7 +1760,7 @@ handle_response(PGXCNodeHandle *conn, ResponseCombiner *combiner)
 			default:
 				/* sync lost? */
 				elog(WARNING, "Received unsupported message type: %c", msg_type);
-				conn->state = DN_CONNECTION_STATE_ERROR_FATAL;
+				PGXCNodeSetConnectionState(conn, DN_CONNECTION_STATE_ERROR_FATAL);
 				/* stop reading */
 				return RESPONSE_COMPLETE;
 		}
@@ -1780,7 +1789,7 @@ is_data_node_ready(PGXCNodeHandle * conn)
 		 * as well as an error stack overflow.
 		 */
 		if (proc_exit_inprogress)
-			conn->state = DN_CONNECTION_STATE_ERROR_FATAL;
+			PGXCNodeSetConnectionState(conn, DN_CONNECTION_STATE_ERROR_FATAL);
 
 		/* don't read from from the connection if there is a fatal error */
 		if (conn->state == DN_CONNECTION_STATE_ERROR_FATAL)
@@ -1800,7 +1809,7 @@ is_data_node_ready(PGXCNodeHandle * conn)
 			 * with the connection
 			 */
 			conn->transaction_status = msg[0];
-			conn->state = DN_CONNECTION_STATE_IDLE;
+			PGXCNodeSetConnectionState(conn, DN_CONNECTION_STATE_IDLE);
 			conn->combiner = NULL;
 			return true;
 		}
@@ -1859,6 +1868,9 @@ pgxc_node_begin(int conn_count, PGXCNodeHandle **connections,
 			need_tran_block = true;
 		else if (IS_PGXC_REMOTE_COORDINATOR)
 			need_tran_block = false;
+
+		elog(DEBUG5, "need_tran_block %d, connections[%d]->transaction_status %c",
+				need_tran_block, i, connections[i]->transaction_status);
 		/* Send BEGIN if not already in transaction */
 		if (need_tran_block && connections[i]->transaction_status == 'I')
 		{
@@ -1924,6 +1936,9 @@ pgxc_node_remote_cleanup_all(void)
 	char		   *resetcmd = "RESET ALL;RESET SESSION AUTHORIZATION;"
 							   "RESET transaction_isolation;";
 
+	elog(DEBUG5, "pgxc_node_remote_cleanup_all - handles->co_conn_count %d,"
+			"handles->dn_conn_count", handles->co_conn_count,
+			handles->dn_conn_count);
 	/*
 	 * We must handle reader and writer connections both since even a read-only
 	 * needs to be cleaned up.
@@ -1941,7 +1956,7 @@ pgxc_node_remote_cleanup_all(void)
 		/* At this point connection should be in IDLE state */
 		if (handle->state != DN_CONNECTION_STATE_IDLE)
 		{
-			handle->state = DN_CONNECTION_STATE_ERROR_FATAL;
+			PGXCNodeSetConnectionState(handle, DN_CONNECTION_STATE_ERROR_FATAL);
 			continue;
 		}
 
@@ -1954,7 +1969,7 @@ pgxc_node_remote_cleanup_all(void)
 			ereport(WARNING,
 					(errcode(ERRCODE_INTERNAL_ERROR),
 					 errmsg("Failed to clean up data nodes")));
-			handle->state = DN_CONNECTION_STATE_ERROR_FATAL;
+			PGXCNodeSetConnectionState(handle, DN_CONNECTION_STATE_ERROR_FATAL);
 			continue;
 		}
 		new_connections[new_conn_count++] = handle;
@@ -1967,7 +1982,7 @@ pgxc_node_remote_cleanup_all(void)
 		/* At this point connection should be in IDLE state */
 		if (handle->state != DN_CONNECTION_STATE_IDLE)
 		{
-			handle->state = DN_CONNECTION_STATE_ERROR_FATAL;
+			PGXCNodeSetConnectionState(handle, DN_CONNECTION_STATE_ERROR_FATAL);
 			continue;
 		}
 
@@ -1980,7 +1995,7 @@ pgxc_node_remote_cleanup_all(void)
 			ereport(WARNING,
 					(errcode(ERRCODE_INTERNAL_ERROR),
 					 errmsg("Failed to clean up data nodes")));
-			handle->state = DN_CONNECTION_STATE_ERROR_FATAL;
+			PGXCNodeSetConnectionState(handle, DN_CONNECTION_STATE_ERROR_FATAL);
 			continue;
 		}
 		new_connections[new_conn_count++] = handle;
@@ -2601,6 +2616,9 @@ pgxc_node_remote_abort(void)
 
 	SetSendCommandId(false);
 
+	elog(DEBUG5, "pgxc_node_remote_abort - dn_conn_count %d, co_conn_count %d",
+			handles->dn_conn_count, handles->co_conn_count);
+
 	for (i = 0; i < handles->dn_conn_count; i++)
 	{
 		PGXCNodeHandle *conn = handles->datanode_handles[i];
@@ -2608,6 +2626,10 @@ pgxc_node_remote_abort(void)
 		/* Skip empty slots */
 		if (conn->sock == NO_SOCKET)
 			continue;
+
+		elog(DEBUG5, "node %s, conn->transaction_status %c",
+				conn->nodename,
+				conn->transaction_status);
 
 		if (conn->transaction_status != 'I')
 		{
@@ -2619,7 +2641,7 @@ pgxc_node_remote_abort(void)
 			 * Do not matter, is there committed or failed transaction,
 			 * just send down rollback to finish it.
 			 */
-			if (pgxc_node_send_query(conn, rollbackCmd))
+			if (pgxc_node_send_rollback(conn, rollbackCmd))
 			{
 				add_error_message(conn,
 						"failed to send ROLLBACK TRANSACTION command");
@@ -2646,7 +2668,7 @@ pgxc_node_remote_abort(void)
 			 * Do not matter, is there committed or failed transaction,
 			 * just send down rollback to finish it.
 			 */
-			if (pgxc_node_send_query(conn, rollbackCmd))
+			if (pgxc_node_send_rollback(conn, rollbackCmd))
 			{
 				add_error_message(conn,
 						"failed to send ROLLBACK TRANSACTION command");
@@ -3222,6 +3244,9 @@ pgxc_start_command_on_connection(PGXCNodeHandle *connection,
 	RemoteQuery	*step = (RemoteQuery *) combiner->ss.ps.plan;
 	CHECK_OWNERSHIP(connection, combiner);
 
+	elog(DEBUG5, "pgxc_start_command_on_connection - node %s, state %d",
+			connection->nodename, connection->state);
+
 	/*
 	 * Scan descriptor would be valid and would contain a valid snapshot
 	 * in cases when we need to send out of order command id to data node
@@ -3234,7 +3259,7 @@ pgxc_start_command_on_connection(PGXCNodeHandle *connection,
 
 	if (snapshot && pgxc_node_send_snapshot(connection, snapshot))
 		return false;
-	if (step->statement || step->cursor || step->remote_param_types)
+	if (step->statement || step->cursor || remotestate->rqs_num_params)
 	{
 		/* need to use Extended Query Protocol */
 		int	fetch = 0;
@@ -3262,8 +3287,8 @@ pgxc_start_command_on_connection(PGXCNodeHandle *connection,
 							prepared ? NULL : step->sql_statement,
 							step->statement,
 							step->cursor,
-							step->remote_num_params,
-							step->remote_param_types,
+							remotestate->rqs_num_params,
+							remotestate->rqs_param_types,
 							remotestate->paramval_len,
 							remotestate->paramval_data,
 							step->has_row_marks ? true : step->read_only,
@@ -3272,6 +3297,7 @@ pgxc_start_command_on_connection(PGXCNodeHandle *connection,
 	}
 	else
 	{
+		combiner->extended_query = false;
 		if (pgxc_node_send_query(connection, step->sql_statement) != 0)
 			return false;
 	}
@@ -3684,14 +3710,16 @@ ExecCloseRemoteStatement(const char *stmt_name, List *nodelist)
 			 * unclosed statement on the Datanode as a fatal issue and
 			 * force connection is discarded
 			 */
-			connections[i]->state = DN_CONNECTION_STATE_ERROR_FATAL;
+			PGXCNodeSetConnectionState(connections[i],
+					DN_CONNECTION_STATE_ERROR_FATAL);
 			ereport(WARNING,
 					(errcode(ERRCODE_INTERNAL_ERROR),
 					 errmsg("Failed to close Datanode statemrnt")));
 		}
 		if (pgxc_node_send_sync(connections[i]) != 0)
 		{
-			connections[i]->state = DN_CONNECTION_STATE_ERROR_FATAL;
+			PGXCNodeSetConnectionState(connections[i],
+					DN_CONNECTION_STATE_ERROR_FATAL);
 			ereport(WARNING,
 					(errcode(ERRCODE_INTERNAL_ERROR),
 					 errmsg("Failed to close Datanode statement")));
@@ -3709,7 +3737,8 @@ ExecCloseRemoteStatement(const char *stmt_name, List *nodelist)
 		if (pgxc_node_receive(conn_count, connections, NULL))
 		{
 			for (i = 0; i <= conn_count; i++)
-				connections[i]->state = DN_CONNECTION_STATE_ERROR_FATAL;
+				PGXCNodeSetConnectionState(connections[i],
+						DN_CONNECTION_STATE_ERROR_FATAL);
 
 			ereport(ERROR,
 					(errcode(ERRCODE_INTERNAL_ERROR),
@@ -3777,6 +3806,144 @@ DataNodeCopyInBinaryForAll(char *msg_buf, int len, int conn_count,
 	}
 
 	return 0;
+}
+
+/*
+ * Encode parameter values to format of DataRow message (the same format is
+ * used in Bind) to prepare for sending down to Datanodes.
+ * The data row is copied to RemoteQueryState.paramval_data.
+ */
+void
+SetDataRowForExtParams(ParamListInfo paraminfo, RemoteQueryState *rq_state)
+{
+	StringInfoData buf;
+	uint16 n16;
+	int i;
+	int real_num_params = 0;
+	RemoteQuery *node = (RemoteQuery*) rq_state->combiner.ss.ps.plan;
+
+	/* If there are no parameters, there is no data to BIND. */
+	if (!paraminfo)
+		return;
+
+	Assert(!rq_state->paramval_data);
+
+	/*
+	 * It is necessary to fetch parameters
+	 * before looking at the output value.
+	 */
+	for (i = 0; i < paraminfo->numParams; i++)
+	{
+		ParamExternData *param;
+
+		param = &paraminfo->params[i];
+
+		if (!OidIsValid(param->ptype) && paraminfo->paramFetch != NULL)
+			(*paraminfo->paramFetch) (paraminfo, i + 1);
+
+		/*
+		 * This is the last parameter found as useful, so we need
+		 * to include all the previous ones to keep silent the remote
+		 * nodes. All the parameters prior to the last usable having no
+		 * type available will be considered as NULL entries.
+		 */
+		if (OidIsValid(param->ptype))
+			real_num_params = i + 1;
+	}
+
+	/*
+	 * If there are no parameters available, simply leave.
+	 * This is possible in the case of a query called through SPI
+	 * and using no parameters.
+	 */
+	if (real_num_params == 0)
+	{
+		rq_state->paramval_data = NULL;
+		rq_state->paramval_len = 0;
+		return;
+	}
+
+	initStringInfo(&buf);
+
+	/* Number of parameter values */
+	n16 = htons(real_num_params);
+	appendBinaryStringInfo(&buf, (char *) &n16, 2);
+
+	/* Parameter values */
+	for (i = 0; i < real_num_params; i++)
+	{
+		ParamExternData *param = &paraminfo->params[i];
+		uint32 n32;
+
+		/*
+		 * Parameters with no types are considered as NULL and treated as integer
+		 * The same trick is used for dropped columns for remote DML generation.
+		 */
+		if (param->isnull || !OidIsValid(param->ptype))
+		{
+			n32 = htonl(-1);
+			appendBinaryStringInfo(&buf, (char *) &n32, 4);
+		}
+		else
+		{
+			Oid		typOutput;
+			bool	typIsVarlena;
+			Datum	pval;
+			char   *pstring;
+			int		len;
+
+			/* Get info needed to output the value */
+			getTypeOutputInfo(param->ptype, &typOutput, &typIsVarlena);
+
+			/*
+			 * If we have a toasted datum, forcibly detoast it here to avoid
+			 * memory leakage inside the type's output routine.
+			 */
+			if (typIsVarlena)
+				pval = PointerGetDatum(PG_DETOAST_DATUM(param->value));
+			else
+				pval = param->value;
+
+			/* Convert Datum to string */
+			pstring = OidOutputFunctionCall(typOutput, pval);
+
+			/* copy data to the buffer */
+			len = strlen(pstring);
+			n32 = htonl(len);
+			appendBinaryStringInfo(&buf, (char *) &n32, 4);
+			appendBinaryStringInfo(&buf, pstring, len);
+		}
+	}
+
+
+	/*
+	 * If parameter types are not already set, infer them from
+	 * the paraminfo.
+	 */
+	if (node->rq_num_params > 0)
+	{
+		/*
+		 * Use the already known param types for BIND. Parameter types
+		 * can be already known when the same plan is executed multiple
+		 * times.
+		 */
+		if (node->rq_num_params != real_num_params)
+			elog(ERROR, "Number of user-supplied parameters do not match "
+						"the number of remote parameters");
+		rq_state->rqs_num_params = node->rq_num_params;
+		rq_state->rqs_param_types = node->rq_param_types;
+	}
+	else
+	{
+		rq_state->rqs_num_params = real_num_params;
+		rq_state->rqs_param_types = (Oid *) palloc(sizeof(Oid) * real_num_params);
+		for (i = 0; i < real_num_params; i++)
+			rq_state->rqs_param_types[i] = paraminfo->params[i].ptype;
+	}
+
+	/* Assign the newly allocated data row to paramval */
+	rq_state->paramval_data = buf.data;
+	rq_state->paramval_len = buf.len;
 }
 
 /*
@@ -3972,6 +4139,7 @@ PreAbort_Remote(void)
 	 * certain issues for aborted transactions, we drop the connections.
 	 * Revisit and fix the issue
 	 */
+	elog(DEBUG5, "temp_object_included %d", temp_object_included);
 	if (!temp_object_included)
 	{
 		/* Clean up remote sessions */
@@ -4381,14 +4549,9 @@ ExecInitRemoteQuery(RemoteQuery *node, EState *estate, int eflags)
 
 	/*
 	 * If there are parameters supplied, get them into a form to be sent to the
-	 * datanodes with bind message. We should not have had done this before.
+	 * Datanodes with bind message. We should not have had done this before.
 	 */
-	if (estate->es_param_list_info)
-	{
-		Assert(!remotestate->paramval_data);
-		remotestate->paramval_len = ParamListToDataRow(estate->es_param_list_info,
-												&remotestate->paramval_data);
-	}
+	SetDataRowForExtParams(estate->es_param_list_info, remotestate);
 
 	/* We need expression context to evaluate */
 	if (node->exec_nodes && node->exec_nodes->en_expr)
@@ -6112,7 +6275,7 @@ ExecEndRemoteSubplan(RemoteSubplanState *node)
 		 * state will be changed back to IDLE and conn->coordinator will be
 		 * cleared.
 		 */
-		conn->state = DN_CONNECTION_STATE_CLOSE;
+		PGXCNodeSetConnectionState(conn, DN_CONNECTION_STATE_CLOSE);
 	}
 
 	while (combiner->conn_count > 0)

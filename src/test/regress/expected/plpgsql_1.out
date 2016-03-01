@@ -2053,13 +2053,13 @@ begin
   return x;
 end$$ language plpgsql;
 select subxact_rollback_semantics();
-ERROR:  could not determine data type of parameter $1
-CONTEXT:  SQL statement "insert into foo values(x)"
-PL/pgSQL function subxact_rollback_semantics() line 5 at SQL statement
+ERROR:  Internal subtransactions not supported in Postgres-XL
+CONTEXT:  PL/pgSQL function subxact_rollback_semantics() line 6 during statement block entry
 select * from foo;
  f1 
 ----
-(0 rows)
+  1
+(1 row)
 
 drop table foo;
 create function trap_timeout() returns void as $$
@@ -2292,8 +2292,11 @@ $$ language plpgsql;
 -- PGXCTODO: This is failing due to issue 3522907, complicated SELECT queries in plpgsql functions
 select refcursor_test2(20000, 20000) as "Should be false",
        refcursor_test2(20, 20) as "Should be true";
-ERROR:  could not determine data type of parameter $1
-CONTEXT:  PL/pgSQL function refcursor_test2(integer,integer) line 7 at FETCH
+ Should be false | Should be true 
+-----------------+----------------
+ f               | t
+(1 row)
+
 --
 -- tests for cursors with named parameter arguments
 --
@@ -2314,8 +2317,11 @@ end
 $$ language plpgsql;
 select namedparmcursor_test1(20000, 20000) as "Should be false",
        namedparmcursor_test1(20, 20) as "Should be true";
-ERROR:  could not determine data type of parameter $1
-CONTEXT:  PL/pgSQL function namedparmcursor_test1(integer,integer) line 7 at FETCH
+ Should be false | Should be true 
+-----------------+----------------
+ f               | t
+(1 row)
+
 -- mixing named and positional argument notations
 create function namedparmcursor_test2(int, int) returns boolean as $$
 declare
@@ -2333,8 +2339,11 @@ begin
 end
 $$ language plpgsql;
 select namedparmcursor_test2(20, 20);
-ERROR:  could not determine data type of parameter $1
-CONTEXT:  PL/pgSQL function namedparmcursor_test2(integer,integer) line 7 at FETCH
+ namedparmcursor_test2 
+-----------------------
+ t
+(1 row)
+
 -- mixing named and positional: param2 is given twice, once in named notation
 -- and second time in positional notation. Should throw an error at parse time
 create function namedparmcursor_test3() returns void as $$
@@ -3125,9 +3134,9 @@ begin
   raise notice 'x.f1 = %, x.f2 = %', x.f1, x.f2;
 end$$ language plpgsql;
 select footest();
-ERROR:  could not determine data type of parameter $1
-CONTEXT:  SQL statement "select * from foo where f1 = p1 and f1::text = p3"
-PL/pgSQL function footest() line 8 at SQL statement
+ERROR:  query returned no rows
+DETAIL:  parameters: p1 = '2', p3 = 'foo'
+CONTEXT:  PL/pgSQL function footest() line 8 at SQL statement
 create or replace function footest() returns void as $$
 declare
 x record;
@@ -3139,9 +3148,9 @@ begin
   raise notice 'x.f1 = %, x.f2 = %', x.f1, x.f2;
 end$$ language plpgsql;
 select footest();
-ERROR:  could not determine data type of parameter $1
-CONTEXT:  SQL statement "select * from foo where f1 > p1 or f1::text = p3"
-PL/pgSQL function footest() line 8 at SQL statement
+ERROR:  query returned more than one row
+DETAIL:  parameters: p1 = '2', p3 = 'foo'
+CONTEXT:  PL/pgSQL function footest() line 8 at SQL statement
 create or replace function footest() returns void as $$
 declare x record;
 begin
@@ -3160,9 +3169,9 @@ begin
   raise notice 'x.f1 = %, x.f2 = %', x.f1, x.f2;
 end$$ language plpgsql;
 select footest();
-ERROR:  there is no parameter $1
-CONTEXT:  SQL statement "select * from foo where f1 = $1 or f1::text = $2"
-PL/pgSQL function footest() line 5 at EXECUTE
+ERROR:  query returned no rows
+DETAIL:  parameters: $1 = '0', $2 = 'foo'
+CONTEXT:  PL/pgSQL function footest() line 5 at EXECUTE
 create or replace function footest() returns void as $$
 declare x record;
 begin
@@ -3171,9 +3180,9 @@ begin
   raise notice 'x.f1 = %, x.f2 = %', x.f1, x.f2;
 end$$ language plpgsql;
 select footest();
-ERROR:  there is no parameter $1
-CONTEXT:  SQL statement "select * from foo where f1 > $1"
-PL/pgSQL function footest() line 5 at EXECUTE
+ERROR:  query returned more than one row
+DETAIL:  parameters: $1 = '1'
+CONTEXT:  PL/pgSQL function footest() line 5 at EXECUTE
 create or replace function footest() returns void as $$
 declare x record;
 begin
@@ -3197,9 +3206,8 @@ begin
   raise notice 'x.f1 = %, x.f2 = %', x.f1, x.f2;
 end$$ language plpgsql;
 select footest();
-ERROR:  could not determine data type of parameter $1
-CONTEXT:  SQL statement "select * from foo where f1 > p1 or f1::text = p3"
-PL/pgSQL function footest() line 10 at SQL statement
+ERROR:  query returned more than one row
+CONTEXT:  PL/pgSQL function footest() line 10 at SQL statement
 reset plpgsql.print_strict_params;
 create or replace function footest() returns void as $$
 -- override the global
@@ -3214,9 +3222,9 @@ begin
   raise notice 'x.f1 = %, x.f2 = %', x.f1, x.f2;
 end$$ language plpgsql;
 select footest();
-ERROR:  could not determine data type of parameter $1
-CONTEXT:  SQL statement "select * from foo where f1 > p1 or f1::text = p3"
-PL/pgSQL function footest() line 10 at SQL statement
+ERROR:  query returned more than one row
+DETAIL:  parameters: p1 = '2', p3 = 'foo'
+CONTEXT:  PL/pgSQL function footest() line 10 at SQL statement
 -- test warnings and errors
 set plpgsql.extra_warnings to 'all';
 ERROR:  syntax error at or near "all"
@@ -4873,8 +4881,15 @@ end;
 $$ language plpgsql;
 -- PGXCTODO: This is failing due to issue 3522907, complicated SELECT queries in plpgsql functions
 select * from conflict_test() order by 1,2;
-ERROR:  could not determine data type of parameter $1
-CONTEXT:  PL/pgSQL function conflict_test() line 6 at FOR over SELECT rows
+ q1 |        q2         
+----+-------------------
+ 42 | -4567890123456789
+ 42 |               123
+ 42 |               456
+ 42 |  4567890123456789
+ 42 |  4567890123456789
+(5 rows)
+
 create or replace function conflict_test() returns setof int8_tbl as $$
 #variable_conflict use_column
 declare r record;

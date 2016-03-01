@@ -142,6 +142,7 @@ extern int	ensure_in_buffer_capacity(size_t bytes_needed, PGXCNodeHandle * handl
 extern int	ensure_out_buffer_capacity(size_t bytes_needed, PGXCNodeHandle * handle);
 
 extern int	pgxc_node_send_query(PGXCNodeHandle * handle, const char *query);
+extern int	pgxc_node_send_rollback(PGXCNodeHandle * handle, const char *query);
 extern int	pgxc_node_send_describe(PGXCNodeHandle * handle, bool is_statement,
 						const char *name);
 extern int	pgxc_node_send_execute(PGXCNodeHandle * handle, const char *portal, int fetch);
@@ -187,5 +188,7 @@ extern char *PGXCNodeGetSessionParamStr(void);
 extern char *PGXCNodeGetTransactionParamStr(void);
 extern void pgxc_node_set_query(PGXCNodeHandle *handle, const char *set_query);
 extern void RequestInvalidateRemoteHandles(void);
+extern void PGXCNodeSetConnectionState(PGXCNodeHandle *handle,
+		DNConnectionState new_state);
 
 #endif /* PGXCNODE_H */

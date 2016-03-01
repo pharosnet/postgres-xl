@@ -151,6 +151,8 @@ typedef struct RemoteQueryState
 	/* Support for parameters */
 	char	   *paramval_data;		/* parameter data, format is like in BIND */
 	int			paramval_len;		/* length of parameter values data */
+	Oid		   *rqs_param_types;	/* Types of the remote params */
+	int			rqs_num_params;
 
 	int			eflags;			/* capability flags to pass to tuplestore */
 	bool		eof_underlying; /* reached end of underlying plan? */
@@ -272,7 +274,7 @@ extern void BufferConnection(PGXCNodeHandle *conn);
 
 extern void ExecRemoteQueryReScan(RemoteQueryState *node, ExprContext *exprCtxt);
 
-extern int ParamListToDataRow(ParamListInfo params, char** result);
+extern void SetDataRowForExtParams(ParamListInfo params, RemoteQueryState *rq_state);
 
 extern void ExecCloseRemoteStatement(const char *stmt_name, List *nodelist);
 extern char *PrePrepare_Remote(char *prepareGID, bool localNode, bool implicit);
