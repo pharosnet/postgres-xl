@@ -73,6 +73,10 @@ typedef struct GTM_Threads
 
 extern GTM_Threads *GTMThreads;
 
+typedef struct GTM_RestoreContext {
+	int	version;
+} GTM_RestoreContext;
+
 int GTM_ThreadAdd(GTM_ThreadInfo *thrinfo);
 int GTM_ThreadRemove(GTM_ThreadInfo *thrinfo);
 int GTM_ThreadJoin(GTM_ThreadInfo *thrinfo);
@@ -88,6 +92,7 @@ GTM_ThreadInfo *GTM_ThreadCreate(GTM_ConnectionInfo *conninfo,
 GTM_ThreadInfo * GTM_GetThreadInfo(GTM_ThreadID thrid);
 #ifdef XCP
 extern void SaveControlInfo(void);
+void GTM_RestoreSeqInfo(FILE *ctlf, struct GTM_RestoreContext *context);
 #define CONTROL_INTERVAL		50000
 #endif
 
@@ -143,5 +148,6 @@ extern GTM_ThreadID						TopMostThreadID;
 	((((a) + 1) == UINT32_MAX) ? 1 : ((a) + 1))
 
 #define GTM_CONTROL_FILE		"gtm.control"
+#define GTM_CONTROL_VERSION		20160302
 
 #endif

@@ -57,8 +57,9 @@ static int NodeRegisterMagic = 0xeaeaeaea;
 static int NodeUnregisterMagic = 0xebebebeb;
 static int NodeEndMagic = 0xefefefef;
 
+#define GTM_GlobalXmin GTMTransactions.gt_recent_global_xmin
+
 static GTM_PGXCNodeInfoHashBucket GTM_PGXCNodes[NODE_HASH_TABLE_SIZE];
-static GlobalTransactionId GTM_GlobalXmin = FirstNormalGlobalTransactionId;
 static GTM_Timestamp GTM_GlobalXminComputedTime;
 
 static GTM_PGXCNodeInfo *pgxcnode_find_info(GTM_PGXCNodeType type, char *node_name);
@@ -1025,10 +1026,6 @@ GTM_HandleGlobalXmin(GTM_PGXCNodeType type, char *node_name,
 		*errcode = GTM_ERRCODE_TOO_OLD_XMIN;
 
 		mynodeinfo->joining = true;
-		mynodeinfo->reported_xmin_time = GTM_TimestampGetCurrent();
-		mynodeinfo->reported_xmin = GTM_GlobalXmin;
-
-		GTM_RWLockRelease(&mynodeinfo->node_lock);
 
 		/*
 		 * When node registers from the first time, the reported_xmin is set
@@ -1042,6 +1039,11 @@ GTM_HandleGlobalXmin(GTM_PGXCNodeType type, char *node_name,
 			elog(LOG, "GTM_ERRCODE_TOO_OLD_XMIN - node_name %s, reported_xmin %d, "
 					"previously reported_xmin %d, GTM_GlobalXmin %d", node_name,
 					reported_xmin, mynodeinfo->reported_xmin, GTM_GlobalXmin);
+
+		mynodeinfo->reported_xmin_time = GTM_TimestampGetCurrent();
+		mynodeinfo->reported_xmin = GTM_GlobalXmin;
+
+		GTM_RWLockRelease(&mynodeinfo->node_lock);
 		return InvalidGlobalTransactionId;
 	}
 

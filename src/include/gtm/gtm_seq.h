@@ -101,8 +101,8 @@ void ProcessSequenceAlterCommand(Port *myport, StringInfo message, bool is_backu
 
 void ProcessSequenceListCommand(Port *myport, StringInfo message);
 
+void decode_seq_key(char* value, GTM_SequenceKey seqkey);
 void GTM_SaveSeqInfo(FILE *ctlf);
-void GTM_RestoreSeqInfo(FILE *ctlf);
 int GTM_SeqRestore(GTM_SequenceKey seqkey,
 			   GTM_Sequence increment_by,
 			   GTM_Sequence minval,

@@ -1929,7 +1929,7 @@ encode_seq_key(GTM_SequenceKey seqkey, char *buffer)
 /*
  * Decode the string encoded by the encode_seq_key function
  */
-static void
+void
 decode_seq_key(char* value, GTM_SequenceKey seqkey)
 {
 	char   *in;
@@ -2146,82 +2146,6 @@ void GTM_WriteRestorePointSeq(FILE *ctlf)
 {
 	GTM_UpdateRestorePointSeq();
 	GTM_SaveSeqInfo2(ctlf, TRUE);
-}
-
-void
-GTM_RestoreSeqInfo(FILE *ctlf)
-{
-	char seqname[1024];
-
-	if (ctlf == NULL)
-		return;
-
-	while (fscanf(ctlf, "%s", seqname) == 1)
-	{
-		GTM_SequenceKeyData seqkey;
-		GTM_Sequence increment_by;
-		GTM_Sequence minval;
-		GTM_Sequence maxval;
-		GTM_Sequence startval;
-		GTM_Sequence curval;
-		int32 state;
-		bool cycle;
-		bool called;
-		char boolval[16];
-
-		decode_seq_key(seqname, &seqkey);
-
-		if (fscanf(ctlf, "%ld", &curval) != 1)
-		{
-			elog(WARNING, "Corrupted control file");
-			return;
-		}
-		if (fscanf(ctlf, "%ld", &startval) != 1)
-		{
-			elog(WARNING, "Corrupted control file");
-			return;
-		}
-		if (fscanf(ctlf, "%ld", &increment_by) != 1)
-		{
-			elog(WARNING, "Corrupted control file");
-			return;
-		}
-		if (fscanf(ctlf, "%ld", &minval) != 1)
-		{
-			elog(WARNING, "Corrupted control file");
-			return;
-		}
-		if (fscanf(ctlf, "%ld", &maxval) != 1)
-		{
-			elog(WARNING, "Corrupted control file");
-			return;
-		}
-		if (fscanf(ctlf, "%s", boolval) == 1)
-		{
-			cycle = (*boolval == 't');
-		}
-		else
-		{
-			elog(WARNING, "Corrupted control file");
-			return;
-		}
-		if (fscanf(ctlf, "%s", boolval) == 1)
-		{
-			called = (*boolval == 't');
-		}
-		else
-		{
-			elog(WARNING, "Corrupted control file");
-			return;
-		}
-		if (fscanf(ctlf, "%x", &state) != 1)
-		{
-			elog(WARNING, "Corrupted control file");
-			return;
-		}
-		GTM_SeqRestore(&seqkey, increment_by, minval, maxval, startval, curval,
-					   state, cycle, called);
-	}
 }
 
 /*

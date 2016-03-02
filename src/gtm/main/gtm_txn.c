@@ -32,6 +32,8 @@
 
 extern bool Backup_synchronously;
 
+#define GTM_CONTROL_VERSION	20160302
+
 /* Local functions */
 static XidStatus GlobalTransactionIdGetStatus(GlobalTransactionId transactionId);
 static bool GTM_SetDoVacuum(GTM_TransactionHandle handle);
@@ -92,6 +94,9 @@ GTM_InitTxnManager(void)
 	 * XXX Newest XID that is committed or aborted
 	 */
 	GTMTransactions.gt_latestCompletedXid = FirstNormalGlobalTransactionId;
+
+	/* Initialise gt_recent_global_xmin */
+	GTMTransactions.gt_recent_global_xmin = FirstNormalGlobalTransactionId;
 
 	/*
 	 * Initialize the locks to protect various XID fields as well as the linked
@@ -684,6 +689,11 @@ SetNextGlobalTransactionId(GlobalTransactionId gxid)
 	return;
 }
 
+void
+SetControlXid(GlobalTransactionId gxid)
+{
+	ControlXid = gxid;
+}
 
 /* Transaction Control */
 int
@@ -2776,62 +2786,11 @@ GTM_SetShuttingDown(void)
 	GTM_RWLockRelease(&GTMTransactions.gt_XidGenLock);
 }
 
-void
-GTM_RestoreTxnInfo(FILE *ctlf, GlobalTransactionId next_gxid)
-{
-	GlobalTransactionId saved_gxid;
-
-	if (ctlf)
-	{
-		if ((fscanf(ctlf, "%u", &saved_gxid) != 1) &&
-			(!GlobalTransactionIdIsValid(next_gxid)))
-			next_gxid = InitialGXIDValue_Default;
-		else if (!GlobalTransactionIdIsValid(next_gxid))
-		{
-			/* Add in extra amount in case we had not gracefully stopped */
-			next_gxid = saved_gxid + CONTROL_INTERVAL;
-			ControlXid = next_gxid;
-		}
-	}
-	else if (!GlobalTransactionIdIsValid(next_gxid))
-		next_gxid = InitialGXIDValue_Default;
-
-	elog(LOG, "Restoring last GXID to %u\n", next_gxid);
-
-	if (GlobalTransactionIdIsValid(next_gxid))
-		SetNextGlobalTransactionId(next_gxid);
-	/* Set this otherwise a strange snapshot might be returned for the first one */
-	GTMTransactions.gt_latestCompletedXid = next_gxid - 1;
-	return;
-}
-
-void
-GTM_SaveTxnInfo(FILE *ctlf)
-{
-	GlobalTransactionId next_gxid;
-
-	next_gxid = ReadNewGlobalTransactionId();
-
-	elog(DEBUG1, "Saving transaction info - next_gxid: %u", next_gxid);
-
-	fprintf(ctlf, "%u\n", next_gxid);
-}
-
 bool GTM_NeedXidRestoreUpdate(void)
 {
 	return(GlobalTransactionIdPrecedesOrEquals(GTMTransactions.gt_backedUpXid, GTMTransactions.gt_nextXid));
 }
 
-void GTM_WriteRestorePointXid(FILE *f)
-{
-	if ((MaxGlobalTransactionId - GTMTransactions.gt_nextXid) <= RestoreDuration)
-		GTMTransactions.gt_backedUpXid = GTMTransactions.gt_nextXid + RestoreDuration;
-	else
-		GTMTransactions.gt_backedUpXid = FirstNormalGlobalTransactionId + (RestoreDuration - (MaxGlobalTransactionId - GTMTransactions.gt_nextXid));
-	
-	elog(DEBUG1, "Saving transaction restoration info, backed-up gxid: %u", GTMTransactions.gt_backedUpXid);
-	fprintf(f, "%u\n", GTMTransactions.gt_backedUpXid);
-}
 
 GlobalTransactionId
 GTM_GetLatestCompletedXID(void)

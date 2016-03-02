@@ -28,6 +28,7 @@ typedef int XidStatus;
 #define TRANSACTION_STATUS_COMMITTED        0x01
 #define TRANSACTION_STATUS_ABORTED          0x02
 
+struct GTM_RestoreContext;
 /*
  * prototypes for functions in transam/transam.c
  */
@@ -226,8 +227,11 @@ void ProcessBeginTransactionGetGXIDCommandMulti(Port *myport, StringInfo message
 void ProcessCommitTransactionCommandMulti(Port *myport, StringInfo message, bool is_backup);
 void ProcessRollbackTransactionCommandMulti(Port *myport, StringInfo message, bool is_backup) ;
 
+void GTM_WriteRestorePointVersion(FILE *f);
+void GTM_RestoreStart(FILE *ctlf, struct GTM_RestoreContext *context);
 void GTM_SaveTxnInfo(FILE *ctlf);
-void GTM_RestoreTxnInfo(FILE *ctlf, GlobalTransactionId next_gxid);
+void GTM_RestoreTxnInfo(FILE *ctlf, GlobalTransactionId next_gxid,
+		struct GTM_RestoreContext *context);
 void GTM_BkupBeginTransaction(GTM_IsolationLevel isolevel,
 							  bool readonly,
 							  const char *global_sessionid,

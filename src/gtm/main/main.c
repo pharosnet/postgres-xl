@@ -94,6 +94,8 @@ static int	ListenSocket[MAXLISTEN];
 pthread_key_t	threadinfo_key;
 static bool		GTMAbortPending = false;
 
+static void GTM_SaveVersion(FILE *ctlf);
+
 static Port *ConnCreate(int serverFd);
 static int ServerLoop(void);
 static int initMasks(fd_set *rmask);
@@ -323,6 +325,7 @@ SaveControlInfo(void)
 		return;
 	}
 
+	GTM_SaveVersion(ctlf);
 	GTM_SaveTxnInfo(ctlf);
 	GTM_SaveSeqInfo(ctlf);
 	fclose(ctlf);
@@ -648,6 +651,7 @@ main(int argc, char *argv[])
 	else
 	{
 		GTM_MutexLockAcquire(&control_lock);
+		GTM_RestoreContext restoreContext;
 
 		ctlf = fopen(GTMControlFile, "r");
 
@@ -691,8 +695,10 @@ main(int argc, char *argv[])
 				elog(ERROR, "Could not open %s, errno %d - aborting GTM start",
 						GTMControlFile, errno);
 		}
-		GTM_RestoreTxnInfo(ctlf, next_gxid);
-		GTM_RestoreSeqInfo(ctlf);
+
+		GTM_RestoreStart(ctlf, &restoreContext);
+		GTM_RestoreTxnInfo(ctlf, next_gxid, &restoreContext);
+		GTM_RestoreSeqInfo(ctlf, &restoreContext);
 		if (ctlf)
 			fclose(ctlf);
 
@@ -2284,3 +2290,210 @@ static void ProcessBarrierCommand(Port *myport, GTM_MessageType mtype, StringInf
 	}
 }
 	
+void
+GTM_RestoreStart(FILE *ctlf, struct GTM_RestoreContext *context)
+{
+	int version;
+
+	Assert(ctlf);
+
+	if (fscanf(ctlf, "version: %d\n", &version) == 1)
+	{
+		elog(LOG, "Read control file version %d", version);
+		context->version = version;
+	}
+	else
+	{
+		elog(LOG, "Failed to read file version");
+		context->version = -1;
+	}
+}
+
+void
+GTM_RestoreTxnInfo(FILE *ctlf, GlobalTransactionId next_gxid,
+		struct GTM_RestoreContext *context)
+{
+	GlobalTransactionId saved_gxid;
+	GlobalTransactionId saved_global_xmin;
+
+	if (ctlf)
+	{
+		/*
+		 * If the control file version is 20160302, then we expect to see
+		 * next_xid and global_xmin saved as first two lines. For older
+		 * versions, just the next_xid is stored
+		 */
+		if (context && context->version == 20160302)
+		{
+			if (fscanf(ctlf, "next_xid: %u\n", &saved_gxid) != 1)
+				saved_gxid = InvalidGlobalTransactionId;
+
+			if (fscanf(ctlf, "global_xmin: %u\n", &saved_global_xmin) != 1)
+				saved_global_xmin = InvalidGlobalTransactionId;
+		}
+		else
+		{
+			if (fscanf(ctlf, "%u\n", &saved_gxid) != 1)
+				saved_gxid = InvalidGlobalTransactionId;
+			saved_global_xmin = InvalidGlobalTransactionId;
+		}
+	}
+
+	/*
+	 * If the caller has supplied an explicit XID to restore, just use that.
+	 * This is typically only be used during initdb and in some exception
+	 * circumstances to recover from failures. But otherwise we must start with
+	 * the XIDs saved in the control file
+	 *
+	 * If the global_xmin was saved (which should be unless we are dealing with
+	 * an old control file), use that. Otherwise set it saved_gxid/next_xid
+	 * whatever is available. If we don't used the value incremented by
+	 * CONTROL_INTERVAL because its better to start with a conservative value
+	 * for the GlobalXmin
+	 */
+	if (!GlobalTransactionIdIsValid(next_gxid))
+	{
+		if (GlobalTransactionIdIsValid(saved_gxid))
+		{
+			/* 
+			 * Add in extra amount in case we had not gracefully stopped
+			 */
+			next_gxid = saved_gxid + CONTROL_INTERVAL;
+			SetControlXid(next_gxid);
+		}
+		else
+			saved_gxid = next_gxid = InitialGXIDValue_Default;
+
+		if (GlobalTransactionIdIsValid(saved_global_xmin))
+			GTMTransactions.gt_recent_global_xmin = saved_global_xmin;
+		else
+			GTMTransactions.gt_recent_global_xmin = saved_gxid;
+	}
+	else
+		GTMTransactions.gt_recent_global_xmin = next_gxid;
+
+	SetNextGlobalTransactionId(next_gxid);
+	elog(LOG, "Restoring last GXID to %u\n", next_gxid);
+	elog(LOG, "Restoring global xmin to %u\n",
+			GTMTransactions.gt_recent_global_xmin);
+
+	/* Set this otherwise a strange snapshot might be returned for the first one */
+	GTMTransactions.gt_latestCompletedXid = next_gxid - 1;
+	return;
+}
+
+static void
+GTM_SaveVersion(FILE *ctlf)
+{
+	fprintf(ctlf, "version: %d\n", GTM_CONTROL_VERSION);
+}
+
+void
+GTM_SaveTxnInfo(FILE *ctlf)
+{
+	GlobalTransactionId next_gxid;
+	GlobalTransactionId global_xmin = GTMTransactions.gt_recent_global_xmin;
+
+	next_gxid = ReadNewGlobalTransactionId();
+
+	elog(DEBUG1, "Saving transaction info - next_gxid: %u, global_xmin: %u",
+			next_gxid, global_xmin);
+
+	fprintf(ctlf, "next_xid: %u\n", next_gxid);
+	fprintf(ctlf, "global_xmin: %u\n", global_xmin);
+}
+
+void
+GTM_WriteRestorePointXid(FILE *f)
+{
+	if ((MaxGlobalTransactionId - GTMTransactions.gt_nextXid) <= RestoreDuration)
+		GTMTransactions.gt_backedUpXid = GTMTransactions.gt_nextXid + RestoreDuration;
+	else
+		GTMTransactions.gt_backedUpXid = FirstNormalGlobalTransactionId + (RestoreDuration - (MaxGlobalTransactionId - GTMTransactions.gt_nextXid));
+	
+	elog(DEBUG1, "Saving transaction restoration info, backed-up gxid: %u", GTMTransactions.gt_backedUpXid);
+	fprintf(f, "next_xid: %u\n", GTMTransactions.gt_backedUpXid);
+	fprintf(f, "global_xmin: %u\n", GTMTransactions.gt_backedUpXid);
+}
+
+void
+GTM_WriteRestorePointVersion(FILE *f)
+{
+	GTM_SaveVersion(f);
+}
+
+void
+GTM_RestoreSeqInfo(FILE *ctlf, struct GTM_RestoreContext *context)
+{
+	char seqname[1024];
+
+	if (ctlf == NULL)
+		return;
+
+	while (fscanf(ctlf, "%s", seqname) == 1)
+	{
+		GTM_SequenceKeyData seqkey;
+		GTM_Sequence increment_by;
+		GTM_Sequence minval;
+		GTM_Sequence maxval;
+		GTM_Sequence startval;
+		GTM_Sequence curval;
+		int32 state;
+		bool cycle;
+		bool called;
+		char boolval[16];
+
+		decode_seq_key(seqname, &seqkey);
+
+		if (fscanf(ctlf, "%ld", &curval) != 1)
+		{
+			elog(WARNING, "Corrupted control file");
+			return;
+		}
+		if (fscanf(ctlf, "%ld", &startval) != 1)
+		{
+			elog(WARNING, "Corrupted control file");
+			return;
+		}
+		if (fscanf(ctlf, "%ld", &increment_by) != 1)
+		{
+			elog(WARNING, "Corrupted control file");
+			return;
+		}
+		if (fscanf(ctlf, "%ld", &minval) != 1)
+		{
+			elog(WARNING, "Corrupted control file");
+			return;
+		}
+		if (fscanf(ctlf, "%ld", &maxval) != 1)
+		{
+			elog(WARNING, "Corrupted control file");
+			return;
+		}
+		if (fscanf(ctlf, "%s", boolval) == 1)
+		{
+			cycle = (*boolval == 't');
+		}
+		else
+		{
+			elog(WARNING, "Corrupted control file");
+			return;
+		}
+		if (fscanf(ctlf, "%s", boolval) == 1)
+		{
+			called = (*boolval == 't');
+		}
+		else
+		{
+			elog(WARNING, "Corrupted control file");
+			return;
+		}
+		if (fscanf(ctlf, "%x", &state) != 1)
+		{
+			elog(WARNING, "Corrupted control file");
+			return;
+		}
+		GTM_SeqRestore(&seqkey, increment_by, minval, maxval, startval, curval,
+					   state, cycle, called);
+	}
+}
