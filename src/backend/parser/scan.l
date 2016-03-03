@@ -1103,6 +1103,10 @@ scanner_init(const char *str,
 	yyext->keywords = keywords;
 	yyext->num_keywords = num_keywords;
 
+#ifdef XCP
+	yyext->query = pstrdup(str);
+#endif
+
 	yyext->backslash_quote = backslash_quote;
 	yyext->escape_string_warning = escape_string_warning;
 	yyext->standard_conforming_strings = standard_conforming_strings;
@@ -1525,4 +1529,36 @@ core_yyfree(void *ptr, core_yyscan_t yyscanner)
 {
 	if (ptr)
 		pfree(ptr);
+}
+
+/*
+ * Return a copy of a substring of the original query string, starting at
+ * 'start' offset and 'len' bytes long, Be mindful of the invalid arguments
+ * being passed by the caller
+ */
+char *
+scanner_get_query(int start, int len, core_yyscan_t yyscanner)
+{
+	char *query;
+
+	/*
+	 * If the caller passes a wrong offset, just assume 0
+	 */
+	if (start == -1)
+		start = 0; 
+	if (start > strlen(yyextra->query))
+		return NULL;
+	/*
+	 * Similarly, if the passed-in length is more than remaining
+	 * bytes in the string, just return whatever is available
+	 */
+	if (len == -1)
+		len = strlen(yyextra->query) - start;
+	else if (len + start > strlen(yyextra->query))
+		return NULL;
+
+	query = palloc0(len + 1);
+	memcpy(query, yyextra->query + start, len);
+	query[len] = '\0';
+	return query; 
 }

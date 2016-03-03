@@ -53,6 +53,7 @@ typedef struct base_yy_extra_type
 	 * State variables that belong to the grammar.
 	 */
 	List	   *parsetree;		/* final parse result is delivered here */
+	List	   *queries;
 } base_yy_extra_type;
 
 /*

@@ -123,6 +123,14 @@ typedef struct ImportQual
 	List	   *table_names;
 } ImportQual;
 
+typedef struct StmtMulti
+{
+	List	*parsetrees;
+	List	*queries;
+	int		offset;
+	char	*lastQuery;
+} StmtMulti;
+
 /* ConstraintAttributeSpec yields an integer bitmask of these flags: */
 #define CAS_NOT_DEFERRABLE			0x01
 #define CAS_DEFERRABLE				0x02
@@ -231,6 +239,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	InsertStmt			*istmt;
 	VariableSetStmt		*vsetstmt;
 /* PGXC_BEGIN */
+	struct StmtMulti			*stmtmulti;
 	DistributeBy		*distby;
 	PGXCSubCluster		*subclus;
 /* PGXC_END */
@@ -354,7 +363,8 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <ival>	import_qualification_type
 %type <importqual> import_qualification
 
-%type <list>	stmtblock stmtmulti
+%type <stmtmulti> stmtmulti
+%type <list>	stmtblock
 				OptTableElementList TableElementList OptInherit definition
 				OptTypedTableElementList TypedTableElementList
 				reloptions opt_reloptions
@@ -758,7 +768,8 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
  */
 stmtblock:	stmtmulti
 			{
-				pg_yyget_extra(yyscanner)->parsetree = $1;
+				pg_yyget_extra(yyscanner)->parsetree = $1 ? $1->parsetrees : NIL;
+				pg_yyget_extra(yyscanner)->queries = $1 ? $1->queries : NIL;
 			}
 		;
 
@@ -766,16 +777,59 @@ stmtblock:	stmtmulti
 stmtmulti:	stmtmulti ';' stmt
 				{
 					if ($3 != NULL)
-						$$ = lappend($1, $3);
+					{
+						char *query = scanner_get_query(@3, -1, yyscanner);
+						/*
+						 * Because of the way multi-commands are parsed by the
+						 * parser, when the earlier command was parsed and
+						 * reduced to a 'stmtmulti', we did not have the
+						 * end-of-the-query marker. But now that we have seen
+						 * the ';' token, add '\0' at the corresponding offset
+						 * to get a separated command.
+						 */
+						if ($1->lastQuery)
+							$1->lastQuery[@2 - $1->offset] = '\0';
+						$1->offset = @2;
+						$1->parsetrees = lappend($1->parsetrees, $3);
+						$1->queries = lappend($1->queries, makeString(query));
+						$1->lastQuery = query;
+						$$ = $1;
+					}
 					else
 						$$ = $1;
 				}
 			| stmt
 				{
 					if ($1 != NULL)
-						$$ = list_make1($1);
+					{
+						StmtMulti *n = (StmtMulti *) palloc0(sizeof (StmtMulti));
+						char *query = scanner_get_query(@1, -1, yyscanner);
+						n->lastQuery = query;
+
+						/*
+						 * Keep track of the offset where $1 started. We don't
+						 * have the offset where it ends so we copy the entire
+						 * query to the end. If later, we find a ';' followed
+						 * by another command, we'll add the '\0' at the
+						 * appropriate offset
+						 *
+						 * XXX May be there is a better way to get the matching  
+						 * portion of the query string, but this does the trick
+						 * for regression as well as the problem we are trying
+						 * to solve with multi-command queries
+						 */
+						n->offset = @1;
+
+						/*
+						 * Collect both parsetree as well as the original query
+						 * that resulted in the parsetree
+						 */
+						n->parsetrees = list_make1($1);
+						n->queries = list_make1(makeString(query));
+						$$ = n;
+					}
 					else
-						$$ = NIL;
+						$$ = NULL;
 				}
 		;
 

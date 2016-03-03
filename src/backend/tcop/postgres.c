@@ -754,7 +754,7 @@ ProcessClientWriteInterrupt(bool blocked)
  * commands are not processed any further than the raw parse stage.
  */
 List *
-pg_parse_query(const char *query_string)
+pg_parse_query_internal(const char *query_string, List **querysource_list)
 {
 	List	   *raw_parsetree_list;
 
@@ -763,7 +763,7 @@ pg_parse_query(const char *query_string)
 	if (log_parser_stats)
 		ResetUsage();
 
-	raw_parsetree_list = raw_parser(query_string);
+	raw_parsetree_list = raw_parser(query_string, querysource_list);
 
 	if (log_parser_stats)
 		ShowUsage("PARSER STATISTICS");
@@ -784,6 +784,18 @@ pg_parse_query(const char *query_string)
 	TRACE_POSTGRESQL_QUERY_PARSE_DONE(query_string);
 
 	return raw_parsetree_list;
+}
+
+List *
+pg_parse_query(const char *query_string)
+{
+	return pg_parse_query_internal(query_string, NULL);
+}
+
+List *
+pg_parse_query_get_source(const char *query_string, List **querysource_list)
+{
+	return pg_parse_query_internal(query_string, querysource_list);
 }
 
 /*
@@ -1044,6 +1056,8 @@ exec_simple_query(const char *query_string)
 	MemoryContext oldcontext;
 	List	   *parsetree_list;
 	ListCell   *parsetree_item;
+	List	   *querysource_list;
+	ListCell   *querysource_item;
 	bool		save_log_statement_stats = log_statement_stats;
 	bool		was_logged = false;
 	bool		isTopLevel;
@@ -1092,7 +1106,7 @@ exec_simple_query(const char *query_string)
 	 * Do basic parsing of the query or queries (this should be safe even if
 	 * we are in aborted transaction state!)
 	 */
-	parsetree_list = pg_parse_query(query_string);
+	parsetree_list = pg_parse_query_get_source(query_string, &querysource_list);
 
 #ifdef XCP
 	if (IS_PGXC_LOCAL_COORDINATOR && list_length(parsetree_list) > 1)
@@ -1159,9 +1173,10 @@ exec_simple_query(const char *query_string)
 	/*
 	 * Run through the raw parsetree(s) and process each one.
 	 */
-	foreach(parsetree_item, parsetree_list)
+	forboth(parsetree_item, parsetree_list, querysource_item, querysource_list)
 	{
 		Node	   *parsetree = (Node *) lfirst(parsetree_item);
+		char	   *querysource = ((Value *) lfirst(querysource_item))->val.str;
 		bool		snapshot_set = false;
 		const char *commandTag;
 		char		completionTag[COMPLETION_TAG_BUFSIZE];
@@ -1274,10 +1289,23 @@ exec_simple_query(const char *query_string)
 		 * We don't have to copy anything into the portal, because everything
 		 * we are passing here is in MessageContext, which will outlive the
 		 * portal anyway.
+		 *
+		 * The query_string may contain multiple commands separated by ';' and
+		 * we have a separate parsetree corresponding to each such command.
+		 * Since we later may send down the query to the remote nodes
+		 * (especially for utility queries), using the query_string is a
+		 * problem because the same query will be sent out multiple times, one
+		 * for each command processed. So we taught the parser to return the
+		 * portion of the query_string along with the parsetree and use that
+		 * while defining a portal below.
+		 *
+		 * XXX Since the portal expects to see a valid query_string, if the
+		 * substring is available, use the original query_string. Not elegant,
+		 * but far better than what we were doing earlier
 		 */
 		PortalDefineQuery(portal,
 						  NULL,
-						  query_string,
+						  querysource ? querysource : query_string,
 						  commandTag,
 						  plantree_list,
 						  NULL);

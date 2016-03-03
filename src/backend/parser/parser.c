@@ -32,7 +32,7 @@
  * Returns a list of raw (un-analyzed) parse trees.
  */
 List *
-raw_parser(const char *str)
+raw_parser(const char *str, List **queries)
 {
 	core_yyscan_t yyscanner;
 	base_yy_extra_type yyextra;
@@ -56,6 +56,9 @@ raw_parser(const char *str)
 
 	if (yyresult)				/* error */
 		return NIL;
+
+	if (queries)
+		*queries = yyextra.queries;
 
 	return yyextra.parsetree;
 }
