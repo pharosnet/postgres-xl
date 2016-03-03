@@ -778,7 +778,8 @@ stmtmulti:	stmtmulti ';' stmt
 				{
 					if ($3 != NULL)
 					{
-						char *query = scanner_get_query(@3, -1, yyscanner);
+						char *query;
+						ListCell *last;
 						/*
 						 * Because of the way multi-commands are parsed by the
 						 * parser, when the earlier command was parsed and
@@ -787,12 +788,16 @@ stmtmulti:	stmtmulti ';' stmt
 						 * the ';' token, add '\0' at the corresponding offset
 						 * to get a separated command.
 						 */
-						if ($1->lastQuery)
-							$1->lastQuery[@2 - $1->offset] = '\0';
+						last = list_tail($1->queries);
+						query = palloc(@2 - $1->offset + 1);
+						memcpy(query, lfirst(last), @2 - $1->offset);
+						query[@2 - $1->offset] = '\0';
+
+						lfirst(last) = query;
+						query = scanner_get_query(@3, -1, yyscanner);
 						$1->offset = @2;
 						$1->parsetrees = lappend($1->parsetrees, $3);
-						$1->queries = lappend($1->queries, makeString(query));
-						$1->lastQuery = query;
+						$1->queries = lappend($1->queries, query);
 						$$ = $1;
 					}
 					else
@@ -804,7 +809,6 @@ stmtmulti:	stmtmulti ';' stmt
 					{
 						StmtMulti *n = (StmtMulti *) palloc0(sizeof (StmtMulti));
 						char *query = scanner_get_query(@1, -1, yyscanner);
-						n->lastQuery = query;
 
 						/*
 						 * Keep track of the offset where $1 started. We don't
@@ -825,7 +829,7 @@ stmtmulti:	stmtmulti ';' stmt
 						 * that resulted in the parsetree
 						 */
 						n->parsetrees = list_make1($1);
-						n->queries = list_make1(makeString(query));
+						n->queries = list_make1(query);
 						$$ = n;
 					}
 					else

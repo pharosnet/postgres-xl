@@ -1176,7 +1176,7 @@ exec_simple_query(const char *query_string)
 	forboth(parsetree_item, parsetree_list, querysource_item, querysource_list)
 	{
 		Node	   *parsetree = (Node *) lfirst(parsetree_item);
-		char	   *querysource = ((Value *) lfirst(querysource_item))->val.str;
+		char	   *querysource = (char *) lfirst(querysource_item);
 		bool		snapshot_set = false;
 		const char *commandTag;
 		char		completionTag[COMPLETION_TAG_BUFSIZE];

@@ -1557,8 +1557,6 @@ scanner_get_query(int start, int len, core_yyscan_t yyscanner)
 	else if (len + start > strlen(yyextra->query))
 		return NULL;
 
-	query = palloc0(len + 1);
-	memcpy(query, yyextra->query + start, len);
-	query[len] = '\0';
+	query = yyextra->query + start;
 	return query; 
 }
