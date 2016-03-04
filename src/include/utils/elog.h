@@ -440,9 +440,9 @@ typedef struct ErrorData
 #define PGXL_MSG_MAX_FILEIDS_PER_MODULE	100
 #define PGXL_MSG_MAX_MSGIDS_PER_FILE	300
 
-extern char *MsgModuleCtl;
 extern Size MsgModuleShmemSize(void);
 extern void MsgModuleShmemInit(void);
+extern void AtProcStart_MsgModule(void);
 #endif
 
 extern void EmitErrorReport(void);

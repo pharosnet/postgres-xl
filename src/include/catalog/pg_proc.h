@@ -5381,6 +5381,14 @@ DATA(insert OID = 6015 ( pg_msgmodule_set PGNSP PGUID 12 1 1 0 0 f f f f t t i 4
 DESCR("set debugging level for module/file/msg");
 DATA(insert OID = 6016 ( pg_msgmodule_change PGNSP PGUID 12 1 1 0 0 f f f f t t i 4 0 16 "20 20 20 20" _null_ _null_ _null_ _null_ _null_ pg_msgmodule_change _null_ _null_ _null_ ));
 DESCR("change debugging level for module/file/msg");
+DATA(insert OID = 6017 ( pg_msgmodule_enable PGNSP PGUID 12 1 1 0 0 f f f f t t i 1 0 16 "20" _null_ _null_ _null_ _null_ _null_ pg_msgmodule_enable _null_ _null_ _null_ ));
+DESCR("pid to honour overriden log levels");
+DATA(insert OID = 6018 ( pg_msgmodule_disable PGNSP PGUID 12 1 1 0 0 f f f f t t i 1 0 16 "20" _null_ _null_ _null_ _null_ _null_ pg_msgmodule_disable _null_ _null_ _null_ ));
+DESCR("pid to ignore overriden log levels");
+DATA(insert OID = 6019 ( pg_msgmodule_enable_all PGNSP PGUID 12 1 1 0 0 f f f f t t i 1 0 16 "16" _null_ _null_ _null_ _null_ _null_ pg_msgmodule_enable_all _null_ _null_ _null_ ));
+DESCR("all current/future processes to honour overriden log levels");
+DATA(insert OID = 6020 ( pg_msgmodule_disable_all PGNSP PGUID 12 1 1 0 0 f f f f t t 0 0 0 16 "" _null_ _null_ _null_ _null_ _null_ pg_msgmodule_disable_all _null_ _null_ _null_ ));
+DESCR("all processes to ignore overriden log levels");
 #endif
 
 /*

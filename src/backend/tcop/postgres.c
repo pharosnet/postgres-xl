@@ -4310,6 +4310,10 @@ PostgresMain(int argc, char *argv[],
 		prev_ParseAnalyze_callback = post_parse_analyze_hook;
 	post_parse_analyze_hook = ParseAnalyze_callback;
 
+#ifdef USE_MODULE_MSGIDS
+	AtProcStart_MsgModule();
+#endif
+
 	/* if we exit, try to release cluster lock properly */
 	on_shmem_exit(PGXCCleanClusterLock, 0);
 

@@ -73,7 +73,9 @@
 #include "postmaster/syslogger.h"
 #include "storage/ipc.h"
 #include "storage/proc.h"
+#include "storage/procarray.h"
 #include "tcop/tcopprot.h"
+#include "utils/builtins.h"
 #include "utils/guc.h"
 #include "utils/memutils.h"
 #include "utils/ps_status.h"
@@ -88,6 +90,10 @@
 
 static const char *err_gettext(const char *str) pg_attribute_format_arg(1);
 static void set_errdata_field(MemoryContextData *cxt, char **ptr, const char *str);
+#ifdef USE_MODULE_MSGIDS
+static void AtProcExit_MsgModule(int code, Datum arg);
+static bool pg_msgmodule_enable_disable(int32 pid, bool enable);
+#endif
 
 /* Global variables */
 ErrorContextCallback *error_context_stack = NULL;
@@ -189,7 +195,27 @@ static void setup_formatted_log_time(void);
 static void setup_formatted_start_time(void);
 
 #ifdef USE_MODULE_MSGIDS
-char *MsgModuleCtl;
+typedef struct MsgModuleCtlStruct
+{
+	bool	mm_enabled;
+	bool	mm_persistent;
+	char	mm_flags[FLEXIBLE_ARRAY_MEMBER];
+} MsgModuleCtlStruct;
+
+#define StartOfBackendFlags 	\
+	( \
+	  PGXL_MSG_MAX_MODULES * \
+	  PGXL_MSG_MAX_FILEIDS_PER_MODULE * \
+	  PGXL_MSG_MAX_MSGIDS_PER_FILE \
+	)
+
+#define SizeOfMsgModuleCtlStruct	\
+	( \
+	  offsetof(MsgModuleCtlStruct, mm_flags) + \
+	  StartOfBackendFlags + \
+	  MaxBackends \
+	)
+static MsgModuleCtlStruct *MsgModuleCtl;
 #endif
 
 /*
@@ -3747,7 +3773,7 @@ write_stderr(const char *fmt,...)
 
 #ifdef USE_MODULE_MSGIDS
 static int
-get_overriden_log_level(int moduleid, int fileid, int msgid, int origlevel)
+get_overridden_log_level(int moduleid, int fileid, int msgid, int origlevel)
 {
 	uint32 position;
 	int value, relative, change, elevel;
@@ -3757,6 +3783,9 @@ get_overriden_log_level(int moduleid, int fileid, int msgid, int origlevel)
 	 * backend.
 	 */
 	if (!IsPostmasterEnvironment || IsInitProcessingMode())
+		return origlevel;
+
+	if (!MsgModuleCtl->mm_enabled)
 		return origlevel;
 
 	/*
@@ -3770,6 +3799,9 @@ get_overriden_log_level(int moduleid, int fileid, int msgid, int origlevel)
 	if (origlevel < DEBUG5 || origlevel >= LOG)
 		return origlevel;
 
+	if (!(MsgModuleCtl->mm_flags[StartOfBackendFlags + MyBackendId]))
+		return origlevel;
+
 	elevel = origlevel;
 
 	/*
@@ -3781,7 +3813,7 @@ get_overriden_log_level(int moduleid, int fileid, int msgid, int origlevel)
 			(msgid - 1);
 	
 	/* Read once */
-	value = MsgModuleCtl[position];
+	value = MsgModuleCtl->mm_flags[position];
 
 	relative = value & 0x80;
 	change = value & 0x7f;
@@ -3836,7 +3868,7 @@ is_log_level_output(int elevel,
 	 * especially be useful to turn some specific ERROR messages into FATAL or
 	 * PANIC to be able to get a core dump for analysis.
 	 */
-	elevel = get_overriden_log_level(moduleid, fileid, msgid,
+	elevel = get_overridden_log_level(moduleid, fileid, msgid,
 			elevel);
 #endif
 
@@ -3887,8 +3919,6 @@ trace_recovery(int trace_level)
 Size
 MsgModuleShmemSize(void)
 {
-	Size mm_size;
-
 	/*
 	 * One byte per message to store overridden log level.
 	 * !!TODO We don't really need a byte and a few bits would be enough. So
@@ -3901,14 +3931,12 @@ MsgModuleShmemSize(void)
 	 * to the largest value that any one module uses, but the actual values are
 	 * much smaller
 	 *
-	 * In theory, we could also have separate area for each backend so that
-	 * logging can be controlled at a backend level. But the current
-	 * representation is not at all efficient to do that.
+	 * Also have a separate area for MaxBackends so that caller can selectively
+	 * change logging for individual backends. Note that we don't support
+	 * having different logging levels for different backends. So either a
+	 * backend honours the module/file/msg level overrides or it does not.
 	 */
-	mm_size = mul_size(PGXL_MSG_MAX_MODULES, PGXL_MSG_MAX_FILEIDS_PER_MODULE);
-	mm_size = mul_size(mm_size, PGXL_MSG_MAX_MSGIDS_PER_FILE);
-
-	return mm_size;
+	return SizeOfMsgModuleCtlStruct;
 }
 
 void
@@ -3917,10 +3945,18 @@ MsgModuleShmemInit(void)
 	bool found;
 
 	MsgModuleCtl = ShmemInitStruct("Message Module Struct",
-								   (PGXL_MSG_MAX_MODULES *
-								    PGXL_MSG_MAX_FILEIDS_PER_MODULE *
-								    PGXL_MSG_MAX_MSGIDS_PER_FILE),
+								   SizeOfMsgModuleCtlStruct,
 								   &found);
+}
+
+void
+AtProcStart_MsgModule(void)
+{
+	if (MsgModuleCtl->mm_persistent)
+		MsgModuleCtl->mm_flags[StartOfBackendFlags + MyBackendId] = true;
+	else
+		MsgModuleCtl->mm_flags[StartOfBackendFlags + MyBackendId] = false;
+	before_shmem_exit(AtProcExit_MsgModule, 0);
 }
 
 static bool
@@ -3947,8 +3983,8 @@ pg_msgmodule_internal(int32 moduleid, int32 fileid, int32 msgid, char value)
 		 */
 		len = PGXL_MSG_MAX_FILEIDS_PER_MODULE * PGXL_MSG_MAX_MSGIDS_PER_FILE;
 		start_position = (moduleid - 1) * len;
-		memset(MsgModuleCtl + start_position, value, len);
-		return true;
+		memset(MsgModuleCtl->mm_flags + start_position, value, len);
+		goto success;
 	}
 	else
 	{
@@ -3965,8 +4001,8 @@ pg_msgmodule_internal(int32 moduleid, int32 fileid, int32 msgid, char value)
 			len = PGXL_MSG_MAX_MSGIDS_PER_FILE;
 			start_position = ((moduleid - 1) * PGXL_MSG_MAX_FILEIDS_PER_MODULE * PGXL_MSG_MAX_MSGIDS_PER_FILE) +
 						(fileid - 1) * PGXL_MSG_MAX_MSGIDS_PER_FILE;
-			memset(MsgModuleCtl + start_position, value, len);
-			return true;
+			memset(MsgModuleCtl->mm_flags + start_position, value, len);
+			goto success;
 		}
 
 		if (msgid <= 0 || msgid >= PGXL_MSG_MAX_MSGIDS_PER_FILE)
@@ -3980,9 +4016,11 @@ pg_msgmodule_internal(int32 moduleid, int32 fileid, int32 msgid, char value)
 		start_position = ((moduleid - 1) * PGXL_MSG_MAX_FILEIDS_PER_MODULE * PGXL_MSG_MAX_MSGIDS_PER_FILE) +
 			((fileid - 1) * PGXL_MSG_MAX_MSGIDS_PER_FILE) +
 			(msgid - 1);
-		memset(MsgModuleCtl + start_position, value, len);
-		return true;
+		memset(MsgModuleCtl->mm_flags + start_position, value, len);
+		goto success;
 	}
+
+success:
 	return true;
 }
 
@@ -4050,6 +4088,153 @@ pg_msgmodule_change(PG_FUNCTION_ARGS)
 
 	PG_RETURN_BOOL(pg_msgmodule_internal(moduleid, fileid, msgid, level));
 }
+
+static bool
+pg_msgmodule_enable_disable(int32 pid, bool enable)
+{
+	BackendId backendId;
+	/*
+	 * pid == -1 implies the action is applied for all backends
+	 */
+	if (pid != -1)
+	{
+		volatile PGPROC *proc = BackendPidGetProc(pid);
+		if (proc == NULL)
+			ereport(ERROR,
+					(errcode(ERRCODE_INTERNAL_ERROR),
+					 (errmsg("PID %d is not a PostgreSQL server process", pid))));
+		backendId = proc->backendId;
+		MsgModuleCtl->mm_flags[StartOfBackendFlags + backendId] = enable ? true :
+			false;
+	}
+	else
+	{
+		/*
+		 * All backends should not honour the current settings
+		 */
+		memset(MsgModuleCtl->mm_flags + StartOfBackendFlags, true,
+				MaxBackends);
+	}
+
+	/*
+	 * If we are disabling the last backend and no new backends are going to
+	 * participate in the facility, then just disable the entire facility so
+	 * that subsequent backends can quickly bail out
+	 *
+	 * XXX There is a race possible here if another call to turn on the logging
+	 * comes just after we had passed over tje slot. We should possibly protect
+	 * access to the shared memory, but doesn't seem like worth the effort
+	 * right now
+	 */
+	if (!enable && !MsgModuleCtl->mm_persistent)
+	{
+		int i;
+		for (i = 0; i < MaxBackends; i++)
+			if (MsgModuleCtl->mm_flags[StartOfBackendFlags + i])
+				break;
+		if (i == MaxBackends)
+			MsgModuleCtl->mm_enabled = false;
+	}
+	else
+		MsgModuleCtl->mm_enabled = true;
+
+	return true;
+}
+
+Datum
+pg_msgmodule_enable(PG_FUNCTION_ARGS)
+{
+	int32 pid = PG_GETARG_INT32(0);
+
+	if (!superuser())
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+			 (errmsg("must be superuser to change elog message level"))));
+
+	PG_RETURN_BOOL(pg_msgmodule_enable_disable(pid, true));
+}
+
+Datum
+pg_msgmodule_disable(PG_FUNCTION_ARGS)
+{
+	int32 pid = PG_GETARG_INT32(0);
+
+	if (!superuser())
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+			 (errmsg("must be superuser to change elog message level"))));
+
+	PG_RETURN_BOOL(pg_msgmodule_enable_disable(pid, false));
+}
+
+/*
+ * pg_msgmodule_enable_all(bool persistent)
+ *
+ * All processes to start honouring the current settings of overridden log
+ * levels. If "persistent" is set to true, then all future processes will also
+ * honour the settings.
+ */
+Datum
+pg_msgmodule_enable_all(PG_FUNCTION_ARGS)
+{
+	bool persistent = PG_GETARG_BOOL(0);
+
+	if (!superuser())
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+			 (errmsg("must be superuser to change elog message level"))));
+
+	MsgModuleCtl->mm_persistent = persistent;
+	if (persistent)
+	{
+		MsgModuleCtl->mm_enabled = true;
+		memset(MsgModuleCtl->mm_flags + StartOfBackendFlags, true,
+				MaxBackends);
+		PG_RETURN_BOOL(true);
+	}
+	else
+		PG_RETURN_BOOL(pg_msgmodule_enable_disable(-1, true));
+}
+
+/*
+ * Disable all current and future processes from honouring the overridden log
+ * levels
+ */
+Datum
+pg_msgmodule_disable_all(PG_FUNCTION_ARGS)
+{
+	if (!superuser())
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+			 (errmsg("must be superuser to change elog message level"))));
+
+	MsgModuleCtl->mm_enabled = false;
+	MsgModuleCtl->mm_persistent = false;
+	memset(MsgModuleCtl->mm_flags + StartOfBackendFlags, false,
+			MaxBackends);
+	PG_RETURN_BOOL(true);
+}
+
+/*
+ * Handle proc exit. If persistent flag is not set then also check if we are
+ * the last process using the facility and if so, disable it. The current log
+ * settings are retained and will be used when newer processes are enabled for
+ * the facility
+ */
+static void
+AtProcExit_MsgModule(int code, Datum arg)
+{
+	MsgModuleCtl->mm_flags[StartOfBackendFlags + MyBackendId] = false;
+	if (!MsgModuleCtl->mm_persistent)
+	{
+		int i;
+		for (i = 0; i < MaxBackends; i++)
+			if (MsgModuleCtl->mm_flags[StartOfBackendFlags + i])
+				break;
+		if (i == MaxBackends)
+			MsgModuleCtl->mm_enabled = false;
+	}
+}
 #else
 Datum
 pg_msgmodule_set(PG_FUNCTION_ARGS)
@@ -4059,6 +4244,30 @@ pg_msgmodule_set(PG_FUNCTION_ARGS)
 }
 Datum
 pg_msgmodule_change(PG_FUNCTION_ARGS)
+{
+	ereport(ERROR, (errmsg_internal("Module msgid support not available. "
+					"Please recompile with --enable-genmsgids")));
+}
+Datum
+pg_msgmodule_enable(PG_FUNCTION_ARGS)
+{
+	ereport(ERROR, (errmsg_internal("Module msgid support not available. "
+					"Please recompile with --enable-genmsgids")));
+}
+Datum
+pg_msgmodule_disable(PG_FUNCTION_ARGS)
+{
+	ereport(ERROR, (errmsg_internal("Module msgid support not available. "
+					"Please recompile with --enable-genmsgids")));
+}
+Datum
+pg_msgmodule_enable_all(PG_FUNCTION_ARGS)
+{
+	ereport(ERROR, (errmsg_internal("Module msgid support not available. "
+					"Please recompile with --enable-genmsgids")));
+}
+Datum
+pg_msgmodule_disable_all(PG_FUNCTION_ARGS)
 {
 	ereport(ERROR, (errmsg_internal("Module msgid support not available. "
 					"Please recompile with --enable-genmsgids")));
