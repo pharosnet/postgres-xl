@@ -92,6 +92,9 @@ struct pgxc_node_handle
 	 * For details see comments of RESP_ROLLBACK
 	 */
 	bool		ck_resp_rollback;
+
+	bool		in_extended_query;
+	bool		needSync;
 };
 typedef struct pgxc_node_handle PGXCNodeHandle;
 

@@ -143,6 +143,7 @@ init_pgxc_handle(PGXCNodeHandle *pgxc_handle)
 	pgxc_handle->inEnd = 0;
 	pgxc_handle->inCursor = 0;
 	pgxc_handle->outEnd = 0;
+	pgxc_handle->needSync = false;
 
 	if (pgxc_handle->outBuffer == NULL || pgxc_handle->inBuffer == NULL)
 	{
@@ -415,6 +416,7 @@ pgxc_node_init(PGXCNodeHandle *handle, int sock, bool global_session, int pid)
 	handle->inStart = 0;
 	handle->inEnd = 0;
 	handle->inCursor = 0;
+	handle->needSync = false;
 	/*
 	 * We got a new connection, set on the remote node the session parameters
 	 * if defined. The transaction parameter should be sent after BEGIN
@@ -1325,6 +1327,7 @@ pgxc_node_send_plan(PGXCNodeHandle * handle, const char *statement,
 	}
 	pfree(paramTypes);
 
+	handle->in_extended_query = true;
  	return 0;
 }
 
@@ -1405,6 +1408,7 @@ pgxc_node_send_bind(PGXCNodeHandle * handle, const char *portal,
 	handle->outBuffer[handle->outEnd++] = 0;
 	handle->outBuffer[handle->outEnd++] = 0;
 
+	handle->in_extended_query = true;
  	return 0;
 }
 
@@ -1452,6 +1456,7 @@ pgxc_node_send_describe(PGXCNodeHandle * handle, bool is_statement,
 	else
 		handle->outBuffer[handle->outEnd++] = '\0';
 
+	handle->in_extended_query = true;
  	return 0;
 }
 
@@ -1492,6 +1497,7 @@ pgxc_node_send_close(PGXCNodeHandle * handle, bool is_statement,
 	else
 		handle->outBuffer[handle->outEnd++] = '\0';
 
+	handle->in_extended_query = true;
  	return 0;
 }
 
@@ -1535,6 +1541,7 @@ pgxc_node_send_execute(PGXCNodeHandle * handle, const char *portal, int fetch)
 
 	PGXCNodeSetConnectionState(handle, DN_CONNECTION_STATE_QUERY);
 
+	handle->in_extended_query = true;
 	return 0;
 }
 
@@ -1561,6 +1568,7 @@ pgxc_node_send_flush(PGXCNodeHandle * handle)
 	memcpy(handle->outBuffer + handle->outEnd, &msgLen, 4);
 	handle->outEnd += 4;
 
+	handle->in_extended_query = true;
 	return pgxc_node_flush(handle);
 }
 
@@ -1586,6 +1594,9 @@ pgxc_node_send_sync(PGXCNodeHandle * handle)
 	msgLen = htonl(msgLen);
 	memcpy(handle->outBuffer + handle->outEnd, &msgLen, 4);
 	handle->outEnd += 4;
+
+	handle->in_extended_query = false;
+	handle->needSync = false;
 
 	return pgxc_node_flush(handle);
 }
@@ -1721,6 +1732,7 @@ pgxc_node_send_query_internal(PGXCNodeHandle * handle, const char *query,
 
 	PGXCNodeSetConnectionState(handle, DN_CONNECTION_STATE_QUERY);
 
+	handle->in_extended_query = false;
  	return pgxc_node_flush(handle);
 }
 

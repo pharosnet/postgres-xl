@@ -1718,6 +1718,15 @@ handle_response(PGXCNodeHandle *conn, ResponseCombiner *combiner)
 			case 'E':			/* ErrorResponse */
 				HandleError(combiner, msg, msg_len, conn);
 				add_error_message(conn, combiner->errorMessage);
+				/*
+				 * In case the remote node was running an extended query
+				 * protocol and reported an error, it will keep ignoring all
+				 * subsequent commands until it sees a SYNC message. So make
+				 * sure that we send down SYNC even before sending a ROLLBACK
+				 * command
+				 */
+				if (conn->in_extended_query)
+					conn->needSync = true;
 				return RESPONSE_ERROR;
 			case 'A':			/* NotificationResponse */
 			case 'N':			/* NoticeResponse */
@@ -2638,6 +2647,16 @@ pgxc_node_remote_abort(void)
 				BufferConnection(conn);
 
 			/*
+			 * If the remote session was running extended query protocol when
+			 * it failed, it will expect a SYNC message before it accepts any
+			 * other command
+			 */
+			if (conn->needSync)
+			{
+				pgxc_node_send_sync(conn);
+				pgxc_node_receive(1, &conn, NULL);
+			}
+			/*
 			 * Do not matter, is there committed or failed transaction,
 			 * just send down rollback to finish it.
 			 */
@@ -2664,6 +2683,12 @@ pgxc_node_remote_abort(void)
 
 		if (conn->transaction_status != 'I')
 		{
+			/* Send SYNC if the remote session is expecting one */
+			if (conn->needSync)
+			{
+				pgxc_node_send_sync(conn);
+				pgxc_node_receive(1, &conn, NULL);
+			}
 			/*
 			 * Do not matter, is there committed or failed transaction,
 			 * just send down rollback to finish it.
@@ -2902,6 +2927,8 @@ DataNodeCopyIn(char *data_row, int len, int conn_count, PGXCNodeHandle** copy_co
 			memcpy(handle->outBuffer + handle->outEnd, data_row, len);
 			handle->outEnd += len;
 			handle->outBuffer[handle->outEnd++] = '\n';
+
+			handle->in_extended_query = false;
 		}
 		else
 		{
@@ -3045,6 +3072,7 @@ DataNodeCopyEnd(PGXCNodeHandle *handle, bool is_error)
 	memcpy(handle->outBuffer + handle->outEnd, &nLen, 4);
 	handle->outEnd += 4;
 
+	handle->in_extended_query = false;
 	/* We need response right away, so send immediately */
 	if (pgxc_node_flush(handle) < 0)
 		return true;
