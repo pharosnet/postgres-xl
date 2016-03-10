@@ -585,6 +585,7 @@ extern void *copyObject(const void *obj);
 /*
  * nodes/equalfuncs.c
  */
+extern bool equalDistribution(const void *a, const void *b);
 extern bool equal(const void *a, const void *b);
 
 

@@ -139,19 +139,42 @@ _equalIntoClause(const IntoClause *a, const IntoClause *b)
  */
 
 static bool
-_equalVar(const Var *a, const Var *b)
+_equalVarInternal(const Var *a, const Var *b, bool compareVarno)
 {
-	COMPARE_SCALAR_FIELD(varno);
+	if (compareVarno)
+		COMPARE_SCALAR_FIELD(varno);
 	COMPARE_SCALAR_FIELD(varattno);
 	COMPARE_SCALAR_FIELD(vartype);
 	COMPARE_SCALAR_FIELD(vartypmod);
 	COMPARE_SCALAR_FIELD(varcollid);
 	COMPARE_SCALAR_FIELD(varlevelsup);
-	COMPARE_SCALAR_FIELD(varnoold);
+	if (compareVarno)
+		COMPARE_SCALAR_FIELD(varnoold);
 	COMPARE_SCALAR_FIELD(varoattno);
 	COMPARE_LOCATION_FIELD(location);
 
 	return true;
+}
+
+static bool
+_equalVar(const Var *a, const Var *b)
+{
+	return _equalVarInternal(a, b, true);
+}
+
+/*
+ * Compare all fields in Var except varno
+ */
+bool
+equalVarExceptVarno(const void *a, const void *b)
+{
+	if (a == b)
+		return true;
+
+	if (a == NULL || b == NULL)
+		return false;
+
+	return _equalVarInternal(a, b, false);
 }
 
 static bool
@@ -2565,13 +2588,31 @@ _equalXmlSerialize(const XmlSerialize *a, const XmlSerialize *b)
 
 #ifdef XCP
 static bool
-_equalDistribution(const Distribution *a, const Distribution *b)
+_equalDistribution(const Distribution *a, const Distribution *b,
+		bool exceptVarno)
 {
 	COMPARE_SCALAR_FIELD(distributionType);
-	COMPARE_NODE_FIELD(distributionExpr);
 	COMPARE_BITMAPSET_FIELD(nodes);
+	if (exceptVarno &&
+		a->distributionExpr && IsA(a->distributionExpr, Var) &&
+		b->distributionExpr && IsA(b->distributionExpr, Var))
+		return equalVarExceptVarno(a->distributionExpr, b->distributionExpr);
+	else
+		COMPARE_NODE_FIELD(distributionExpr);
 
 	return true;
+}
+
+bool
+equalDistribution(const void *a, const void *b)
+{
+	if (a == b)
+		return true;
+
+	if (a == NULL || b == NULL)
+		return false;
+
+	return _equalDistribution(a, b, true);
 }
 #endif
 
@@ -3429,7 +3470,7 @@ equal(const void *a, const void *b)
 			break;
 #ifdef XCP
 		case T_Distribution:
-			retval = _equalDistribution(a, b);
+			retval = _equalDistribution(a, b, false);
 			break;
 #endif
 		case T_RoleSpec:

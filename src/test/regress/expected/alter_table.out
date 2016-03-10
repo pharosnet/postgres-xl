@@ -386,68 +386,59 @@ alter table nv_child_2011 add check (d between '2011-01-01'::date and '2011-12-3
 explain (costs off, nodes off) select * from nv_parent where d between '2011-08-01' and '2011-08-31';
                                    QUERY PLAN                                    
 ---------------------------------------------------------------------------------
- Append
-   ->  Remote Subquery Scan on all
+ Remote Subquery Scan on all
+   ->  Append
          ->  Seq Scan on nv_parent
                Filter: ((d >= '08-01-2011'::date) AND (d <= '08-31-2011'::date))
-   ->  Remote Subquery Scan on all
          ->  Seq Scan on nv_child_2010
                Filter: ((d >= '08-01-2011'::date) AND (d <= '08-31-2011'::date))
-   ->  Remote Subquery Scan on all
          ->  Seq Scan on nv_child_2011
                Filter: ((d >= '08-01-2011'::date) AND (d <= '08-31-2011'::date))
-(10 rows)
+(8 rows)
 
 create table nv_child_2009 (check (d between '2009-01-01'::date and '2009-12-31'::date)) inherits (nv_parent);
 explain (costs off, nodes off) select * from nv_parent where d between '2011-08-01'::date and '2011-08-31'::date;
                                    QUERY PLAN                                    
 ---------------------------------------------------------------------------------
- Append
-   ->  Remote Subquery Scan on all
+ Remote Subquery Scan on all
+   ->  Append
          ->  Seq Scan on nv_parent
                Filter: ((d >= '08-01-2011'::date) AND (d <= '08-31-2011'::date))
-   ->  Remote Subquery Scan on all
          ->  Seq Scan on nv_child_2010
                Filter: ((d >= '08-01-2011'::date) AND (d <= '08-31-2011'::date))
-   ->  Remote Subquery Scan on all
          ->  Seq Scan on nv_child_2011
                Filter: ((d >= '08-01-2011'::date) AND (d <= '08-31-2011'::date))
-(10 rows)
+(8 rows)
 
 explain (costs off, nodes off) select * from nv_parent where d between '2009-08-01'::date and '2009-08-31'::date;
                                    QUERY PLAN                                    
 ---------------------------------------------------------------------------------
- Append
-   ->  Remote Subquery Scan on all
+ Remote Subquery Scan on all
+   ->  Append
          ->  Seq Scan on nv_parent
                Filter: ((d >= '08-01-2009'::date) AND (d <= '08-31-2009'::date))
-   ->  Remote Subquery Scan on all
          ->  Seq Scan on nv_child_2010
                Filter: ((d >= '08-01-2009'::date) AND (d <= '08-31-2009'::date))
-   ->  Remote Subquery Scan on all
          ->  Seq Scan on nv_child_2011
                Filter: ((d >= '08-01-2009'::date) AND (d <= '08-31-2009'::date))
-   ->  Remote Subquery Scan on all
          ->  Seq Scan on nv_child_2009
                Filter: ((d >= '08-01-2009'::date) AND (d <= '08-31-2009'::date))
-(13 rows)
+(10 rows)
 
 -- after validation, the constraint should be used
 alter table nv_child_2011 VALIDATE CONSTRAINT nv_child_2011_d_check;
 explain (costs off, nodes off) select * from nv_parent where d between '2009-08-01'::date and '2009-08-31'::date;
                                    QUERY PLAN                                    
 ---------------------------------------------------------------------------------
- Append
-   ->  Remote Subquery Scan on all
+ Remote Subquery Scan on all
+   ->  Append
          ->  Seq Scan on nv_parent
                Filter: ((d >= '08-01-2009'::date) AND (d <= '08-31-2009'::date))
-   ->  Remote Subquery Scan on all
          ->  Seq Scan on nv_child_2010
                Filter: ((d >= '08-01-2009'::date) AND (d <= '08-31-2009'::date))
-   ->  Remote Subquery Scan on all
          ->  Seq Scan on nv_child_2009
                Filter: ((d >= '08-01-2009'::date) AND (d <= '08-31-2009'::date))
-(10 rows)
+(8 rows)
 
 -- add an inherited NOT VALID constraint
 alter table nv_parent add check (d between '2001-01-01'::date and '2099-12-31'::date) not valid;

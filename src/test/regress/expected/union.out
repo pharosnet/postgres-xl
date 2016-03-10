@@ -482,14 +482,13 @@ explain (num_nodes off, nodes off, costs off)
  WHERE ab = 'ab';
                     QUERY PLAN                     
 ---------------------------------------------------
- Append
-   ->  Remote Subquery Scan on all
+ Remote Subquery Scan on all
+   ->  Append
          ->  Index Scan using t1_ab_idx on t1
                Index Cond: ((a || b) = 'ab'::text)
-   ->  Remote Subquery Scan on all
          ->  Index Only Scan using t2_pkey on t2
                Index Cond: (ab = 'ab'::text)
-(7 rows)
+(6 rows)
 
 explain (num_nodes off, nodes off, costs off)
  SELECT * FROM
@@ -528,20 +527,19 @@ explain (costs off)
    UNION ALL
    SELECT ab FROM t2) t
   ORDER BY 1 LIMIT 8;
-                           QUERY PLAN                            
------------------------------------------------------------------
+                        QUERY PLAN                         
+-----------------------------------------------------------
  Limit
-   ->  Merge Append
-         Sort Key: ((t1.a || t1.b))
-         ->  Remote Subquery Scan on all (datanode_1,datanode_2)
-               ->  Index Scan using t1_ab_idx on t1
-         ->  Remote Subquery Scan on all (datanode_1,datanode_2)
-               ->  Index Scan using t1c_ab_idx on t1c
-         ->  Remote Subquery Scan on all (datanode_1,datanode_2)
-               ->  Index Scan using t2_pkey on t2
-         ->  Remote Subquery Scan on all (datanode_1,datanode_2)
-               ->  Index Scan using t2c_pkey on t2c
-(11 rows)
+   ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+         ->  Limit
+               ->  Sort
+                     Sort Key: ((t1.a || t1.b))
+                     ->  Append
+                           ->  Seq Scan on t1
+                           ->  Seq Scan on t1c
+                           ->  Seq Scan on t2
+                           ->  Seq Scan on t2c
+(10 rows)
 
   SELECT * FROM
   (SELECT a || b AS ab FROM t1
@@ -573,19 +571,16 @@ select event_id
        union all
        select event_id from other_events) ss
  order by event_id;
-                           QUERY PLAN                           
-----------------------------------------------------------------
- Merge Append
-   Sort Key: events.event_id
-   ->  Remote Subquery Scan on all (datanode_1,datanode_2)
-         ->  Index Scan using events_pkey on events
-   ->  Remote Subquery Scan on all (datanode_1,datanode_2)
-         ->  Sort
-               Sort Key: events_child.event_id
+                     QUERY PLAN                      
+-----------------------------------------------------
+ Remote Subquery Scan on all (datanode_1,datanode_2)
+   ->  Sort
+         Sort Key: events.event_id
+         ->  Append
+               ->  Seq Scan on events
                ->  Seq Scan on events_child
-   ->  Remote Subquery Scan on all (datanode_1,datanode_2)
-         ->  Index Scan using other_events_pkey on other_events
-(10 rows)
+               ->  Seq Scan on other_events
+(7 rows)
 
 drop table events_child, events, other_events;
 reset enable_indexonlyscan;
@@ -706,17 +701,15 @@ select * from
   join int4_tbl on f1 = expensivefunc(x);
                             QUERY PLAN                            
 ------------------------------------------------------------------
- Nested Loop
-   ->  Remote Subquery Scan on all
+ Remote Subquery Scan on all
+   ->  Nested Loop
          ->  Seq Scan on int4_tbl
-   ->  Append
-         ->  Remote Subquery Scan on all
+         ->  Append
                ->  Index Scan using t3i on t3 a
                      Index Cond: (expensivefunc(x) = int4_tbl.f1)
-         ->  Remote Subquery Scan on all
                ->  Index Scan using t3i on t3 b
                      Index Cond: (expensivefunc(x) = int4_tbl.f1)
-(10 rows)
+(8 rows)
 
 select * from
   (select * from t3 a union all select * from t3 b) ss

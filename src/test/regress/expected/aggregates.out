@@ -797,19 +797,17 @@ insert into minmaxtest2 values(15), (16);
 insert into minmaxtest3 values(17), (18);
 explain (costs off, nodes off)
   select min(f1), max(f1) from minmaxtest;
-                QUERY PLAN                 
--------------------------------------------
+                   QUERY PLAN                    
+-------------------------------------------------
  Aggregate
-   ->  Append
-         ->  Remote Subquery Scan on all
-               ->  Seq Scan on minmaxtest
-         ->  Remote Subquery Scan on all
-               ->  Seq Scan on minmaxtest1
-         ->  Remote Subquery Scan on all
-               ->  Seq Scan on minmaxtest2
-         ->  Remote Subquery Scan on all
-               ->  Seq Scan on minmaxtest3
-(10 rows)
+   ->  Remote Subquery Scan on all
+         ->  Aggregate
+               ->  Append
+                     ->  Seq Scan on minmaxtest
+                     ->  Seq Scan on minmaxtest1
+                     ->  Seq Scan on minmaxtest2
+                     ->  Seq Scan on minmaxtest3
+(8 rows)
 
 select min(f1), max(f1) from minmaxtest;
  min | max 
@@ -820,21 +818,19 @@ select min(f1), max(f1) from minmaxtest;
 -- DISTINCT doesn't do anything useful here, but it shouldn't fail
 explain (costs off)
   select distinct min(f1), max(f1) from minmaxtest;
-                              QUERY PLAN                               
------------------------------------------------------------------------
+                           QUERY PLAN                            
+-----------------------------------------------------------------
  HashAggregate
-   Group Key: min(minmaxtest.f1), max(minmaxtest.f1)
+   Group Key: min((min(f1))), max((max(f1)))
    ->  Aggregate
-         ->  Append
-               ->  Remote Subquery Scan on all (datanode_1,datanode_2)
-                     ->  Seq Scan on minmaxtest
-               ->  Remote Subquery Scan on all (datanode_1,datanode_2)
-                     ->  Seq Scan on minmaxtest1
-               ->  Remote Subquery Scan on all (datanode_1,datanode_2)
-                     ->  Seq Scan on minmaxtest2
-               ->  Remote Subquery Scan on all (datanode_1,datanode_2)
-                     ->  Seq Scan on minmaxtest3
-(12 rows)
+         ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+               ->  Aggregate
+                     ->  Append
+                           ->  Seq Scan on minmaxtest
+                           ->  Seq Scan on minmaxtest1
+                           ->  Seq Scan on minmaxtest2
+                           ->  Seq Scan on minmaxtest3
+(10 rows)
 
 select distinct min(f1), max(f1) from minmaxtest;
  min | max 

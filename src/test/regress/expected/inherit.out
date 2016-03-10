@@ -777,42 +777,40 @@ insert into bar2 values(2,2,2);
 insert into bar2 values(3,3,3);
 insert into bar2 values(4,4,4);
 update bar set f2 = f2 + 100 where f1 in (select f1 from foo);
-ERROR:  could not plan this distributed update
-DETAIL:  correlated UPDATE or updating distribution column currently not supported in Postgres-XL.
 --select tableoid::regclass::text as relname, bar.* from bar order by 1,2;
 -- In Postgres-XL OIDs are not consistent across the cluster. Hence above
 -- queries do not show any result. Hence in order to ensure data consistency, we
 -- add following SQLs. In case above set of queries start producing valid
 -- results in XC, we should remove the following set
 SELECT * FROM bar ORDER BY f1, f2;
- f1 | f2 
-----+----
-  1 |  1
-  1 |  1
-  2 |  2
-  2 |  2
-  3 |  3
-  3 |  3
-  4 |  4
-  4 |  4
+ f1 | f2  
+----+-----
+  1 | 101
+  1 | 101
+  2 | 102
+  2 | 102
+  3 | 103
+  3 | 103
+  4 |   4
+  4 |   4
 (8 rows)
 
 SELECT * FROM ONLY bar ORDER BY f1, f2;
- f1 | f2 
-----+----
-  1 |  1
-  2 |  2
-  3 |  3
-  4 |  4
+ f1 | f2  
+----+-----
+  1 | 101
+  2 | 102
+  3 | 103
+  4 |   4
 (4 rows)
 
 SELECT * FROM bar2 ORDER BY f1, f2;
- f1 | f2 | f3 
-----+----+----
-  1 |  1 |  1
-  2 |  2 |  2
-  3 |  3 |  3
-  4 |  4 |  4
+ f1 | f2  | f3 
+----+-----+----
+  1 | 101 |  1
+  2 | 102 |  2
+  3 | 103 |  3
+  4 |   4 |  4
 (4 rows)
 
 -- Check UPDATE with inherited target and an appendrel subquery
@@ -820,8 +818,6 @@ update bar set f2 = f2 + 100
 from
   ( select f1 from foo union all select f1+3 from foo ) ss
 where bar.f1 = ss.f1;
-ERROR:  could not plan this distributed update
-DETAIL:  correlated UPDATE or updating distribution column currently not supported in Postgres-XL.
 --select tableoid::regclass::text as relname, bar.* from bar order by 1,2;
 /* Test multiple inheritance of column defaults */
 CREATE TABLE firstparent (tomorrow date default now()::date + 1);
@@ -1371,29 +1367,28 @@ analyze patest2;
 analyze int4_tbl;
 explain (costs off, num_nodes off, nodes off)
 select * from patest0 join (select f1 from int4_tbl where f1 = 0 limit 1) ss on id = f1;
-                        QUERY PLAN                        
-----------------------------------------------------------
+                           QUERY PLAN                           
+----------------------------------------------------------------
  Nested Loop
    ->  Limit
          ->  Remote Subquery Scan on all
                ->  Limit
                      ->  Seq Scan on int4_tbl
                            Filter: (f1 = 0)
-   ->  Append
+   ->  Materialize
          ->  Remote Subquery Scan on all
-               ->  Seq Scan on patest0
-                     Filter: (int4_tbl.f1 = id)
-         ->  Remote Subquery Scan on all
-               ->  Bitmap Heap Scan on patest1
-                     Recheck Cond: (id = int4_tbl.f1)
-                     ->  Bitmap Index Scan on patest1i
-                           Index Cond: (id = int4_tbl.f1)
-         ->  Remote Subquery Scan on all
-               ->  Bitmap Heap Scan on patest2
-                     Recheck Cond: (id = int4_tbl.f1)
-                     ->  Bitmap Index Scan on patest2i
-                           Index Cond: (id = int4_tbl.f1)
-(20 rows)
+               ->  Append
+                     ->  Seq Scan on patest0
+                           Filter: (int4_tbl.f1 = id)
+                     ->  Bitmap Heap Scan on patest1
+                           Recheck Cond: (id = int4_tbl.f1)
+                           ->  Bitmap Index Scan on patest1i
+                                 Index Cond: (id = int4_tbl.f1)
+                     ->  Bitmap Heap Scan on patest2
+                           Recheck Cond: (id = int4_tbl.f1)
+                           ->  Bitmap Index Scan on patest2i
+                                 Index Cond: (id = int4_tbl.f1)
+(19 rows)
 
 select * from patest0 join (select f1 from int4_tbl where f1 = 0 limit 1) ss on id = f1;
  id | x | f1 
@@ -1406,27 +1401,26 @@ select * from patest0 join (select f1 from int4_tbl where f1 = 0 limit 1) ss on 
 drop index patest2i;
 explain (costs off, num_nodes off, nodes off)
 select * from patest0 join (select f1 from int4_tbl where f1 = 0 limit 1) ss on id = f1;
-                        QUERY PLAN                        
-----------------------------------------------------------
+                           QUERY PLAN                           
+----------------------------------------------------------------
  Nested Loop
    ->  Limit
          ->  Remote Subquery Scan on all
                ->  Limit
                      ->  Seq Scan on int4_tbl
                            Filter: (f1 = 0)
-   ->  Append
+   ->  Materialize
          ->  Remote Subquery Scan on all
-               ->  Seq Scan on patest0
-                     Filter: (int4_tbl.f1 = id)
-         ->  Remote Subquery Scan on all
-               ->  Bitmap Heap Scan on patest1
-                     Recheck Cond: (id = int4_tbl.f1)
-                     ->  Bitmap Index Scan on patest1i
-                           Index Cond: (id = int4_tbl.f1)
-         ->  Remote Subquery Scan on all
-               ->  Seq Scan on patest2
-                     Filter: (int4_tbl.f1 = id)
-(18 rows)
+               ->  Append
+                     ->  Seq Scan on patest0
+                           Filter: (int4_tbl.f1 = id)
+                     ->  Bitmap Heap Scan on patest1
+                           Recheck Cond: (id = int4_tbl.f1)
+                           ->  Bitmap Index Scan on patest1i
+                                 Index Cond: (id = int4_tbl.f1)
+                     ->  Seq Scan on patest2
+                           Filter: (int4_tbl.f1 = id)
+(17 rows)
 
 select * from patest0 join (select f1 from int4_tbl where f1 = 0 limit 1) ss on id = f1;
  id | x | f1 
@@ -1462,31 +1456,25 @@ insert into matest3 (name) values ('Test 5');
 insert into matest3 (name) values ('Test 6');
 set enable_indexscan = off;  -- force use of seqscan/sort, so no merge
 explain (verbose, costs off, nodes off) select * from matest0 order by 1-id;
-                         QUERY PLAN                         
-------------------------------------------------------------
- Sort
-   Output: matest0.id, matest0.name, ((1 - matest0.id))
-   Sort Key: ((1 - matest0.id))
-   ->  Result
-         Output: matest0.id, matest0.name, (1 - matest0.id)
-         ->  Append
-               ->  Remote Subquery Scan on all
-                     Output: matest0.id, matest0.name
+                            QUERY PLAN                            
+------------------------------------------------------------------
+ Remote Subquery Scan on all
+   Output: id, name, (1 - id)
+   ->  Sort
+         Output: matest0.id, matest0.name, ((1 - matest0.id))
+         Sort Key: ((1 - matest0.id))
+         ->  Result
+               Output: matest0.id, matest0.name, (1 - matest0.id)
+               ->  Append
                      ->  Seq Scan on public.matest0
                            Output: matest0.id, matest0.name
-               ->  Remote Subquery Scan on all
-                     Output: matest1.id, matest1.name
                      ->  Seq Scan on public.matest1
                            Output: matest1.id, matest1.name
-               ->  Remote Subquery Scan on all
-                     Output: matest2.id, matest2.name
                      ->  Seq Scan on public.matest2
                            Output: matest2.id, matest2.name
-               ->  Remote Subquery Scan on all
-                     Output: matest3.id, matest3.name
                      ->  Seq Scan on public.matest3
                            Output: matest3.id, matest3.name
-(22 rows)
+(16 rows)
 
 select * from matest0 order by 1-id;
  id |  name  
@@ -1500,28 +1488,24 @@ select * from matest0 order by 1-id;
 (6 rows)
 
 explain (verbose, costs off) select min(1-id) from matest0;
-                           QUERY PLAN                            
------------------------------------------------------------------
+                        QUERY PLAN                         
+-----------------------------------------------------------
  Aggregate
-   Output: min((1 - matest0.id))
-   ->  Append
-         ->  Remote Subquery Scan on all (datanode_1,datanode_2)
-               Output: matest0.id
-               ->  Seq Scan on public.matest0
-                     Output: matest0.id
-         ->  Remote Subquery Scan on all (datanode_1,datanode_2)
-               Output: matest1.id
-               ->  Seq Scan on public.matest1
-                     Output: matest1.id
-         ->  Remote Subquery Scan on all (datanode_1,datanode_2)
-               Output: matest2.id
-               ->  Seq Scan on public.matest2
-                     Output: matest2.id
-         ->  Remote Subquery Scan on all (datanode_1,datanode_2)
-               Output: matest3.id
-               ->  Seq Scan on public.matest3
-                     Output: matest3.id
-(19 rows)
+   Output: min((min((1 - id))))
+   ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+         Output: min((1 - id))
+         ->  Aggregate
+               Output: min((1 - matest0.id))
+               ->  Append
+                     ->  Seq Scan on public.matest0
+                           Output: matest0.id
+                     ->  Seq Scan on public.matest1
+                           Output: matest1.id
+                     ->  Seq Scan on public.matest2
+                           Output: matest2.id
+                     ->  Seq Scan on public.matest3
+                           Output: matest3.id
+(15 rows)
 
 select min(1-id) from matest0;
  min 
@@ -1532,30 +1516,25 @@ select min(1-id) from matest0;
 reset enable_indexscan;
 set enable_seqscan = off;  -- plan with fewest seqscans should be merge
 explain (verbose, costs off, nodes off) select * from matest0 order by 1-id;
-                               QUERY PLAN                               
-------------------------------------------------------------------------
- Merge Append
-   Sort Key: ((1 - matest0.id))
-   ->  Remote Subquery Scan on all
-         Output: matest0.id, matest0.name, (1 - matest0.id)
-         ->  Index Scan using matest0i on public.matest0
+                             QUERY PLAN                              
+---------------------------------------------------------------------
+ Remote Subquery Scan on all
+   Output: id, name, (1 - id)
+   ->  Sort
+         Output: matest0.id, matest0.name, ((1 - matest0.id))
+         Sort Key: ((1 - matest0.id))
+         ->  Result
                Output: matest0.id, matest0.name, (1 - matest0.id)
-   ->  Remote Subquery Scan on all
-         Output: matest1.id, matest1.name, (1 - matest1.id)
-         ->  Index Scan using matest1i on public.matest1
-               Output: matest1.id, matest1.name, (1 - matest1.id)
-   ->  Remote Subquery Scan on all
-         Output: matest2.id, matest2.name, (1 - matest2.id)
-         ->  Sort
-               Output: matest2.id, matest2.name, ((1 - matest2.id))
-               Sort Key: ((1 - matest2.id))
-               ->  Seq Scan on public.matest2
-                     Output: matest2.id, matest2.name, (1 - matest2.id)
-   ->  Remote Subquery Scan on all
-         Output: matest3.id, matest3.name, (1 - matest3.id)
-         ->  Index Scan using matest3i on public.matest3
-               Output: matest3.id, matest3.name, (1 - matest3.id)
-(21 rows)
+               ->  Append
+                     ->  Index Scan using matest0i on public.matest0
+                           Output: matest0.id, matest0.name
+                     ->  Index Scan using matest1i on public.matest1
+                           Output: matest1.id, matest1.name
+                     ->  Seq Scan on public.matest2
+                           Output: matest2.id, matest2.name
+                     ->  Index Scan using matest3i on public.matest3
+                           Output: matest3.id, matest3.name
+(16 rows)
 
 select * from matest0 order by 1-id;
  id |  name  
@@ -1569,42 +1548,27 @@ select * from matest0 order by 1-id;
 (6 rows)
 
 explain (verbose, costs off) select min(1-id) from matest0;
-                                   QUERY PLAN                                   
---------------------------------------------------------------------------------
- Result
-   Output: $0
-   InitPlan 1 (returns $0)
-     ->  Limit
-           Output: ((1 - matest0.id))
-           ->  Result
-                 Output: ((1 - matest0.id))
-                 ->  Merge Append
-                       Sort Key: ((1 - matest0.id))
-                       ->  Remote Subquery Scan on all (datanode_1,datanode_2)
-                             Output: matest0.id, (1 - matest0.id)
-                             ->  Index Scan using matest0i on public.matest0
-                                   Output: matest0.id, (1 - matest0.id)
-                                   Index Cond: ((1 - matest0.id) IS NOT NULL)
-                       ->  Remote Subquery Scan on all (datanode_1,datanode_2)
-                             Output: matest1.id, (1 - matest1.id)
-                             ->  Index Scan using matest1i on public.matest1
-                                   Output: matest1.id, (1 - matest1.id)
-                                   Index Cond: ((1 - matest1.id) IS NOT NULL)
-                       ->  Remote Subquery Scan on all (datanode_1,datanode_2)
-                             Output: matest2.id, (1 - matest2.id)
-                             ->  Sort
-                                   Output: matest2.id, ((1 - matest2.id))
-                                   Sort Key: ((1 - matest2.id))
-                                   ->  Bitmap Heap Scan on public.matest2
-                                         Output: matest2.id, (1 - matest2.id)
-                                         Filter: ((1 - matest2.id) IS NOT NULL)
-                                         ->  Bitmap Index Scan on matest2_pkey
-                       ->  Remote Subquery Scan on all (datanode_1,datanode_2)
-                             Output: matest3.id, (1 - matest3.id)
-                             ->  Index Scan using matest3i on public.matest3
-                                   Output: matest3.id, (1 - matest3.id)
-                                   Index Cond: ((1 - matest3.id) IS NOT NULL)
-(33 rows)
+                                  QUERY PLAN                                  
+------------------------------------------------------------------------------
+ Aggregate
+   Output: min((min((1 - id))))
+   ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+         Output: min((1 - id))
+         ->  Aggregate
+               Output: min((1 - matest0.id))
+               ->  Append
+                     ->  Index Only Scan using matest0_pkey on public.matest0
+                           Output: matest0.id
+                     ->  Bitmap Heap Scan on public.matest1
+                           Output: matest1.id
+                           ->  Bitmap Index Scan on matest1_pkey
+                     ->  Bitmap Heap Scan on public.matest2
+                           Output: matest2.id
+                           ->  Bitmap Index Scan on matest2_pkey
+                     ->  Bitmap Heap Scan on public.matest3
+                           Output: matest3.id
+                           ->  Bitmap Index Scan on matest3_pkey
+(18 rows)
 
 select min(1-id) from matest0;
  min 
@@ -1631,27 +1595,29 @@ explain (costs off)
 select t1.* from matest0 t1, matest0 t2
 where t1.b = t2.b and t2.c = t2.d
 order by t1.b limit 10;
-                                 QUERY PLAN                                  
------------------------------------------------------------------------------
+                                       QUERY PLAN                                        
+-----------------------------------------------------------------------------------------
  Limit
-   ->  Merge Join
-         Merge Cond: (t1.b = t2.b)
-         ->  Merge Append
-               Sort Key: t1.b
-               ->  Remote Subquery Scan on all (datanode_1,datanode_2)
-                     ->  Index Scan using matest0i on matest0 t1
-               ->  Remote Subquery Scan on all (datanode_1,datanode_2)
-                     ->  Index Scan using matest1i on matest1 t1_1
-         ->  Materialize
-               ->  Merge Append
-                     Sort Key: t2.b
-                     ->  Remote Subquery Scan on all (datanode_1,datanode_2)
-                           ->  Index Scan using matest0i on matest0 t2
-                                 Filter: (c = d)
-                     ->  Remote Subquery Scan on all (datanode_1,datanode_2)
-                           ->  Index Scan using matest1i on matest1 t2_1
-                                 Filter: (c = d)
-(18 rows)
+   ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+         ->  Limit
+               ->  Sort
+                     Sort Key: b
+                     ->  Hash Join
+                           Hash Cond: (b = b)
+                           ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+                                 Distribute results by H: b
+                                 ->  Append
+                                       ->  Seq Scan on matest0 t1
+                                       ->  Seq Scan on matest1 t1_1
+                           ->  Hash
+                                 ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+                                       Distribute results by H: b
+                                       ->  Append
+                                             ->  Seq Scan on matest0 t2
+                                                   Filter: (c = d)
+                                             ->  Seq Scan on matest1 t2_1
+                                                   Filter: (c = d)
+(20 rows)
 
 reset enable_nestloop;
 drop table matest0 cascade;
@@ -1687,15 +1653,13 @@ SELECT 42, 42, hundred FROM tenk1
 ORDER BY thousand, tenthous;
                                QUERY PLAN                               
 ------------------------------------------------------------------------
- Merge Append
-   Sort Key: tenk1.thousand, tenk1.tenthous
-   ->  Remote Subquery Scan on all
-         ->  Index Only Scan using tenk1_thous_tenthous on tenk1
-   ->  Remote Subquery Scan on all
-         ->  Sort
-               Sort Key: (42), (42)
+ Remote Subquery Scan on all
+   ->  Sort
+         Sort Key: tenk1.thousand, tenk1.tenthous
+         ->  Append
+               ->  Index Only Scan using tenk1_thous_tenthous on tenk1
                ->  Index Only Scan using tenk1_hundred on tenk1 tenk1_1
-(8 rows)
+(6 rows)
 
 explain (costs off, num_nodes off, nodes off)
 SELECT thousand, tenthous FROM tenk1

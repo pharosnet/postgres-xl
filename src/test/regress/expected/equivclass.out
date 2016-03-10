@@ -236,18 +236,17 @@ explain (costs off)
                            QUERY PLAN                            
 -----------------------------------------------------------------
  Nested Loop
-   Join Filter: ((((ec1_1.ff + 2) + 1)) = ec1.f1)
+   Join Filter: (x = ec1.f1)
    ->  Remote Subquery Scan on all (datanode_1)
          ->  Index Scan using ec1_pkey on ec1
                Index Cond: (ff = '42'::bigint)
-   ->  Append
+   ->  Materialize
          ->  Remote Subquery Scan on all (datanode_1,datanode_2)
-               ->  Seq Scan on ec1 ec1_1
-         ->  Remote Subquery Scan on all (datanode_1,datanode_2)
-               ->  Seq Scan on ec1 ec1_2
-         ->  Remote Subquery Scan on all (datanode_1,datanode_2)
-               ->  Seq Scan on ec1 ec1_3
-(12 rows)
+               ->  Append
+                     ->  Seq Scan on ec1 ec1_1
+                     ->  Seq Scan on ec1 ec1_2
+                     ->  Seq Scan on ec1 ec1_3
+(11 rows)
 
 explain (costs off)
   select * from ec1,
@@ -261,22 +260,21 @@ explain (costs off)
                                QUERY PLAN                                
 -------------------------------------------------------------------------
  Nested Loop
-   Join Filter: ((((ec1_1.ff + 2) + 1)) = ec1.f1)
+   Join Filter: (x = ec1.f1)
    ->  Remote Subquery Scan on all (datanode_1)
          ->  Index Scan using ec1_pkey on ec1
                Index Cond: ((ff = '42'::bigint) AND (ff = '42'::bigint))
                Filter: (ff = f1)
-   ->  Append
+   ->  Materialize
          ->  Remote Subquery Scan on all (datanode_1,datanode_2)
-               ->  Seq Scan on ec1 ec1_1
-                     Filter: (((ff + 2) + 1) = '42'::bigint)
-         ->  Remote Subquery Scan on all (datanode_1,datanode_2)
-               ->  Seq Scan on ec1 ec1_2
-                     Filter: (((ff + 3) + 1) = '42'::bigint)
-         ->  Remote Subquery Scan on all (datanode_1,datanode_2)
-               ->  Seq Scan on ec1 ec1_3
-                     Filter: ((ff + 4) = '42'::bigint)
-(16 rows)
+               ->  Append
+                     ->  Seq Scan on ec1 ec1_1
+                           Filter: (((ff + 2) + 1) = '42'::bigint)
+                     ->  Seq Scan on ec1 ec1_2
+                           Filter: (((ff + 3) + 1) = '42'::bigint)
+                     ->  Seq Scan on ec1 ec1_3
+                           Filter: ((ff + 4) = '42'::bigint)
+(15 rows)
 
 explain (costs off)
   select * from ec1,
@@ -296,28 +294,25 @@ explain (costs off)
                                  QUERY PLAN                                  
 -----------------------------------------------------------------------------
  Nested Loop
-   Join Filter: ((((ec1_1.ff + 2) + 1)) = (((ec1_4.ff + 2) + 1)))
-   ->  Append
-         ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+   Join Filter: (x = x)
+   ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+         ->  Append
                ->  Seq Scan on ec1 ec1_4
-         ->  Remote Subquery Scan on all (datanode_1,datanode_2)
                ->  Seq Scan on ec1 ec1_5
-         ->  Remote Subquery Scan on all (datanode_1,datanode_2)
                ->  Seq Scan on ec1 ec1_6
    ->  Materialize
          ->  Nested Loop
-               Join Filter: ((((ec1_1.ff + 2) + 1)) = ec1.f1)
+               Join Filter: (x = ec1.f1)
                ->  Remote Subquery Scan on all (datanode_1)
                      ->  Index Scan using ec1_pkey on ec1
                            Index Cond: (ff = '42'::bigint)
-               ->  Append
+               ->  Materialize
                      ->  Remote Subquery Scan on all (datanode_1,datanode_2)
-                           ->  Seq Scan on ec1 ec1_1
-                     ->  Remote Subquery Scan on all (datanode_1,datanode_2)
-                           ->  Seq Scan on ec1 ec1_2
-                     ->  Remote Subquery Scan on all (datanode_1,datanode_2)
-                           ->  Seq Scan on ec1 ec1_3
-(22 rows)
+                           ->  Append
+                                 ->  Seq Scan on ec1 ec1_1
+                                 ->  Seq Scan on ec1 ec1_2
+                                 ->  Seq Scan on ec1 ec1_3
+(19 rows)
 
 -- let's try that as a mergejoin
 set enable_mergejoin = on;
@@ -341,18 +336,17 @@ explain (costs off)
                            QUERY PLAN                            
 -----------------------------------------------------------------
  Nested Loop
-   Join Filter: ((((ec1_1.ff + 2) + 1)) = ec1.f1)
+   Join Filter: (x = ec1.f1)
    ->  Remote Subquery Scan on all (datanode_1)
          ->  Index Scan using ec1_pkey on ec1
                Index Cond: (ff = '42'::bigint)
-   ->  Append
+   ->  Materialize
          ->  Remote Subquery Scan on all (datanode_1,datanode_2)
-               ->  Seq Scan on ec1 ec1_1
-         ->  Remote Subquery Scan on all (datanode_1,datanode_2)
-               ->  Seq Scan on ec1 ec1_2
-         ->  Remote Subquery Scan on all (datanode_1,datanode_2)
-               ->  Seq Scan on ec1 ec1_3
-(12 rows)
+               ->  Append
+                     ->  Seq Scan on ec1 ec1_1
+                     ->  Seq Scan on ec1 ec1_2
+                     ->  Seq Scan on ec1 ec1_3
+(11 rows)
 
 -- let's try that as a mergejoin
 set enable_mergejoin = on;

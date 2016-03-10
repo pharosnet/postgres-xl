@@ -693,8 +693,8 @@ explain (costs off, num_nodes off, nodes off, verbose on)  WITH q1 AS (SELECT * 
 select * from p1 order by 1 for update;
   a  |  b  
 -----+-----
-  55 |  66
   77 |  88
+  55 |  66
  111 | 222
  123 | 345
 (4 rows)
@@ -702,18 +702,16 @@ select * from p1 order by 1 for update;
 explain (costs off, num_nodes off, nodes off, verbose on)  select * from p1 for update;
                           QUERY PLAN                          
 --------------------------------------------------------------
- LockRows
-   Output: p1.a, p1.b, p1.ctid, p1.tableoid
-   ->  Append
-         ->  Remote Subquery Scan on all
-               Output: p1.a, p1.b, p1.ctid, p1.tableoid
+ Remote Subquery Scan on all
+   Output: a, b, ctid, tableoid
+   ->  LockRows
+         Output: p1.a, p1.b, p1.ctid, p1.tableoid
+         ->  Append
                ->  Seq Scan on public.p1
                      Output: p1.a, p1.b, p1.ctid, p1.tableoid
-         ->  Remote Subquery Scan on all
-               Output: c1.a, c1.b, c1.ctid, c1.tableoid
                ->  Seq Scan on public.c1
                      Output: c1.a, c1.b, c1.ctid, c1.tableoid
-(11 rows)
+(9 rows)
 
 select * from c1 order by 1 for update;
   a  |  b  |  d  |  e  

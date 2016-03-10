@@ -2037,7 +2037,16 @@ create_append_path(RelOptInfo *rel, List *subpaths, Relids required_outer)
 		{
 			subpath = (Path *) lfirst(l);
 
-			if (equal(distribution, subpath->distribution))
+			/*
+			 * For Append and MergeAppend paths, we are most often dealing with
+			 * different relations, appended together. So its very likely that
+			 * the distribution for each relation will have a different varno.
+			 * But we should be able to push down Append and MergeAppend as
+			 * long as rest of the distribution information matches.
+			 *
+			 * equalDistribution() compares everything except the varnos
+			 */
+			if (equalDistribution(distribution, subpath->distribution))
 			{
 				/*
 				 * Both distribution and subpath->distribution may be NULL at
@@ -2150,7 +2159,10 @@ create_merge_append_path(PlannerInfo *root,
 		{
 			subpath = (Path *) lfirst(l);
 
-			if (distribution && equal(distribution, subpath->distribution))
+			/*
+			 * See comments in Append path
+			 */
+			if (distribution && equalDistribution(distribution, subpath->distribution))
 			{
 				if (subpath->distribution->restrictNodes)
 					distribution->restrictNodes = bms_union(

@@ -168,3 +168,90 @@ drop function f1();
 drop table my_tab1;
 
 --------------------------------------------------
+-- 
+-- versions
+--
+
+-- Bugs related to pushing down volatile functions to datanodes - copied from
+-- misc.sql
+--
+-- postquel functions
+--
+--
+-- mike does post_hacking,
+-- joe and sally play basketball, and
+-- everyone else does nothing.
+--
+SELECT p.name, name(p.hobbies) FROM ONLY person p ORDER BY 1,2;
+
+--
+-- as above, but jeff also does post_hacking.
+--
+SELECT p.name, name(p.hobbies) FROM person* p ORDER BY 1,2;
+
+--
+-- the next two queries demonstrate how functions generate bogus duplicates.
+-- this is a "feature" ..
+--
+SELECT DISTINCT hobbies_r.name, name(hobbies_r.equipment) FROM hobbies_r
+  ORDER BY 1,2;
+
+SELECT hobbies_r.name, (hobbies_r.equipment).name FROM hobbies_r ORDER BY 1,2;
+
+--
+-- mike needs advil and peet's coffee,
+-- joe and sally need hightops, and
+-- everyone else is fine.
+--
+SELECT p.name, name(p.hobbies), name(equipment(p.hobbies)) FROM ONLY person p ORDER BY 1,2,3;
+
+--
+-- as above, but jeff needs advil and peet's coffee as well.
+--
+SELECT p.name, name(p.hobbies), name(equipment(p.hobbies)) FROM person* p ORDER BY 1,2,3;
+
+--
+-- just like the last two, but make sure that the target list fixup and
+-- unflattening is being done correctly.
+--
+SELECT name(equipment(p.hobbies)), p.name, name(p.hobbies) FROM ONLY person p ORDER BY 1,2,3;
+
+SELECT (p.hobbies).equipment.name, p.name, name(p.hobbies) FROM person* p ORDER BY 1,2,3;
+
+SELECT (p.hobbies).equipment.name, name(p.hobbies), p.name FROM ONLY person p ORDER BY 1,2,3;
+
+SELECT name(equipment(p.hobbies)), name(p.hobbies), p.name FROM person* p ORDER BY 1,2,3;
+
+SELECT user_relns() AS user_relns
+   ORDER BY user_relns;
+
+SELECT name(equipment(hobby_construct(text 'skywalking', text 'mer')));
+
+SELECT name(equipment(hobby_construct_named(text 'skywalking', text 'mer')));
+
+SELECT name(equipment_named(hobby_construct_named(text 'skywalking', text 'mer')));
+
+SELECT name(equipment_named_ambiguous_1a(hobby_construct_named(text 'skywalking', text 'mer')));
+
+SELECT name(equipment_named_ambiguous_1b(hobby_construct_named(text 'skywalking', text 'mer')));
+
+SELECT name(equipment_named_ambiguous_1c(hobby_construct_named(text 'skywalking', text 'mer')));
+
+SELECT name(equipment_named_ambiguous_2a(text 'skywalking'));
+
+SELECT name(equipment_named_ambiguous_2b(text 'skywalking')) ORDER BY 1;
+
+SELECT hobbies_by_name('basketball');
+
+SELECT name, overpaid(emp.*) FROM emp ORDER BY 1,2;
+
+--
+-- Try a few cases with SQL-spec row constructor expressions
+--
+SELECT * FROM equipment(ROW('skywalking', 'mer'));
+
+SELECT name(equipment(ROW('skywalking', 'mer')));
+
+SELECT *, name(equipment(h.*)) FROM hobbies_r h ORDER BY 1,2,3;
+
+SELECT *, (equipment(CAST((h.*) AS hobbies_r))).name FROM hobbies_r h ORDER BY 1,2,3;
