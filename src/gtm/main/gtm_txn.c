@@ -2009,7 +2009,7 @@ ProcessGetGIDDataTransactionCommand(Port *myport, StringInfo message)
 	{
 		GTM_Conn *oldconn = GetMyThreadInfo->thr_conn->standby;
 		int count = 0;
-		GTM_Timestamp timestamp;
+		GTM_Timestamp timestamp = 0;
 
 		elog(DEBUG1, "calling bkup_begin_transaction_gxid() for auxiliary transaction for standby GTM %p.",
 			GetMyThreadInfo->thr_conn->standby);

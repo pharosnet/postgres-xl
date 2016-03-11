@@ -166,7 +166,7 @@ _equalVar(const Var *a, const Var *b)
  * Compare all fields in Var except varno
  */
 bool
-equalVarExceptVarno(const void *a, const void *b)
+static equalVarExceptVarno(const void *a, const void *b)
 {
 	if (a == b)
 		return true;

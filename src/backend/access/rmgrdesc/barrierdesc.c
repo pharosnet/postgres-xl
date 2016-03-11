@@ -19,9 +19,10 @@ void
 barrier_desc(StringInfo buf, XLogReaderState *record)
 {
 	char       *rec = XLogRecGetData(record);
+#ifdef USE_ASSERT_CHECKING
 	uint8       info = XLogRecGetInfo(record);
-
 	Assert(info == XLOG_BARRIER_CREATE);
+#endif
 	appendStringInfo(buf, "BARRIER %s", rec);
 }
 

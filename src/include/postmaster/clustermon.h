@@ -35,8 +35,9 @@ extern bool IsClusterMonitorProcess(void);
 /* Functions to start cluster monitor process, called from postmaster */
 int ClusterMonitorInit(void);
 extern int	StartClusterMonitor(void);
-GlobalTransactionId ClusterMonitorGetGlobalXmin(void);
-void ClusterMonitorSetGlobalXmin(GlobalTransactionId xmin);
+extern GlobalTransactionId ClusterMonitorGetGlobalXmin(void);
+extern void ClusterMonitorSetGlobalXmin(GlobalTransactionId xmin);
+extern GlobalTransactionId ClusterMonitorGetReportingGlobalXmin(void);
 
 #ifdef EXEC_BACKEND
 extern void ClusterMonitorIAm(void);

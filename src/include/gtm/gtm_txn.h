@@ -48,6 +48,7 @@ extern GlobalTransactionId ReadNewGlobalTransactionId(void);
 extern GlobalTransactionId GTM_GetLatestCompletedXID(void);
 extern void SetGlobalTransactionIdLimit(GlobalTransactionId oldest_datfrozenxid);
 extern void SetNextGlobalTransactionId(GlobalTransactionId gxid);
+extern void SetControlXid(GlobalTransactionId gxid);
 extern void GTM_SetShuttingDown(void);
 
 /* For restoration point backup */

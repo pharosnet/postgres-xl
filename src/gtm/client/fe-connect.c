@@ -776,7 +776,7 @@ keep_going:						/* We will come back to here until there is
 								"server, but received %d bytes\n",
 								msgLength);
 
-					if (gtmpqGetInt(&conn->my_id, 4, conn))
+					if (gtmpqGetInt((int *)&conn->my_id, 4, conn))
 					{
 						/* We'll come back when there is more data */
 						return PGRES_POLLING_READING;

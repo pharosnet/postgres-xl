@@ -1946,7 +1946,7 @@ pgxc_node_remote_cleanup_all(void)
 							   "RESET transaction_isolation;";
 
 	elog(DEBUG5, "pgxc_node_remote_cleanup_all - handles->co_conn_count %d,"
-			"handles->dn_conn_count", handles->co_conn_count,
+			"handles->dn_conn_count %d", handles->co_conn_count,
 			handles->dn_conn_count);
 	/*
 	 * We must handle reader and writer connections both since even a read-only
@@ -3330,113 +3330,6 @@ pgxc_start_command_on_connection(PGXCNodeHandle *connection,
 			return false;
 	}
 	return true;
-}
-
-/*
- * Encode parameter values to format of DataRow message (the same format is
- * used in Bind) to prepare for sending down to Datanodes.
- * The buffer to store encoded value is palloc'ed and returned as the result
- * parameter. Function returns size of the result
- */
-int
-ParamListToDataRow(ParamListInfo params, char** result)
-{
-	StringInfoData buf;
-	uint16 n16;
-	int i;
-	int real_num_params = 0;
-
-	/*
-	 * It is necessary to fetch parameters
-	 * before looking at the output value.
-	 */
-	for (i = 0; i < params->numParams; i++)
-	{
-		ParamExternData *param;
-
-		param = &params->params[i];
-
-		if (!OidIsValid(param->ptype) && params->paramFetch != NULL)
-			(*params->paramFetch) (params, i + 1);
-
-		/*
-		 * This is the last parameter found as useful, so we need
-		 * to include all the previous ones to keep silent the remote
-		 * nodes. All the parameters prior to the last usable having no
-		 * type available will be considered as NULL entries.
-		 */
-		if (OidIsValid(param->ptype))
-			real_num_params = i + 1;
-	}
-
-	/*
-	 * If there are no parameters available, simply leave.
-	 * This is possible in the case of a query called through SPI
-	 * and using no parameters.
-	 */
-	if (real_num_params == 0)
-	{
-		*result = NULL;
-		return 0;
-	}
-
-	initStringInfo(&buf);
-
-	/* Number of parameter values */
-	n16 = htons(real_num_params);
-	appendBinaryStringInfo(&buf, (char *) &n16, 2);
-
-	/* Parameter values */
-	for (i = 0; i < real_num_params; i++)
-	{
-		ParamExternData *param = &params->params[i];
-		uint32 n32;
-
-		/*
-		 * Parameters with no types are considered as NULL and treated as integer
-		 * The same trick is used for dropped columns for remote DML generation.
-		 */
-		if (param->isnull || !OidIsValid(param->ptype))
-		{
-			n32 = htonl(-1);
-			appendBinaryStringInfo(&buf, (char *) &n32, 4);
-		}
-		else
-		{
-			Oid		typOutput;
-			bool	typIsVarlena;
-			Datum	pval;
-			char   *pstring;
-			int		len;
-
-			/* Get info needed to output the value */
-			getTypeOutputInfo(param->ptype, &typOutput, &typIsVarlena);
-
-			/*
-			 * If we have a toasted datum, forcibly detoast it here to avoid
-			 * memory leakage inside the type's output routine.
-			 */
-			if (typIsVarlena)
-				pval = PointerGetDatum(PG_DETOAST_DATUM(param->value));
-			else
-				pval = param->value;
-
-			/* Convert Datum to string */
-			pstring = OidOutputFunctionCall(typOutput, pval);
-
-			/* copy data to the buffer */
-			len = strlen(pstring);
-			n32 = htonl(len);
-			appendBinaryStringInfo(&buf, (char *) &n32, 4);
-			appendBinaryStringInfo(&buf, pstring, len);
-		}
-	}
-
-	/* Take data from the buffer */
-	*result = palloc(buf.len);
-	memcpy(*result, buf.data, buf.len);
-	pfree(buf.data);
-	return buf.len;
 }
 
 /*

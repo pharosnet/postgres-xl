@@ -1323,12 +1323,10 @@ extern Datum stormdb_promote_standby(PG_FUNCTION_ARGS);
 extern Datum pgxc_is_committed(PG_FUNCTION_ARGS);
 extern Datum pgxc_is_inprogress(PG_FUNCTION_ARGS);
 #endif
-#ifdef USE_MODULE_MSGIDS
 extern Datum pg_msgmodule_set(PG_FUNCTION_ARGS);
 extern Datum pg_msgmodule_change(PG_FUNCTION_ARGS);
 extern Datum pg_msgmodule_enable(PG_FUNCTION_ARGS);
 extern Datum pg_msgmodule_disable(PG_FUNCTION_ARGS);
 extern Datum pg_msgmodule_enable_all(PG_FUNCTION_ARGS);
 extern Datum pg_msgmodule_disable_all(PG_FUNCTION_ARGS);
-#endif
 #endif   /* BUILTINS_H */

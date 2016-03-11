@@ -360,7 +360,7 @@ pgxc_node_all_free(void)
 
 	for (i = 0; i < 2; i++)
 	{
-		int num_nodes;
+		int num_nodes = 0;
 		PGXCNodeHandle *array_handles;
 
 		switch (i)
@@ -1181,7 +1181,9 @@ pgxc_node_send_parse(PGXCNodeHandle * handle, const char* statement,
 	/* message length */
 	int			msgLen;
 	int			cnt_params;
+#ifdef USE_ASSERT_CHECKING
 	size_t		old_outEnd = handle->outEnd;
+#endif
 
 	/* if there are parameters, param_types should exist */
 	Assert(num_params <= 0 || param_types);

@@ -178,7 +178,9 @@ static void UnregisterProxy(void);
 static GTM_Conn *ConnectGTM(void);
 static void ReleaseCmdBackup(GTMProxy_CommandInfo *cmdinfo);
 static void workerThreadReconnectToGTM(void);
+#ifdef USE_ASSERT_CHECKING
 static bool IsProxiedMessage(GTM_MessageType mtype);
+#endif
 
 /*
  * One-time initialization. It's called immediately after the main process
@@ -486,7 +488,7 @@ GTMProxy_SigleHandler(int signal)
 			/* Main thread has nothing to do twith this signal and should not receive this. */
 			PG_SETMASK(&BlockSig);
 
-			elog(DEBUG1, "Detected SIGUSR2, thread:%ld", MyThreadID);
+			elog(DEBUG1, "Detected SIGUSR2, thread:%ld", (long) MyThreadID);
 
 			if (MyThreadID == TopMostThreadID)
 			{
@@ -1707,6 +1709,7 @@ HandlePostCommand(GTMProxy_ConnectionInfo *conninfo, GTM_Conn *gtm_conn)
 
 }
 
+#ifdef USE_ASSERT_CHECKING
 static bool
 IsProxiedMessage(GTM_MessageType mtype)
 {
@@ -1742,6 +1745,7 @@ IsProxiedMessage(GTM_MessageType mtype)
 			return false;
 	}
 }
+#endif
 
 static void
 ProcessResponse(GTMProxy_ThreadInfo *thrinfo, GTMProxy_CommandInfo *cmdinfo,
@@ -1821,8 +1825,8 @@ ProcessResponse(GTMProxy_ThreadInfo *thrinfo, GTMProxy_CommandInfo *cmdinfo,
 
 				pq_beginmessage(&buf, 'S');
 				pq_sendint(&buf, TXN_COMMIT_MULTI_RESULT, 4);
-				pq_sendbytes(&buf, &txn_count, sizeof (int));
-				pq_sendbytes(&buf, &status, sizeof (int));
+				pq_sendbytes(&buf, (const char *)&txn_count, sizeof (int));
+				pq_sendbytes(&buf, (const char *)&status, sizeof (int));
 				pq_endmessage(cmdinfo->ci_conn->con_port, &buf);
 				pq_flush(cmdinfo->ci_conn->con_port);
 			}
@@ -2121,8 +2125,7 @@ ProcessTransactionCommand(GTMProxy_ConnectionInfo *conninfo, GTM_Conn *gtm_conn,
 
 		case MSG_TXN_COMMIT_MULTI:
 			{
-				int txn_count = pq_getmsgint(message, sizeof (int));
-				Assert (txn_count == 1);
+				(void) pq_getmsgint(message, sizeof (int));
 			}
 			/* fall through */
 		case MSG_TXN_ROLLBACK:
@@ -2959,7 +2962,6 @@ RegisterProxy(bool is_reconnect)
 	char proxyname[] = "";
 	time_t finish_time;
 	MemoryContext old_mcxt = NULL;
-	GlobalTransactionId xmin = InvalidGlobalTransactionId;
 
 	if (is_reconnect)
 	{

@@ -753,7 +753,7 @@ ProcessClientWriteInterrupt(bool blocked)
  * we've seen a COMMIT or ABORT command; when we are in abort state, other
  * commands are not processed any further than the raw parse stage.
  */
-List *
+static List *
 pg_parse_query_internal(const char *query_string, List **querysource_list)
 {
 	List	   *raw_parsetree_list;
