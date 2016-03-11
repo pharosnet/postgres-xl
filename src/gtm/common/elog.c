@@ -114,10 +114,10 @@ log_line_prefix(StringInfo buf)
 	 * MyProcPid changes. MyStartTime also changes when MyProcPid does, so
 	 * reset the formatted start timestamp too.
 	 */
-	if (log_my_pid != MyThreadID)
+	if (log_my_pid != (int) MyThreadID)
 	{
 		log_line_number = 0;
-		log_my_pid = MyThreadID;
+		log_my_pid = (int) MyThreadID;
 		formatted_start_time[0] = '\0';
 	}
 	log_line_number++;
@@ -144,7 +144,7 @@ log_line_prefix(StringInfo buf)
 		switch (Log_line_prefix[i])
 		{
 			case 'p':
-				appendStringInfo(buf, "%lu", MyThreadID);
+				appendStringInfo(buf, "%u", (int) MyThreadID);
 				break;
 			case 'l':
 				appendStringInfo(buf, "%ld", log_line_number);
