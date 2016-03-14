@@ -5339,6 +5339,12 @@ find_referenced_cols_walker(Node *node, find_referenced_cols_context *context)
 			return true;
 
 		/*
+		 * We can not push down aggregates with ORDER BY.
+		 */
+		if (((Aggref *) node)->aggorder)
+			return true;
+
+		/*
 		 * We need to add aggregate reference to the new tlist if it
 		 * is not already there. Phase 1 aggregate is actually returns values
 		 * of transition data type, so we should change the data type of the
