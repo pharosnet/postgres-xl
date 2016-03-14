@@ -650,8 +650,9 @@ main(int argc, char *argv[])
 	}
 	else
 	{
-		GTM_MutexLockAcquire(&control_lock);
 		GTM_RestoreContext restoreContext;
+
+		GTM_MutexLockAcquire(&control_lock);
 
 		ctlf = fopen(GTMControlFile, "r");
 
