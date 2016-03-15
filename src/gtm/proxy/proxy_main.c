@@ -2163,7 +2163,10 @@ ProcessSnapshotCommand(GTMProxy_ConnectionInfo *conninfo, GTM_Conn *gtm_conn,
 		case MSG_SNAPSHOT_GET_MULTI:
 			{
 				{
-					const char *data = pq_getmsgbytes(message,
+					const char *data;
+
+					(void) pq_getmsgint(message, sizeof (int));
+					data = pq_getmsgbytes(message,
 							sizeof (GlobalTransactionId));
 					if (data == NULL)
 						ereport(ERROR,
