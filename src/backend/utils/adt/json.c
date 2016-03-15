@@ -276,6 +276,45 @@ json_recv(PG_FUNCTION_ARGS)
 	PG_RETURN_TEXT_P(cstring_to_text_with_len(str, nbytes));
 }
 
+#ifdef XCP
+Datum
+json_agg_state_in(PG_FUNCTION_ARGS)
+{
+	char	   *str = pstrdup(PG_GETARG_CSTRING(0));
+	JsonAggState *state;
+	char *token, *freestr;
+
+	state = (JsonAggState *) palloc0(sizeof (JsonAggState));
+	state->str = makeStringInfo();
+
+	freestr = str;
+
+	token = strsep(&str, ":");
+	state->val_category = atoi(token);
+	appendStringInfoString(state->str, str);
+
+	pfree(freestr);
+
+	PG_RETURN_POINTER(state);
+}
+
+/*
+ * json_agg_collectfn only needs the 'val_category' for formatting purposes. So
+ * only output that along with the json string
+ */
+Datum
+json_agg_state_out(PG_FUNCTION_ARGS)
+{
+	JsonAggState *state = (JsonAggState *) PG_GETARG_POINTER(0);
+	char *result;
+	int len = 15 + strlen(state->str->data);
+
+	result = (char *) palloc0(len);
+	sprintf(result, "%d:%s", state->val_category, state->str->data);
+
+	PG_RETURN_CSTRING(result);
+}
+#endif
 /*
  * makeJsonLexContext
  *
@@ -1888,7 +1927,13 @@ json_agg_transfn(PG_FUNCTION_ARGS)
 		state->str = makeStringInfo();
 		MemoryContextSwitchTo(oldcontext);
 
+#ifndef XCP
+		/* 
+		 * Do not add the start marker. It will be done by the
+		 * json_agg_collectfn on receiving the first result
+		 */
 		appendStringInfoChar(state->str, '[');
+#endif
 		json_categorize_type(arg_type, &state->val_category,
 							 &state->val_output_func);
 	}
@@ -1926,6 +1971,70 @@ json_agg_transfn(PG_FUNCTION_ARGS)
 	 */
 	PG_RETURN_POINTER(state);
 }
+
+#ifdef XCP
+/*
+ * json_agg collection function
+ */
+Datum
+json_agg_collectfn(PG_FUNCTION_ARGS)
+{
+	MemoryContext aggcontext,
+				oldcontext;
+	JsonAggState *collectstate;
+	JsonAggState *transstate;
+
+	if (!AggCheckCallContext(fcinfo, &aggcontext))
+	{
+		/* cannot be called directly because of internal-type argument */
+		elog(ERROR, "json_agg_collectfn called in non-aggregate context");
+	}
+
+
+	/* cannot be called directly because of internal-type argument */
+	Assert(AggCheckCallContext(fcinfo, NULL));
+
+	if (PG_ARGISNULL(0))
+	{
+		/*
+		 * Make this state object in a context where it will persist for the
+		 * duration of the aggregate call.  MemoryContextSwitchTo is only
+		 * needed the first time, as the StringInfo routines make sure they
+		 * use the right context to enlarge the object if necessary.
+		 */
+		oldcontext = MemoryContextSwitchTo(aggcontext);
+		collectstate = (JsonAggState *) palloc(sizeof(JsonAggState));
+		collectstate->str = makeStringInfo();
+		MemoryContextSwitchTo(oldcontext);
+
+		appendStringInfoChar(collectstate->str, '[');
+	}
+	else
+	{
+		collectstate = (JsonAggState *) PG_GETARG_POINTER(0);
+		if (!PG_ARGISNULL(1))
+			appendStringInfoString(collectstate->str, ", ");
+	}
+
+	/* fast path for NULLs */
+	if (PG_ARGISNULL(1))
+		PG_RETURN_POINTER(collectstate);
+
+	transstate = (JsonAggState *) PG_GETARG_POINTER(1);
+
+	/* add some whitespace if structured type and not first item */
+	if (!PG_ARGISNULL(0) &&
+		(transstate->val_category == JSONTYPE_ARRAY ||
+		 transstate->val_category == JSONTYPE_COMPOSITE))
+	{
+		appendStringInfoString(collectstate->str, "\n ");
+	}
+
+	appendStringInfoString(collectstate->str, transstate->str->data);
+
+	PG_RETURN_POINTER(collectstate);
+}
+#endif
 
 /*
  * json_agg final function

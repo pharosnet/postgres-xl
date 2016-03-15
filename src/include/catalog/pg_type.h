@@ -707,6 +707,10 @@ DATA(insert OID = 7019 ( numeric_poly_agg_state	   PGNSP PGUID SIZEOF_POINTER t 
 DESCR("numeric_poly_agg_state - internal type used for numeric/int8 aggregation");
 #define NUMERIC_POLY_AGG_STATE_OID		7019
 
+DATA(insert OID = 7028 ( json_agg_state	   PGNSP PGUID SIZEOF_POINTER t p C f t \054 0 0 0 json_agg_state_in json_agg_state_out - - - - - ALIGNOF_POINTER p f 0 -1 0 0 _null_ _null_ _null_ ));
+DESCR("json_agg_state - internal type used for json aggregation");
+#define JSON_AGG_STATE_OID		7028
+
 /*
  * macros
  */

@@ -4403,9 +4403,11 @@ DATA(insert OID = 3155 (  row_to_json	   PGNSP PGUID 12 1 0 0 0 f f f f t f s 1 
 DESCR("map row to json");
 DATA(insert OID = 3156 (  row_to_json	   PGNSP PGUID 12 1 0 0 0 f f f f t f s 2 0 114 "2249 16" _null_ _null_ _null_ _null_ _null_ row_to_json_pretty _null_ _null_ _null_ ));
 DESCR("map row to json with optional pretty printing");
-DATA(insert OID = 3173 (  json_agg_transfn	 PGNSP PGUID 12 1 0 0 0 f f f f f f s 2 0 2281 "2281 2283" _null_ _null_ _null_ _null_ _null_ json_agg_transfn _null_ _null_ _null_ ));
+DATA(insert OID = 3173 (  json_agg_transfn	 PGNSP PGUID 12 1 0 0 0 f f f f f f s 2 0 7028 "7028 2283" _null_ _null_ _null_ _null_ _null_ json_agg_transfn _null_ _null_ _null_ ));
 DESCR("json aggregate transition function");
-DATA(insert OID = 3174 (  json_agg_finalfn	 PGNSP PGUID 12 1 0 0 0 f f f f f f i 1 0 114 "2281" _null_ _null_ _null_ _null_ _null_ json_agg_finalfn _null_ _null_ _null_ ));
+DATA(insert OID = 7029 (  json_agg_collectfn	 PGNSP PGUID 12 1 0 0 0 f f f f f f s 2 0 7028 "7028 7028" _null_ _null_ _null_ _null_ _null_ json_agg_collectfn _null_ _null_ _null_ ));
+DESCR("json aggregate collection function");
+DATA(insert OID = 3174 (  json_agg_finalfn	 PGNSP PGUID 12 1 0 0 0 f f f f f f i 1 0 114 "7028" _null_ _null_ _null_ _null_ _null_ json_agg_finalfn _null_ _null_ _null_ ));
 DESCR("json aggregate final function");
 DATA(insert OID = 3175 (  json_agg		   PGNSP PGUID 12 1 0 0 0 t f f f f f s 1 0 114 "2283" _null_ _null_ _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
 DESCR("aggregate input into json");
@@ -5317,6 +5319,10 @@ DESCR("I/O");
 DATA(insert OID = 7022 (  numeric_poly_agg_state_recv		   PGNSP PGUID 12 1 0 0 0 f f f f t f i 1 0 7019 "2281" _null_ _null_ _null_ _null_ _null_ numeric_poly_agg_state_recv _null_ _null_ _null_ ));
 DESCR("I/O");
 DATA(insert OID = 7023 (  numeric_poly_agg_state_send		   PGNSP PGUID 12 1 0 0 0 f f f f t f i 1 0 17 "7019" _null_ _null_ _null_ _null_ _null_ numeric_poly_agg_state_send _null_ _null_ _null_ ));
+DESCR("I/O");
+DATA(insert OID = 7030 ( json_agg_state_in				PGNSP PGUID 12 1 0 0 0 f f f f t f i 1 0 7028 "2275" _null_ _null_ _null_ _null_ _null_ json_agg_state_in _null_ _null_ _null_ ));
+DESCR("I/O");
+DATA(insert OID = 7025 ( json_agg_state_out			PGNSP PGUID 12 1 0 0 0 f f f f t f i 1 0 2275 "7028" _null_ _null_ _null_ _null_ _null_ json_agg_state_out _null_ _null_ _null_ ));
 DESCR("I/O");
 #endif
 /* pg_upgrade support */

@@ -306,7 +306,7 @@ DATA(insert ( 3538	n 0 string_agg_transfn	-	string_agg_finalfn	-				-				-				f 
 DATA(insert ( 3545	n 0 bytea_string_agg_transfn	-	bytea_string_agg_finalfn	-				-				-		f f 0	2281	0	0	0		0	_null_	_null_ _null_ ));
 
 /* json */
-DATA(insert ( 3175	n 0 json_agg_transfn	-	json_agg_finalfn			-				-				-				f f 0	2281	0	0	0		0	_null_ _null_ _null_ ));
+DATA(insert ( 3175	n 0 json_agg_transfn	json_agg_collectfn json_agg_finalfn			-				-				- f f 0	7028	7028	0	0	0	_null_ _null_ _null_ ));
 DATA(insert ( 3197	n 0 json_object_agg_transfn -	json_object_agg_finalfn -				-				-				f f 0	2281	0	0	0		0	_null_ _null_ _null_ ));
 
 /* jsonb */
