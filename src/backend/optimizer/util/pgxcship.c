@@ -493,22 +493,22 @@ retry_pools:
 		ListCell *lc;
 		bool healthmap[MaxDataNodes];
 
-		PgxcNodeDnListHealth(rel_loc_info->nodeList, healthmap);
+		PgxcNodeDnListHealth(rel_loc_info->rl_nodeList, healthmap);
 
 		i = 0;
-		foreach(lc, rel_loc_info->nodeList)
+		foreach(lc, rel_loc_info->rl_nodeList)
 		{
 			if (!healthmap[i++])
 				newlist = lappend_int(newlist, lfirst_int(lc));
 		}
 
 		if (newlist != NIL)
-			rel_loc_info->nodeList = list_difference_int(rel_loc_info->nodeList,
+			rel_loc_info->rl_nodeList = list_difference_int(rel_loc_info->rl_nodeList,
 													 newlist);
 		/*
 		 * If all nodes are down, cannot do much, just return NULL here
 		 */
-		if (rel_loc_info->nodeList == NIL)
+		if (rel_loc_info->rl_nodeList == NIL)
 		{
 			/*
 			 * Try an on-demand pool maintenance just to see if some nodes
@@ -518,7 +518,7 @@ retry_pools:
 			 */
 			if (retry)
 			{
-				rel_loc_info->nodeList = newlist;
+				rel_loc_info->rl_nodeList = newlist;
 				newlist = NIL;
 				PoolPingNodes();
 				retry = false;
@@ -1713,7 +1713,7 @@ pgxc_check_index_shippability(RelationLocInfo *relLocInfo,
 	 * Check if relation is distributed on a single node, in this case
 	 * the constraint can be shipped in all the cases.
 	 */
-	if (list_length(relLocInfo->nodeList) == 1)
+	if (list_length(relLocInfo->rl_nodeList) == 1)
 		return result;
 
 	/*
@@ -1921,8 +1921,8 @@ pgxc_check_fk_shippability(RelationLocInfo *parentLocInfo,
 			 * Parent and child need to have their data located exactly
 			 * on the same list of nodes.
 			 */
-			if (list_difference_int(childLocInfo->nodeList, parentLocInfo->nodeList) ||
-				list_difference_int(parentLocInfo->nodeList, childLocInfo->nodeList))
+			if (list_difference_int(childLocInfo->rl_nodeList, parentLocInfo->rl_nodeList) ||
+				list_difference_int(parentLocInfo->rl_nodeList, childLocInfo->rl_nodeList))
 			{
 				result = false;
 				break;

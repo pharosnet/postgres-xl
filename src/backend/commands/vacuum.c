@@ -1774,7 +1774,7 @@ vacuum_rel_coordinator(Relation onerel, bool is_outer)
 	{
 		int			nindexes;
 		Relation   *Irel;
-		int 		nodes = list_length(RelationGetLocInfo(onerel)->nodeList);
+		int 		nodes = list_length(RelationGetLocInfo(onerel)->rl_nodeList);
 
 		vac_open_indexes(onerel, ShareUpdateExclusiveLock, &nindexes, &Irel);
 		hasindex = (nindexes > 0);

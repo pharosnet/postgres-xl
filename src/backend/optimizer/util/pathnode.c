@@ -890,10 +890,10 @@ retry_pools:
 			int i;
 			bool healthmap[MaxDataNodes];
 
-			PgxcNodeDnListHealth(rel_loc_info->nodeList, healthmap);
+			PgxcNodeDnListHealth(rel_loc_info->rl_nodeList, healthmap);
 
 			i = 0;
-			foreach(lc, rel_loc_info->nodeList)
+			foreach(lc, rel_loc_info->rl_nodeList)
 			{
 				if (healthmap[i++] == true)
 					distribution->nodes = bms_add_member(distribution->nodes,
@@ -921,7 +921,7 @@ retry_pools:
 		}
 		else
 		{
-			foreach(lc, rel_loc_info->nodeList)
+			foreach(lc, rel_loc_info->rl_nodeList)
 				distribution->nodes = bms_add_member(distribution->nodes,
 													 lfirst_int(lc));
 		}

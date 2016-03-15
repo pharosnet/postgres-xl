@@ -2740,7 +2740,7 @@ void
 DataNodeCopyBegin(RemoteCopyData *rcstate)
 {
 	int i;
-	List *nodelist = rcstate->rel_loc->nodeList;
+	List *nodelist = rcstate->rel_loc->rl_nodeList;
 	PGXCNodeHandle **connections;
 	bool need_tran_block;
 	GlobalTransactionId gxid;

@@ -164,10 +164,10 @@ pgxc_redist_build_replicate_to_distrib(RedistribState *distribState,
 		return;
 
 	/* Get the list of nodes that are added to the relation */
-	removedNodes = list_difference_int(oldLocInfo->nodeList, newLocInfo->nodeList);
+	removedNodes = list_difference_int(oldLocInfo->rl_nodeList, newLocInfo->rl_nodeList);
 
 	/* Get the list of nodes that are removed from relation */
-	newNodes = list_difference_int(newLocInfo->nodeList, oldLocInfo->nodeList);
+	newNodes = list_difference_int(newLocInfo->rl_nodeList, oldLocInfo->rl_nodeList);
 
 	/*
 	 * If some nodes are added, turn back to default, we need to fetch data
@@ -190,7 +190,7 @@ pgxc_redist_build_replicate_to_distrib(RedistribState *distribState,
 	 * If the table is redistributed to a single node, a TRUNCATE on removed nodes
 	 * is sufficient so leave here.
 	 */
-	if (list_length(newLocInfo->nodeList) == 1)
+	if (list_length(newLocInfo->rl_nodeList) == 1)
 	{
 		/* Add REINDEX command if necessary */
 		pgxc_redist_add_reindex(distribState);
@@ -205,14 +205,14 @@ pgxc_redist_build_replicate_to_distrib(RedistribState *distribState,
 	if (newLocInfo->locatorType == LOCATOR_TYPE_HASH)
 	{
 		ExecNodes *execNodes = makeNode(ExecNodes);
-		execNodes->nodeList = newLocInfo->nodeList;
+		execNodes->nodeList = newLocInfo->rl_nodeList;
 		distribState->commands = lappend(distribState->commands,
 					 makeRedistribCommand(DISTRIB_DELETE_HASH, CATALOG_UPDATE_AFTER, execNodes));
 	}
 	else if (newLocInfo->locatorType == LOCATOR_TYPE_MODULO)
 	{
 		ExecNodes *execNodes = makeNode(ExecNodes);
-		execNodes->nodeList = newLocInfo->nodeList;
+		execNodes->nodeList = newLocInfo->rl_nodeList;
 		distribState->commands = lappend(distribState->commands,
 					 makeRedistribCommand(DISTRIB_DELETE_MODULO, CATALOG_UPDATE_AFTER, execNodes));
 	}
@@ -248,10 +248,10 @@ pgxc_redist_build_replicate(RedistribState *distribState,
 		return;
 
 	/* Get the list of nodes that are added to the relation */
-	removedNodes = list_difference_int(oldLocInfo->nodeList, newLocInfo->nodeList);
+	removedNodes = list_difference_int(oldLocInfo->rl_nodeList, newLocInfo->rl_nodeList);
 
 	/* Get the list of nodes that are removed from relation */
-	newNodes = list_difference_int(newLocInfo->nodeList, oldLocInfo->nodeList);
+	newNodes = list_difference_int(newLocInfo->rl_nodeList, oldLocInfo->rl_nodeList);
 
 	/*
 	 * If nodes have to be added, we need to fetch data for redistribution first.
@@ -475,7 +475,7 @@ distrib_copy_from(RedistribState *distribState, ExecNodes *exec_nodes)
 	if (exec_nodes)
 	{
 		if (exec_nodes->nodeList)
-			copyState->rel_loc->nodeList = exec_nodes->nodeList;
+			copyState->rel_loc->rl_nodeList = exec_nodes->nodeList;
 	}
 
 	tupdesc = RelationGetDescr(rel);
@@ -736,7 +736,7 @@ distrib_delete_hash(RedistribState *distribState, ExecNodes *exec_nodes)
 		 * Find the correct node position in node list of locator information.
 		 * So scan the node list and fetch the position of node.
 		 */
-		foreach(item2, locinfo->nodeList)
+		foreach(item2, locinfo->rl_nodeList)
 		{
 			int loc = lfirst_int(item2);
 			if (loc == nodenum)
@@ -759,10 +759,10 @@ distrib_delete_hash(RedistribState *distribState, ExecNodes *exec_nodes)
 		if (hashfuncname)
 			appendStringInfo(buf2, "%s WHERE abs(%s(%s)) %% %d != %d",
 							 buf->data, hashfuncname, colname,
-							 list_length(locinfo->nodeList), nodepos);
+							 list_length(locinfo->rl_nodeList), nodepos);
 		else
 			appendStringInfo(buf2, "%s WHERE abs(%s) %% %d != %d", buf->data, colname,
-							 list_length(locinfo->nodeList), nodepos);
+							 list_length(locinfo->rl_nodeList), nodepos);
 
 		/* Then launch this single query */
 		distrib_execute_query(buf2->data, IsTempTable(relOid), local_exec_nodes);

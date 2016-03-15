@@ -503,7 +503,7 @@ GetRoundRobinNode(Oid relid)
 		rel->rd_locator_info->roundRobinNode = rel->rd_locator_info->roundRobinNode->next;
 	else
 		/* reset to first one */
-		rel->rd_locator_info->roundRobinNode = rel->rd_locator_info->nodeList->head;
+		rel->rd_locator_info->roundRobinNode = rel->rd_locator_info->rl_nodeList->head;
 
 	relation_close(rel, AccessShareLock);
 
@@ -522,10 +522,10 @@ IsTableDistOnPrimary(RelationLocInfo *rel_loc_info)
 
 	if (!OidIsValid(primary_data_node) ||
 		rel_loc_info == NULL ||
-		list_length(rel_loc_info->nodeList = 0))
+		list_length(rel_loc_info->rl_nodeList = 0))
 		return false;
 
-	foreach(item, rel_loc_info->nodeList)
+	foreach(item, rel_loc_info->rl_nodeList)
 	{
 		char ntype = PGXC_NODE_DATANODE;
 		if (PGXCNodeGetNodeId(primary_data_node, &ntype) == lfirst_int(item))
@@ -545,8 +545,8 @@ IsLocatorInfoEqual(RelationLocInfo *rel_loc_info1, RelationLocInfo *rel_loc_info
 	List *nodeList1, *nodeList2;
 	Assert(rel_loc_info1 && rel_loc_info2);
 
-	nodeList1 = rel_loc_info1->nodeList;
-	nodeList2 = rel_loc_info2->nodeList;
+	nodeList1 = rel_loc_info1->rl_nodeList;
+	nodeList2 = rel_loc_info2->rl_nodeList;
 
 	/* Same relation? */
 	if (rel_loc_info1->relid != rel_loc_info2->relid)
@@ -713,13 +713,13 @@ RelationBuildLocator(Relation rel)
 
 	relationLocInfo->partAttrName = get_attname(relationLocInfo->relid, pgxc_class->pcattnum);
 
-	relationLocInfo->nodeList = NIL;
+	relationLocInfo->rl_nodeList = NIL;
 
 	for (j = 0; j < pgxc_class->nodeoids.dim1; j++)
 	{
 		char ntype = PGXC_NODE_DATANODE;
 		int nid = PGXCNodeGetNodeId(pgxc_class->nodeoids.values[j], &ntype);
-		relationLocInfo->nodeList = lappend_int(relationLocInfo->nodeList, nid);
+		relationLocInfo->rl_nodeList = lappend_int(relationLocInfo->rl_nodeList, nid);
 	}
 
 	/*
@@ -735,10 +735,10 @@ RelationBuildLocator(Relation rel)
 		 * pick a random one to start with,
 		 * since each process will do this independently
 		 */
-		offset = compute_modulo(abs(rand()), list_length(relationLocInfo->nodeList));
+		offset = compute_modulo(abs(rand()), list_length(relationLocInfo->rl_nodeList));
 
 		srand(time(NULL));
-		relationLocInfo->roundRobinNode = relationLocInfo->nodeList->head; /* initialize */
+		relationLocInfo->roundRobinNode = relationLocInfo->rl_nodeList->head; /* initialize */
 		for (j = 0; j < offset && relationLocInfo->roundRobinNode->next != NULL; j++)
 			relationLocInfo->roundRobinNode = relationLocInfo->roundRobinNode->next;
 	}
@@ -801,8 +801,8 @@ CopyRelationLocInfo(RelationLocInfo * src_info)
 	if (src_info->partAttrName)
 		dest_info->partAttrName = pstrdup(src_info->partAttrName);
 
-	if (src_info->nodeList)
-		dest_info->nodeList = list_copy(src_info->nodeList);
+	if (src_info->rl_nodeList)
+		dest_info->rl_nodeList = list_copy(src_info->rl_nodeList);
 	/* Note, for round robin, we use the relcache entry */
 
 	return dest_info;
@@ -1625,7 +1625,7 @@ GetRelationNodes(RelationLocInfo *rel_loc_info, Datum valueForDistCol,
 							typeOfValueForDistCol,
 							LOCATOR_LIST_LIST,
 							0,
-							(void *)rel_loc_info->nodeList,
+							(void *)rel_loc_info->rl_nodeList,
 							(void **)&nodenums,
 							false);
 	count = GET_NODES(locator, valueForDistCol, isValueNull, NULL);

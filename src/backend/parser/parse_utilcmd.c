@@ -414,7 +414,7 @@ transformCreateStmt(CreateStmt *stmt, const char *queryString)
 				 * Use defined node, if nothing defined get from the parent
 				 */
 				if (stmt->subcluster == NULL)
-					stmt->subcluster = makeSubCluster(rel->rd_locator_info->nodeList);
+					stmt->subcluster = makeSubCluster(rel->rd_locator_info->rl_nodeList);
 			}
 			heap_close(rel, NoLock);
 		}
@@ -3406,7 +3406,7 @@ checkLocalFKConstraints(CreateStmtContext *cxt)
 				 * Distribution nodes are defined, they must be a subset of
 				 * the referenced relation's nodes
 				 */
-				common = list_intersection_int(nodelist, rel_loc_info->nodeList);
+				common = list_intersection_int(nodelist, rel_loc_info->rl_nodeList);
 				if (list_length(common) < list_length(nodelist))
 					ereport(ERROR,
 							(errcode(ERRCODE_SYNTAX_ERROR),
@@ -3418,7 +3418,7 @@ checkLocalFKConstraints(CreateStmtContext *cxt)
 				/* suggest distribution */
 				if (nodelist)
 				{
-					common = list_intersection_int(nodelist, rel_loc_info->nodeList);
+					common = list_intersection_int(nodelist, rel_loc_info->rl_nodeList);
 					if (list_length(common) == 0)
 						ereport(ERROR,
 								(errcode(ERRCODE_SYNTAX_ERROR),
@@ -3427,7 +3427,7 @@ checkLocalFKConstraints(CreateStmtContext *cxt)
 					nodelist = common;
 				}
 				else
-					nodelist = rel_loc_info? list_copy(rel_loc_info->nodeList):NIL;
+					nodelist = rel_loc_info? list_copy(rel_loc_info->rl_nodeList):NIL;
 			}
 		}
 		else if (rel_loc_info->locatorType == LOCATOR_TYPE_RROBIN)
@@ -3451,8 +3451,8 @@ checkLocalFKConstraints(CreateStmtContext *cxt)
 			 */
 			if (cxt->subcluster)
 			{
-				common = list_intersection_int(nodelist, rel_loc_info->nodeList);
-				if (list_length(common) != list_length(rel_loc_info->nodeList) ||
+				common = list_intersection_int(nodelist, rel_loc_info->rl_nodeList);
+				if (list_length(common) != list_length(rel_loc_info->rl_nodeList) ||
 						list_length(common) != list_length(nodelist))
 				{
 					if (list_length(common) == 0)
@@ -3466,8 +3466,8 @@ checkLocalFKConstraints(CreateStmtContext *cxt)
 			{
 				if (nodelist)
 				{
-					common = list_intersection_int(nodelist, rel_loc_info->nodeList);
-					if (list_length(common) != list_length(rel_loc_info->nodeList))
+					common = list_intersection_int(nodelist, rel_loc_info->rl_nodeList);
+					if (list_length(common) != list_length(rel_loc_info->rl_nodeList))
 						ereport(ERROR,
 								(errcode(ERRCODE_SYNTAX_ERROR),
 								 errmsg("referenced HASH/MODULO table must be defined on same nodes")));
@@ -3475,7 +3475,7 @@ checkLocalFKConstraints(CreateStmtContext *cxt)
 					nodelist = common;
 				}
 				else
-					nodelist = list_copy(rel_loc_info->nodeList);
+					nodelist = list_copy(rel_loc_info->rl_nodeList);
 				/* Now define the subcluster */
 				cxt->subcluster = makeSubCluster(nodelist);
 			}

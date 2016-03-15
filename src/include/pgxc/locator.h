@@ -65,7 +65,7 @@ typedef struct
 	char		locatorType;
 	PartAttrNumber	partAttrNum;	/* if partitioned */
 	char		*partAttrName;		/* if partitioned */
-	List		*nodeList;			/* Node Indices */
+	List		*rl_nodeList;		/* Node Indices */
 	ListCell	*roundRobinNode;	/* index of the next one to use */
 } RelationLocInfo;
 

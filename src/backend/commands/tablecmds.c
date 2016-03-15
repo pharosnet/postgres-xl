@@ -11675,8 +11675,8 @@ BuildRedistribCommands(Oid relid, List *subCmds)
 	 */
 	newLocInfo = CopyRelationLocInfo(oldLocInfo);
 	/* The node list of this locator information will be rebuilt after command scan */
-	list_free(newLocInfo->nodeList);
-	newLocInfo->nodeList = NULL;
+	list_free(newLocInfo->rl_nodeList);
+	newLocInfo->rl_nodeList = NULL;
 
 	/* Get the list to be modified */
 	new_num = get_pgxc_classnodes(RelationGetRelid(rel), &new_oid_array);
@@ -11728,7 +11728,7 @@ BuildRedistribCommands(Oid relid, List *subCmds)
 
 	/* Build relation node list for new locator info */
 	for (i = 0; i < new_num; i++)
-		newLocInfo->nodeList = lappend_int(newLocInfo->nodeList,
+		newLocInfo->rl_nodeList = lappend_int(newLocInfo->rl_nodeList,
 										   PGXCNodeGetNodeId(new_oid_array[i],
 															 &node_type));
 	/* Build the command tree for table redistribution */

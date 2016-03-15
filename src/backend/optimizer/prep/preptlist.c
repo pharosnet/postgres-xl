@@ -98,7 +98,7 @@ preprocess_targetlist(PlannerInfo *root, List *tlist)
 			ListCell *lc;
 
 			distribution->distributionType = rel_loc_info->locatorType;
-			foreach(lc, rel_loc_info->nodeList)
+			foreach(lc, rel_loc_info->rl_nodeList)
 				distribution->nodes = bms_add_member(distribution->nodes,
 													 lfirst_int(lc));
 			distribution->restrictNodes = NULL;
