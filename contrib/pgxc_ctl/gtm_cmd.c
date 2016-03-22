@@ -70,8 +70,12 @@ cmd_t *prepare_initGtmMaster(bool stop)
 	cmdInitGtmMaster = initCmd(sval(VAR_gtmMasterServer));
 	snprintf(newCommand(cmdInitGtmMaster), MAXLINE,
 			 "%s;"
-			 "gtm_ctl -D %s -m immediate -Z gtm stop; rm -rf %s; mkdir -p %s;initgtm -Z gtm -D %s",
+			 "[ -f %s/gtm.pid ] && gtm_ctl -D %s -m immediate -Z gtm stop;"
+			 "rm -rf %s;"
+			 "mkdir -p %s;"
+			 "initgtm -Z gtm -D %s",
 			 remoteDirCheck,
+			 sval(VAR_gtmMasterDir),
 			 sval(VAR_gtmMasterDir),
 			 sval(VAR_gtmMasterDir), sval(VAR_gtmMasterDir), sval(VAR_gtmMasterDir));
 
@@ -409,7 +413,11 @@ cmd_t *prepare_initGtmSlave(void)
 	/* Kill current gtm, build work directory and run initgtm */
 	cmdInitGtm = initCmd(sval(VAR_gtmSlaveServer));
 	snprintf(newCommand(cmdInitGtm), MAXLINE,
-			 "gtm_ctl -D %s -m immediate -Z gtm stop; rm -rf %s; mkdir -p %s; initgtm -Z gtm -D %s",
+			 "[ -f %s/gtm.pid ] && gtm_ctl -D %s -m immediate -Z gtm stop;"
+			 "rm -rf %s;"
+			 "mkdir -p %s;"
+			 "initgtm -Z gtm -D %s",
+			 sval(VAR_gtmSlaveDir),
 			 sval(VAR_gtmSlaveDir),
 			 sval(VAR_gtmSlaveDir), sval(VAR_gtmSlaveDir), sval(VAR_gtmSlaveDir));
 
@@ -478,10 +486,13 @@ cmd_t *prepare_startGtmMaster(void)
 
 	cmdGtmCtl = initCmd(sval(VAR_gtmMasterServer));
 	snprintf(newCommand(cmdGtmCtl), MAXLINE, 
-			 "gtm_ctl stop -Z gtm -D %s;"
+			 "[ -f %s/gtm.pid ] && gtm_ctl stop -Z gtm -D %s;"
 			 "rm -f %s/register.node;"
 			 "gtm_ctl start -Z gtm -D %s",
-			 sval(VAR_gtmMasterDir), sval(VAR_gtmMasterDir), sval(VAR_gtmMasterDir));
+			 sval(VAR_gtmMasterDir),
+			 sval(VAR_gtmMasterDir),
+			 sval(VAR_gtmMasterDir),
+			 sval(VAR_gtmMasterDir));
 	return cmdGtmCtl;
 }
 
@@ -517,10 +528,13 @@ cmd_t *prepare_startGtmSlave(void)
 	}
 	cmdGtmCtl = initCmd(sval(VAR_gtmSlaveServer));
 	snprintf(newCommand(cmdGtmCtl), MAXLINE, 
-			 "gtm_ctl stop -Z gtm -D %s;"
+			 "[ -f %s/gtm.pid ] && gtm_ctl stop -Z gtm -D %s;"
 			 "rm -rf %s/register.node;"
 			 "gtm_ctl start -Z gtm -D %s",
-			 sval(VAR_gtmSlaveDir), sval(VAR_gtmSlaveDir), sval(VAR_gtmSlaveDir));
+			 sval(VAR_gtmSlaveDir),
+			 sval(VAR_gtmSlaveDir),
+			 sval(VAR_gtmSlaveDir),
+			 sval(VAR_gtmSlaveDir));
 	return (cmdGtmCtl);
 }
 
@@ -553,6 +567,7 @@ cmd_t *prepare_stopGtmMaster(void)
 	cmdGtmCtl = initCmd(sval(VAR_gtmMasterServer));
 	snprintf(newCommand(cmdGtmCtl), MAXLINE,
 			 "gtm_ctl stop -Z gtm -D %s",
+			 sval(VAR_gtmMasterDir),
 			 sval(VAR_gtmMasterDir));
 	return(cmdGtmCtl);
 }
@@ -1038,10 +1053,11 @@ cmd_t *prepare_initGtmProxy(char *nodeName)
 	/* Build directory and run initgtm */
 	cmdInitGtm = initCmd(aval(VAR_gtmProxyServers)[idx]);
 	snprintf(newCommand(cmdInitGtm), MAXLINE,
-			 "gtm_ctl -D %s -m immediate -Z gtm_proxy stop;"
+			 "[ -f %s/gtm_proxy.pid ] && gtm_ctl -D %s -m immediate -Z gtm_proxy stop;"
 			 "rm -rf %s;"
 			 "mkdir -p %s;"
 			 "initgtm -Z gtm_proxy -D %s",
+			 aval(VAR_gtmProxyDirs)[idx],
 			 aval(VAR_gtmProxyDirs)[idx],
 			 aval(VAR_gtmProxyDirs)[idx],
 			 aval(VAR_gtmProxyDirs)[idx],
@@ -1146,8 +1162,9 @@ cmd_t *prepare_startGtmProxy(char *nodeName)
 	}
 	cmd = initCmd(aval(VAR_gtmProxyServers)[idx]);
 	snprintf(newCommand(cmd), MAXLINE,
-			 "gtm_ctl -D %s -m immediate -Z gtm_proxy stop;"
+			 "[ -f %s/gtm_proxy.pid ] && gtm_ctl -D %s -m immediate -Z gtm_proxy stop;"
 			 "gtm_ctl start -Z gtm_proxy -D %s",
+			 aval(VAR_gtmProxyDirs)[idx],
 			 aval(VAR_gtmProxyDirs)[idx],
 			 aval(VAR_gtmProxyDirs)[idx]);
 	return(cmd);
