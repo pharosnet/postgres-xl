@@ -396,9 +396,9 @@ Location Nodes: ALL DATANODES
 
 Now insert some sample data in these tables.
 <screen>
-testdb=# INSERT INTO disttab VALUES (generate_series(1,100), generate_series(101, 200), 'foo');
+testdb=# INSERT INTO disttab SELECT generate_series(1,100), generate_series(101, 200), 'foo';
 INSERT 0 100
-testdb=# INSERT INTO repltab VALUES (generate_series(1,100), generate_series(101, 200));
+testdb=# INSERT INTO repltab SELECT generate_series(1,100), generate_series(101, 200);
 INSERT 0 100
 
 </screen>
@@ -714,7 +714,7 @@ testdb=# EXECUTE DIRECT ON(dn1) 'SELECT client_hostname, state, sync_state FROM 
 Add some more rows to test failover now.
 
 <screen>
-testdb=# INSERT INTO disttab VALUES (generate_series(1001,1100), generate_series(1101, 1200), 'foo');
+testdb=# INSERT INTO disttab SELECT generate_series(1001,1100), generate_series(1101, 1200), 'foo';
 INSERT 0 100
 testdb=# SELECT xc_node_id, count(*) FROM disttab GROUP BY xc_node_id;
  xc_node_id | count 
