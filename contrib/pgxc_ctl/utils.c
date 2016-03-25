@@ -324,6 +324,35 @@ int pingNode(char *host, char *port)
 		return -1;
 }
 
+/*
+ * A different mechanism to ping datanode and coordinator slaves since these
+ * nodes currently do not accept connections and hence won't respond to PQping
+ * requests. Instead we rely on "pg_ctl status", which must be run via ssh on
+ * the remote machine
+ */
+int pingNodeSlave(char *host, char *datadir)
+{
+	FILE *wkf;
+	char cmd[MAXLINE+1];
+	char line[MAXLINE+1];
+	int	 rv;
+
+	snprintf(cmd, MAXLINE, "ssh %s@%s pg_ctl -D %s status > /dev/null 2>&1; echo $?",
+			 sval(VAR_pgxcUser), host, datadir);
+	wkf = popen(cmd, "r");
+	if (wkf == NULL)
+		return -1;
+	if (fgets(line, MAXLINE, wkf))
+	{
+		trimNl(line);
+		rv = atoi(line);
+	}
+	else
+		rv = -1;
+	pclose(wkf);
+	return rv;
+}
+
 void trimNl(char *s)
 {
 	for (;*s && *s != '\n'; s++);

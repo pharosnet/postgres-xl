@@ -175,7 +175,7 @@ cmd_t *prepare_initDatanodeMaster(char *nodeName)
 			return(NULL);
 		}
 		fprintf(f,
-				"wal_level = hot_standby\n"
+				"wal_level = archive\n"
 				"archive_mode = on\n"
 				"archive_command = 'rsync %%p %s@%s:%s/%%f'\n"
 				"max_wal_senders = %s\n"
@@ -349,7 +349,7 @@ cmd_t *prepare_initDatanodeSlave(char *nodeName)
 	fprintf(f,
 			"#==========================================\n"
 			"# Added to startup the slave, %s\n"
-			"hot_standby = on\n"
+			"hot_standby = off\n"
 			"port = %s\n"
 			"pooler_port = %s\n"
 			"# End of addition\n",
@@ -646,7 +646,8 @@ cmd_t *prepare_stopDatanodeSlave(char *nodeName, char *immediate)
 	/* The next step might need improvement.  When GTM is dead, the following may
 	 * fail even though the master is running.
 	 */
-	if (pingNode(aval(VAR_datanodeSlaveServers)[idx], aval(VAR_datanodeSlavePorts)[idx]) == 0)
+	if (pingNodeSlave(aval(VAR_datanodeSlaveServers)[idx],
+				aval(VAR_datanodeSlaveDirs)[idx]) == 0)
 	{
 		cmd_t *cmdReloadMaster;
 
@@ -1360,7 +1361,7 @@ int add_datanodeSlave(char *name, char *host, int port, int pooler, char *dir,
 	fprintf(f, 
 			"#========================================\n"
 			"# Addition for log shipping, %s\n"
-			"wal_level = hot_standby\n"
+			"wal_level = archive\n"
 			"archive_mode = on\n"
 			"archive_command = 'rsync %%p %s@%s:%s/%%f'\n"
 			"max_wal_senders = %d\n"
@@ -1472,10 +1473,10 @@ int add_datanodeSlave(char *name, char *host, int port, int pooler, char *dir,
 	fprintf(f,
 			"#==========================================\n"
 			"# Added to initialize the slave, %s\n"
-			"hot_standby = on\n"
+			"hot_standby = off\n"
 			"port = %s\n"
 			"pooler_port = %s\n"
-			"wal_level = minimal\n"		/* WAL level --- minimal.   No cascade slave so far. */
+			"wal_level = archive\n"
 			"archive_mode = off\n"		/* No archive mode */
 			"archive_command = ''\n"	/* No archive mode */
 			"max_wal_senders = 0\n"		/* Minimum WAL senders */
@@ -1728,7 +1729,8 @@ int remove_datanodeSlave(char *name, int clean_opt)
 		return 1;
 	}
 	AddMember(nodelist, name);
-	if (pingNode(aval(VAR_datanodeSlaveServers)[idx], aval(VAR_datanodeSlavePorts)[idx]) == 0)
+	if (pingNodeSlave(aval(VAR_datanodeSlaveServers)[idx],
+				aval(VAR_datanodeSlaveDirs)[idx]) == 0)
 		stop_datanode_slave(nodelist, "immediate");
 	{
 		FILE *f;

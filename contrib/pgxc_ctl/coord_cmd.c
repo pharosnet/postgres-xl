@@ -158,7 +158,7 @@ cmd_t *prepare_initCoordinatorMaster(char *nodeName)
 		fprintf(f, 
 				"#========================================\n"
 				"# Addition for log shipping, %s\n"
-				"wal_level = hot_standby\n"
+				"wal_level = archive\n"
 				"archive_mode = on\n"
 				"archive_command = 'rsync %%p %s@%s:%s/%%f'\n"
 				"max_wal_senders = %s\n"
@@ -325,10 +325,10 @@ cmd_t *prepare_initCoordinatorSlave(char *nodeName)
 	fprintf(f,
 			"#==========================================\n"
 			"# Added to initialize the slave, %s\n"
-			"hot_standby = on\n"
+			"hot_standby = off\n"
 			"port = %s\n"
 			"pooler_port = %s\n"
-			"wal_level = minimal\n"
+			"wal_level = archive\n"
 			"archive_mode = off\n"
 			"archive_command = ''\n"
 			"max_wal_senders = 0\n"
@@ -1305,7 +1305,7 @@ int add_coordinatorSlave(char *name, char *host, int port, int pooler_port, char
 	fprintf(f, 
 			"#========================================\n"
 			"# Addition for log shipping, %s\n"
-			"wal_level = hot_standby\n"
+			"wal_level = archive\n"
 			"archive_mode = on\n"
 			"archive_command = 'rsync %%p %s@%s:%s/%%f'\n"
 			"max_wal_senders = %d\n"
@@ -1405,10 +1405,10 @@ int add_coordinatorSlave(char *name, char *host, int port, int pooler_port, char
 	fprintf(f,
 			"#==========================================\n"
 			"# Added to initialize the slave, %s\n"
-			"hot_standby = on\n"
+			"hot_standby = off\n"
 			"port = %d\n"
 			"pooler_port = %d\n"
-			"wal_level = minimal\n"		/* WAL level --- minimal.   No cascade slave so far. */
+			"wal_level = archive\n"
 			"archive_mode = off\n"		/* No archive mode */
 			"archive_command = ''\n"	/* No archive mode */
 			"max_wal_senders = 0\n"		/* Minimum WAL senders */
@@ -1641,7 +1641,7 @@ int remove_coordinatorSlave(char *name, int clean_opt)
 		return 1;
 	}
 	AddMember(nodelist, name);
-	if (pingNode(aval(VAR_coordSlaveServers)[idx], aval(VAR_coordSlavePorts)[idx]) == 0)
+	if (pingNodeSlave(aval(VAR_coordSlaveServers)[idx], aval(VAR_coordSlaveDirs)[idx]) == 0)
 		stop_coordinator_slave(nodelist, "immediate");
 	{
 		FILE *f;

@@ -30,6 +30,7 @@ extern int datanodeIdx(char *datanodeName);
 extern int getEffectiveGtmProxyIdxFromServerName(char *serverName);
 extern pid_t get_prog_pid(char *host, char *pidfile, char *dir);
 extern int pingNode(char *host, char *port);
+extern int pingNodeSlave(char *host, char *datadir);
 extern void trimNl(char *s);
 extern char *getChPidList(char *host, pid_t ppid);
 extern char *getIpAddress(char *hostName);
