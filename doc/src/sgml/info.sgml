@@ -10,22 +10,11 @@
   <variablelist>
 
    <varlistentry>
-    <term>Wiki</term>
-    <listitem>
-     <para>
-      The <productname>Postgres-XL</productname> <ulink
-      url="http://sourceforge.net/p/postgres-xl/wiki/Home/">wiki</ulink> contains the project's 
-      information, links to related pages and various development information.
-     </para>
-    </listitem>
-   </varlistentry>
-
-   <varlistentry>
     <term>Web Site</term>
     <listitem>
      <para>
       The <productname>Postgres-XL</productname> 
-      <ulink url="http://postgres-xl.sourceforge.net/">web site</ulink>
+      <ulink url="http://www.postgres-xl.org/">web site</ulink>
       carries details on the latest release and other
       information to make your work or play with
       <productname>Postgres-XL</productname> more productive.
