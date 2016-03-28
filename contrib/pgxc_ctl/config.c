@@ -1196,6 +1196,13 @@ NodeType getNodeType(char *nodeName)
 
 }
 
+#define DEFAULT_PGXC_CTL_MAX_WAL_SENDERS	5
+
+/*
+ * Determine default value for max_wal_senders. We pick up the value specified
+ * for some other existing coordinator or datanode or return the
+ * DEFAULT_PGXC_CTL_MAX_WAL_SENDERS value if none is spcified
+ */
 int getDefaultWalSender(int isCoord)
 {
 	int ii;
@@ -1206,8 +1213,11 @@ int getDefaultWalSender(int isCoord)
 	for (ii = 0; aval(names)[ii]; ii++)
 	{
 		if (doesExist(names, ii) && !is_none(aval(names)[ii]) && (atoi(aval(walSender)[ii]) >= 0))
-			return atoi(aval(walSender)[ii]);
+		{
+			int nsenders = atoi(aval(walSender)[ii]);
+			return nsenders ? nsenders : DEFAULT_PGXC_CTL_MAX_WAL_SENDERS;
+		}
 	}
-	/* If none found, return 5 as the default value.. */
-	return 5;
+	/* If none found, return the default value.. */
+	return DEFAULT_PGXC_CTL_MAX_WAL_SENDERS;
 }
