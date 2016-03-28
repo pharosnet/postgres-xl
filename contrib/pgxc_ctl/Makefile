@@ -43,3 +43,9 @@ clean: clean-script
 
 clean-script:
 	rm -f pgxc_ctl_bash.c signature.h
+
+check:
+	$(prove_check)
+
+installcheck:
+	$(prove_installcheck)
