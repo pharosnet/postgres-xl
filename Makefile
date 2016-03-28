@@ -1,4 +1,4 @@
-# The PostgreSQL make files exploit features of GNU make that other
+# The Postgres-XL make files exploit features of GNU make that other
 # makes do not have. Because it is a common mistake for users to try
 # to build Postgres with a different make, we have this make file
 # that, as a service, will look for a GNU make and invoke it, or show
@@ -6,7 +6,7 @@
 
 # If the user were using GNU make now, this file would not get used
 # because GNU make uses a make file named "GNUmakefile" in preference
-# to "Makefile" if it exists. PostgreSQL is shipped with a
+# to "Makefile" if it exists. Postgres-XL is shipped with a
 # "GNUmakefile". If the user hasn't run the configure script yet, the
 # GNUmakefile won't exist yet, so we catch that case as well.
 
@@ -31,6 +31,6 @@ all check install installdirs installcheck installcheck-parallel uninstall clean
 	   echo "Using GNU make found at $${GMAKE}"; \
 	   $${GMAKE} $@ ; \
 	 else \
-	   echo "You must use GNU make to build PostgreSQL." ; \
+	   echo "You must use GNU make to build Postgres-XL." ; \
 	   false; \
 	 fi
