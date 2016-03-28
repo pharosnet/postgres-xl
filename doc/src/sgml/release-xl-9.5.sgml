@@ -7,7 +7,7 @@
   <note>
    <title>Release Date</title>
    <simpara>2016-??-??</simpara>
-   <simpara>Current as of 2016-01-18</simpara>
+   <simpara>Current as of 2016-03-28</simpara>
   </note>
 
   <sect2>
@@ -715,6 +715,90 @@ or removed from distribution or when distribution key is changed.
    <listitem>
     <para>
    Set up pg_hba.conf on the master properly while adding a slave.
+    </para>
+   </listitem>
+  </itemizedlist> 
+ </sect2>
+ <sect2>
+  <title>Important Bug Fixes and Improvements since 9.5r1beta1</title>
+  <itemizedlist> 
+   <listitem>
+    <para>
+   Fix agregation handling when a collection function is not specified for the
+aggregate.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Fix bugs around handling of params passed to the datanodes.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Limit the frequency of reporting local state to GTM so that we don't report
+more than once every CLUSTER_MONITOR_NAPTIME seconds, even when GTM reports
+errors.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Correctly include the string terminator in calculating GID size, without
+which the GID will look corrupted and unusable after a crash recovery.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Include a version identifier in the GTM control file so that we can read
+different versions correctly for backward compatibility.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Correctly handle multi-command SQL statements i.e. statements with multiple
+';' separated commands.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Fix handling of binary data transfer for JDBC as well as libpq protocols.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Fix several compilation warnings (Tomas Vondra)
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Do not use 3-stage aggregation when ORDER BY is specified in the aggregate
+itself.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Fix problems in VPATH build.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Add support for process level control for overriding log levels for elog
+messages.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Improve handling of Append and MergeAppend plans. They are now pushed down
+to the datanodes whenever possible.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+   Add support for 3-stage aggregation for json_agg() aggregate, thus improving
+performance for the aggregate handling.
+    </para>
+    <para>
+   Add support for checking status of a coordinator or datanode slave without
+requiring it to be started as a Hot Standby.
     </para>
    </listitem>
   </itemizedlist> 
