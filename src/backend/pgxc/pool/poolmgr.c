@@ -1781,7 +1781,6 @@ create_database_pool(const char *database, const char *user_name, const char *pg
 	MemoryContext	dbcontext;
 	DatabasePool   *databasePool;
 	HASHCTL			hinfo;
-	int				hflags;
 
 	elog(DEBUG1, "Creating a connection pool for database %s, user %s,"
 			" with pgoptions %s", database, user_name, pgoptions);
@@ -1828,17 +1827,14 @@ create_database_pool(const char *database, const char *user_name, const char *pg
 
 	/* Init node hashtable */
 	MemSet(&hinfo, 0, sizeof(hinfo));
-	hflags = 0;
 
 	hinfo.keysize = sizeof(Oid);
 	hinfo.entrysize = sizeof(PGXCNodePool);
-	hflags |= HASH_ELEM;
-
 	hinfo.hcxt = dbcontext;
-	hflags |= HASH_CONTEXT;
 
 	databasePool->nodePools = hash_create("Node Pool", MaxDataNodes + MaxCoords,
-										  &hinfo, hflags);
+										  &hinfo,
+										  HASH_ELEM | HASH_CONTEXT | HASH_BLOBS);
 
 	MemoryContextSwitchTo(oldcontext);
 
