@@ -63,8 +63,10 @@ su - postgres
 /usr/local/pgsql/bin/psql -c "CREATE NODE datanode2 WITH (TYPE = 'datanode', PORT = 15433)" postgres
 /usr/local/pgsql/bin/psql -c "EXECUTE DIRECT ON (datanode1) 'ALTER NODE datanode1 WITH (TYPE = ''datanode'', PORT = 15432)'" postgres
 /usr/local/pgsql/bin/psql -c "EXECUTE DIRECT ON (datanode1) 'CREATE NODE datanode2 WITH (TYPE = ''datanode'', PORT = 15433)'" postgres
+/usr/local/pgsql/bin/psql -c "EXECUTE DIRECT ON (datanode1) 'CREATE NODE coord1 WITH (TYPE = ''coordinator'', PORT = 5432)'" postgres
 /usr/local/pgsql/bin/psql -c "EXECUTE DIRECT ON (datanode2) 'ALTER NODE datanode2 WITH (TYPE = ''datanode'', PORT = 15433)'" postgres
 /usr/local/pgsql/bin/psql -c "EXECUTE DIRECT ON (datanode2) 'CREATE NODE datanode1 WITH (TYPE = ''datanode'', PORT = 15432)'" postgres
+/usr/local/pgsql/bin/psql -c "EXECUTE DIRECT ON (datanode2) 'CREATE NODE coord1 WITH (TYPE = ''coordinator'', PORT = 5432)'" postgres
 /usr/local/pgsql/bin/psql -c "SELECT pgxc_pool_reload()" postgres
 /usr/local/pgsql/bin/psql -c "EXECUTE DIRECT ON (datanode1) 'SELECT pgxc_pool_reload()'" postgres
 /usr/local/pgsql/bin/psql -c "EXECUTE DIRECT ON (datanode2) 'SELECT pgxc_pool_reload()'" postgres
