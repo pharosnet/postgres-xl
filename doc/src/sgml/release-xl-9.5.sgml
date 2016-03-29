@@ -724,6 +724,12 @@ or removed from distribution or when distribution key is changed.
   <itemizedlist> 
    <listitem>
     <para>
+   Add missing steps in the installation guide (which is used to create the INSTALL
+file).
+    </para>
+   </listitem>
+   <listitem>
+    <para>
    Fix agregation handling when a collection function is not specified for the
 aggregate.
     </para>
