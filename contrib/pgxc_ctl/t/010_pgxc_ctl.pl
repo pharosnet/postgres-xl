@@ -16,6 +16,12 @@ my $DN1_HOST = "localhost";
 my $DN2_HOST = "localhost";
 my $DN3_HOST = "localhost";
 my $dataDirRoot="~/DATA/pgxl/nodes";
+my $pgxcCtlRoot="~/pgxc_ctl/";
+
+system_or_bail 'pgxc_ctl', 'clean', 'all' ;
+#delete related dirs for cleanup
+my $result = system("rm -rf $dataDirRoot");
+my $result = system("rm -rf $pgxcCtlRoot");
 
 system_or_bail 'pgxc_ctl', 'prepare', 'config', 'empty' ;
 
@@ -58,3 +64,6 @@ system_or_bail 'pgxc_ctl', 'monitor', 'all' ;
 system_or_bail 'pgxc_ctl', 'clean', 'all' ;
 
 
+#delete related dirs for cleanup
+my $result = system("rm -rf $dataDirRoot");
+my $result = system("rm -rf $pgxcCtlRoot");
