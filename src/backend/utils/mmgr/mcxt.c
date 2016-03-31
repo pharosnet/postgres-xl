@@ -972,10 +972,13 @@ repalloc(void *pointer, Size size)
 
 	ret = (*context->methods->realloc) (context, pointer, size);
 	if (ret == NULL)
+	{
+		MemoryContextStats(TopMemoryContext);
 		ereport(ERROR,
 				(errcode(ERRCODE_OUT_OF_MEMORY),
 				 errmsg("out of memory"),
 				 errdetail("Failed on request of size %zu.", size)));
+	}
 
 	VALGRIND_MEMPOOL_CHANGE(context, pointer, ret, size);
 
@@ -1052,10 +1055,13 @@ repalloc_huge(void *pointer, Size size)
 
 	ret = (*context->methods->realloc) (context, pointer, size);
 	if (ret == NULL)
+	{
+		MemoryContextStats(TopMemoryContext);
 		ereport(ERROR,
 				(errcode(ERRCODE_OUT_OF_MEMORY),
 				 errmsg("out of memory"),
 				 errdetail("Failed on request of size %zu.", size)));
+	}
 
 	VALGRIND_MEMPOOL_CHANGE(context, pointer, ret, size);
 

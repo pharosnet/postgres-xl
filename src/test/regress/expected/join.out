@@ -2374,6 +2374,40 @@ select tt1.*, tt2.* from tt2 right join tt1 on tt1.joincol = tt2.joincol
 reset enable_hashjoin;
 reset enable_nestloop;
 --
+-- regression test for bug #13908 (hash join with skew tuples & nbatch increase)
+--
+set work_mem to '64kB';
+set enable_mergejoin to off;
+explain (costs off)
+select count(*) from tenk1 a, tenk1 b
+  where a.hundred = b.thousand and (b.fivethous % 10) < 10;
+                                    QUERY PLAN                                     
+-----------------------------------------------------------------------------------
+ Aggregate
+   ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+         ->  Aggregate
+               ->  Hash Join
+                     Hash Cond: (a.hundred = b.thousand)
+                     ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+                           Distribute results by H: hundred
+                           ->  Seq Scan on tenk1 a
+                     ->  Hash
+                           ->  Remote Subquery Scan on all (datanode_1,datanode_2)
+                                 Distribute results by H: thousand
+                                 ->  Seq Scan on tenk1 b
+                                       Filter: ((fivethous % 10) < 10)
+(13 rows)
+
+select count(*) from tenk1 a, tenk1 b
+  where a.hundred = b.thousand and (b.fivethous % 10) < 10;
+ count  
+--------
+ 100000
+(1 row)
+
+reset work_mem;
+reset enable_mergejoin;
+--
 -- regression test for 8.2 bug with improper re-ordering of left joins
 --
 create temp table tt3(f1 int, f2 text);
