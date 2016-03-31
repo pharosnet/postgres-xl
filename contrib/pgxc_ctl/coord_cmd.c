@@ -1067,7 +1067,7 @@ int add_coordinatorMaster(char *name, char *host, int port, int pooler,
 	}
 	fprintf(f, 
 			"#===================================================\n"
-			"# pgxc configuration file updated due to GTM slave addition\n"
+			"# pgxc configuration file updated due to coordinator master addition\n"
 			"#        %s\n",
 			timeStampString(date, MAXTOKEN+1));
 	fprintAval(f, VAR_coordNames);
