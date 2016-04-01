@@ -464,7 +464,7 @@ int main(int argc, char *argv[])
 	while(1) {
 		int option_index = 0;
 
-		c = getopt_long(argc, argv, "i:o:c:vVl:L:h", long_options, &option_index);
+		c = getopt_long(argc, argv, "m:i:o:c:vVl:L:h", long_options, &option_index);
 
 		if (c == -1)
 			break;
@@ -511,6 +511,8 @@ int main(int argc, char *argv[])
 				break;
 			case 'h':
 				help_opt = 1;
+				break;
+			case 'm':
 				break;
 			default:
 				fprintf(stderr, "Invalid optin value, received code 0%o\n", c);
