@@ -422,7 +422,8 @@ int extendVar(char *name, int newSize, char *def_value)
 
 	/* Store NULL in the last element to mark the end-of-array */
 	(target->val)[newSize] = NULL;
-	target->val_used = newSize;
+	if (target->val_used < newSize)
+		target->val_used = newSize;
 	
 	return 0;
 }
