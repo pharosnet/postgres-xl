@@ -1248,6 +1248,7 @@ int add_coordinatorSlave(char *name, char *host, int port, int pooler_port, char
 	char port_s[MAXTOKEN+1];
 	char pooler_s[MAXTOKEN+1];
 	int kk;
+	int size;
 
 	/* Check if the name is valid coordinator */
 	if ((idx = coordIdx(name)) < 0)
@@ -1338,23 +1339,24 @@ int add_coordinatorSlave(char *name, char *host, int port, int pooler_port, char
 			sval(VAR_pgxcOwner), getIpAddress(host));
 	pclose(f);
 	/* Reconfigure pgxc_ctl configuration with the new slave */
+	size = arraySizeName(VAR_coordNames);
 	/* Need an API to expand the array to desired size */
-	if ((extendVar(VAR_coordSlaveServers, idx + 1, "none") != 0) ||
-		(extendVar(VAR_coordSlaveDirs, idx + 1, "none")  != 0) ||
-		(extendVar(VAR_coordSlavePorts, idx + 1, "none")  != 0) ||
-		(extendVar(VAR_coordSlavePoolerPorts, idx + 1, "none")  != 0) ||
-		(extendVar(VAR_coordArchLogDirs, idx + 1, "none") != 0))
+	if ((extendVar(VAR_coordSlaveServers, size, "none") != 0) ||
+		(extendVar(VAR_coordSlaveDirs, size, "none")  != 0) ||
+		(extendVar(VAR_coordSlavePorts, size, "none")  != 0) ||
+		(extendVar(VAR_coordSlavePoolerPorts, size, "none")  != 0) ||
+		(extendVar(VAR_coordArchLogDirs, size, "none") != 0))
 	{
 		elog(PANIC, "PANIC: Internal error, inconsistent coordinator information\n");
 		return 1;
 	}
 	if (!isVarYes(VAR_coordSlave))
 		assign_sval(VAR_coordSlave, "y");
-	assign_arrayEl(VAR_coordSlaveServers, idx, host, NULL);
-	assign_arrayEl(VAR_coordSlavePorts, idx, port_s, NULL);
-	assign_arrayEl(VAR_coordSlavePoolerPorts, idx, pooler_s, NULL);
-	assign_arrayEl(VAR_coordSlaveDirs, idx, dir, NULL);
-	assign_arrayEl(VAR_coordArchLogDirs, idx, archDir, NULL);
+	replace_arrayEl(VAR_coordSlaveServers, idx, host, NULL);
+	replace_arrayEl(VAR_coordSlavePorts, idx, port_s, NULL);
+	replace_arrayEl(VAR_coordSlavePoolerPorts, idx, pooler_s, NULL);
+	replace_arrayEl(VAR_coordSlaveDirs, idx, dir, NULL);
+	replace_arrayEl(VAR_coordArchLogDirs, idx, archDir, NULL);
 	/* Update the configuration file and backup it */
 	if ((f = fopen(pgxc_ctl_config_path, "a")) == NULL)
 	{

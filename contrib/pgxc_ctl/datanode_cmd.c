@@ -1299,6 +1299,7 @@ int add_datanodeSlave(char *name, char *host, int port, int pooler, char *dir,
     char pooler_s[MAXTOKEN+1];
 	int kk;
 	bool wal;
+	int size;
 
 	if (walDir && (strcasecmp(walDir, "none") != 0))
 		wal = true;
@@ -1396,12 +1397,15 @@ int add_datanodeSlave(char *name, char *host, int port, int pooler, char *dir,
 			"# End of addition ===============================\n",
 			sval(VAR_pgxcOwner), getIpAddress(host));
 	pclose(f);
+
+	size = arraySizeName(VAR_datanodeNames);
 	/* Need an API to expand the array to desired size */
-	if ((extendVar(VAR_datanodeSlaveServers, idx + 1, "none") != 0) ||
-		(extendVar(VAR_datanodeSlavePorts, idx + 1, "none")  != 0) ||
-		(extendVar(VAR_datanodeSlavePoolerPorts, idx + 1, "none")  != 0) ||
-		(extendVar(VAR_datanodeSlaveDirs, idx + 1, "none")  != 0) ||
-		(extendVar(VAR_datanodeArchLogDirs, idx + 1, "none") != 0))
+	if ((extendVar(VAR_datanodeSlaveServers, size, "none") != 0) ||
+		(extendVar(VAR_datanodeSlavePorts, size, "none")  != 0) ||
+		(extendVar(VAR_datanodeSlavePoolerPorts, size, "none")  != 0) ||
+		(extendVar(VAR_datanodeSlaveDirs, size, "none")  != 0) ||
+		(extendVar(VAR_datanodeSlaveWALDirs, size, "none")  != 0) ||
+		(extendVar(VAR_datanodeArchLogDirs, size, "none") != 0))
 	{
 		elog(PANIC, "PANIC: Internal error, inconsistent datanode information\n");
 		return 1;
@@ -1413,12 +1417,12 @@ int add_datanodeSlave(char *name, char *host, int port, int pooler, char *dir,
 
 	if (!isVarYes(VAR_datanodeSlave))
 		assign_sval(VAR_datanodeSlave, "y");
-	assign_arrayEl(VAR_datanodeSlaveServers, idx, host, NULL);
-	assign_arrayEl(VAR_datanodeSlavePorts, idx, port_s, NULL);
-	assign_arrayEl(VAR_datanodeSlavePoolerPorts, idx, pooler_s, NULL);
-	assign_arrayEl(VAR_datanodeSlaveDirs, idx, dir, NULL);
-	assign_arrayEl(VAR_datanodeSlaveWALDirs, idx, walDir, NULL);
-	assign_arrayEl(VAR_datanodeArchLogDirs, idx, archDir, NULL);
+	replace_arrayEl(VAR_datanodeSlaveServers, idx, host, NULL);
+	replace_arrayEl(VAR_datanodeSlavePorts, idx, port_s, NULL);
+	replace_arrayEl(VAR_datanodeSlavePoolerPorts, idx, pooler_s, NULL);
+	replace_arrayEl(VAR_datanodeSlaveDirs, idx, dir, NULL);
+	replace_arrayEl(VAR_datanodeSlaveWALDirs, idx, walDir, NULL);
+	replace_arrayEl(VAR_datanodeArchLogDirs, idx, archDir, NULL);
 	/* Update the configuration file and backup it */
 	if ((f = fopen(pgxc_ctl_config_path, "a")) == NULL)
 	{
