@@ -50,6 +50,7 @@ system_or_bail 'pgxc_ctl', 'monitor', 'all' ;
 system_or_bail 'pgxc_ctl', 'remove', 'datanode', 'master', 'dn3', 'clean' ;
 system_or_bail 'pgxc_ctl', 'monitor', 'all' ;
 
+#Datanode slave test
 
 system_or_bail 'pgxc_ctl', 'add', 'datanode', 'slave', 'dn1', "$DN1_HOST", '40101', '40111', "$dataDirRoot/dn_slave.1", 'none', "$dataDirRoot/datanode_archlog.1" ;
 system_or_bail 'pgxc_ctl', 'monitor', 'all' ;
@@ -57,6 +58,21 @@ system_or_bail 'pgxc_ctl', 'monitor', 'all' ;
 system_or_bail 'pgxc_ctl', 'stop', "-m", 'immediate', 'datanode', 'master', 'dn1' ;
 
 system_or_bail 'pgxc_ctl', 'failover', 'datanode', 'dn1' ;
+
+system_or_bail 'pgxc_ctl', 'monitor', 'all' ;
+
+#GTM standby test
+
+system_or_bail 'pgxc_ctl', 'add', 'gtm', 'slave', 'gtm_slave', "$GTM_HOST", '20101', "$dataDirRoot/gtm_slave" ;
+
+#this step may need to be done by pgxc_ctl internally
+#system_or_bail 'gtm_ctl', '-Z', 'gtm_standby', '-D', "$dataDirRoot/gtm_slave", "-l", "$dataDirRoot/gtm_slave_archlog.1", 'start' ;
+
+system_or_bail 'pgxc_ctl', 'monitor', 'all' ;
+
+system_or_bail 'pgxc_ctl', 'stop', "-m", 'immediate', 'gtm', 'master', 'gtm' ;
+
+system_or_bail 'pgxc_ctl', 'failover', 'gtm', 'gtm' ;
 
 system_or_bail 'pgxc_ctl', 'monitor', 'all' ;
 
