@@ -6,6 +6,7 @@ use TestLib;
 use Test::More tests => 6;
 
 my $dataDirRoot="~/DATA/pgxl/nodes/";
+$ENV{'PGXC_CTL_HOME'} = '/tmp/pgxc_ctl';
 my $PGXC_CTL_HOME=$ENV{'PGXC_CTL_HOME'};
 
 #delete related dirs for cleanup

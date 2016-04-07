@@ -6,6 +6,7 @@ use TestLib;
 use Test::More tests => 6;
 
 my $dataDirRoot="~/DATA/pgxl/nodes/";
+$ENV{'PGXC_CTL_HOME'} = '/tmp/pgxc_ctl';
 my $PGXC_CTL_HOME=$ENV{'PGXC_CTL_HOME'};
 
 #delete related dirs for cleanup
@@ -65,8 +66,7 @@ system_or_bail 'pgxc_ctl', 'monitor', 'all' ;
 
 system_or_bail 'pgxc_ctl', 'add', 'gtm', 'slave', 'gtm_slave', "$GTM_HOST", '20101', "$dataDirRoot/gtm_slave" ;
 
-#this step may need to be done by pgxc_ctl internally
-#system_or_bail 'gtm_ctl', '-Z', 'gtm_standby', '-D', "$dataDirRoot/gtm_slave", "-l", "$dataDirRoot/gtm_slave_archlog.1", 'start' ;
+system_or_bail 'pgxc_ctl', 'start', 'gtm', 'slave' ;
 
 system_or_bail 'pgxc_ctl', 'monitor', 'all' ;
 
