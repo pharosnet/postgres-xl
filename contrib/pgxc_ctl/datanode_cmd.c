@@ -1816,10 +1816,11 @@ cmd_t *prepare_cleanDatanodeMaster(char *nodeName)
 	
 	cmd = initCmd(aval(VAR_datanodeMasterServers)[idx]);
 	snprintf(newCommand(cmd), MAXLINE,
-			 "rm -rf %s; %s %s ; mkdir -p %s; chmod 0700 %s; rm -f /tmp/.s.*%d*",
+			 "rm -rf %s; %s %s %s mkdir -p %s; chmod 0700 %s; rm -f /tmp/.s.*%d*",
 			 aval(VAR_datanodeMasterDirs)[idx],
 			 wal ? "rm -rf " : "",
 			 wal ? aval(VAR_datanodeMasterWALDirs)[idx] : "",
+			 wal ? ";" : "",
 			 aval(VAR_datanodeMasterDirs)[idx],
 			 aval(VAR_datanodeMasterDirs)[idx],
 			 atoi(aval(VAR_datanodePoolerPorts)[idx]));
