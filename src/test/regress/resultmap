@@ -15,3 +15,4 @@ int8:out:i.86-pc-mingw32=int8-exp-three-digits.out
 int8:out:x86_64-w64-mingw32=int8-exp-three-digits.out
 int8:out:i.86-w64-mingw32=int8-exp-three-digits.out
 int8:out:i.86-pc-win32vc=int8-exp-three-digits.out
+aggregates:out:i386-pc-solaris2.11=aggregates-float-sunos.out

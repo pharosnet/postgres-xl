@@ -24,6 +24,9 @@
 #include <ucred.h>
 #endif
 #ifdef HAVE_SYS_UCRED_H
+#ifdef __sun
+#include <procfs.h>
+#endif
 #include <sys/ucred.h>
 #endif
 

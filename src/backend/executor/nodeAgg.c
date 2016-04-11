@@ -1117,10 +1117,14 @@ finalize_aggregate(AggState *aggstate,
 			 * copy the initial datum since it might get changed inside the
 			 * collection function
 			 */
-			fcinfo.arg[0] = datumCopy(peraggstate->initCollectValue,
-			                                     peraggstate->collecttypeByVal,
-			                                     peraggstate->collecttypeLen);
 			fcinfo.argnull[0] = peraggstate->initCollectValueIsNull;
+			fcinfo.arg[0] = (Datum) NULL;
+			if (!fcinfo.argnull[0])
+			{
+				fcinfo.arg[0] = datumCopy(peraggstate->initCollectValue,
+								peraggstate->collecttypeByVal,
+								peraggstate->collecttypeLen);
+			}
 			value = FunctionCallInvoke(&fcinfo);
 			isnull = fcinfo.isnull;
 		}

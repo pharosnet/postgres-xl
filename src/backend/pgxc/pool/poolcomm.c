@@ -11,6 +11,11 @@
  *-------------------------------------------------------------------------
  */
 
+#ifdef __sun
+#define _XOPEN_SOURCE 500
+#define uint uint32_t
+#endif
+
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/uio.h>

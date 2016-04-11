@@ -30,6 +30,9 @@
 #include <sys/param.h>			/* for MAXHOSTNAMELEN on most */
 #include <sys/socket.h>
 #ifdef HAVE_SYS_UCRED_H
+#ifdef __sun
+#include <procfs.h>
+#endif
 #include <sys/ucred.h>
 #endif
 #ifndef  MAXHOSTNAMELEN

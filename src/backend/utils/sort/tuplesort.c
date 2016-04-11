@@ -1075,7 +1075,7 @@ tuplesort_begin_merge(TupleDesc tupDesc,
 	state->mergenext = (int *) palloc0(combiner->conn_count * sizeof(int));
 	state->mergelast = (int *) palloc0(combiner->conn_count * sizeof(int));
 	state->mergeavailslots = (int *) palloc0(combiner->conn_count * sizeof(int));
-	state->mergeavailmem = (long *) palloc0(combiner->conn_count * sizeof(long));
+	state->mergeavailmem = (int64 *) palloc0(combiner->conn_count * sizeof(int64));
 
 	state->tp_runs = (int *) palloc0(combiner->conn_count * sizeof(int));
 	state->tp_dummy = (int *) palloc0(combiner->conn_count * sizeof(int));

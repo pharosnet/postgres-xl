@@ -20,6 +20,10 @@
 #include "postgres.h"
 #include <poll.h>
 
+#ifdef __sun
+#include <sys/filio.h>
+#endif
+
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/ioctl.h>

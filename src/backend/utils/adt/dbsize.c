@@ -1021,6 +1021,7 @@ pgxc_execute_on_nodes(int numnodes, Oid *nodelist, char *query)
 	int64           total_size = 0;
 	int64           size = 0;
 	Datum			datum = (Datum) 0;
+	bool		isnull = true;
 
 #ifdef XCP
 	EState		   *estate;
@@ -1082,13 +1083,27 @@ pgxc_execute_on_nodes(int numnodes, Oid *nodelist, char *query)
 	MemoryContextSwitchTo(oldcontext);
 
 	result = ExecRemoteQuery(pstate);
-	while (!TupIsNull(result))
+	while (result != NULL && !TupIsNull(result))
 	{
-		bool isnull;
 		datum = slot_getattr(result, 1, &isnull);
-		size = DatumGetInt64(datum);
-                total_size += size;
 		result = ExecRemoteQuery(pstate);
+
+		/* For single node, don't assume the type of datum. It can be bool also. */
+		if (numnodes == 1)
+			continue;
+		/* We should not cast a null into an int */
+		if (isnull)
+		{
+			ereport(ERROR,
+					(errcode(ERRCODE_INTERNAL_ERROR),
+					 errmsg("Expected Int64 but got null instead "
+						"while executing query '%s'",
+						query)));
+			break;
+		}
+
+		size = DatumGetInt64(datum);
+		total_size += size;
 	}
 	ExecEndRemoteQuery(pstate);
 #else
@@ -1136,7 +1151,15 @@ pgxc_execute_on_nodes(int numnodes, Oid *nodelist, char *query)
 #endif
 
 	if (numnodes == 1)
+	{
+		if (isnull)
+			ereport(ERROR,
+					(errcode(ERRCODE_INTERNAL_ERROR),
+					 errmsg("Expected datum but got null instead "
+						"while executing query '%s'",
+						query)));
 		PG_RETURN_DATUM(datum);
+	}
 	else
 		PG_RETURN_INT64(total_size);
 }
