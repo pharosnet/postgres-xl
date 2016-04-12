@@ -743,7 +743,7 @@ PgxcNodeCreate(CreateNodeStmt *stmt)
 	if (node_port == 0)
 	{
 		node_port = 5432;
-		elog(LOG, "PGXC node %s: Applying default port value: %d",
+		elog(DEBUG1, "PGXC node %s: Applying default port value: %d",
 			 node_name, node_port);
 	}
 
@@ -751,7 +751,7 @@ PgxcNodeCreate(CreateNodeStmt *stmt)
 	if (!node_host)
 	{
 		node_host = strdup("localhost");
-		elog(LOG, "PGXC node %s: Applying default host value: %s",
+		elog(DEBUG1, "PGXC node %s: Applying default host value: %s",
 			 node_name, node_host);
 	}
 
