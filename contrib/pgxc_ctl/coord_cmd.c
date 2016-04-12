@@ -95,7 +95,7 @@ cmd_t *prepare_initCoordinatorMaster(char *nodeName)
 			 "%s;"
 			 "rm -rf %s;"
 			 "mkdir -p %s;"
-			 "initdb --nodename %s -D %s",
+			 "PGXC_CTL_SILENT=1 initdb --nodename %s -D %s",
 			 remoteDirCheck,
 			 aval(VAR_coordMasterDirs)[jj],
 			 aval(VAR_coordMasterDirs)[jj],
@@ -1095,7 +1095,7 @@ int add_coordinatorMaster(char *name, char *host, int port, int pooler,
 	gtmPort = (gtmPxyIdx > 0) ? aval(VAR_gtmProxyPorts)[gtmPxyIdx] : sval(VAR_gtmMasterPort);
 
 	/* initdb */
-	doImmediate(host, NULL, "initdb -D %s --nodename %s", dir, name);
+	doImmediate(host, NULL, "PGXC_CTL_SILENT=1 initdb -D %s --nodename %s", dir, name);
 
 	/* Edit configurations */
 	if ((f = pgxc_popen_w(host, "cat >> %s/postgresql.conf", dir)))

@@ -1114,24 +1114,31 @@ main(int argc, char *argv[])
 	strcpy(bin_dir, argv[0]);
 	get_parent_directory(bin_dir);
 
-	if (is_gtm)
-		printf(_("\nSuccess. You can now start the GTM server using:\n\n"
-				 "    %s%s%sgtm%s -D %s%s%s\n"
-				 "or\n"
-				 "    %s%s%sgtm_ctl%s -Z gtm -D %s%s%s -l logfile start\n\n"),
-		   QUOTE_PATH, bin_dir, (strlen(bin_dir) > 0) ? DIR_SEP : "", QUOTE_PATH,
-			   QUOTE_PATH, pg_data_native, QUOTE_PATH,
-		   QUOTE_PATH, bin_dir, (strlen(bin_dir) > 0) ? DIR_SEP : "", QUOTE_PATH,
-			   QUOTE_PATH, pg_data_native, QUOTE_PATH);
-	else
-		printf(_("\nSuccess. You can now start the GTM proxy server using:\n\n"
-				 "    %s%s%sgtm_proxy%s -D %s%s%s\n"
-				 "or\n"
-				 "    %s%s%sgtm_ctl%s -Z gtm_proxy -D %s%s%s -l logfile start\n\n"),
-		   QUOTE_PATH, bin_dir, (strlen(bin_dir) > 0) ? DIR_SEP : "", QUOTE_PATH,
-			   QUOTE_PATH, pg_data_native, QUOTE_PATH,
-		   QUOTE_PATH, bin_dir, (strlen(bin_dir) > 0) ? DIR_SEP : "", QUOTE_PATH,
-			   QUOTE_PATH, pg_data_native, QUOTE_PATH);
+	printf(_("\nSuccess.\n"));
+	{
+		char *pgxc_ctl_silent = getenv("PGXC_CTL_SILENT");
+		if (!pgxc_ctl_silent || !strlen(pgxc_ctl_silent))
+		{
+			if (is_gtm)
+				printf(_("You can now start the GTM server using:\n\n"
+							"    %s%s%sgtm%s -D %s%s%s\n"
+							"or\n"
+							"    %s%s%sgtm_ctl%s -Z gtm -D %s%s%s -l logfile start\n\n"),
+						QUOTE_PATH, bin_dir, (strlen(bin_dir) > 0) ? DIR_SEP : "", QUOTE_PATH,
+						QUOTE_PATH, pg_data_native, QUOTE_PATH,
+						QUOTE_PATH, bin_dir, (strlen(bin_dir) > 0) ? DIR_SEP : "", QUOTE_PATH,
+						QUOTE_PATH, pg_data_native, QUOTE_PATH);
+			else
+				printf(_("You can now start the GTM proxy server using:\n\n"
+							"    %s%s%sgtm_proxy%s -D %s%s%s\n"
+							"or\n"
+							"    %s%s%sgtm_ctl%s -Z gtm_proxy -D %s%s%s -l logfile start\n\n"),
+						QUOTE_PATH, bin_dir, (strlen(bin_dir) > 0) ? DIR_SEP : "", QUOTE_PATH,
+						QUOTE_PATH, pg_data_native, QUOTE_PATH,
+						QUOTE_PATH, bin_dir, (strlen(bin_dir) > 0) ? DIR_SEP : "", QUOTE_PATH,
+						QUOTE_PATH, pg_data_native, QUOTE_PATH);
+		}
+	}
 
 	return 0;
 }

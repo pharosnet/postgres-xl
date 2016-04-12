@@ -103,7 +103,7 @@ cmd_t *prepare_initDatanodeMaster(char *nodeName)
 	snprintf(newCommand(cmdInitdb), MAXLINE,
 			 "%s;"
 			 "rm -rf %s;"
-			 "mkdir -p %s; initdb --nodename %s %s %s -D %s",
+			 "mkdir -p %s; PGXC_CTL_SILENT=1 initdb --nodename %s %s %s -D %s",
 			 remoteDirCheck,
 			 aval(VAR_datanodeMasterDirs)[idx], aval(VAR_datanodeMasterDirs)[idx],
 			 aval(VAR_datanodeNames)[idx],
@@ -1132,7 +1132,7 @@ int add_datanodeMaster(char *name, char *host, int port, int pooler, char *dir,
 	gtmPort = (gtmPxyIdx > 0) ? aval(VAR_gtmProxyPorts)[gtmPxyIdx] : sval(VAR_gtmMasterPort);
 
 	/* initdb */
-	doImmediate(host, NULL, "initdb -D %s %s %s --nodename %s", dir,
+	doImmediate(host, NULL, "PGXC_CTL_SILENT=1 initdb -D %s %s %s --nodename %s", dir,
 			wal ? "-X" : "",
 			wal ? waldir : "",
 			name);

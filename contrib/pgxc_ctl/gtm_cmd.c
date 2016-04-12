@@ -73,7 +73,7 @@ cmd_t *prepare_initGtmMaster(bool stop)
 			 "[ -f %s/gtm.pid ] && gtm_ctl -D %s -m immediate -Z gtm stop;"
 			 "rm -rf %s;"
 			 "mkdir -p %s;"
-			 "initgtm -Z gtm -D %s",
+			 "PGXC_CTL_SILENT=1 initgtm -Z gtm -D %s",
 			 remoteDirCheck,
 			 sval(VAR_gtmMasterDir),
 			 sval(VAR_gtmMasterDir),
@@ -416,7 +416,7 @@ cmd_t *prepare_initGtmSlave(void)
 			 "[ -f %s/gtm.pid ] && gtm_ctl -D %s -m immediate -Z gtm stop;"
 			 "rm -rf %s;"
 			 "mkdir -p %s;"
-			 "initgtm -Z gtm -D %s",
+			 "PGXC_CTL_SILENT=1 initgtm -Z gtm -D %s",
 			 sval(VAR_gtmSlaveDir),
 			 sval(VAR_gtmSlaveDir),
 			 sval(VAR_gtmSlaveDir), sval(VAR_gtmSlaveDir), sval(VAR_gtmSlaveDir));
@@ -1056,7 +1056,7 @@ cmd_t *prepare_initGtmProxy(char *nodeName)
 			 "[ -f %s/gtm_proxy.pid ] && gtm_ctl -D %s -m immediate -Z gtm_proxy stop;"
 			 "rm -rf %s;"
 			 "mkdir -p %s;"
-			 "initgtm -Z gtm_proxy -D %s",
+			 "PGXC_CTL_SILENT=1 initgtm -Z gtm_proxy -D %s",
 			 aval(VAR_gtmProxyDirs)[idx],
 			 aval(VAR_gtmProxyDirs)[idx],
 			 aval(VAR_gtmProxyDirs)[idx],

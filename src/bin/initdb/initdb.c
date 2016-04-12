@@ -3790,22 +3790,29 @@ main(int argc, char *argv[])
 
 
 #ifdef PGXC
-	printf(_("\nSuccess.\n You can now start the database server of the Postgres-XL coordinator using:\n\n"
-			 "    %s%s%spostgres%s --coordinator -D %s%s%s\n"
-			 "or\n"
-			 "    %s%s%spg_ctl%s start -D %s%s%s -Z coordinator -l logfile\n\n"
-			 " You can now start the database server of the Postgres-XL datanode using:\n\n"
-			 "    %s%s%spostgres%s --datanode -D %s%s%s\n"
-			 "or \n"
-			 "    %s%s%spg_ctl%s start -D %s%s%s -Z datanode -l logfile\n\n"),
-	   QUOTE_PATH, bin_dir, (strlen(bin_dir) > 0) ? DIR_SEP : "", QUOTE_PATH,
-		   QUOTE_PATH, pgdata_native, QUOTE_PATH,
-	   QUOTE_PATH, bin_dir, (strlen(bin_dir) > 0) ? DIR_SEP : "", QUOTE_PATH,
-		   QUOTE_PATH, pgdata_native, QUOTE_PATH,
-	   QUOTE_PATH, bin_dir, (strlen(bin_dir) > 0) ? DIR_SEP : "", QUOTE_PATH,
-		   QUOTE_PATH, pgdata_native, QUOTE_PATH,
-	   QUOTE_PATH, bin_dir, (strlen(bin_dir) > 0) ? DIR_SEP : "", QUOTE_PATH,
-		   QUOTE_PATH, pgdata_native, QUOTE_PATH);
+	printf(_("\nSuccess.\n"));
+	{
+		char *pgxc_ctl_silent = getenv("PGXC_CTL_SILENT");
+		if (!pgxc_ctl_silent || !strlen(pgxc_ctl_silent))
+		{
+			printf(_("You can now start the database server of the Postgres-XL coordinator using:\n\n"
+						"    %s%s%spostgres%s --coordinator -D %s%s%s\n"
+						"or\n"
+						"    %s%s%spg_ctl%s start -D %s%s%s -Z coordinator -l logfile\n\n"
+						" You can now start the database server of the Postgres-XL datanode using:\n\n"
+						"    %s%s%spostgres%s --datanode -D %s%s%s\n"
+						"or \n"
+						"    %s%s%spg_ctl%s start -D %s%s%s -Z datanode -l logfile\n\n"),
+					QUOTE_PATH, bin_dir, (strlen(bin_dir) > 0) ? DIR_SEP : "", QUOTE_PATH,
+					QUOTE_PATH, pgdata_native, QUOTE_PATH,
+					QUOTE_PATH, bin_dir, (strlen(bin_dir) > 0) ? DIR_SEP : "", QUOTE_PATH,
+					QUOTE_PATH, pgdata_native, QUOTE_PATH,
+					QUOTE_PATH, bin_dir, (strlen(bin_dir) > 0) ? DIR_SEP : "", QUOTE_PATH,
+					QUOTE_PATH, pgdata_native, QUOTE_PATH,
+					QUOTE_PATH, bin_dir, (strlen(bin_dir) > 0) ? DIR_SEP : "", QUOTE_PATH,
+					QUOTE_PATH, pgdata_native, QUOTE_PATH);
+		}
+	}
 #else
 	printf(_("\nSuccess. You can now start the database server using:\n\n"
 			 "    %s%s%spg_ctl%s -D %s%s%s -l logfile start\n\n"),
