@@ -467,10 +467,9 @@ int doCmdList(cmdList_t *cmds)
 			{
 				if (cmds->cmds[ii]->pid)
 				{
-					int rc_new;
-					
-					rc_new = waitpid(cmds->cmds[ii]->pid, &status, 0);
-					rc = WEXITSTATUS(rc_new);
+					int pid;
+					pid = waitpid(cmds->cmds[ii]->pid, &status, 0);
+					rc = WEXITSTATUS(status);
 				}
 			}
 			cmds->cmds[ii]->pid = 0;
