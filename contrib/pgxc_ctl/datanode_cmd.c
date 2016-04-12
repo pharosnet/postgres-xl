@@ -870,7 +870,7 @@ static int failover_oneDatanode(int datanodeIdx)
 		if (pingNode(aval(VAR_datanodeMasterServers)[jj], aval(VAR_datanodePorts)[jj]) != 0)
 		{
 			elog(ERROR, "Datanode %s is not running.  Skip reconfiguration for this datanode.\n",
-				 aval(VAR_coordNames)[jj]);
+				 aval(VAR_datanodeNames)[jj]);
 			continue;
 		}
 		
