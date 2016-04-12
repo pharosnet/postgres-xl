@@ -274,6 +274,7 @@ cmd_t *prepare_initDatanodeSlave(char *nodeName)
 	int idx;
 	int startMaster;
 	char timestamp[MAXTOKEN+1];
+	char remoteDirCheck[MAXPATH * 2 + 128];
 	
 	if ((idx = datanodeIdx(nodeName)) < 0)
 	{
@@ -292,10 +293,25 @@ cmd_t *prepare_initDatanodeSlave(char *nodeName)
 		return NULL;
 	}
 
+	remoteDirCheck[0] = '\0';
+	if (!forceInit)
+	{
+		sprintf(remoteDirCheck, "if [ \"$(ls -A %s 2> /dev/null)\" ]; then echo 'ERROR: "
+				"target directory (%s) exists and not empty. "
+				"Skip Datanode initilialization'; exit; fi",
+				aval(VAR_datanodeSlaveDirs)[idx],
+				aval(VAR_datanodeSlaveDirs)[idx]
+			   );
+	}
+
 	/* Build slave's directory -1- */
 	cmd = cmdBuildDir = initCmd(aval(VAR_datanodeSlaveServers)[idx]);
 	snprintf(newCommand(cmdBuildDir), MAXLINE,
-			 "rm -rf %s;mkdir -p %s; chmod 0700 %s",
+			 "%s"
+			 "rm -rf %s;"
+			 "mkdir -p %s;"
+			 "chmod 0700 %s",
+			 remoteDirCheck,
 			 aval(VAR_datanodeSlaveDirs)[idx], aval(VAR_datanodeSlaveDirs)[idx],
 			 aval(VAR_datanodeSlaveDirs)[idx]);
 
@@ -1347,7 +1363,7 @@ int add_datanodeSlave(char *name, char *host, int port, int pooler, char *dir,
 		return 1;
 	}
 	/* Prepare the resources (directories) */
-	doImmediate(host, NULL, "rm -rf %s; mkdir -p %s;chmod 0700 %s", dir, dir, dir);
+	doImmediate(host, NULL, "mkdir -p %s;chmod 0700 %s", dir, dir);
 	doImmediate(host, NULL, "rm -rf %s; mkdir -p %s;chmod 0700 %s", archDir, archDir, archDir);
 	doImmediate(host, NULL, "rm -rf %s; mkdir -p %s;chmod 0700 %s", walDir,
 			walDir, walDir);

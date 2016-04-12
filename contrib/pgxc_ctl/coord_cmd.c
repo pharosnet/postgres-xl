@@ -253,6 +253,7 @@ cmd_t *prepare_initCoordinatorSlave(char *nodeName)
 	FILE *f;
 	char localStdin[MAXPATH+1];
 	char timestamp[MAXTOKEN+1];
+	char remoteDirCheck[MAXPATH * 2 + 128];
 
 	if ((idx = coordIdx(nodeName)) < 0)
 	{
@@ -265,10 +266,25 @@ cmd_t *prepare_initCoordinatorSlave(char *nodeName)
 		return(NULL);
 	}
 
+	remoteDirCheck[0] = '\0';
+	if (!forceInit)
+	{
+		sprintf(remoteDirCheck, "if [ \"$(ls -A %s 2> /dev/null)\" ]; then echo 'ERROR: "
+				"target directory (%s) exists and not empty. "
+				"Skip Coordinator slave initilialization'; exit; fi;",
+				aval(VAR_coordSlaveDirs)[idx],
+				aval(VAR_coordSlaveDirs)[idx]
+			   );
+	}
+
 	/* Build work directory */
 	cmd = cmdBuildDir = initCmd(aval(VAR_coordSlaveServers)[idx]);
 	snprintf(newCommand(cmdBuildDir), MAXLINE,
-			 "rm -rf %s;mkdir -p %s;chmod 0700 %s",
+			 "%s"
+			 "rm -rf %s;"
+			 "mkdir -p %s;"
+			 "chmod 0700 %s",
+			 remoteDirCheck,
 			 aval(VAR_coordSlaveDirs)[idx], aval(VAR_coordSlaveDirs)[idx], aval(VAR_coordSlaveDirs)[idx]);
 	/* 
 	 * Check if the master is running --> May not need change if we have watchdog.   This case, we need
@@ -1293,7 +1309,7 @@ int add_coordinatorSlave(char *name, char *host, int port, int pooler_port, char
 	snprintf(pooler_s, MAXTOKEN, "%d", pooler_port);
 	
 	/* Prepare the resources (directories) */
-	doImmediate(host, NULL, "rm -rf %s; mkdir -p %s;chmod 0700 %s", dir, dir, dir);
+	doImmediate(host, NULL, "mkdir -p %s;chmod 0700 %s", dir, dir);
 	doImmediate(host, NULL, "rm -rf %s; mkdir -p %s;chmod 0700 %s", archDir, archDir, archDir);
 	/* Reconfigure the master with WAL archive */
 	/* Update the configuration and backup the configuration file */
