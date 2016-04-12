@@ -289,6 +289,7 @@ help(const char *progname)
 	printf(_("  -D directory    GTM working directory\n"));
 	printf(_("  -l filename     GTM server log file name \n"));
 	printf(_("  -c              show server status, then exit\n"));
+	printf(_("  -f              force start GTM with starting XID specified by -x option\n"));
 	printf(_("  --help          show this help, then exit\n"));
 	printf(_("\n"));
 	printf(_("Options for Standby mode:\n"));
@@ -344,6 +345,7 @@ main(int argc, char *argv[])
 	int			i;
 	GlobalTransactionId next_gxid = InvalidGlobalTransactionId;
 	FILE	   *ctlf;
+	bool		force_xid = false;
 
 	/*
 	 * Local variable to hold command line options.
@@ -409,7 +411,7 @@ main(int argc, char *argv[])
 	/*
 	 * Parse the command like options and set variables
 	 */
-	while ((opt = getopt(argc, argv, "ch:n:p:x:D:l:si:q:")) != -1)
+	while ((opt = getopt(argc, argv, "ch:n:p:x:D:l:si:q:f")) != -1)
 	{
 		switch (opt)
 		{
@@ -468,6 +470,10 @@ main(int argc, char *argv[])
 				if (dest_port)
 					free(dest_port);
 				dest_port = strdup(optarg);
+				break;
+
+			case 'f':
+				force_xid = true;
 				break;
 
 			default:
@@ -698,7 +704,7 @@ main(int argc, char *argv[])
 		}
 
 		GTM_RestoreStart(ctlf, &restoreContext);
-		GTM_RestoreTxnInfo(ctlf, next_gxid, &restoreContext);
+		GTM_RestoreTxnInfo(ctlf, next_gxid, &restoreContext, force_xid);
 		GTM_RestoreSeqInfo(ctlf, &restoreContext);
 		if (ctlf)
 			fclose(ctlf);
@@ -2312,7 +2318,7 @@ GTM_RestoreStart(FILE *ctlf, struct GTM_RestoreContext *context)
 
 void
 GTM_RestoreTxnInfo(FILE *ctlf, GlobalTransactionId next_gxid,
-		struct GTM_RestoreContext *context)
+		struct GTM_RestoreContext *context, bool force_xid)
 {
 	GlobalTransactionId saved_gxid;
 	GlobalTransactionId saved_global_xmin;
@@ -2371,7 +2377,18 @@ GTM_RestoreTxnInfo(FILE *ctlf, GlobalTransactionId next_gxid,
 			GTMTransactions.gt_recent_global_xmin = saved_gxid;
 	}
 	else
+	{
+		if (GlobalTransactionIdIsValid(saved_gxid) &&
+			GlobalTransactionIdPrecedes(next_gxid, saved_gxid) && !force_xid)
+			ereport(FATAL,
+					(EINVAL,
+					 errmsg("Requested to start GTM with starting xid %d, "
+						 "which is lower than gxid saved in control file %d. Refusing to start",
+						 next_gxid, saved_gxid),
+					 errhint("If you must force start GTM with a lower xid, please"
+						 " use -f option")));
 		GTMTransactions.gt_recent_global_xmin = next_gxid;
+	}
 
 	SetNextGlobalTransactionId(next_gxid);
 	elog(LOG, "Restoring last GXID to %u\n", next_gxid);

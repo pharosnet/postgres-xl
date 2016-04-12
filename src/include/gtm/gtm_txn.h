@@ -232,7 +232,7 @@ void GTM_WriteRestorePointVersion(FILE *f);
 void GTM_RestoreStart(FILE *ctlf, struct GTM_RestoreContext *context);
 void GTM_SaveTxnInfo(FILE *ctlf);
 void GTM_RestoreTxnInfo(FILE *ctlf, GlobalTransactionId next_gxid,
-		struct GTM_RestoreContext *context);
+		struct GTM_RestoreContext *context, bool force_xid);
 void GTM_BkupBeginTransaction(GTM_IsolationLevel isolevel,
 							  bool readonly,
 							  const char *global_sessionid,
