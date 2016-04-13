@@ -2665,7 +2665,7 @@ do_show_help(char *line)
 	{
 		printf(
 				"\n"
-				"add gtm slave name host port dir\n"
+				"add gtm slave slave_name host port dir\n"
 				"add gtm_proxy name host port dir\n"
 				"add coordinator master name host port pooler dir extra_conf extra_pghba\n"
 				"add coordinator slave name host port pooler dir archDir\n"
