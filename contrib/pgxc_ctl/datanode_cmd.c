@@ -181,7 +181,7 @@ cmd_t *prepare_initDatanodeMaster(char *nodeName)
 				"max_wal_senders = %s\n"
 				"# End of Addition\n",
 				sval(VAR_pgxcUser), aval(VAR_datanodeSlaveServers)[idx], aval(VAR_datanodeArchLogDirs)[idx],
-				aval(VAR_datanodeMaxWALSenders)[idx]);
+				is_none(aval(VAR_datanodeMaxWALSenders)[idx]) ? "0" : aval(VAR_datanodeMaxWALSenders)[idx]);
 		fclose(f);
 	}
 	else

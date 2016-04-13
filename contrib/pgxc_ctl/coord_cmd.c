@@ -165,7 +165,7 @@ cmd_t *prepare_initCoordinatorMaster(char *nodeName)
 				"# End of Addition\n",
 				timeStampString(timestamp, MAXPATH),
 				sval(VAR_pgxcUser), aval(VAR_coordSlaveServers)[jj], aval(VAR_coordArchLogDirs)[jj],
-				aval(VAR_coordMaxWALSenders)[jj]);
+				is_none(aval(VAR_coordMaxWALSenders)[jj]) ? "0" : aval(VAR_coordMaxWALSenders)[jj]);
 		fclose(f);
 		cmdWalArch->localStdin = Strdup(localStdin);
 		snprintf(newCommand(cmdWalArch), MAXLINE,
