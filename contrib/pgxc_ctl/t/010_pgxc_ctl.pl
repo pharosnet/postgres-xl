@@ -66,8 +66,6 @@ system_or_bail 'pgxc_ctl', 'monitor', 'all' ;
 
 system_or_bail 'pgxc_ctl', 'add', 'gtm', 'slave', 'gtm_slave', "$GTM_HOST", '20101', "$dataDirRoot/gtm_slave" ;
 
-system_or_bail 'pgxc_ctl', 'start', 'gtm', 'slave' ;
-
 system_or_bail 'pgxc_ctl', 'monitor', 'all' ;
 
 system_or_bail 'pgxc_ctl', 'stop', "-m", 'immediate', 'gtm', 'master', 'gtm' ;
