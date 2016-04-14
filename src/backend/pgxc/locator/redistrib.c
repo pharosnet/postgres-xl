@@ -549,6 +549,8 @@ distrib_copy_from(RedistribState *distribState, ExecNodes *exec_nodes)
 										  typioparam, typmod);
 				is_null = false;
 			}
+
+			pfree(fields);
 		}
 
 		if (DataNodeCopyIn(data, len,
