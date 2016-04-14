@@ -57,6 +57,8 @@ producerStartupReceiver(DestReceiver *self, int operation, TupleDesc typeinfo)
 		 */
 		MemoryContext savecontext;
 		savecontext = MemoryContextSwitchTo(PortalGetHeapMemory(ActivePortal));
+		if (myState->typeinfo)
+			pfree(myState->typeinfo);
 		myState->typeinfo = CreateTupleDescCopy(typeinfo);
 		MemoryContextSwitchTo(savecontext);
 	}
