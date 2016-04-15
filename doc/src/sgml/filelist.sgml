@@ -170,7 +170,7 @@
 <!ENTITY sourcerepo SYSTEM "sourcerepo.sgml">
 
 <!ENTITY release    SYSTEM "release.sgml">
-<!ENTITY release-xl-9.5    SYSTEM "release-xl-9.5.sgml">
+<!ENTITY release-xl-9.5r1    SYSTEM "release-xl-9.5r1.sgml">
 <!ENTITY release-9.5    SYSTEM "release-9.5.sgml">
 <!ENTITY release-9.4    SYSTEM "release-9.4.sgml">
 <!ENTITY release-9.3    SYSTEM "release-9.3.sgml">

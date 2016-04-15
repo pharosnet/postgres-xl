@@ -1,13 +1,13 @@
 <!-- doc/src/sgml/release-9.5.sgml -->
 <!-- See header comment in release.sgml about typical markup -->
 
- <sect1 id="release-xl-9-5">
-  <title>Postgres-XL Release 9.5</title>
+ <sect1 id="release-xl-9-5r1">
+  <title>Postgres-XL Release 9.5r1</title>
 
   <note>
    <title>Release Date</title>
-   <simpara>2016-??-??</simpara>
-   <simpara>Current as of 2016-03-28</simpara>
+   <simpara>2016-04-18</simpara>
+   <simpara>Current as of 2016-04-18</simpara>
   </note>
 
   <sect2>
@@ -34,9 +34,9 @@ currently not supported or have limited support is also mentioned in
   </sect2>
 
   <sect2>
-  <title>Migration to Postgres-XL 9.5 </title>
+  <title>Migration to Postgres-XL 9.5r1 </title>
    <sect3>
-   <title>Migration to Postgres-XL 9.5 from PostgreSQL 9.5 </title>
+   <title>Migration to Postgres-XL 9.5r1 from PostgreSQL 9.5 </title>
     <para>
      A dump/restore using <xref linkend="app-pg-dumpall">
      is required for those wishing to migrate
@@ -48,10 +48,10 @@ linkend="pgupgrade">, as a mechanism to upgrade from PostgreSQL 9.5
     </para>
    </sect3>
    <sect3>
-   <title>Migration to Postgres-XL 9.5 from Postgres-XL 9.2 </title>
+   <title>Migration to Postgres-XL 9.5r1 from Postgres-XL 9.2 </title>
     <para>
-     Version 9.5 contains a number of changes that may affect compatibility
-     with previous releases. Since Postgres-XL 9.5 release includes all changes
+     Version 9.5r1 contains a number of changes that may affect compatibility
+     with previous releases. Since Postgres-XL 9.5r1 release includes all changes
 from PostgreSQL 9.3, PostgreSQL 9.4 and PostgreSQL 9.5 releases, it is
 recommended that you review respective release notes of those releases to find
 the exact incompatibilities.
@@ -60,9 +60,9 @@ the exact incompatibilities.
   </sect2>
 
   <sect2>
-   <title>Major Enhancements in Postgres-XL 9.5 </title>
+   <title>Major Enhancements in Postgres-XL 9.5r1 </title>
    <para>
-    <productname>Postgres-XL</productname> 9.5 is the first major release
+    <productname>Postgres-XL</productname> 9.5r1 is the first major release
 after <productname>Postgres-XL</productname> 9.2 release. So this release
 contains most of the major enhancements that went into
 <productname>PostgreSQL</productname> releases 9.3, 9.4 and 9.5. This is a very
@@ -272,7 +272,7 @@ files when its not necessary.
 
    <para>
     Below you will find a detailed account of the changes between
-    <productname>Postgres-XL</productname> 9.5 and the previous major
+    <productname>Postgres-XL</productname> 9.5r1 and the previous major
     release.
    </para>
 
@@ -805,6 +805,40 @@ performance for the aggregate handling.
     <para>
    Add support for checking status of a coordinator or datanode slave without
 requiring it to be started as a Hot Standby.
+    </para>
+   </listitem>
+  </itemizedlist> 
+ </sect2>
+ <sect2>
+  <title>Important Bug Fixes and Improvements since 9.5r1beta2</title>
+  <itemizedlist> 
+   <listitem>
+    <para>
+     Fully caught up to the latest <productname>PostgreSQL</productname> 9.5.2
+release.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+     Compilation and regression support for SmartOS.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+     Add check against accidental start of GTM with an XID lower than what it's
+    saved in its control file.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+     Correctly start GTM standby after it's added by 'pgxc_ctl add gtm slave'
+command.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+     Fix several memory leaks in the executor code path which should help ALTER
+TABLE .. ADD NODE and large INSERTs into a distributed table.
     </para>
    </listitem>
   </itemizedlist> 
