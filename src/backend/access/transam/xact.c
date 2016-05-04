@@ -6792,6 +6792,15 @@ SetTopTransactionId(GlobalTransactionId xid)
 	Assert(!GlobalTransactionIdIsValid(s->transactionId) ||
 			GlobalTransactionIdEquals(s->transactionId, xid));
 
+	/*
+	 * Also extend the CLOG, SubtransLog and CommitTsLog to ensure that this
+	 * XID can later be referenced correctly
+	 *
+	 * Normally this happens in the GetNextLocalTransactionId() path, but that
+	 * may not be ever called when XID is received from the remote node
+	 */
+	ExtendLogs(xid);
+
 	if (!IsConnFromDatanode())
 	{
 		XactTopTransactionId = s->transactionId = xid;
