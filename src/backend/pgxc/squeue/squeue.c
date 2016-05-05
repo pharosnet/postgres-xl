@@ -1448,23 +1448,17 @@ CHECK:
 		goto CHECK;
 	}
 
-	/*
-	 * XXX Decrement the refcnt, but it doesn't really matter because we are
-	 * unconditionally removing the SQueue anyways. SharedQueueRelease is
-	 * prepared to work with already removed SQueue
-	 *
-	 * This ought to be fixed someday
-	 */
-	squeue->sq_refcnt--;
-	
 	/* All is done, clean up */
 	DisownLatch(&sqsync->sqs_producer_latch);
 
-	/* Now it is OK to remove hash table entry */
-	squeue->sq_sync = NULL;
-	sqsync->queue = NULL;
-	if (hash_search(SharedQueues, squeue->sq_key, HASH_REMOVE, NULL) != squeue)
-		elog(PANIC, "Shared queue data corruption");
+	if (--squeue->sq_refcnt == 0)
+	{
+		/* Now it is OK to remove hash table entry */
+		squeue->sq_sync = NULL;
+		sqsync->queue = NULL;
+		if (hash_search(SharedQueues, squeue->sq_key, HASH_REMOVE, NULL) != squeue)
+			elog(PANIC, "Shared queue data corruption");
+	}
 
 	LWLockRelease(SQueuesLock);
 }
