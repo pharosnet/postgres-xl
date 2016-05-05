@@ -2943,7 +2943,8 @@ static struct config_int ConfigureNamesInt[] =
 	 */
 	{
 		{"shared_queues", PGC_POSTMASTER, RESOURCES_MEM,
-			gettext_noop("Sets the number of shared memory queues used by the distributed executor."),
+			gettext_noop("Sets the number of shared memory queues used by the "
+					"distributed executor, minimum 1/4 of max_connections."),
 			NULL
 		},
 		&NSQueues,
@@ -2953,12 +2954,13 @@ static struct config_int ConfigureNamesInt[] =
 
 	{
 		{"shared_queue_size", PGC_POSTMASTER, RESOURCES_MEM,
-			gettext_noop("Sets the amount of memory allocated for a shared memory queue."),
+			gettext_noop("Sets the amount of memory allocated for a shared"
+					" memory queue per datanode."),
 			NULL,
 			GUC_UNIT_KB
 		},
 		&SQueueSize,
-		64, 1, MAX_KILOBYTES,
+		32, 1, MAX_KILOBYTES,
 		NULL, NULL, NULL
 	},
 

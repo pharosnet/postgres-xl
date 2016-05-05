@@ -25,9 +25,9 @@ extern PGDLLIMPORT int NSQueues;
 extern PGDLLIMPORT int SQueueSize;
 
 /* Fixed size of shared queue, maybe need to be GUC configurable */
-#define SQUEUE_SIZE ((long) SQueueSize * 1024L)
+#define SQUEUE_SIZE ((long) SQueueSize * MaxDataNodes * 1024L)
 /* Number of shared queues, maybe need to be GUC configurable */
-#define NUM_SQUEUES ((long) NSQueues)
+#define NUM_SQUEUES Max((long) NSQueues, MaxConnections / 4)
 
 #define SQUEUE_KEYSIZE (64)
 
