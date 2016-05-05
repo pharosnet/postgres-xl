@@ -243,13 +243,10 @@ SharedQueuesInit(void)
 Size
 SharedQueueShmemSize(void)
 {
-	Size sq_size;
 	Size sqs_size;
 
-	sq_size = mul_size(NUM_SQUEUES, SQUEUE_SIZE);
 	sqs_size = mul_size(NUM_SQUEUES, SQUEUE_SYNC_SIZE);
-
-	return add_size(sq_size, sqs_size);
+	return add_size(sqs_size, hash_estimate_size(NUM_SQUEUES, SQUEUE_SIZE));
 }
 
 /*
