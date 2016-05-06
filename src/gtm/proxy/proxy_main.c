@@ -2441,6 +2441,14 @@ GTMProxy_ProcessPendingCommands(GTMProxy_ThreadInfo *thrinfo)
 				 */
 				thrinfo->thr_processed_commands = gtm_list_concat(thrinfo->thr_processed_commands,
 						thrinfo->thr_pending_commands[ii]);
+				/*
+				 * Free the list header of the second list, unless
+				 * gtm_list_concat actually returned the second list as-is
+				 * because the first list was empty
+				 */
+				if ((thrinfo->thr_processed_commands != thrinfo->thr_pending_commands[ii]) &&
+					(thrinfo->thr_pending_commands[ii] != gtm_NIL))
+					pfree(thrinfo->thr_pending_commands[ii]);
 				thrinfo->thr_pending_commands[ii] = gtm_NIL;
 				break;
 
@@ -2472,6 +2480,14 @@ GTMProxy_ProcessPendingCommands(GTMProxy_ThreadInfo *thrinfo)
 				 */
 				thrinfo->thr_processed_commands = gtm_list_concat(thrinfo->thr_processed_commands,
 						thrinfo->thr_pending_commands[ii]);
+				/*
+				 * Free the list header of the second list, unless
+				 * gtm_list_concat actually returned the second list as-is
+				 * because the first list was empty
+				 */
+				if ((thrinfo->thr_processed_commands != thrinfo->thr_pending_commands[ii]) &&
+					(thrinfo->thr_pending_commands[ii] != gtm_NIL))
+					pfree(thrinfo->thr_pending_commands[ii]);
 				thrinfo->thr_pending_commands[ii] = gtm_NIL;
 				break;
 
@@ -2506,6 +2522,14 @@ GTMProxy_ProcessPendingCommands(GTMProxy_ThreadInfo *thrinfo)
 				 */
 				thrinfo->thr_processed_commands = gtm_list_concat(thrinfo->thr_processed_commands,
 						thrinfo->thr_pending_commands[ii]);
+				/*
+				 * Free the list header of the second list, unless
+				 * gtm_list_concat actually returned the second list as-is
+				 * because the first list was empty
+				 */
+				if ((thrinfo->thr_processed_commands != thrinfo->thr_pending_commands[ii]) &&
+					(thrinfo->thr_pending_commands[ii] != gtm_NIL))
+					pfree(thrinfo->thr_pending_commands[ii]);
 				thrinfo->thr_pending_commands[ii] = gtm_NIL;
 				break;
 
@@ -2537,6 +2561,14 @@ GTMProxy_ProcessPendingCommands(GTMProxy_ThreadInfo *thrinfo)
 				 */
 				thrinfo->thr_processed_commands = gtm_list_concat(thrinfo->thr_processed_commands,
 						thrinfo->thr_pending_commands[ii]);
+				/*
+				 * Free the list header of the second list, unless
+				 * gtm_list_concat actually returned the second list as-is
+				 * because the first list was empty
+				 */
+				if ((thrinfo->thr_processed_commands != thrinfo->thr_pending_commands[ii]) &&
+					(thrinfo->thr_pending_commands[ii] != gtm_NIL))
+					pfree(thrinfo->thr_pending_commands[ii]);
 				thrinfo->thr_pending_commands[ii] = gtm_NIL;
 				break;
 
