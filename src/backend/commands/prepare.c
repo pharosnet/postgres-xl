@@ -721,6 +721,7 @@ DropPreparedStatement(const char *stmt_name, bool showError)
 		/* Now we can remove the hash table entry */
 		hash_search(prepared_queries, entry->stmt_name, HASH_REMOVE, NULL);
 #ifdef XCP
+		DropDatanodeStatement(entry->stmt_name);
 		if (entry->use_resowner)
 			ResourceOwnerForgetPreparedStmt(CurTransactionResourceOwner,
 					entry->stmt_name);

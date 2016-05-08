@@ -3645,6 +3645,7 @@ ExecCloseRemoteStatement(const char *stmt_name, List *nodelist)
 					(errcode(ERRCODE_INTERNAL_ERROR),
 					 errmsg("Failed to close Datanode statement")));
 		}
+		PGXCNodeSetConnectionState(connections[i], DN_CONNECTION_STATE_CLOSE);
 	}
 
 	InitResponseCombiner(&combiner, conn_count, COMBINE_TYPE_NONE);
@@ -3657,7 +3658,7 @@ ExecCloseRemoteStatement(const char *stmt_name, List *nodelist)
 	{
 		if (pgxc_node_receive(conn_count, connections, NULL))
 		{
-			for (i = 0; i <= conn_count; i++)
+			for (i = 0; i < conn_count; i++)
 				PGXCNodeSetConnectionState(connections[i],
 						DN_CONNECTION_STATE_ERROR_FATAL);
 
