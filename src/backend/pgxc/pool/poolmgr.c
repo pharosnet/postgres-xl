@@ -960,7 +960,7 @@ PoolManagerGetConnections(List *datanodelist, List *coordlist, int **pids)
 	if (pool_recvfds(&poolHandle->port, fds, totlen))
 	{
 		pfree(fds);
-		return NULL;
+		fds = NULL;
 	}
 
 	if (pool_recvpids(&poolHandle->port, pids) != totlen)
