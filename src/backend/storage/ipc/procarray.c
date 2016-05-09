@@ -2919,10 +2919,13 @@ CountOtherDBBackends(Oid databaseId, int *nbackends, int *nprepared)
 
 #ifdef PGXC
 /*
- * ReloadConnInfoOnBackends -- reload connection information for all the backends
+ * ReloadConnInfoOnBackends -- reload/refresh connection information
+ * for all the backends
+ *
+ * "refresh" is less destructive than "reload"
  */
 void
-ReloadConnInfoOnBackends(void)
+ReloadConnInfoOnBackends(bool refresh_only)
 {
 	ProcArrayStruct *arrayP = procArray;
 	int			index;
@@ -2954,7 +2957,9 @@ ReloadConnInfoOnBackends(void)
 		/*
 		 * Send the reload signal if backend still exists
 		 */
-		(void) SendProcSignal(pid, PROCSIG_PGXCPOOL_RELOAD, vxid.backendId);
+		(void) SendProcSignal(pid, refresh_only?
+					  PROCSIG_PGXCPOOL_REFRESH:PROCSIG_PGXCPOOL_RELOAD,
+					  vxid.backendId);
 	}
 
 	LWLockRelease(ProcArrayLock);

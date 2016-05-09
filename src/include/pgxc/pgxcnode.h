@@ -60,6 +60,8 @@ struct pgxc_node_handle
 	Oid			nodeoid;
 	int			nodeid;
 	char		nodename[NAMEDATALEN];
+	char		nodehost[NAMEDATALEN];
+	int			nodeport;
 
 	/* fd of the connection */
 	int		sock;
@@ -191,7 +193,12 @@ extern char *PGXCNodeGetSessionParamStr(void);
 extern char *PGXCNodeGetTransactionParamStr(void);
 extern void pgxc_node_set_query(PGXCNodeHandle *handle, const char *set_query);
 extern void RequestInvalidateRemoteHandles(void);
+extern void RequestRefreshRemoteHandles(void);
+extern bool PoolerMessagesPending(void);
 extern void PGXCNodeSetConnectionState(PGXCNodeHandle *handle,
 		DNConnectionState new_state);
-
+extern bool PgxcNodeDiffBackendHandles(List **nodes_alter,
+			   List **nodes_delete, List **nodes_add);
+extern void PgxcNodeRefreshBackendHandlesShmem(List *nodes_alter);
+extern void HandlePoolerMessages(void);
 #endif /* PGXCNODE_H */

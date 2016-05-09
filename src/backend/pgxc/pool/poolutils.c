@@ -33,6 +33,7 @@
 #include "commands/prepare.h"
 #include "storage/ipc.h"
 #include "storage/procarray.h"
+#include "storage/latch.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
@@ -63,6 +64,10 @@ pgxc_pool_check(PG_FUNCTION_ARGS)
 
 /*
  * pgxc_pool_reload
+ *
+ * This function checks if a refresh should be carried out first. A refresh
+ * is carried out if NODEs have only been ALTERed in the catalog. Otherwise
+ * reload is performed as below.
  *
  * Reload data cached in pooler and reload node connection
  * information in all the server sessions. This aborts all
@@ -97,6 +102,13 @@ pgxc_pool_reload(PG_FUNCTION_ARGS)
 				(errcode(ERRCODE_ACTIVE_SQL_TRANSACTION),
 				 errmsg("pgxc_pool_reload cannot run inside a transaction block")));
 
+	/*
+	 * Always check if we can get away with a LESS destructive refresh
+	 * operation.
+	 */
+	if (PgxcNodeRefresh())
+		PG_RETURN_BOOL(true);
+
 	/* Session is being reloaded, drop prepared and temporary objects */
 	DropAllPreparedStatements();
 
@@ -112,9 +124,59 @@ pgxc_pool_reload(PG_FUNCTION_ARGS)
 
 	/* Signal other sessions to reconnect to pooler if have privileges */
 	if (superuser())
-		ReloadConnInfoOnBackends();
+		ReloadConnInfoOnBackends(false);
 
 	PG_RETURN_BOOL(true);
+}
+
+bool
+PgxcNodeRefresh(void)
+{
+	List *nodes_alter = NIL, *nodes_delete = NIL, *nodes_add = NIL;
+
+	/*
+	 * Check if NODE metadata has been ALTERed only. If there are DELETIONs
+	 * or ADDITIONs of NODEs, then we tell the caller to use reload
+	 * instead
+	 */
+	if (!PgxcNodeDiffBackendHandles(&nodes_alter, &nodes_delete, &nodes_add))
+	{
+		elog(LOG, "Self node altered. Performing reload"
+			 " to re-create connections!");
+		return false;
+	}
+
+	if (nodes_delete != NIL || nodes_add != NIL)
+	{
+		elog(LOG, "Nodes added/deleted. Performing reload"
+			 " to re-create connections!");
+		return false;
+	}
+
+	if (nodes_alter == NIL)
+	{
+		elog(LOG, "No nodes altered. Returning");
+		return true;
+	}
+
+	/* Be sure it is done consistently */
+	while (!PoolManagerCheckConnectionInfo())
+	{
+		/* Refresh connection information in pooler */
+		PoolManagerRefreshConnectionInfo();
+	}
+
+	PgxcNodeRefreshBackendHandlesShmem(nodes_alter);
+
+	/* Signal other sessions to reconnect to pooler if have privileges */
+	if (superuser())
+		ReloadConnInfoOnBackends(true);
+
+	list_free(nodes_alter);
+	list_free(nodes_add);
+	list_free(nodes_delete);
+
+	return true;
 }
 
 /*
@@ -348,4 +410,25 @@ HandlePoolerReload(void)
 
 	/* Prevent using of cached connections to remote nodes */
 	RequestInvalidateRemoteHandles();
+}
+
+/*
+ * HandlePoolerRefresh
+ *
+ * This is called when PROCSIG_PGXCPOOL_REFRESH is activated.
+ * Reconcile local backend connection info with the one in
+ * shared memory
+ */
+void
+HandlePoolerRefresh(void)
+{
+	if (proc_exit_inprogress)
+		return;
+
+	InterruptPending = true;
+
+	RequestRefreshRemoteHandles();
+
+	/* make sure the event is processed in due course */
+	SetLatch(MyLatch);
 }

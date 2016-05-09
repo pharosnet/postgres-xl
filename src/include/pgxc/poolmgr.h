@@ -125,6 +125,9 @@ extern bool PoolManagerCheckConnectionInfo(void);
 /* Reload connection data in pooler and drop all the existing connections of pooler */
 extern void PoolManagerReloadConnectionInfo(void);
 
+/* Refresh connection data in pooler and drop connections of altered nodes in pooler */
+extern int PoolManagerRefreshConnectionInfo(void);
+
 /* Send Abort signal to transactions being run */
 extern int	PoolManagerAbortTransactions(char *dbname, char *username, int **proc_pids);
 

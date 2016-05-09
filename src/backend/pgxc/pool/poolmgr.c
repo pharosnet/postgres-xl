@@ -126,6 +126,8 @@ static DatabasePool *create_database_pool(const char *database, const char *user
 static void insert_database_pool(DatabasePool *pool);
 static int	destroy_database_pool(const char *database, const char *user_name);
 static void reload_database_pools(PoolAgent *agent);
+static int refresh_database_pools(PoolAgent *agent);
+static bool remove_all_agent_references(Oid nodeoid);
 static DatabasePool *find_database_pool(const char *database, const char *user_name, const char *pgoptions);
 static DatabasePool *remove_database_pool(const char *database, const char *user_name);
 static int *agent_acquire_connections(PoolAgent *agent, List *datanodelist,
@@ -1145,6 +1147,29 @@ PoolManagerReloadConnectionInfo(void)
 	pool_flush(&poolHandle->port);
 }
 
+/*
+ * Refresh connection data in pooler and drop connections for those nodes
+ * that have changed. Thus, this operation is less destructive as compared
+ * to PoolManagerReloadConnectionInfo and should typically be called when
+ * NODE ALTER has been performed
+ */
+int
+PoolManagerRefreshConnectionInfo(void)
+{
+	int res;
+
+	Assert(poolHandle);
+	PgxcNodeListAndCount();
+	pool_putmessage(&poolHandle->port, 'R', NULL, 0);
+	pool_flush(&poolHandle->port);
+
+	res = pool_recvres(&poolHandle->port);
+
+	if (res == POOL_CHECK_SUCCESS)
+		return true;
+
+	return false;
+}
 
 /*
  * Handle messages to agent
@@ -1228,7 +1253,7 @@ agent_handle_input(PoolAgent * agent, StringInfo s)
 			case 'f':			/* CLEAN CONNECTION */
 				pool_getmessage(&agent->port, s, 0);
 				datanodecount = pq_getmsgint(s, 4);
-				/* It is possible to clean up only Coordinators connections */
+				/* It is possible to clean up only datanode connections */
 				for (i = 0; i < datanodecount; i++)
 				{
 					/* Translate index to Oid */
@@ -1237,7 +1262,7 @@ agent_handle_input(PoolAgent * agent, StringInfo s)
 					nodelist = lappend_oid(nodelist, node);
 				}
 				coordcount = pq_getmsgint(s, 4);
-				/* It is possible to clean up only Datanode connections */
+				/* It is possible to clean up only coordinator connections */
 				for (i = 0; i < coordcount; i++)
 				{
 					/* Translate index to Oid */
@@ -1362,6 +1387,24 @@ agent_handle_input(PoolAgent * agent, StringInfo s)
 
 				/* First update all the pools */
 				reload_database_pools(agent);
+				break;
+			case 'R':			/* Refresh connection info */
+				/*
+				 * Connection information refresh concerns all the database pools.
+				 * A database pool is refreshed as follows for each remote node:
+				 * - node pool is deleted if its port or host information is changed.
+				 *   Subsequently all its connections are dropped.
+				 *
+				 * If any other type of activity is found, we error out
+				 */
+				pool_getmessage(&agent->port, s, 4);
+				pq_getmsgend(s);
+
+				/* Refresh the pools */
+				res = refresh_database_pools(agent);
+
+				/* Send result */
+				pool_sendres(&agent->port, res);
 				break;
 			case 'P':			/* Ping connection info */
 				/*
@@ -1954,6 +1997,148 @@ reload_database_pools(PoolAgent *agent)
 	}
 }
 
+/*
+ * Refresh information of database pools
+ */
+static int
+refresh_database_pools(PoolAgent *agent)
+{
+	DatabasePool *databasePool;
+	Oid			   *coOids;
+	Oid			   *dnOids;
+	int				numCo;
+	int				numDn;
+	int 			res = POOL_REFRESH_SUCCESS;
+
+	elog(LOG, "Refreshing database pools");
+
+	/*
+	 * re-check if agent's node information matches current contents of the
+	 * shared memory table.
+	 */
+	PgxcNodeGetOids(&coOids, &dnOids, &numCo, &numDn, false);
+
+	if (agent->num_coord_connections != numCo ||
+			agent->num_dn_connections != numDn ||
+			memcmp(agent->coord_conn_oids, coOids, numCo * sizeof(Oid)) ||
+			memcmp(agent->dn_conn_oids, dnOids, numDn * sizeof(Oid)))
+		res = POOL_REFRESH_FAILED;
+
+	/* Release palloc'ed memory */
+	pfree(coOids);
+	pfree(dnOids);
+
+	/*
+	 * Scan the list and destroy any altered pool. They will be recreated
+	 * upon subsequent connection acquisition.
+	 */
+	databasePool = databasePools;
+	while (res == POOL_REFRESH_SUCCESS && databasePool)
+	{
+		HASH_SEQ_STATUS hseq_status;
+		PGXCNodePool   *nodePool;
+
+		hash_seq_init(&hseq_status, databasePool->nodePools);
+		while ((nodePool = (PGXCNodePool *) hash_seq_search(&hseq_status)))
+		{
+			char *connstr_chk = build_node_conn_str(nodePool->nodeoid, databasePool);
+
+			/*
+			 * Since we re-checked the numbers above, we should not get
+			 * the case of an ADDED or a DELETED node here..
+			 */
+			if (connstr_chk == NULL)
+			{
+				elog(LOG, "Found a deleted node (%u)", nodePool->nodeoid);
+				hash_seq_term(&hseq_status);
+				res = POOL_REFRESH_FAILED;
+				break;
+			}
+
+			if (strcmp(connstr_chk, nodePool->connstr))
+			{
+				elog(LOG, "Found an altered node (%u)", nodePool->nodeoid);
+				/*
+				 * Node has been altered. First remove
+				 * all references to this node from ALL the
+				 * agents before destroying it..
+				 */
+				if (!remove_all_agent_references(nodePool->nodeoid))
+				{
+					res = POOL_REFRESH_FAILED;
+					break;
+				}
+
+				destroy_node_pool(nodePool);
+				hash_search(databasePool->nodePools, &nodePool->nodeoid,
+							HASH_REMOVE, NULL);
+			}
+
+			if (connstr_chk)
+				pfree(connstr_chk);
+		}
+
+		databasePool = databasePool->next;
+	}
+	return res;
+}
+
+static bool
+remove_all_agent_references(Oid nodeoid)
+{
+	int i, j;
+	bool res = true;
+
+	/*
+	 * Identify if it's a coordinator or datanode first
+	 * and get its index
+	 */
+	for (i = 1; i <= agentCount; i++)
+	{
+		bool found = false;
+
+		PoolAgent *agent = poolAgents[i - 1];
+		for (j = 0; j < agent->num_dn_connections; j++)
+		{
+			if (agent->dn_conn_oids[j] == nodeoid)
+			{
+				found = true;
+				break;
+			}
+		}
+		if (found)
+		{
+			PGXCNodePoolSlot *slot = agent->dn_connections[j];
+			if (slot)
+				release_connection(agent->pool, slot, agent->dn_conn_oids[j], false);
+			agent->dn_connections[j] = NULL;
+		}
+		else
+		{
+			for (j = 0; j < agent->num_coord_connections; j++)
+			{
+				if (agent->coord_conn_oids[j] == nodeoid)
+				{
+					found = true;
+					break;
+				}
+			}
+			if (found)
+			{
+				PGXCNodePoolSlot *slot = agent->coord_connections[j];
+				if (slot)
+					release_connection(agent->pool, slot, agent->coord_conn_oids[j], true);
+				agent->coord_connections[j] = NULL;
+			}
+			else
+			{
+				elog(LOG, "Node not found! (%u)", nodeoid);
+				res = false;
+			}
+		}
+	}
+	return res;
+}
 
 /*
  * Find pool for specified database and username in the list

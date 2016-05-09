@@ -281,6 +281,9 @@ procsignal_sigusr1_handler(SIGNAL_ARGS)
 #ifdef PGXC
 	if (CheckProcSignal(PROCSIG_PGXCPOOL_RELOAD))
 		HandlePoolerReload();
+
+	if (CheckProcSignal(PROCSIG_PGXCPOOL_REFRESH))
+		HandlePoolerRefresh();
 #endif
 	if (CheckProcSignal(PROCSIG_PARALLEL_MESSAGE))
 		HandleParallelMessageInterrupt();

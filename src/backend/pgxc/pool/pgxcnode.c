@@ -34,6 +34,7 @@
 #include "access/gtm.h"
 #include "access/transam.h"
 #include "access/xact.h"
+#include "access/htup_details.h"
 #include "catalog/pg_type.h"
 #include "commands/prepare.h"
 #include "gtm/gtm_c.h"
@@ -55,6 +56,7 @@
 #include "utils/syscache.h"
 #include "utils/lsyscache.h"
 #include "utils/formatting.h"
+#include "utils/tqual.h"
 #include "../interfaces/libpq/libpq-fe.h"
 #ifdef XCP
 #include "miscadmin.h"
@@ -90,6 +92,7 @@ int 		NumCoords;
 
 #ifdef XCP
 volatile bool HandlesInvalidatePending = false;
+volatile bool HandlesRefreshPending = false;
 
 /*
  * Session and transaction parameters need to to be set on newly connected
@@ -108,6 +111,7 @@ typedef struct
 
 
 static bool DoInvalidateRemoteHandles(void);
+static bool DoRefreshRemoteHandles(void);
 #endif
 
 #ifdef XCP
@@ -216,6 +220,9 @@ InitMultinodeExecutor(bool is_force)
 		dn_handles[count].nodeid = get_pgxc_node_id(dnOids[count]);
 		strncpy(dn_handles[count].nodename, get_pgxc_nodename(dnOids[count]),
 				NAMEDATALEN);
+		strncpy(dn_handles[count].nodehost, get_pgxc_nodehost(dnOids[count]),
+				NAMEDATALEN);
+		dn_handles[count].nodeport = get_pgxc_nodeport(dnOids[count]);
 	}
 	for (count = 0; count < NumCoords; count++)
 	{
@@ -224,6 +231,9 @@ InitMultinodeExecutor(bool is_force)
 		co_handles[count].nodeid = get_pgxc_node_id(coOids[count]);
 		strncpy(co_handles[count].nodename, get_pgxc_nodename(coOids[count]),
 				NAMEDATALEN);
+		strncpy(co_handles[count].nodehost, get_pgxc_nodehost(coOids[count]),
+				NAMEDATALEN);
+		co_handles[count].nodeport = get_pgxc_nodeport(coOids[count]);
 	}
 
 	datanode_count = 0;
@@ -350,7 +360,8 @@ PGXCNodeConnected(NODE_CONNECTION *conn)
 static void
 pgxc_node_free(PGXCNodeHandle *handle)
 {
-	close(handle->sock);
+	if (handle->sock != NO_SOCKET)
+		close(handle->sock);
 	handle->sock = NO_SOCKET;
 }
 
@@ -393,6 +404,7 @@ pgxc_node_all_free(void)
 	co_handles = NULL;
 	dn_handles = NULL;
 	HandlesInvalidatePending = false;
+	HandlesRefreshPending = false;
 }
 
 /*
@@ -1960,6 +1972,12 @@ get_any_handle(List *datanodelist)
 					(errcode(ERRCODE_QUERY_CANCELED),
 					 errmsg("canceling transaction due to cluster configuration reset by administrator command")));
 
+	if (HandlesRefreshPending)
+		if (DoRefreshRemoteHandles())
+			ereport(ERROR,
+					(errcode(ERRCODE_QUERY_CANCELED),
+					 errmsg("canceling transaction due to cluster configuration reset by administrator command")));
+
 	/* loop through local datanode handles */
 	for (i = 0, node = load_balancer; i < NumDataNodes; i++, node++)
 	{
@@ -2069,6 +2087,12 @@ get_handles(List *datanodelist, List *coordlist, bool is_coord_only_query, bool 
 
 	if (HandlesInvalidatePending)
 		if (DoInvalidateRemoteHandles())
+			ereport(ERROR,
+					(errcode(ERRCODE_QUERY_CANCELED),
+					 errmsg("canceling transaction due to cluster configuration reset by administrator command")));
+
+	if (HandlesRefreshPending)
+		if (DoRefreshRemoteHandles())
 			ereport(ERROR,
 					(errcode(ERRCODE_QUERY_CANCELED),
 					 errmsg("canceling transaction due to cluster configuration reset by administrator command")));
@@ -2394,7 +2418,7 @@ pfree_pgxc_all_handles(PGXCNodeAllHandles *pgxc_handles)
 }
 
 /*
- * PGXCNode_getNodeId
+ * PGXCNodeGetNodeId
  *		Look at the data cached for handles and return node position
  * 		If node type is PGXC_NODE_COORDINATOR look only in coordinator list,
  *		if node type is PGXC_NODE_DATANODE look only in datanode list,
@@ -2439,7 +2463,7 @@ PGXCNodeGetNodeId(Oid nodeoid, char *node_type)
 }
 
 /*
- * PGXCNode_getNodeOid
+ * PGXCNodeGetNodeOid
  *		Look at the data cached for handles and return node Oid
  */
 Oid
@@ -2801,6 +2825,20 @@ RequestInvalidateRemoteHandles(void)
 	HandlesInvalidatePending = true;
 }
 
+void
+RequestRefreshRemoteHandles(void)
+{
+	HandlesRefreshPending = true;
+}
+
+bool
+PoolerMessagesPending(void)
+{
+	if (HandlesRefreshPending)
+		return true;
+
+	return false;
+}
 
 /*
  * For all handles, mark as they are not in use and discard pending input/output
@@ -2813,6 +2851,7 @@ DoInvalidateRemoteHandles(void)
 	bool			result = false;
 
 	HandlesInvalidatePending = false;
+	HandlesRefreshPending = false;
 
 	for (i = 0; i < NumCoords; i++)
 	{
@@ -2838,10 +2877,352 @@ DoInvalidateRemoteHandles(void)
 	return result;
 }
 
+/*
+ * Diff handles using shmem, and remove ALTERed handles
+ */
+static bool
+DoRefreshRemoteHandles(void)
+{
+	List			*altered = NIL, *deleted = NIL, *added = NIL;
+	List			*shmoids = NIL;
+	Oid				*coOids, *dnOids, *allOids, nodeoid;
+	int				numDNodes;
+	int				i, numCoords, total_nodes;
+	NodeDefinition	*nodeDef;
+	PGXCNodeHandle	*handle;
+	bool			res = true;
+
+	HandlesRefreshPending = false;
+
+	PgxcNodeGetOids(&coOids, &dnOids, &numCoords, &numDNodes, false);
+
+	total_nodes = numCoords + numDNodes;
+	if (total_nodes > 0)
+	{
+		allOids = (Oid *)palloc(total_nodes * sizeof(Oid));
+
+		for (i = 0; i < numCoords; i++)
+			allOids[i] = coOids[i];
+
+		for (i = 0; i + numCoords < total_nodes; i++)
+			allOids[i + numCoords] = dnOids[i];
+	}
+
+	LWLockAcquire(NodeTableLock, LW_SHARED);
+	for (i = 0; i < total_nodes; i++)
+	{
+		int nid;
+		Oid nodeoid;
+		char ntype = PGXC_NODE_NONE;
+
+		nodeoid = allOids[i];
+		shmoids = lappend_oid(shmoids, nodeoid);
+
+		nodeDef = PgxcNodeGetDefinition(nodeoid);
+		/*
+		 * identify an entry with this nodeoid. If found
+		 * compare the name/host/port entries. If the name is
+		 * same and other info is different, it's an ALTER.
+		 * If the local entry does not exist in the shmem, it's
+		 * a DELETE. If the entry from shmem does not exist
+		 * locally, it's an ADDITION
+		 */
+		nid = PGXCNodeGetNodeId(nodeoid, &ntype);
+
+		if (nid == -1)
+		{
+			/* a new node has been added to the shmem */
+			added = lappend_oid(added, nodeoid);
+			elog(LOG, "Node added: name (%s) host (%s) port (%d)",
+				 NameStr(nodeDef->nodename), NameStr(nodeDef->nodehost),
+				 nodeDef->nodeport);
+		}
+		else
+		{
+			if (ntype == PGXC_NODE_COORDINATOR)
+				handle = &co_handles[nid];
+			else if (ntype == PGXC_NODE_DATANODE)
+				handle = &dn_handles[nid];
+			else
+				elog(ERROR, "Node with non-existent node type!");
+
+			/*
+			 * compare name, host, port to see if this node
+			 * has been ALTERed
+			 */
+			if (strncmp(handle->nodename, NameStr(nodeDef->nodename), NAMEDATALEN)
+				!= 0 ||
+				strncmp(handle->nodehost, NameStr(nodeDef->nodehost), NAMEDATALEN)
+				!= 0 ||
+				handle->nodeport != nodeDef->nodeport)
+			{
+				elog(LOG, "Node altered: old name (%s) old host (%s) old port (%d)"
+						" new name (%s) new host (%s) new port (%d)",
+					 handle->nodename, handle->nodehost, handle->nodeport,
+					 NameStr(nodeDef->nodename), NameStr(nodeDef->nodehost),
+					 nodeDef->nodeport);
+				altered = lappend_oid(altered, nodeoid);
+			}
+			/* else do nothing */
+		}
+		pfree(nodeDef);
+	}
+
+	/*
+	 * Any entry in backend area but not in shmem means that it has
+	 * been deleted
+	 */
+	for (i = 0; i < NumCoords; i++)
+	{
+		handle = &co_handles[i];
+		nodeoid = handle->nodeoid;
+		if (!list_member_oid(shmoids, nodeoid))
+		{
+			deleted = lappend_oid(deleted, nodeoid);
+			elog(LOG, "Node deleted: name (%s) host (%s) port (%d)",
+				 handle->nodename, handle->nodehost, handle->nodeport);
+		}
+	}
+	for (i = 0; i < NumDataNodes; i++)
+	{
+		handle = &dn_handles[i];
+		nodeoid = handle->nodeoid;
+		if (!list_member_oid(shmoids, nodeoid))
+		{
+			deleted = lappend_oid(deleted, nodeoid);
+			elog(LOG, "Node deleted: name (%s) host (%s) port (%d)",
+				 handle->nodename, handle->nodehost, handle->nodeport);
+		}
+	}
+	LWLockRelease(NodeTableLock);
+
+	/* Release palloc'ed memory */
+	pfree(coOids);
+	pfree(dnOids);
+	pfree(allOids);
+
+	if (deleted != NIL || added != NIL)
+	{
+		elog(LOG, "Nodes added/deleted. Reload needed!");
+		res = false;
+	}
+
+	if (altered == NIL)
+	{
+		elog(LOG, "No nodes altered. Returning");
+		res = true;
+	}
+	else
+		PgxcNodeRefreshBackendHandlesShmem(altered);
+
+	list_free(shmoids);
+	list_free(altered);
+	list_free(added);
+	list_free(deleted);
+	return res;
+}
+
 void
 PGXCNodeSetConnectionState(PGXCNodeHandle *handle, DNConnectionState new_state)
 {
 	elog(DEBUG5, "Changing connection state for node %s, old state %d, "
 			"new state %d", handle->nodename, handle->state, new_state);
 	handle->state = new_state;
+}
+
+/*
+ * Do a "Diff" of backend NODE metadata and the one present in catalog
+ *
+ * We do this in order to identify if we should do a destructive
+ * cleanup or just invalidation of some specific handles
+ */
+bool
+PgxcNodeDiffBackendHandles(List **nodes_alter,
+			   List **nodes_delete, List **nodes_add)
+{
+	Relation rel;
+	HeapScanDesc scan;
+	HeapTuple   tuple;
+	int	i;
+	List *altered = NIL, *added = NIL, *deleted = NIL;
+	List *catoids = NIL;
+	PGXCNodeHandle *handle;
+	Oid	nodeoid;
+	bool res = true;
+
+	LWLockAcquire(NodeTableLock, LW_SHARED);
+
+	rel = heap_open(PgxcNodeRelationId, AccessShareLock);
+	scan = heap_beginscan(rel, SnapshotSelf, 0, NULL);
+	while ((tuple = heap_getnext(scan, ForwardScanDirection)) != NULL)
+	{
+		Form_pgxc_node  nodeForm = (Form_pgxc_node) GETSTRUCT(tuple);
+		int nid;
+		Oid nodeoid;
+		char ntype = PGXC_NODE_NONE;
+
+		nodeoid = HeapTupleGetOid(tuple);
+		catoids = lappend_oid(catoids, nodeoid);
+
+		/*
+		 * identify an entry with this nodeoid. If found
+		 * compare the name/host/port entries. If the name is
+		 * same and other info is different, it's an ALTER.
+		 * If the local entry does not exist in the catalog, it's
+		 * a DELETE. If the entry from catalog does not exist
+		 * locally, it's an ADDITION
+		 */
+		nid = PGXCNodeGetNodeId(nodeoid, &ntype);
+
+		if (nid == -1)
+		{
+			/* a new node has been added to the catalog */
+			added = lappend_oid(added, nodeoid);
+			elog(LOG, "Node added: name (%s) host (%s) port (%d)",
+				 NameStr(nodeForm->node_name), NameStr(nodeForm->node_host),
+				 nodeForm->node_port);
+		}
+		else
+		{
+			if (ntype == PGXC_NODE_COORDINATOR)
+				handle = &co_handles[nid];
+			else if (ntype == PGXC_NODE_DATANODE)
+				handle = &dn_handles[nid];
+			else
+				elog(ERROR, "Node with non-existent node type!");
+
+			/*
+			 * compare name, host, port to see if this node
+			 * has been ALTERed
+			 */
+			if (strncmp(handle->nodename, NameStr(nodeForm->node_name), NAMEDATALEN)
+				!= 0 ||
+				strncmp(handle->nodehost, NameStr(nodeForm->node_host), NAMEDATALEN)
+				!= 0 ||
+				handle->nodeport != nodeForm->node_port)
+			{
+				elog(LOG, "Node altered: old name (%s) old host (%s) old port (%d)"
+						" new name (%s) new host (%s) new port (%d)",
+					 handle->nodename, handle->nodehost, handle->nodeport,
+					 NameStr(nodeForm->node_name), NameStr(nodeForm->node_host),
+					 nodeForm->node_port);
+				/*
+				 * If this node itself is being altered, then we need to
+				 * resort to a reload. Check so..
+				 */
+				if (pg_strcasecmp(PGXCNodeName,
+								  NameStr(nodeForm->node_name)) == 0)
+				{
+					res = false;
+				}
+				altered = lappend_oid(altered, nodeoid);
+			}
+			/* else do nothing */
+		}
+	}
+	heap_endscan(scan);
+
+	/*
+	 * Any entry in backend area but not in catalog means that it has
+	 * been deleted
+	 */
+	for (i = 0; i < NumCoords; i++)
+	{
+		handle = &co_handles[i];
+		nodeoid = handle->nodeoid;
+		if (!list_member_oid(catoids, nodeoid))
+		{
+			deleted = lappend_oid(deleted, nodeoid);
+			elog(LOG, "Node deleted: name (%s) host (%s) port (%d)",
+				 handle->nodename, handle->nodehost, handle->nodeport);
+		}
+	}
+	for (i = 0; i < NumDataNodes; i++)
+	{
+		handle = &dn_handles[i];
+		nodeoid = handle->nodeoid;
+		if (!list_member_oid(catoids, nodeoid))
+		{
+			deleted = lappend_oid(deleted, nodeoid);
+			elog(LOG, "Node deleted: name (%s) host (%s) port (%d)",
+				 handle->nodename, handle->nodehost, handle->nodeport);
+		}
+	}
+	heap_close(rel, AccessShareLock);
+	LWLockRelease(NodeTableLock);
+
+	if (nodes_alter)
+		*nodes_alter = altered;
+	if (nodes_delete)
+		*nodes_delete = deleted;
+	if (nodes_add)
+		*nodes_add = added;
+
+	if (catoids)
+		list_free(catoids);
+
+	return res;
+}
+
+/*
+ * Refresh specific backend handles associated with
+ * nodes in the "nodes_alter" list below
+ *
+ * The handles are refreshed using shared memory
+ */
+void
+PgxcNodeRefreshBackendHandlesShmem(List *nodes_alter)
+{
+	ListCell *lc;
+	Oid nodeoid;
+	int nid;
+	PGXCNodeHandle *handle = NULL;
+
+	foreach(lc, nodes_alter)
+	{
+		char ntype = PGXC_NODE_NONE;
+		NodeDefinition *nodedef;
+
+		nodeoid = lfirst_oid(lc);
+		nid = PGXCNodeGetNodeId(nodeoid, &ntype);
+
+		if (nid == -1)
+			elog(ERROR, "Looks like node metadata changed again");
+		else
+		{
+			if (ntype == PGXC_NODE_COORDINATOR)
+				handle = &co_handles[nid];
+			else if (ntype == PGXC_NODE_DATANODE)
+				handle = &dn_handles[nid];
+			else
+				elog(ERROR, "Node with non-existent node type!");
+		}
+
+		/*
+		 * Update the local backend handle data with data from catalog
+		 * Free the handle first..
+		 */
+		pgxc_node_free(handle);
+		elog(LOG, "Backend (%u), Node (%s) updated locally",
+			 MyBackendId, handle->nodename);
+		nodedef = PgxcNodeGetDefinition(nodeoid);
+		strncpy(handle->nodename, NameStr(nodedef->nodename), NAMEDATALEN);
+		strncpy(handle->nodehost, NameStr(nodedef->nodehost), NAMEDATALEN);
+		handle->nodeport = nodedef->nodeport;
+		pfree(nodedef);
+	}
+	return;
+}
+
+void
+HandlePoolerMessages(void)
+{
+	if (HandlesRefreshPending)
+	{
+		DoRefreshRemoteHandles();
+
+		elog(LOG, "Backend (%u), doing handles refresh",
+			 MyBackendId);
+	}
+	return;
 }

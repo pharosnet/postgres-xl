@@ -18416,7 +18416,7 @@ SELECT (pg_stat_file('filename')).modification;
         <literal><function>pgxc_pool_reload()</function></literal>
        </entry>
        <entry><type>boolean</type></entry>
-       <entry>Reload connection data cached in pooler and reload sessions in server</entry>
+       <entry>Refresh or reload connection data cached in pooler and reload sessions in server</entry>
       </row>
      </tbody>
     </tgroup>
@@ -18436,11 +18436,18 @@ SELECT (pg_stat_file('filename')).modification;
     <primary>pgxc_pool_reload</primary>
    </indexterm>
    <para>
-    <function>pgxc_pool_reload</> reloads connection data cached in pooler from
+    <function>pgxc_pool_reload</> attempts to identify if metadata about nodes was added,
+     deleted or altered. If metadata was only altered then it does a refresh of the
+    connection data by selectively cleaning up that specific node's connections from the
+    pooler and from all backends. Thus connections to nodes that are not altered are
+    retained in this case.
+    
+    However, if nodes were added or deleted then it resorts to
+    a more destructive reload operation. It reloads connection data cached in pooler from
     <link linkend="catalog-pgxc-node"><structname>pgxc_node</structname></link> catalog
     and reloads all the information info cached in pooler. All the active transactions
     are aborted and all existing pooler connections are dropped. This results in having
-    all the temporary and prepared objects dropped on remote and local node for session.
+    all the temporary and prepared objects dropped on remote and local nodes for the session.
    </para>
 
    <para>

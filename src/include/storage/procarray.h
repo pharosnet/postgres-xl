@@ -51,7 +51,7 @@ extern void SetGlobalSnapshotData(TransactionId xmin, TransactionId xmax, int xc
 		TransactionId *xip,
 		SnapshotSource source);
 extern void UnsetGlobalSnapshotData(void);
-extern void ReloadConnInfoOnBackends(void);
+extern void ReloadConnInfoOnBackends(bool refresh_only);
 #endif /* PGXC */
 extern void ProcArrayInitRecovery(TransactionId initializedUptoXID);
 extern void ProcArrayApplyRecoveryInfo(RunningTransactions running);

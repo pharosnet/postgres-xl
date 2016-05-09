@@ -3419,6 +3419,9 @@ ProcessInterrupts(void)
 
 	if (ParallelMessagePending)
 		HandleParallelMessages();
+
+	if (PoolerMessagesPending())
+		HandlePoolerMessages();
 }
 
 

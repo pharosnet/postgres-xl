@@ -43,6 +43,7 @@ typedef enum
 	PROCSIG_NOTIFY_INTERRUPT,	/* listen/notify interrupt */
 #ifdef PGXC
 	PROCSIG_PGXCPOOL_RELOAD,	/* abort current transaction and reconnect to pooler */
+	PROCSIG_PGXCPOOL_REFRESH,	/* refresh local view of connection handles */
 #endif
 	PROCSIG_PARALLEL_MESSAGE,	/* message from cooperating parallel backend */
 

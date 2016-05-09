@@ -32,9 +32,15 @@
 #define POOL_CHECK_SUCCESS					0
 #define POOL_CHECK_FAILED					1
 
+/* Results for pooler connection info refresh */
+#define POOL_REFRESH_SUCCESS				0
+#define POOL_REFRESH_FAILED					1
+
 void CleanConnection(CleanConnStmt *stmt);
 void DropDBCleanConnection(char *dbname);
 
-/* Handle pooler connection reload when signaled by SIGUSR1 */
+/* Handle pooler connection reload/refresh when signaled by SIGUSR1 */
 void HandlePoolerReload(void);
+void HandlePoolerRefresh(void);
+bool PgxcNodeRefresh(void);
 #endif
