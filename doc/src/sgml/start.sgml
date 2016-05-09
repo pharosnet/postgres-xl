@@ -250,15 +250,15 @@
 <prompt>$</prompt> <userinput>export dataDirRoot=$HOME/DATA/pgxl/nodes</userinput>
 <prompt>$</prompt> <userinput>mkdir $HOME/pgxc_ctl</userinput>
 <prompt>$</prompt> <userinput>pgxc_ctl</userinput>
-Installing pgxc_ctl_bash script as /Users/nikhils/pgxc_ctl/pgxc_ctl_bash.
-Installing pgxc_ctl_bash script as /Users/nikhils/pgxc_ctl/pgxc_ctl_bash.
-Reading configuration using /Users/nikhils/pgxc_ctl/pgxc_ctl_bash --home
-/Users/nikhils/pgxc_ctl --configuration
-/Users/nikhils/pgxc_ctl/pgxc_ctl.conf
+Installing pgxc_ctl_bash script as /Users/postgres/pgxc_ctl/pgxc_ctl_bash.
+Installing pgxc_ctl_bash script as /Users/postgres/pgxc_ctl/pgxc_ctl_bash.
+Reading configuration using /Users/postgres/pgxc_ctl/pgxc_ctl_bash --home
+/Users/postgres/pgxc_ctl --configuration
+/Users/postgres/pgxc_ctl/pgxc_ctl.conf
 Finished reading configuration.
    ******** PGXC_CTL START ***************
 
-   Current directory: /Users/nikhils/pgxc_ctl
+   Current directory: /Users/postgres/pgxc_ctl
 <prompt>PGXC$ </prompt> <userinput>prepare config empty</userinput>
 <prompt>PGXC$ </prompt> <userinput>exit</userinput>
 </screen>
