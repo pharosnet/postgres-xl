@@ -3016,6 +3016,8 @@ regression_main(int argc, char *argv[], init_function ifunc, test_function tfunc
 #ifndef PGXC
 		FILE	   *pg_conf;
 #endif
+		const char *env_wait;
+		int			wait_seconds;
 
 		/*
 		 * Prepare the temp instance
@@ -3206,11 +3208,23 @@ regression_main(int argc, char *argv[], init_function ifunc, test_function tfunc
 #endif
 
 		/*
-		 * Wait till postmaster is able to accept connections (normally only a
-		 * second or so, but Cygwin is reportedly *much* slower).  Don't wait
-		 * forever, however.
+		 * Wait till postmaster is able to accept connections; normally this
+		 * is only a second or so, but Cygwin is reportedly *much* slower, and
+		 * test builds using Valgrind or similar tools might be too.  Hence,
+		 * allow the default timeout of 60 seconds to be overridden from the
+		 * PGCTLTIMEOUT environment variable.
 		 */
-		for (i = 0; i < 60; i++)
+		env_wait = getenv("PGCTLTIMEOUT");
+		if (env_wait != NULL)
+		{
+			wait_seconds = atoi(env_wait);
+			if (wait_seconds <= 0)
+				wait_seconds = 60;
+		}
+		else
+			wait_seconds = 60;
+
+		for (i = 0; i < wait_seconds; i++)
 		{
 
 #ifdef PGXC
@@ -3247,7 +3261,7 @@ regression_main(int argc, char *argv[], init_function ifunc, test_function tfunc
 
 			pg_usleep(1000000L);
 		}
-		if (i >= 60)
+		if (i >= wait_seconds)
 		{
 #ifdef PGXC
 			/* If one node fails, all fail */
@@ -3256,7 +3270,8 @@ regression_main(int argc, char *argv[], init_function ifunc, test_function tfunc
 			kill_node(PGXC_DATANODE_1);
 			kill_node(PGXC_DATANODE_2);
 #else
-			fprintf(stderr, _("\n%s: postmaster did not respond within 60 seconds\nExamine %s/log/postmaster.log for the reason\n"), progname, outputdir);
+			fprintf(stderr, _("\n%s: postmaster did not respond within %d seconds\nExamine %s/log/postmaster.log for the reason\n"),
+					progname, wait_seconds, outputdir);
 
 			/*
 			 * If we get here, the postmaster is probably wedged somewhere in
