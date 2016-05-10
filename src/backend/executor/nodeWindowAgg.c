@@ -2156,6 +2156,9 @@ initialize_peragg(WindowAggState *winstate, WindowFunc *wfunc,
 		!contain_volatile_functions((Node *) wfunc))
 	{
 		peraggstate->transfn_oid = transfn_oid = aggform->aggmtransfn;
+#ifdef XCP
+		peraggstate->collectfn_oid = collectfn_oid = InvalidOid;
+#endif
 		peraggstate->invtransfn_oid = invtransfn_oid = aggform->aggminvtransfn;
 		peraggstate->finalfn_oid = finalfn_oid = aggform->aggmfinalfn;
 		finalextra = aggform->aggmfinalextra;
