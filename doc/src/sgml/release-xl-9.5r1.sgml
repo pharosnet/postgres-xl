@@ -1,6 +1,147 @@
 <!-- doc/src/sgml/release-9.5.sgml -->
 <!-- See header comment in release.sgml about typical markup -->
 
+ <sect1 id="release-xl-9-5r1.1">
+  <title>Postgres-XL Release 9.5r1.1</title>
+
+  <note>
+  <title>Release Date</title>
+  <simpara>2016-05-12</simpara>
+  </note>
+
+  <para>
+   This release contains a variety of fixes from Postgres-XL 9.5r1.
+   For information about new features in the Postgres-XL 9.5r1 major release, see
+   <xref linkend="release-xl-9-5r1">.
+  </para>
+  <para>
+   This release also incorporates all the bug and security fixes in PostgreSQL
+   9.5.3 release.
+  </para>
+  <sect2>
+   <title>Migration to Version Postgres-XL 9.5r1.1</title>
+
+   <para>
+    A dump/restore is not required for those running Postgres-XL 9.5r1
+   </para>
+  </sect2>
+
+  <sect2>
+   <title>Changes</title>
+   <itemizedlist>
+    <listitem>
+     <para>
+      Fix a nasty bug that was zeroing out clog and subtrans pages, thus
+      causing various sorts of data corruptions.
+     </para>
+     <para>
+      The bug dates back to the XC days, but became prominent in XL because of
+      certain recent changes, especially the addition of cluster monitor process. In
+      Postgres-XL, a node may not see all the XIDs and hence clog/subtrans log must
+      be extended whenever a new XID crosses the previously seen page boundary. We do
+      this by comparing the pageno where the new XID maps with the latest_page_no as
+      stored in the shared SLRU data structure.  But to handle XID wrap-arounds, we
+      added a check for difference in number of pages to be less than
+      CLOG_WRAP_CHECK_DELTA, which was incorrectly defined as (2^30 /
+              CLOG_XACTS_PER_PAGE). Note that "^" is a logical XOR operator in C and hence
+      this was returned a very small number of 28, thus causing incorrect zeroing of
+      pages if ExtendCLOG is called with an XID which is older than what 28 clog
+      pages can hold. All such transactions would suddenly be marked as aborted,
+      resulting in removal of perfectly valid tuples.
+     </para>
+     <para>
+      This bug is now fixed.
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      Extend CLOG and Subtrans Log correctly when a new XID is received from
+      the remote node.
+     </para>
+     <para>
+      When a datanode assigns an XID for a running transaction, it sends it
+      back to the coordinator. If the XID maps to a new CLOG page, it must extend the
+      CLOG to include the page. 
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      Correct shared memory size calculation for Shared Queue hashtable.
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      Add a reference count mechanism for Shared Queue management.
+     </para>
+     <para>
+      When a process acquires or binds to a Shared Queue, reference count is
+      incremented and decremented when the process releases or unbinds from the
+      queue. The new mechanism ensures that the queue is returned to the free list
+      once all users have finished their work.
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      Interprete <varname>shared_queue_size</varname> to be per datanode value.
+     </para>
+     <para>
+      Earlier, each consumer of a shared queue would get
+      <varname>shared_queue_size</varname>/<varname>num_consumers</varname> kilobytes
+      of shared memory. So the amount of shared memory available to each consumer
+      greatly depends on the number of datanodes in the cluster, thus making it
+      difficult to choose a default value. So we now treat the
+      <varname>shared_queue_size</varname> as a per datanode setting and compute the
+      total size by multiplying it with the number of max datanodes as configured by
+      <varname>max_datanodes</varname>.
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      Set <varname>shared_queues</varname> to at least 1/4th of
+      <varname>max_connections</varname>.
+     </para>
+     <para>
+      This parameter is highly dependent on the number of concurrent sessions
+      and in the worst case, every session may use more than one shared queues. While
+      the user should set this value high enough depending on the concurrent
+      distributed queries, we now automatically set this to at least 1/4th of the
+      <varname>max_connections</varname> to avoid running with too small value.
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      Fix a memory leak in the GTM proxy.
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      Properly deallocate prepared statements on the remote node when user makes
+      such request.
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      Avoid protocol breakage when pooler fails to open connection to one or
+      more nodes. 
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      Add a mechanism to selectively refresh pooler information when only
+      connection options, such as hostname/port changes for a node.
+     </para> 
+     <para> 
+      This allows us to retain connections to all other nodes in the cluster and
+      just recreate connections to the node whose connection information is changed.
+      This will be especially handy while dealing with datanode/coordinator failover
+     </para> 
+    </listitem>
+   </itemizedlist>
+
+  </sect2>
+
+ </sect1>
+ 
  <sect1 id="release-xl-9-5r1">
   <title>Postgres-XL Release 9.5r1</title>
 
