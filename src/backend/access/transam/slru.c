@@ -410,17 +410,6 @@ SimpleLruReadPage(SlruCtl ctl, int pageno, bool write_ok,
 		/* Do the read */
 		ok = SlruPhysicalReadPage(ctl, pageno, slotno);
 
-		/*
-		 * If we failed, it may be because we tried to read the status
-		 * before the page was created. Retry once
-		 */
-		if (!ok && slru_errcause == SLRU_READ_FAILED)
-		{
-			ExtendLogs(xid);
-			/* Retry */
-			ok = SlruPhysicalReadPage(ctl, pageno, slotno);
-		}
-
 		/* Set the LSNs for this newly read-in page to zero */
 		SimpleLruZeroLSNs(ctl, slotno);
 
