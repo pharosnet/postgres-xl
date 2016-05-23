@@ -2382,10 +2382,13 @@ grow_pool(DatabasePool *dbPool, Oid node)
 		slot->conn = PGXCNodeConnect(nodePool->connstr);
 		if (!PGXCNodeConnected(slot->conn))
 		{
-			destroy_slot(slot);
 			ereport(LOG,
 					(errcode(ERRCODE_CONNECTION_FAILURE),
-					 errmsg("failed to connect to Datanode")));
+					 errmsg("failed to connect to node, connection string (%s),"
+						  " connection error (%s)",
+						  nodePool->connstr,
+						  PQerrorMessage(slot->conn))));
+			destroy_slot(slot);
 			/*
 			 * If we failed to connect probably number of connections on the
 			 * target node reached max_connections. Try and release idle
