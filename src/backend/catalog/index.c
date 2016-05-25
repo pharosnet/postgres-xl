@@ -52,6 +52,7 @@
 #include "nodes/nodeFuncs.h"
 #include "optimizer/clauses.h"
 #include "parser/parser.h"
+#include "pgxc/pgxc.h"
 #include "storage/bufmgr.h"
 #include "storage/lmgr.h"
 #include "storage/predicate.h"
@@ -1925,21 +1926,35 @@ index_update_stats(Relation rel,
 		else	/* don't bother for indexes */
 			relallvisible = 0;
 
-		if (rd_rel->relpages != (int32) relpages)
-		{
-			rd_rel->relpages = (int32) relpages;
-			dirty = true;
-		}
-		if (rd_rel->reltuples != (float4) reltuples)
-		{
-			rd_rel->reltuples = (float4) reltuples;
-			dirty = true;
-		}
-		if (rd_rel->relallvisible != (int32) relallvisible)
-		{
-			rd_rel->relallvisible = (int32) relallvisible;
-			dirty = true;
-		}
+#ifdef XCP
+			/*
+			 * Coordinator stats are populated using data from remote
+			 * datanodes. Hence we must not use local information to set those
+			 * stats
+			 */
+		if (!IS_PGXC_COORDINATOR || !rel->rd_locator_info)
+#endif
+			if (rd_rel->relpages != (int32) relpages)
+			{
+				rd_rel->relpages = (int32) relpages;
+				dirty = true;
+			}
+#ifdef XCP
+		if (!IS_PGXC_COORDINATOR || !rel->rd_locator_info)
+#endif
+			if (rd_rel->reltuples != (float4) reltuples)
+			{
+				rd_rel->reltuples = (float4) reltuples;
+				dirty = true;
+			}
+#ifdef XCP
+		if (!IS_PGXC_COORDINATOR || !rel->rd_locator_info)
+#endif
+			if (rd_rel->relallvisible != (int32) relallvisible)
+			{
+				rd_rel->relallvisible = (int32) relallvisible;
+				dirty = true;
+			}
 	}
 
 	/*

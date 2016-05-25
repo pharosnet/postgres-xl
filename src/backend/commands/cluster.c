@@ -36,6 +36,7 @@
 #include "commands/vacuum.h"
 #include "miscadmin.h"
 #include "optimizer/planner.h"
+#include "pgxc/pgxc.h"
 #include "storage/bufmgr.h"
 #include "storage/lmgr.h"
 #include "storage/predicate.h"
@@ -1261,6 +1262,13 @@ swap_relation_files(Oid r1, Oid r2, bool target_is_pg_class,
 		relform1->relminmxid = cutoffMulti;
 	}
 
+#ifdef XCP
+	/*
+	 * Don't touch the stats on the coordinator since they may not reflect the
+	 * true cluster-wide information
+	 */
+	if (!IS_PGXC_COORDINATOR || !relRelation->rd_locator_info)
+#endif
 	/* swap size statistics too, since new rel has freshly-updated stats */
 	{
 		int32		swap_pages;
