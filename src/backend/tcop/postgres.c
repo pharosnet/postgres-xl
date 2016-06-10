@@ -1755,6 +1755,9 @@ exec_plan_message(const char *query_string,	/* source of the query */
 	Oid		   *paramTypes = NULL;
 	CachedPlanSource *psrc;
 
+	/* coord name + remote node + whatever */
+	static char		commandTag[NAMEDATALEN + NAMEDATALEN + 128];
+
 	/* Statement name should not be empty */
 	Assert(stmt_name[0]);
 
@@ -1819,7 +1822,15 @@ exec_plan_message(const char *query_string,	/* source of the query */
 	/* If we got a cancel signal, quit */
 	CHECK_FOR_INTERRUPTS();
 
-	psrc = CreateCachedPlan(NULL, query_string, stmt_name, "REMOTE SUBPLAN");
+	snprintf(commandTag, sizeof (commandTag),
+			"REMOTE SUBPLAN (%s:%d) (%c:%s:%d)",
+			MyCoordName, MyCoordPid,
+			remoteConnType == REMOTE_CONN_APP ? 'A' : 
+				remoteConnType == REMOTE_CONN_DATANODE ? 'D' :
+				remoteConnType == REMOTE_CONN_COORD ? 'C' : 'U',
+			parentPGXCNode, parentPGXCPid
+			);
+	psrc = CreateCachedPlan(NULL, query_string, stmt_name, commandTag);
 
 	CompleteCachedPlan(psrc, NIL, NULL, paramTypes, numParams, NULL, NULL,
 					   CURSOR_OPT_GENERIC_PLAN, false);
