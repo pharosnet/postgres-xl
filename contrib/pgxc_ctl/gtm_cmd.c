@@ -58,7 +58,7 @@ cmd_t *prepare_initGtmMaster(bool stop)
 	remoteDirCheck[0] = '\0';
 	if (!forceInit)
 	{
-		sprintf(remoteDirCheck, "set -x; if [ '$(ls -A %s 2> /dev/null)' ]; then echo 'ERROR: "
+		sprintf(remoteDirCheck, "if [ '$(ls -A %s 2> /dev/null)' ]; then echo 'ERROR: "
 				"target directory (%s) exists and not empty. "
 				"Skip GTM initilialization'; exit; fi;",
 				sval(VAR_gtmMasterDir),
