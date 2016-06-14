@@ -58,9 +58,9 @@ cmd_t *prepare_initGtmMaster(bool stop)
 	remoteDirCheck[0] = '\0';
 	if (!forceInit)
 	{
-		sprintf(remoteDirCheck, "if [ \"$(ls -A %s 2> /dev/null)\" ]; then echo 'ERROR: "
+		sprintf(remoteDirCheck, "set -x; if [ '$(ls -A %s 2> /dev/null)' ]; then echo 'ERROR: "
 				"target directory (%s) exists and not empty. "
-				"Skip GTM initilialization'; exit; fi",
+				"Skip GTM initilialization'; exit; fi;",
 				sval(VAR_gtmMasterDir),
 				sval(VAR_gtmMasterDir)
 			   );
@@ -69,7 +69,7 @@ cmd_t *prepare_initGtmMaster(bool stop)
 	/* Kill current gtm, bild work directory and run initgtm */
 	cmdInitGtmMaster = initCmd(sval(VAR_gtmMasterServer));
 	snprintf(newCommand(cmdInitGtmMaster), MAXLINE,
-			 "%s;"
+			 "%s"
 			 "[ -f %s/gtm.pid ] && gtm_ctl -D %s -m immediate -Z gtm stop;"
 			 "rm -rf %s;"
 			 "mkdir -p %s;"
@@ -567,7 +567,6 @@ cmd_t *prepare_stopGtmMaster(void)
 	cmdGtmCtl = initCmd(sval(VAR_gtmMasterServer));
 	snprintf(newCommand(cmdGtmCtl), MAXLINE,
 			 "gtm_ctl stop -Z gtm -D %s",
-			 sval(VAR_gtmMasterDir),
 			 sval(VAR_gtmMasterDir));
 	return(cmdGtmCtl);
 }
@@ -1043,6 +1042,7 @@ cmd_t *prepare_initGtmProxy(char *nodeName)
 	FILE *f;
 	char timestamp[MAXTOKEN+1];
 	char **fileList = NULL;
+	char remoteDirCheck[MAXPATH * 2 + 128];
 
 	if ((idx = gtmProxyIdx(nodeName)) < 0)
 	{
@@ -1050,13 +1050,25 @@ cmd_t *prepare_initGtmProxy(char *nodeName)
 		return NULL;
 	}
 
+	remoteDirCheck[0] = '\0';
+	if (!forceInit)
+	{
+		sprintf(remoteDirCheck, "if [ '$(ls -A %s 2> /dev/null)' ]; then echo 'ERROR: "
+				"target directory (%s) exists and not empty. "
+				"Skip GTM proxy initilialization'; exit; fi;",
+				aval(VAR_gtmProxyDirs)[idx],
+				aval(VAR_gtmProxyDirs)[idx]);
+	}
+
 	/* Build directory and run initgtm */
 	cmdInitGtm = initCmd(aval(VAR_gtmProxyServers)[idx]);
 	snprintf(newCommand(cmdInitGtm), MAXLINE,
+			 "%s"
 			 "[ -f %s/gtm_proxy.pid ] && gtm_ctl -D %s -m immediate -Z gtm_proxy stop;"
 			 "rm -rf %s;"
 			 "mkdir -p %s;"
 			 "PGXC_CTL_SILENT=1 initgtm -Z gtm_proxy -D %s",
+			 remoteDirCheck,
 			 aval(VAR_gtmProxyDirs)[idx],
 			 aval(VAR_gtmProxyDirs)[idx],
 			 aval(VAR_gtmProxyDirs)[idx],

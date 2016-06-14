@@ -82,9 +82,9 @@ cmd_t *prepare_initCoordinatorMaster(char *nodeName)
 	remoteDirCheck[0] = '\0';
 	if (!forceInit)
 	{
-		sprintf(remoteDirCheck, "if [ \"$(ls -A %s 2> /dev/null)\" ]; then echo 'ERROR: "
+		sprintf(remoteDirCheck, "if [ '$(ls -A %s 2> /dev/null)' ]; then echo 'ERROR: "
 				"target directory (%s) exists and not empty. "
-				"Skip Coordinator initilialization'; exit; fi",
+				"Skip Coordinator initilialization'; exit; fi;",
 				aval(VAR_coordMasterDirs)[jj],
 				aval(VAR_coordMasterDirs)[jj]
 			   );
@@ -92,7 +92,7 @@ cmd_t *prepare_initCoordinatorMaster(char *nodeName)
 
 	cmd = cmdInitdb = initCmd(aval(VAR_coordMasterServers)[jj]);
 	snprintf(newCommand(cmdInitdb), MAXLINE, 
-			 "%s;"
+			 "%s"
 			 "rm -rf %s;"
 			 "mkdir -p %s;"
 			 "PGXC_CTL_SILENT=1 initdb --nodename %s -D %s",
@@ -269,7 +269,7 @@ cmd_t *prepare_initCoordinatorSlave(char *nodeName)
 	remoteDirCheck[0] = '\0';
 	if (!forceInit)
 	{
-		sprintf(remoteDirCheck, "if [ \"$(ls -A %s 2> /dev/null)\" ]; then echo 'ERROR: "
+		sprintf(remoteDirCheck, "if [ '$(ls -A %s 2> /dev/null)' ]; then echo 'ERROR: "
 				"target directory (%s) exists and not empty. "
 				"Skip Coordinator slave initilialization'; exit; fi;",
 				aval(VAR_coordSlaveDirs)[idx],

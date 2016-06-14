@@ -65,6 +65,7 @@ cmd_t *prepare_initDatanodeMaster(char *nodeName)
 	FILE *f;
 	char timeStamp[MAXTOKEN+1];
 	char remoteDirCheck[MAXPATH * 2 + 128];
+	char remoteWalDirCheck[MAXPATH * 2 + 128];
 	bool wal;
 
 	if ((idx = datanodeIdx(nodeName)) < 0)
@@ -78,19 +79,20 @@ cmd_t *prepare_initDatanodeMaster(char *nodeName)
 		wal = false;
 
 	remoteDirCheck[0] = '\0';
+	remoteWalDirCheck[0] = '\0';
 	if (!forceInit)
 	{
-		sprintf(remoteDirCheck, "if [ \"$(ls -A %s 2> /dev/null)\" ]; then echo 'ERROR: "
+		sprintf(remoteDirCheck, "if [ '$(ls -A %s 2> /dev/null)' ]; then echo 'ERROR: "
 				"target directory (%s) exists and not empty. "
-				"Skip Datanode initilialization'; exit; fi",
+				"Skip Datanode initilialization'; exit; fi;",
 				aval(VAR_datanodeMasterDirs)[idx],
 				aval(VAR_datanodeMasterDirs)[idx]
 			   );
 		if (wal)
 		{
-			sprintf(remoteDirCheck, "if [ \"$(ls -A %s 2> /dev/null)\" ]; then echo 'ERROR: "
+			sprintf(remoteWalDirCheck, "if [ '$(ls -A %s 2> /dev/null)' ]; then echo 'ERROR: "
 					"target directory (%s) exists and not empty. "
-					"Skip Datanode initilialization'; exit; fi",
+					"Skip Datanode initilialization'; exit; fi;",
 					aval(VAR_datanodeMasterWALDirs)[idx],
 					aval(VAR_datanodeMasterWALDirs)[idx]
 				   );
@@ -101,10 +103,11 @@ cmd_t *prepare_initDatanodeMaster(char *nodeName)
 	/* Build each datanode's initialize command */
 	cmd = cmdInitdb = initCmd(aval(VAR_datanodeMasterServers)[idx]);
 	snprintf(newCommand(cmdInitdb), MAXLINE,
-			 "%s;"
+			 "%s %s"
 			 "rm -rf %s;"
 			 "mkdir -p %s; PGXC_CTL_SILENT=1 initdb --nodename %s %s %s -D %s",
 			 remoteDirCheck,
+			 remoteWalDirCheck,
 			 aval(VAR_datanodeMasterDirs)[idx], aval(VAR_datanodeMasterDirs)[idx],
 			 aval(VAR_datanodeNames)[idx],
 			 wal ? "-X" : "",
@@ -296,9 +299,9 @@ cmd_t *prepare_initDatanodeSlave(char *nodeName)
 	remoteDirCheck[0] = '\0';
 	if (!forceInit)
 	{
-		sprintf(remoteDirCheck, "if [ \"$(ls -A %s 2> /dev/null)\" ]; then echo 'ERROR: "
+		sprintf(remoteDirCheck, "if [ '$(ls -A %s 2> /dev/null)' ]; then echo 'ERROR: "
 				"target directory (%s) exists and not empty. "
-				"Skip Datanode initilialization'; exit; fi",
+				"Skip Datanode initilialization'; exit; fi;",
 				aval(VAR_datanodeSlaveDirs)[idx],
 				aval(VAR_datanodeSlaveDirs)[idx]
 			   );
