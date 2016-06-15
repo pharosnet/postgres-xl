@@ -103,9 +103,7 @@ COMMIT;
 SELECT * FROM temptest;
  col 
 -----
-   1
-   2
-(2 rows)
+(0 rows)
 
 DROP TABLE temptest;
 ---------------------------------------------------
