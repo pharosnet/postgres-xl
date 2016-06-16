@@ -223,26 +223,6 @@ FETCH BACKWARD 2 xl_scroll_cursor1;
 DELETE FROM xl_Pline WHERE CURRENT OF xl_scroll_cursor1;
 COMMIT;
 
---insensitive cursor would be insensitive to updates happening to the table
--- right now it is sensitive which is a bug (34) in Postgres-XL issue tracker sheet. 
-BEGIN;
-declare xl_ins_cursor INSENSITIVE CURSOR for select * from xl_Pline order by slotname desc;
-
-FETCH FIRST xl_ins_cursor;
-FETCH ABSOLUTE 5 xl_ins_cursor;
-update xl_Pline set phonenumber='-503' where slotname = 'PL.029';
-insert into  xl_PLine values ('PL.030', '-367', '', 'PS.first.tb6');
-FETCH FIRST xl_ins_cursor;
-select xl_nodename_from_id(xc_node_id), * from xl_Pline where slotname in ('PL.030', 'PL.029') order by slotname;
-delete from xl_Pline where slotname in ('PL.030');
-FETCH FIRST xl_ins_cursor;
-delete from xl_Pline where slotname in ('PL.029');
-FETCH FIRST xl_ins_cursor;
-insert into  xl_PLine values ('PL.029', '-367', '', 'PS.first.tb6');
-FETCH ALL FROM xl_ins_cursor;
-DELETE FROM xl_Pline WHERE CURRENT OF xl_ins_cursor;
-COMMIT;
-
 --with hold cursor wold be available after the transaction that successfully committed it is gone
 BEGIN;
 

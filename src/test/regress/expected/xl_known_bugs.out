@@ -714,3 +714,40 @@ select pct, count(unique1) from
 (1 row)
 
 ------------------------------------------
+-- Issue #34 - Insensitive cursors
+-- insensitive cursor would be insensitive to updates happening to the table
+-- right now it is sensitive which is a bug (34) in Postgres-XL issue tracker sheet.
+create table xl_PLine (
+    slotname	char(20),
+    phonenumber	char(20),
+    comment	text,
+    backlink	char(20)
+);
+create unique index xl_PLine_n on xl_PLine using btree (slotname bpchar_ops);
+insert into  xl_PLine values ('PL.029', '-502', 'Fax first floor', 'PS.first.ta1');
+insert into  xl_PLine values ('PL.030', '-367', '', 'PS.first.tb6');
+BEGIN;
+declare xl_ins_cur INSENSITIVE CURSOR for select * from xl_Pline order by slotname desc;
+FETCH FIRST xl_ins_cur;
+       slotname       |     phonenumber      | comment |       backlink       
+----------------------+----------------------+---------+----------------------
+ PL.030               | -367                 |         | PS.first.tb6        
+(1 row)
+
+delete from xl_Pline where slotname in ('PL.030');
+FETCH FIRST xl_ins_cur;
+       slotname       |     phonenumber      |     comment     |       backlink       
+----------------------+----------------------+-----------------+----------------------
+ PL.030               | -367                 |         | PS.first.tb6        
+(1 row)
+
+delete from xl_Pline where slotname in ('PL.029');
+FETCH FIRST xl_ins_cur;
+ slotname | phonenumber | comment | backlink 
+----------+-------------+---------+----------
+ PL.030               | -367                 |         | PS.first.tb6        
+(1 row)
+
+COMMIT;
+drop table xl_PLine;
+------------------------------------------
