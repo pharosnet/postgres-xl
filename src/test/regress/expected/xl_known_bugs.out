@@ -693,3 +693,24 @@ SELECT *, (equipment(CAST((h.*) AS hobbies_r))).name FROM hobbies_r h ORDER BY 1
 ------+--------+------
 (0 rows)
 
+------------------------------------------
+-- from tablesample
+select pct, count(unique1) from
+  (values (0),(100)) v(pct),
+  lateral (select * from tenk1 tablesample bernoulli (pct)) ss
+  group by pct;
+ pct | count 
+-----+-------
+ 100 | 10000
+(1 row)
+
+select pct, count(unique1) from
+  (values (0),(100)) v(pct),
+  lateral (select * from tenk1 tablesample system (pct)) ss
+  group by pct;
+ pct | count 
+-----+-------
+ 100 | 10000
+(1 row)
+
+------------------------------------------

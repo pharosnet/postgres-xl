@@ -255,3 +255,19 @@ SELECT name(equipment(ROW('skywalking', 'mer')));
 SELECT *, name(equipment(h.*)) FROM hobbies_r h ORDER BY 1,2,3;
 
 SELECT *, (equipment(CAST((h.*) AS hobbies_r))).name FROM hobbies_r h ORDER BY 1,2,3;
+
+------------------------------------------
+
+-- from tablesample
+
+select pct, count(unique1) from
+  (values (0),(100)) v(pct),
+  lateral (select * from tenk1 tablesample bernoulli (pct)) ss
+  group by pct;
+
+select pct, count(unique1) from
+  (values (0),(100)) v(pct),
+  lateral (select * from tenk1 tablesample system (pct)) ss
+  group by pct;
+
+------------------------------------------

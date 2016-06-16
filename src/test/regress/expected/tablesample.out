@@ -254,22 +254,6 @@ select pct, count(unique1) from
                            Sampling: bernoulli ("*VALUES*".column1)
 (8 rows)
 
-select pct, count(unique1) from
-  (values (0),(100)) v(pct),
-  lateral (select * from tenk1 tablesample bernoulli (pct)) ss
-  group by pct;
- pct | count 
------+-------
-(0 rows)
-
-select pct, count(unique1) from
-  (values (0),(100)) v(pct),
-  lateral (select * from tenk1 tablesample system (pct)) ss
-  group by pct;
- pct | count 
------+-------
-(0 rows)
-
 -- errors
 SELECT id FROM test_tablesample TABLESAMPLE FOOBAR (1);
 ERROR:  tablesample method foobar does not exist

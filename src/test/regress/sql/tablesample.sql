@@ -73,14 +73,6 @@ select pct, count(unique1) from
   (values (0),(100)) v(pct),
   lateral (select * from tenk1 tablesample bernoulli (pct)) ss
   group by pct;
-select pct, count(unique1) from
-  (values (0),(100)) v(pct),
-  lateral (select * from tenk1 tablesample bernoulli (pct)) ss
-  group by pct;
-select pct, count(unique1) from
-  (values (0),(100)) v(pct),
-  lateral (select * from tenk1 tablesample system (pct)) ss
-  group by pct;
 
 -- errors
 SELECT id FROM test_tablesample TABLESAMPLE FOOBAR (1);
