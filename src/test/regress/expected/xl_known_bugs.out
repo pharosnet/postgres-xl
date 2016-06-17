@@ -751,3 +751,45 @@ FETCH FIRST xl_ins_cur;
 COMMIT;
 drop table xl_PLine;
 ------------------------------------------
+-- Issue #38 - complex update
+-- In complex update using FROM list with explicit join, equation clause ‘=’ for integer is not supported
+-- distributed by default by HASH(tmpunique1)
+CREATE TABLE xl_tmp (
+tmpunique1 int4,
+stringu1 name,
+stringu2 name,
+string4 name
+);
+-- distributed by default by HASH(unique1)
+CREATE TABLE xl_onek (
+unique1 int4,
+unique2 int4,
+two int4,
+four int4,
+stringu1 name,
+stringu2 name,
+string4 name
+);
+UPDATE xl_tmp
+   SET stringu1 = xl_onek.stringu1
+   FROM xl_onek
+   WHERE xl_onek.unique1 <= 3 and
+	  xl_onek.unique1 = xl_tmp.tmpunique1;
+UPDATE xl_tmp
+   SET stringu1 = xl_onek.stringu1
+   FROM xl_onek
+   WHERE xl_onek.unique1 = 3 and
+	  xl_onek.unique1 = xl_tmp.tmpunique1;
+UPDATE xl_tmp
+   SET stringu1 = xl_onek.stringu1
+   FROM xl_onek
+   WHERE xl_tmp.tmpunique1 <= 3 and
+	  xl_onek.unique1 = xl_tmp.tmpunique1;
+UPDATE xl_tmp
+   SET stringu1 = xl_onek.stringu1
+   FROM xl_onek
+   WHERE xl_tmp.tmpunique1 = 3 and
+	  xl_onek.unique1 = xl_tmp.tmpunique1;
+drop table xl_tmp;
+drop table xl_onek;
+------------------------------------------
