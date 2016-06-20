@@ -62,23 +62,6 @@ drop table ref_tbl;
 drop table base_tbl;
 --------------------------------------------------
 
--- temp test
--- Test ON COMMIT DELETE ROWS
-
-CREATE TEMP TABLE temptest(col int) ON COMMIT DELETE ROWS;
-
-BEGIN;
-INSERT INTO temptest VALUES (1);
-INSERT INTO temptest VALUES (2);
-
-SELECT * FROM temptest  ORDER BY 1;
-COMMIT;
-
-SELECT * FROM temptest;
-
-DROP TABLE temptest;
----------------------------------------------------
-
 -- from xc_remote test
 
 -- Test for remote DML on different tables

@@ -62,7 +62,7 @@ INSERT INTO temptest VALUES (2);
 SELECT * FROM temptest  ORDER BY 1;
 COMMIT;
 
---SELECT * FROM temptest;
+SELECT * FROM temptest;
 
 DROP TABLE temptest;
 

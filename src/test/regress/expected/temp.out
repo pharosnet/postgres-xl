@@ -60,7 +60,11 @@ SELECT * FROM temptest  ORDER BY 1;
 (2 rows)
 
 COMMIT;
---SELECT * FROM temptest;
+SELECT * FROM temptest;
+ col 
+-----
+(0 rows)
+
 DROP TABLE temptest;
 BEGIN;
 CREATE TEMP TABLE temptest(col) ON COMMIT DELETE ROWS AS SELECT 1;
