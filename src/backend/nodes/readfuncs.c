@@ -239,8 +239,13 @@ set_portable_input(bool value)
 		token = pg_strtok(&length); /* get relname */ \
 		relname = nullable_string(token, length); \
 		if (relname) \
+		{ \
 			relid = get_relname_relid(relname, \
 													NSP_OID(nspname)); \
+			if (!OidIsValid(relid)) \
+				elog(WARNING, "could not find OID for relation %s.%s", nspname,\
+						relname); \
+		} \
 		else \
 			relid = InvalidOid; \
 	} while (0)
