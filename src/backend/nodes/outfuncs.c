@@ -3584,13 +3584,13 @@ _outRangeTblEntry(StringInfo str, const RangeTblEntry *node)
 	switch (node->rtekind)
 	{
 		case RTE_RELATION:
+			WRITE_CHAR_FIELD(relkind);
 #ifdef XCP
 			if (portable_output)
 				WRITE_RELID_FIELD(relid);
 			else
 #endif
 			WRITE_OID_FIELD(relid);
-			WRITE_CHAR_FIELD(relkind);
 			WRITE_NODE_FIELD(tablesample);
 			break;
 		case RTE_SUBQUERY:

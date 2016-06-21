@@ -38,6 +38,7 @@
 #ifdef XCP
 #include "fmgr.h"
 #include "catalog/namespace.h"
+#include "catalog/pg_class.h"
 #include "nodes/plannodes.h"
 #include "pgxc/execRemote.h"
 #include "utils/builtins.h"
@@ -230,7 +231,7 @@ set_portable_input(bool value)
 #define NSP_OID(nspname) LookupNamespaceNoError(nspname)
 
 /* Read relation identifier and lookup the OID */
-#define READ_RELID_INTERNAL(relid) \
+#define READ_RELID_INTERNAL(relid, warn) \
 	do { \
 		char	   *nspname; /* namespace name */ \
 		char	   *relname; /* relation name */ \
@@ -242,7 +243,7 @@ set_portable_input(bool value)
 		{ \
 			relid = get_relname_relid(relname, \
 													NSP_OID(nspname)); \
-			if (!OidIsValid(relid)) \
+			if (!OidIsValid((relid)) && (warn)) \
 				elog(WARNING, "could not find OID for relation %s.%s", nspname,\
 						relname); \
 		} \
@@ -250,11 +251,19 @@ set_portable_input(bool value)
 			relid = InvalidOid; \
 	} while (0)
 
+#define READ_RELID_FIELD_NOWARN(fldname) \
+	do { \
+		Oid relid; \
+		token = pg_strtok(&length);		/* skip :fldname */ \
+		READ_RELID_INTERNAL(relid, false); \
+		local_node->fldname = relid; \
+	} while (0)
+
 #define READ_RELID_FIELD(fldname) \
 	do { \
 		Oid relid; \
 		token = pg_strtok(&length);		/* skip :fldname */ \
-		READ_RELID_INTERNAL(relid); \
+		READ_RELID_INTERNAL(relid, true); \
 		local_node->fldname = relid; \
 	} while (0)
 
@@ -268,7 +277,7 @@ set_portable_input(bool value)
 			for (;;) \
 			{ \
 				Oid relid; \
-				READ_RELID_INTERNAL(relid); \
+				READ_RELID_INTERNAL(relid, true); \
 				local_node->fldname = lappend_oid(local_node->fldname, relid); \
 				token = pg_strtok(&length); \
 				if (token[0] == ')') \
@@ -1941,13 +1950,19 @@ _readRangeTblEntry(void)
 	switch (local_node->rtekind)
 	{
 		case RTE_RELATION:
+			READ_CHAR_FIELD(relkind);
 #ifdef XCP
 			if (portable_input)
-				READ_RELID_FIELD(relid);
+			{
+				if ((local_node->relkind != RELKIND_MATVIEW) &&
+						(local_node->relkind != RELKIND_VIEW))
+					READ_RELID_FIELD(relid);
+				else
+					READ_RELID_FIELD_NOWARN(relid);
+			}
 			else
 #endif
 			READ_OID_FIELD(relid);
-			READ_CHAR_FIELD(relkind);
 			READ_NODE_FIELD(tablesample);
 			break;
 		case RTE_SUBQUERY:
