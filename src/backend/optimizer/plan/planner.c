@@ -2718,7 +2718,10 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 			}
 			else if (!(IsA(result_plan, Result) && result_plan->lefttree ==
 						NULL &&
-						bms_num_members(root->distribution->restrictNodes) == 1))
+						((root->distribution->distributionType == 'H' &&
+						 bms_num_members(root->distribution->restrictNodes) == 1) ||
+						 (root->distribution->distributionType == 'R' &&
+						  !contain_mutable_functions(result_plan->targetlist)))))
 				result_plan = (Plan *) make_remotesubplan(root,
 														  result_plan,
 														  root->distribution,

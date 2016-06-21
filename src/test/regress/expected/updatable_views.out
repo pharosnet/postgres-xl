@@ -1657,14 +1657,12 @@ EXPLAIN (costs off, nodes off) INSERT INTO rw_view1 VALUES (5);
 ---------------------------------------------------------------------------
  Remote Subquery Scan on any
    ->  Insert on base_tbl b
-         ->  Remote Subquery Scan on all
-               Distribute results by R
-               ->  Result
+         ->  Result
                SubPlan 1
                  ->  Remote Subquery Scan on all
                        ->  Index Only Scan using ref_tbl_pkey on ref_tbl r
                              Index Cond: (a = b.a)
-(9 rows)
+(7 rows)
 
 EXPLAIN (costs off, nodes off) UPDATE rw_view1 SET a = a + 5;
                                  QUERY PLAN                                  
@@ -2027,10 +2025,8 @@ EXPLAIN (costs off, nodes off) INSERT INTO rw_view1 VALUES (2, 'New row 2');
            ->  Remote Subquery Scan on all
                  ->  Index Only Scan using base_tbl_pkey on base_tbl t
                        Index Cond: (id = 2)
-         ->  Remote Subquery Scan on all
-               Distribute results by R
-               ->  Result
-                     One-Time Filter: ($0 IS NOT TRUE)
+         ->  Result
+               One-Time Filter: ($0 IS NOT TRUE)
  
  Remote Subquery Scan on any
    ->  Update on base_tbl
@@ -2042,7 +2038,7 @@ EXPLAIN (costs off, nodes off) INSERT INTO rw_view1 VALUES (2, 'New row 2');
                One-Time Filter: $0
                ->  Index Scan using base_tbl_pkey on base_tbl
                      Index Cond: (id = 2)
-(21 rows)
+(19 rows)
 
 INSERT INTO rw_view1 VALUES (2, 'New row 2');
 SELECT * FROM base_tbl;
