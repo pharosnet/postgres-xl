@@ -2622,11 +2622,15 @@ pgxc_node_remote_abort(void)
 	PGXCNodeHandle *connections[MaxDataNodes + MaxCoords];
 	int				conn_count = 0;
 	PGXCNodeAllHandles *handles = get_current_handles();
+	struct timeval timeout;
 
 	SetSendCommandId(false);
 
 	elog(DEBUG5, "pgxc_node_remote_abort - dn_conn_count %d, co_conn_count %d",
 			handles->dn_conn_count, handles->co_conn_count);
+
+	timeout.tv_sec = 60;
+	timeout.tv_usec = 0;
 
 	for (i = 0; i < handles->dn_conn_count; i++)
 	{
@@ -2654,7 +2658,7 @@ pgxc_node_remote_abort(void)
 			if (conn->needSync)
 			{
 				pgxc_node_send_sync(conn);
-				pgxc_node_receive(1, &conn, NULL);
+				pgxc_node_receive(1, &conn, &timeout);
 			}
 			/*
 			 * Do not matter, is there committed or failed transaction,
@@ -2687,7 +2691,7 @@ pgxc_node_remote_abort(void)
 			if (conn->needSync)
 			{
 				pgxc_node_send_sync(conn);
-				pgxc_node_receive(1, &conn, NULL);
+				pgxc_node_receive(1, &conn, &timeout);
 			}
 			/*
 			 * Do not matter, is there committed or failed transaction,
@@ -2710,7 +2714,7 @@ pgxc_node_remote_abort(void)
 	{
 		InitResponseCombiner(&combiner, conn_count, COMBINE_TYPE_NONE);
 		/* Receive responses */
-		result = pgxc_node_receive_responses(conn_count, connections, NULL, &combiner);
+		result = pgxc_node_receive_responses(conn_count, connections, &timeout, &combiner);
 		if (result || !validate_combiner(&combiner))
 			result = EOF;
 		else
