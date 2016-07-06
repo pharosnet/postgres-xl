@@ -219,7 +219,8 @@ attribute_out_text(StringInfo buf, char *string)
  * redistribution and storage of tuple data into a tuple store.
  */
 char **
-CopyOps_RawDataToArrayField(TupleDesc tupdesc, char *message, int len)
+CopyOps_RawDataToArrayField(TupleDesc tupdesc, char *message, int len,
+		char **tmpbuf)
 {
 	char		delimc = COPYOPS_DELIMITER;
 	int			fieldno;
@@ -243,7 +244,7 @@ CopyOps_RawDataToArrayField(TupleDesc tupdesc, char *message, int len)
 	raw_fields = (char **) palloc(fields * sizeof(char *));
 
 	/* Take a copy of message to manipulate */
-	origin_ptr = (char *) palloc0(sizeof(char) * (len + 1));
+	*tmpbuf = origin_ptr = (char *) palloc0(sizeof(char) * (len + 1));
 	memcpy(origin_ptr, message, len + 1);
 
 	/* Add clean separator '\0' at the end of message */

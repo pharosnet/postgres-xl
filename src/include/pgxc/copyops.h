@@ -21,7 +21,8 @@
 /* Type of data delimiter used for data redistribution using remote COPY */
 #define COPYOPS_DELIMITER	'\t'
 
-extern char **CopyOps_RawDataToArrayField(TupleDesc tupdesc, char *message, int len);
+extern char **CopyOps_RawDataToArrayField(TupleDesc tupdesc, char *message,
+		int len, char **tmpbuf);
 extern char *CopyOps_BuildOneRowTo(TupleDesc tupdesc, Datum *values, bool *nulls, int *len);
 
 #endif

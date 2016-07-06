@@ -535,11 +535,12 @@ distrib_copy_from(RedistribState *distribState, ExecNodes *exec_nodes)
 		if (AttributeNumberIsValid(copyState->rel_loc->partAttrNum))
 		{
 			char 	  **fields;
-
+			char	   *tmpbuf = NULL;
+			
 			/*
 			 * Split message on an array of fields.
 			 */
-			fields = CopyOps_RawDataToArrayField(tupdesc, data, len);
+			fields = CopyOps_RawDataToArrayField(tupdesc, data, len, &tmpbuf);
 
 			Assert(partIdx >= 0);
 			/* Determine partitioning value */
@@ -550,6 +551,8 @@ distrib_copy_from(RedistribState *distribState, ExecNodes *exec_nodes)
 				is_null = false;
 			}
 
+			if (tmpbuf)
+				pfree(tmpbuf);
 			pfree(fields);
 		}
 
