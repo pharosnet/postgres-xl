@@ -146,7 +146,7 @@ typedef enum GTM_PortLastCall
  */
 #define InitialGXIDValue_Default		((GlobalTransactionId) 10000)
 
-#define GlobalTransactionIdIsValid(gxid) ((GlobalTransactionId) (gxid)) != InvalidGlobalTransactionId
+#define GlobalTransactionIdIsValid(gxid) (((GlobalTransactionId) (gxid)) != InvalidGlobalTransactionId)
 
 #define _(x) gettext(x)
 
