@@ -851,7 +851,7 @@ GTM_SeqGetNext(GTM_SequenceKey seqkey, char *coord_name,
 			if (seqinfo->gs_max_value - seqinfo->gs_increment_by
 					>= seqinfo->gs_value)
 			{
-				int newval = seqinfo->gs_value + seqinfo->gs_increment_by;
+				GTM_Sequence newval = seqinfo->gs_value + seqinfo->gs_increment_by;
 				*result = seqinfo->gs_value = newval;
 			}
 			else if (SEQ_IS_CYCLE(seqinfo))
@@ -879,7 +879,7 @@ GTM_SeqGetNext(GTM_SequenceKey seqkey, char *coord_name,
 			if (seqinfo->gs_min_value - seqinfo->gs_increment_by
 					<= seqinfo->gs_value)
 			{
-				int newval = seqinfo->gs_value + seqinfo->gs_increment_by;
+				GTM_Sequence newval = seqinfo->gs_value + seqinfo->gs_increment_by;
 				*result = seqinfo->gs_value = newval;
 			}
 			else if (SEQ_IS_CYCLE(seqinfo))
