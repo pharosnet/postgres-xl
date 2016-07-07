@@ -411,6 +411,15 @@ GetNewTransactionId(bool isSubXact)
 		xid = ShmemVariableCache->nextXid;
 #endif
 	}
+
+#ifdef XCP
+	if (!TransactionIdIsValid(xid))
+		ereport(ERROR,
+				(errcode(ERRCODE_INTERNAL_ERROR),
+				 errmsg("Could not obtain a transaction ID from GTM. The GTM"
+					 " might have failed or lost connectivity")));
+#endif
+
 	/*
 	 * If we are allocating the first XID of a new page of the commit log,
 	 * zero out that commit-log page before returning. We must do this while
