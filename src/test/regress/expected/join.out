@@ -5546,3 +5546,43 @@ ERROR:  invalid reference to FROM-clause entry for table "xx1"
 LINE 1: ...xx1 using lateral (select * from int4_tbl where f1 = x1) ss;
                                                                 ^
 HINT:  There is an entry for table "xx1", but it cannot be referenced from this part of the query.
+-- demonstrate problem with extrememly slow join
+CREATE TABLE testr (a int, b int) DISTRIBUTE BY REPLICATION;
+INSERT INTO testr SELECT generate_series(1, 10000), generate_series(5001, 15000);
+INSERT INTO testh SELECT generate_series(1, 10000), generate_series(8001, 18000);CREATE TABLE testh (a int, b int);
+ERROR:  relation "testh" does not exist
+LINE 1: INSERT INTO testh SELECT generate_series(1, 10000), generate...
+                    ^
+set enable_mergejoin TO false;
+set enable_hashjoin TO false;
+EXPLAIN VERBOSE SELECT count(*) FROM testr WHERE NOT EXISTS (SELECT * FROM testh WHERE testr.b = testh.b);
+                                                         QUERY PLAN                                                         
+----------------------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=41632.20..41632.21 rows=1 width=0)
+   Output: pg_catalog.count(*)
+   ->  Remote Subquery Scan on all (datanode_1,datanode_2)  (cost=0.00..41629.38 rows=1130 width=0)
+         Output: count(*)
+         ->  Aggregate  (cost=0.00..41629.38 rows=1 width=0)
+               Output: count(*)
+               ->  Nested Loop Anti Join  (cost=0.00..41629.38 rows=1130 width=0)
+                     Join Filter: (testr.b = testh.b)
+                     ->  Remote Subquery Scan on all (datanode_1)  (cost=100.00..152.94 rows=2260 width=4)
+                           Output: testr.b
+                           Distribute results by H: b
+                           ->  Seq Scan on public.testr  (cost=0.00..32.60 rows=2260 width=4)
+                                 Output: testr.b
+                     ->  Materialize  (cost=100.00..164.24 rows=2260 width=4)
+                           Output: testh.b
+                           ->  Remote Subquery Scan on all (datanode_1,datanode_2)  (cost=100.00..152.94 rows=2260 width=4)
+                                 Output: testh.b
+                                 Distribute results by H: b
+                                 ->  Seq Scan on public.testh  (cost=0.00..32.60 rows=2260 width=4)
+                                       Output: testh.b
+(20 rows)
+
+SELECT count(*) FROM testr WHERE NOT EXISTS (SELECT * FROM testh WHERE testr.b = testh.b);
+ count 
+-------
+ 10000
+(1 row)
+

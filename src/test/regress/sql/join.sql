@@ -1749,3 +1749,12 @@ update xx1 set x2 = f1 from xx1, lateral (select * from int4_tbl where f1 = x1) 
 delete from xx1 using (select * from int4_tbl where f1 = x1) ss;
 delete from xx1 using (select * from int4_tbl where f1 = xx1.x1) ss;
 delete from xx1 using lateral (select * from int4_tbl where f1 = x1) ss;
+
+-- demonstrate problem with extrememly slow join
+CREATE TABLE testr (a int, b int) DISTRIBUTE BY REPLICATION;
+INSERT INTO testr SELECT generate_series(1, 10000), generate_series(5001, 15000);
+INSERT INTO testh SELECT generate_series(1, 10000), generate_series(8001, 18000);CREATE TABLE testh (a int, b int);
+set enable_mergejoin TO false;
+set enable_hashjoin TO false;
+EXPLAIN VERBOSE SELECT count(*) FROM testr WHERE NOT EXISTS (SELECT * FROM testh WHERE testr.b = testh.b);
+SELECT count(*) FROM testr WHERE NOT EXISTS (SELECT * FROM testh WHERE testr.b = testh.b);
