@@ -175,11 +175,11 @@ system_or_bail 'psql', '-p', "$COORD1_PORT", "$TEST_DB",'-c', "EXECUTE DIRECT ON
 
 system("echo '==========commit prepared transactions==========='");
 
-command_ok([ 'psql', '-p', "$COORD1_PORT", "$TEST_DB", '-c', "COMMIT PREPARED 'foo1';" ], 'commit prepared transaction foo1 ');
-command_ok([ 'psql', '-p', "$COORD1_PORT", "$TEST_DB", '-c', "COMMIT PREPARED 'foo2';" ], 'commit prepared transaction foo2');
-command_ok([ 'psql', '-p', "$COORD1_PORT", "$TEST_DB", '-c', "EXECUTE DIRECT ON (coord2) 'COMMIT PREPARED ''foo3'';';" ], 'commit prepared transaction directly on coord2 ');
-command_ok([ 'psql', '-p', "$COORD2_PORT", "$TEST_DB", '-c', "COMMIT PREPARED 'foo3';" ], 'commit prepared transaction connecting to coord2 ');
-command_ok([ 'psql', '-p', "$COORD1_PORT", "$TEST_DB", '-c', "COMMIT PREPARED 'foo4';" ], 'commit prepared transaction connecting to coord2 ');
+command_fails([ 'psql', '-p', "$COORD1_PORT", "$TEST_DB", '-c', "COMMIT PREPARED 'foo1';" ], 'cannot commit prepared transaction foo1 ');
+command_fails([ 'psql', '-p', "$COORD1_PORT", "$TEST_DB", '-c', "COMMIT PREPARED 'foo2';" ], 'cannot commit prepared transaction foo2');
+command_ok([ 'psql', '-p', "$COORD1_PORT", "$TEST_DB", '-c', "EXECUTE DIRECT ON (coord2) 'COMMIT PREPARED ''foo3'';';" ], 'commit prepared transaction foo3 directly on coord2 ');
+command_ok([ 'psql', '-p', "$COORD2_PORT", "$TEST_DB", '-c', "COMMIT PREPARED 'foo3';" ], 'commit prepared transaction foo3 connecting to coord2 ');
+command_fails([ 'psql', '-p', "$COORD1_PORT", "$TEST_DB", '-c', "COMMIT PREPARED 'foo4';" ], 'cannot commit prepared transaction foo4 ');
 
 system("echo '==========data sanity check==========='");
 
