@@ -2004,10 +2004,6 @@ json_agg_collectfn(PG_FUNCTION_ARGS)
 		elog(ERROR, "json_agg_collectfn called in non-aggregate context");
 	}
 
-
-	/* cannot be called directly because of internal-type argument */
-	Assert(AggCheckCallContext(fcinfo, NULL));
-
 	if (PG_ARGISNULL(0))
 	{
 		/*
@@ -2057,9 +2053,11 @@ Datum
 json_agg_finalfn(PG_FUNCTION_ARGS)
 {
 	JsonAggState *state;
+	MemoryContext aggcontext;
 
 	/* cannot be called directly because of internal-type argument */
-	Assert(AggCheckCallContext(fcinfo, NULL));
+	if (!AggCheckCallContext(fcinfo, &aggcontext))
+		elog(ERROR, "aggregate function called in non-aggregate context");
 
 	state = PG_ARGISNULL(0) ?
 		NULL :
@@ -2173,9 +2171,11 @@ Datum
 json_object_agg_finalfn(PG_FUNCTION_ARGS)
 {
 	JsonAggState *state;
+	MemoryContext aggcontext;
 
 	/* cannot be called directly because of internal-type argument */
-	Assert(AggCheckCallContext(fcinfo, NULL));
+	if (!AggCheckCallContext(fcinfo, &aggcontext))
+		elog(ERROR, "aggregate function called in non-aggregate context");
 
 	state = PG_ARGISNULL(0) ? NULL : (JsonAggState *) PG_GETARG_POINTER(0);
 

@@ -1682,9 +1682,11 @@ jsonb_agg_finalfn(PG_FUNCTION_ARGS)
 	JsonbAggState *arg;
 	JsonbInState result;
 	Jsonb	   *out;
+	MemoryContext aggcontext;
 
 	/* cannot be called directly because of internal-type argument */
-	Assert(AggCheckCallContext(fcinfo, NULL));
+	if (!AggCheckCallContext(fcinfo, &aggcontext))
+		elog(ERROR, "jsonb_agg_finalfn called in non-aggregate context");
 
 	if (PG_ARGISNULL(0))
 		PG_RETURN_NULL();		/* returns null iff no input values */
@@ -1913,9 +1915,11 @@ jsonb_object_agg_finalfn(PG_FUNCTION_ARGS)
 	JsonbAggState *arg;
 	JsonbInState result;
 	Jsonb	   *out;
+	MemoryContext aggcontext;
 
 	/* cannot be called directly because of internal-type argument */
-	Assert(AggCheckCallContext(fcinfo, NULL));
+	if (!AggCheckCallContext(fcinfo, &aggcontext))
+		elog(ERROR, "jsonb_object_agg_finalfn called in non-aggregate context");
 
 	if (PG_ARGISNULL(0))
 		PG_RETURN_NULL();		/* returns null iff no input values */

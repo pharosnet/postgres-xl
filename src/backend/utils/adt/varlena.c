@@ -473,9 +473,14 @@ Datum
 bytea_string_agg_finalfn(PG_FUNCTION_ARGS)
 {
 	StringInfo	state;
+	MemoryContext aggcontext;
 
 	/* cannot be called directly because of internal-type argument */
-	Assert(AggCheckCallContext(fcinfo, NULL));
+	if (!AggCheckCallContext(fcinfo, &aggcontext))
+	{
+		/* cannot be called directly because of internal-type argument */
+		elog(ERROR, "bytea_string_agg_finalfn called in non-aggregate context");
+	}
 
 	state = PG_ARGISNULL(0) ? NULL : (StringInfo) PG_GETARG_POINTER(0);
 
@@ -4348,9 +4353,13 @@ Datum
 string_agg_finalfn(PG_FUNCTION_ARGS)
 {
 	StringInfo	state;
+	MemoryContext aggcontext;
 
-	/* cannot be called directly because of internal-type argument */
-	Assert(AggCheckCallContext(fcinfo, NULL));
+	if (!AggCheckCallContext(fcinfo, &aggcontext))
+	{
+		/* cannot be called directly because of internal-type argument */
+		elog(ERROR, "string_agg_finalfn called in non-aggregate context");
+	}
 
 	state = PG_ARGISNULL(0) ? NULL : (StringInfo) PG_GETARG_POINTER(0);
 

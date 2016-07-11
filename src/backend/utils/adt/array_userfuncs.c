@@ -568,9 +568,11 @@ array_agg_finalfn(PG_FUNCTION_ARGS)
 	ArrayBuildState *state;
 	int			dims[1];
 	int			lbs[1];
+	MemoryContext aggcontext;
 
 	/* cannot be called directly because of internal-type argument */
-	Assert(AggCheckCallContext(fcinfo, NULL));
+	if (!AggCheckCallContext(fcinfo, &aggcontext))
+		elog(ERROR, "aggregate function called in non-aggregate context");
 
 	state = PG_ARGISNULL(0) ? NULL : (ArrayBuildState *) PG_GETARG_POINTER(0);
 
@@ -645,9 +647,11 @@ array_agg_array_finalfn(PG_FUNCTION_ARGS)
 {
 	Datum		result;
 	ArrayBuildStateArr *state;
+	MemoryContext aggcontext;
 
 	/* cannot be called directly because of internal-type argument */
-	Assert(AggCheckCallContext(fcinfo, NULL));
+	if (!AggCheckCallContext(fcinfo, &aggcontext))
+		elog(ERROR, "aggregate function called in non-aggregate context");
 
 	state = PG_ARGISNULL(0) ? NULL : (ArrayBuildStateArr *) PG_GETARG_POINTER(0);
 

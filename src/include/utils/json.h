@@ -33,6 +33,9 @@ extern Datum row_to_json_pretty(PG_FUNCTION_ARGS);
 extern Datum to_json(PG_FUNCTION_ARGS);
 
 extern Datum json_agg_transfn(PG_FUNCTION_ARGS);
+#ifdef XCP
+extern Datum json_agg_collectfn(PG_FUNCTION_ARGS);
+#endif
 extern Datum json_agg_finalfn(PG_FUNCTION_ARGS);
 
 extern Datum json_object_agg_finalfn(PG_FUNCTION_ARGS);
