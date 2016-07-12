@@ -98,6 +98,57 @@ explain (costs off, num_nodes off, nodes off, verbose on)  select * from p1 for 
 select * from c1 order by 1 for update;
 explain (costs off, num_nodes off, nodes off, verbose on)  select * from c1 for update;
 
+
+-- confirm that in various join scenarios for update gets to the remote query
+-- single table case
+ select * from t1 for update of t1 nowait;
+
+-- two table case
+ select * from t1, t2 where t1.val = t2.val for update nowait;
+ select * from t1, t2 where t1.val = t2.val for update;
+ select * from t1, t2 where t1.val = t2.val for share;
+ select * from t1, t2 where t1.val = t2.val;
+ select * from t1, t2;
+ select * from t1, t2 for update;
+ select * from t1, t2 for update nowait;
+ select * from t1, t2 for share nowait;
+ select * from t1, t2 for share;
+ select * from t1, t2 for share of t2;
+
+-- three table case
+ select * from t1, t2, t3;
+ select * from t1, t2, t3 for update;
+ select * from t1, t2, t3 for update of t1;
+ select * from t1, t2, t3 for update of t1,t3;
+ select * from t1, t2, t3 for update of t1,t3 nowait;
+ select * from t1, t2, t3 for share of t1,t2 nowait;
+
+-- check a few subquery cases
+ select * from (select * from t1 for update of t1 nowait) as foo;
+ select * from t1 where val in (select val from t2 for update of t2 nowait) for update;
+ select * from t1 where val in (select val from t2 for update of t2 nowait);
+
+-- test multiple row marks
+ select * from t1, t2 for share of t2 for update of t1;
+-- make sure FOR UPDATE takes prioriy over FOR SHARE when mentioned for the same table
+ select * from t1 for share of t1 for update of t1;
+ select * from t1 for update of t1 for share of t1;
+ select * from t1 for share of t1 for share of t1 for update of t1;
+ select * from t1 for share of t1 for share of t1 for share of t1;
+-- make sure NOWAIT is used in remote query even if it is not mentioned with FOR UPDATE clause
+ select * from t1 for share of t1 for share of t1 nowait for update of t1;
+-- same table , different aliases and different row marks for different aliases
+ select * from t1 a,t1 b for share of a for update of b;
+
+-- test WITH queries
+-- join of a WITH table and a normal table
+ WITH q1 AS (SELECT * from t1 FOR UPDATE) SELECT * FROM q1,t2 FOR UPDATE;
+
+ WITH q1 AS (SELECT * from t1) SELECT * FROM q1;
+-- make sure row marks are no ops for queries on WITH tables
+ WITH q1 AS (SELECT * from t1) SELECT * FROM q1 FOR UPDATE;
+ WITH q1 AS (SELECT * from t1 FOR UPDATE) SELECT * FROM q1 FOR UPDATE;
+
 -- drop objects created
 drop table c1;
 drop table p1;

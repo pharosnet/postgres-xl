@@ -1106,23 +1106,19 @@ ERROR:  WHERE CURRENT OF clause not yet supported
 ROLLBACK;
 BEGIN;
 DECLARE c1 CURSOR FOR SELECT * FROM uctest a, uctest b WHERE a.f1 = b.f1 + 5 ORDER BY 1 FOR UPDATE;
+ERROR:  FOR UPDATE is not allowed with joins
 FETCH 1 FROM c1;
- f1 | f2 | f1 | f2 
-----+----+----+----
-(0 rows)
-
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
 UPDATE uctest SET f1 = f1 + 10 WHERE CURRENT OF c1;  -- fail
-ERROR:  WHERE CURRENT OF clause not yet supported
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
 ROLLBACK;
 BEGIN;
 DECLARE c1 CURSOR FOR SELECT * FROM uctest a, uctest b WHERE a.f1 = b.f1 + 5 ORDER BY 1 FOR SHARE OF a;
+ERROR:  FOR SHARE is not allowed with joins
 FETCH 1 FROM c1;
- f1 | f2 | f1 | f2 
-----+----+----+----
-(0 rows)
-
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
 UPDATE uctest SET f1 = f1 + 10 WHERE CURRENT OF c1;
-ERROR:  WHERE CURRENT OF clause not yet supported
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
 SELECT * FROM uctest ORDER BY f1;
 ERROR:  current transaction is aborted, commands ignored until end of transaction block
 ROLLBACK;

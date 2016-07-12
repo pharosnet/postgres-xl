@@ -2713,6 +2713,16 @@ CheckSelectLocking(Query *qry, LockClauseStrength strength)
 		  translator: %s is a SQL row locking clause such as FOR UPDATE */
 				 errmsg("%s is not allowed with window functions",
 						LCS_asString(strength))));
+#ifdef XCP
+	if (list_length(qry->jointree->fromlist) > 1)
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+		/*------
+		  translator: %s is a SQL row locking clause such as FOR UPDATE */
+				 errmsg("%s is not allowed with joins",
+						LCS_asString(strength))));
+#endif
+
 	if (expression_returns_set((Node *) qry->targetList))
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),

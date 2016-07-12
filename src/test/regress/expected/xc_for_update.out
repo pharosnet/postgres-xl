@@ -106,71 +106,11 @@ explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1 for 
 
 -- two table case
 explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1, t2 where t1.val = t2.val for update nowait;
-                                QUERY PLAN                                
---------------------------------------------------------------------------
- Remote Subquery Scan on all
-   Output: t1.val, t1.val2, t2.val, t2.val2, t1.ctid, t2.ctid
-   ->  LockRows
-         Output: t1.val, t1.val2, t2.val, t2.val2, t1.ctid, t2.ctid
-         ->  Merge Join
-               Output: t1.val, t1.val2, t2.val, t2.val2, t1.ctid, t2.ctid
-               Merge Cond: (t1.val = t2.val)
-               ->  Sort
-                     Output: t1.val, t1.val2, t1.ctid
-                     Sort Key: t1.val
-                     ->  Seq Scan on public.t1
-                           Output: t1.val, t1.val2, t1.ctid
-               ->  Sort
-                     Output: t2.val, t2.val2, t2.ctid
-                     Sort Key: t2.val
-                     ->  Seq Scan on public.t2
-                           Output: t2.val, t2.val2, t2.ctid
-(17 rows)
-
+ERROR:  FOR UPDATE is not allowed with joins
 explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1, t2 where t1.val = t2.val for update;
-                                QUERY PLAN                                
---------------------------------------------------------------------------
- Remote Subquery Scan on all
-   Output: t1.val, t1.val2, t2.val, t2.val2, t1.ctid, t2.ctid
-   ->  LockRows
-         Output: t1.val, t1.val2, t2.val, t2.val2, t1.ctid, t2.ctid
-         ->  Merge Join
-               Output: t1.val, t1.val2, t2.val, t2.val2, t1.ctid, t2.ctid
-               Merge Cond: (t1.val = t2.val)
-               ->  Sort
-                     Output: t1.val, t1.val2, t1.ctid
-                     Sort Key: t1.val
-                     ->  Seq Scan on public.t1
-                           Output: t1.val, t1.val2, t1.ctid
-               ->  Sort
-                     Output: t2.val, t2.val2, t2.ctid
-                     Sort Key: t2.val
-                     ->  Seq Scan on public.t2
-                           Output: t2.val, t2.val2, t2.ctid
-(17 rows)
-
+ERROR:  FOR UPDATE is not allowed with joins
 explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1, t2 where t1.val = t2.val for share;
-                                QUERY PLAN                                
---------------------------------------------------------------------------
- Remote Subquery Scan on all
-   Output: t1.val, t1.val2, t2.val, t2.val2, t1.ctid, t2.ctid
-   ->  LockRows
-         Output: t1.val, t1.val2, t2.val, t2.val2, t1.ctid, t2.ctid
-         ->  Merge Join
-               Output: t1.val, t1.val2, t2.val, t2.val2, t1.ctid, t2.ctid
-               Merge Cond: (t1.val = t2.val)
-               ->  Sort
-                     Output: t1.val, t1.val2, t1.ctid
-                     Sort Key: t1.val
-                     ->  Seq Scan on public.t1
-                           Output: t1.val, t1.val2, t1.ctid
-               ->  Sort
-                     Output: t2.val, t2.val2, t2.ctid
-                     Sort Key: t2.val
-                     ->  Seq Scan on public.t2
-                           Output: t2.val, t2.val2, t2.ctid
-(17 rows)
-
+ERROR:  FOR SHARE is not allowed with joins
 explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1, t2 where t1.val = t2.val;
                                          QUERY PLAN                                          
 ---------------------------------------------------------------------------------------------
@@ -210,100 +150,15 @@ explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1, t2;
 (12 rows)
 
 explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1, t2 for update;
-                             QUERY PLAN                             
---------------------------------------------------------------------
- LockRows
-   Output: t1.val, t1.val2, t2.val, t2.val2, t1.ctid, t2.ctid
-   ->  Nested Loop
-         Output: t1.val, t1.val2, t2.val, t2.val2, t1.ctid, t2.ctid
-         ->  Remote Subquery Scan on all
-               Output: t1.val, t1.val2, t1.ctid
-               ->  Seq Scan on public.t1
-                     Output: t1.val, t1.val2, t1.ctid
-         ->  Materialize
-               Output: t2.val, t2.val2, t2.ctid
-               ->  Remote Subquery Scan on all
-                     Output: t2.val, t2.val2, t2.ctid
-                     ->  Seq Scan on public.t2
-                           Output: t2.val, t2.val2, t2.ctid
-(14 rows)
-
+ERROR:  FOR UPDATE is not allowed with joins
 explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1, t2 for update nowait;
-                             QUERY PLAN                             
---------------------------------------------------------------------
- LockRows
-   Output: t1.val, t1.val2, t2.val, t2.val2, t1.ctid, t2.ctid
-   ->  Nested Loop
-         Output: t1.val, t1.val2, t2.val, t2.val2, t1.ctid, t2.ctid
-         ->  Remote Subquery Scan on all
-               Output: t1.val, t1.val2, t1.ctid
-               ->  Seq Scan on public.t1
-                     Output: t1.val, t1.val2, t1.ctid
-         ->  Materialize
-               Output: t2.val, t2.val2, t2.ctid
-               ->  Remote Subquery Scan on all
-                     Output: t2.val, t2.val2, t2.ctid
-                     ->  Seq Scan on public.t2
-                           Output: t2.val, t2.val2, t2.ctid
-(14 rows)
-
+ERROR:  FOR UPDATE is not allowed with joins
 explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1, t2 for share nowait;
-                             QUERY PLAN                             
---------------------------------------------------------------------
- LockRows
-   Output: t1.val, t1.val2, t2.val, t2.val2, t1.ctid, t2.ctid
-   ->  Nested Loop
-         Output: t1.val, t1.val2, t2.val, t2.val2, t1.ctid, t2.ctid
-         ->  Remote Subquery Scan on all
-               Output: t1.val, t1.val2, t1.ctid
-               ->  Seq Scan on public.t1
-                     Output: t1.val, t1.val2, t1.ctid
-         ->  Materialize
-               Output: t2.val, t2.val2, t2.ctid
-               ->  Remote Subquery Scan on all
-                     Output: t2.val, t2.val2, t2.ctid
-                     ->  Seq Scan on public.t2
-                           Output: t2.val, t2.val2, t2.ctid
-(14 rows)
-
+ERROR:  FOR SHARE is not allowed with joins
 explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1, t2 for share;
-                             QUERY PLAN                             
---------------------------------------------------------------------
- LockRows
-   Output: t1.val, t1.val2, t2.val, t2.val2, t1.ctid, t2.ctid
-   ->  Nested Loop
-         Output: t1.val, t1.val2, t2.val, t2.val2, t1.ctid, t2.ctid
-         ->  Remote Subquery Scan on all
-               Output: t1.val, t1.val2, t1.ctid
-               ->  Seq Scan on public.t1
-                     Output: t1.val, t1.val2, t1.ctid
-         ->  Materialize
-               Output: t2.val, t2.val2, t2.ctid
-               ->  Remote Subquery Scan on all
-                     Output: t2.val, t2.val2, t2.ctid
-                     ->  Seq Scan on public.t2
-                           Output: t2.val, t2.val2, t2.ctid
-(14 rows)
-
+ERROR:  FOR SHARE is not allowed with joins
 explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1, t2 for share of t2;
-                             QUERY PLAN                             
---------------------------------------------------------------------
- LockRows
-   Output: t1.val, t1.val2, t2.val, t2.val2, t2.ctid, t1.ctid
-   ->  Nested Loop
-         Output: t1.val, t1.val2, t2.val, t2.val2, t2.ctid, t1.ctid
-         ->  Remote Subquery Scan on all
-               Output: t1.val, t1.val2, t1.ctid
-               ->  Seq Scan on public.t1
-                     Output: t1.val, t1.val2, t1.ctid
-         ->  Materialize
-               Output: t2.val, t2.val2, t2.ctid
-               ->  Remote Subquery Scan on all
-                     Output: t2.val, t2.val2, t2.ctid
-                     ->  Seq Scan on public.t2
-                           Output: t2.val, t2.val2, t2.ctid
-(14 rows)
-
+ERROR:  FOR SHARE is not allowed with joins
 -- three table case
 explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1, t2, t3;
                          QUERY PLAN                          
@@ -331,140 +186,15 @@ explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1, t2,
 (20 rows)
 
 explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1, t2, t3 for update;
-                                          QUERY PLAN                                          
-----------------------------------------------------------------------------------------------
- LockRows
-   Output: t1.val, t1.val2, t2.val, t2.val2, t3.val, t3.val2, t1.ctid, t2.ctid, t3.ctid
-   ->  Nested Loop
-         Output: t1.val, t1.val2, t2.val, t2.val2, t3.val, t3.val2, t1.ctid, t2.ctid, t3.ctid
-         ->  Nested Loop
-               Output: t1.val, t1.val2, t1.ctid, t2.val, t2.val2, t2.ctid
-               ->  Remote Subquery Scan on all
-                     Output: t1.val, t1.val2, t1.ctid
-                     ->  Seq Scan on public.t1
-                           Output: t1.val, t1.val2, t1.ctid
-               ->  Materialize
-                     Output: t2.val, t2.val2, t2.ctid
-                     ->  Remote Subquery Scan on all
-                           Output: t2.val, t2.val2, t2.ctid
-                           ->  Seq Scan on public.t2
-                                 Output: t2.val, t2.val2, t2.ctid
-         ->  Materialize
-               Output: t3.val, t3.val2, t3.ctid
-               ->  Remote Subquery Scan on all
-                     Output: t3.val, t3.val2, t3.ctid
-                     ->  Seq Scan on public.t3
-                           Output: t3.val, t3.val2, t3.ctid
-(22 rows)
-
+ERROR:  FOR UPDATE is not allowed with joins
 explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1, t2, t3 for update of t1;
-                                          QUERY PLAN                                          
-----------------------------------------------------------------------------------------------
- LockRows
-   Output: t1.val, t1.val2, t2.val, t2.val2, t3.val, t3.val2, t1.ctid, t2.ctid, t3.ctid
-   ->  Nested Loop
-         Output: t1.val, t1.val2, t2.val, t2.val2, t3.val, t3.val2, t1.ctid, t2.ctid, t3.ctid
-         ->  Nested Loop
-               Output: t1.val, t1.val2, t1.ctid, t2.val, t2.val2, t2.ctid
-               ->  Remote Subquery Scan on all
-                     Output: t1.val, t1.val2, t1.ctid
-                     ->  Seq Scan on public.t1
-                           Output: t1.val, t1.val2, t1.ctid
-               ->  Materialize
-                     Output: t2.val, t2.val2, t2.ctid
-                     ->  Remote Subquery Scan on all
-                           Output: t2.val, t2.val2, t2.ctid
-                           ->  Seq Scan on public.t2
-                                 Output: t2.val, t2.val2, t2.ctid
-         ->  Materialize
-               Output: t3.val, t3.val2, t3.ctid
-               ->  Remote Subquery Scan on all
-                     Output: t3.val, t3.val2, t3.ctid
-                     ->  Seq Scan on public.t3
-                           Output: t3.val, t3.val2, t3.ctid
-(22 rows)
-
+ERROR:  FOR UPDATE is not allowed with joins
 explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1, t2, t3 for update of t1,t3;
-                                          QUERY PLAN                                          
-----------------------------------------------------------------------------------------------
- LockRows
-   Output: t1.val, t1.val2, t2.val, t2.val2, t3.val, t3.val2, t1.ctid, t3.ctid, t2.ctid
-   ->  Nested Loop
-         Output: t1.val, t1.val2, t2.val, t2.val2, t3.val, t3.val2, t1.ctid, t3.ctid, t2.ctid
-         ->  Nested Loop
-               Output: t1.val, t1.val2, t1.ctid, t2.val, t2.val2, t2.ctid
-               ->  Remote Subquery Scan on all
-                     Output: t1.val, t1.val2, t1.ctid
-                     ->  Seq Scan on public.t1
-                           Output: t1.val, t1.val2, t1.ctid
-               ->  Materialize
-                     Output: t2.val, t2.val2, t2.ctid
-                     ->  Remote Subquery Scan on all
-                           Output: t2.val, t2.val2, t2.ctid
-                           ->  Seq Scan on public.t2
-                                 Output: t2.val, t2.val2, t2.ctid
-         ->  Materialize
-               Output: t3.val, t3.val2, t3.ctid
-               ->  Remote Subquery Scan on all
-                     Output: t3.val, t3.val2, t3.ctid
-                     ->  Seq Scan on public.t3
-                           Output: t3.val, t3.val2, t3.ctid
-(22 rows)
-
+ERROR:  FOR UPDATE is not allowed with joins
 explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1, t2, t3 for update of t1,t3 nowait;
-                                          QUERY PLAN                                          
-----------------------------------------------------------------------------------------------
- LockRows
-   Output: t1.val, t1.val2, t2.val, t2.val2, t3.val, t3.val2, t1.ctid, t3.ctid, t2.ctid
-   ->  Nested Loop
-         Output: t1.val, t1.val2, t2.val, t2.val2, t3.val, t3.val2, t1.ctid, t3.ctid, t2.ctid
-         ->  Nested Loop
-               Output: t1.val, t1.val2, t1.ctid, t2.val, t2.val2, t2.ctid
-               ->  Remote Subquery Scan on all
-                     Output: t1.val, t1.val2, t1.ctid
-                     ->  Seq Scan on public.t1
-                           Output: t1.val, t1.val2, t1.ctid
-               ->  Materialize
-                     Output: t2.val, t2.val2, t2.ctid
-                     ->  Remote Subquery Scan on all
-                           Output: t2.val, t2.val2, t2.ctid
-                           ->  Seq Scan on public.t2
-                                 Output: t2.val, t2.val2, t2.ctid
-         ->  Materialize
-               Output: t3.val, t3.val2, t3.ctid
-               ->  Remote Subquery Scan on all
-                     Output: t3.val, t3.val2, t3.ctid
-                     ->  Seq Scan on public.t3
-                           Output: t3.val, t3.val2, t3.ctid
-(22 rows)
-
+ERROR:  FOR UPDATE is not allowed with joins
 explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1, t2, t3 for share of t1,t2 nowait;
-                                          QUERY PLAN                                          
-----------------------------------------------------------------------------------------------
- LockRows
-   Output: t1.val, t1.val2, t2.val, t2.val2, t3.val, t3.val2, t1.ctid, t2.ctid, t3.ctid
-   ->  Nested Loop
-         Output: t1.val, t1.val2, t2.val, t2.val2, t3.val, t3.val2, t1.ctid, t2.ctid, t3.ctid
-         ->  Nested Loop
-               Output: t1.val, t1.val2, t1.ctid, t2.val, t2.val2, t2.ctid
-               ->  Remote Subquery Scan on all
-                     Output: t1.val, t1.val2, t1.ctid
-                     ->  Seq Scan on public.t1
-                           Output: t1.val, t1.val2, t1.ctid
-               ->  Materialize
-                     Output: t2.val, t2.val2, t2.ctid
-                     ->  Remote Subquery Scan on all
-                           Output: t2.val, t2.val2, t2.ctid
-                           ->  Seq Scan on public.t2
-                                 Output: t2.val, t2.val2, t2.ctid
-         ->  Materialize
-               Output: t3.val, t3.val2, t3.ctid
-               ->  Remote Subquery Scan on all
-                     Output: t3.val, t3.val2, t3.ctid
-                     ->  Seq Scan on public.t3
-                           Output: t3.val, t3.val2, t3.ctid
-(22 rows)
-
+ERROR:  FOR SHARE is not allowed with joins
 -- check a few subquery cases
 explain (costs off, num_nodes off, nodes off, verbose on)  select * from (select * from t1 for update of t1 nowait) as foo;
                       QUERY PLAN                      
@@ -529,24 +259,7 @@ explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1 wher
 
 -- test multiple row marks
 explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1, t2 for share of t2 for update of t1;
-                             QUERY PLAN                             
---------------------------------------------------------------------
- LockRows
-   Output: t1.val, t1.val2, t2.val, t2.val2, t2.ctid, t1.ctid
-   ->  Nested Loop
-         Output: t1.val, t1.val2, t2.val, t2.val2, t2.ctid, t1.ctid
-         ->  Remote Subquery Scan on all
-               Output: t1.val, t1.val2, t1.ctid
-               ->  Seq Scan on public.t1
-                     Output: t1.val, t1.val2, t1.ctid
-         ->  Materialize
-               Output: t2.val, t2.val2, t2.ctid
-               ->  Remote Subquery Scan on all
-                     Output: t2.val, t2.val2, t2.ctid
-                     ->  Seq Scan on public.t2
-                           Output: t2.val, t2.val2, t2.ctid
-(14 rows)
-
+ERROR:  FOR SHARE is not allowed with joins
 -- make sure FOR UPDATE takes prioriy over FOR SHARE when mentioned for the same table
 explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1 for share of t1 for update of t1;
               QUERY PLAN               
@@ -606,50 +319,11 @@ explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1 for 
 
 -- same table , different aliases and different row marks for different aliases
 explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1 a,t1 b for share of a for update of b;
-                          QUERY PLAN                          
---------------------------------------------------------------
- LockRows
-   Output: a.val, a.val2, b.val, b.val2, a.ctid, b.ctid
-   ->  Nested Loop
-         Output: a.val, a.val2, b.val, b.val2, a.ctid, b.ctid
-         ->  Remote Subquery Scan on all
-               Output: a.val, a.val2, a.ctid
-               ->  Seq Scan on public.t1 a
-                     Output: a.val, a.val2, a.ctid
-         ->  Materialize
-               Output: b.val, b.val2, b.ctid
-               ->  Remote Subquery Scan on all
-                     Output: b.val, b.val2, b.ctid
-                     ->  Seq Scan on public.t1 b
-                           Output: b.val, b.val2, b.ctid
-(14 rows)
-
+ERROR:  FOR SHARE is not allowed with joins
 -- test WITH queries
 -- join of a WITH table and a normal table
 explain (costs off, num_nodes off, nodes off, verbose on)  WITH q1 AS (SELECT * from t1 FOR UPDATE) SELECT * FROM q1,t2 FOR UPDATE;
-                           QUERY PLAN                            
------------------------------------------------------------------
- LockRows
-   Output: q1.val, q1.val2, t2.val, t2.val2, t2.ctid, q1.*
-   CTE q1
-     ->  Remote Subquery Scan on all
-           Output: t1.val, t1.val2, t1.ctid
-           ->  LockRows
-                 Output: t1.val, t1.val2, t1.ctid
-                 ->  Seq Scan on public.t1
-                       Output: t1.val, t1.val2, t1.ctid
-   ->  Nested Loop
-         Output: q1.val, q1.val2, t2.val, t2.val2, t2.ctid, q1.*
-         ->  CTE Scan on q1
-               Output: q1.val, q1.val2, q1.*
-         ->  Materialize
-               Output: t2.val, t2.val2, t2.ctid
-               ->  Remote Subquery Scan on all
-                     Output: t2.val, t2.val2, t2.ctid
-                     ->  Seq Scan on public.t2
-                           Output: t2.val, t2.val2, t2.ctid
-(19 rows)
-
+ERROR:  FOR UPDATE is not allowed with joins
 explain (costs off, num_nodes off, nodes off, verbose on)  WITH q1 AS (SELECT * from t1) SELECT * FROM q1;
                QUERY PLAN                
 -----------------------------------------
@@ -730,6 +404,157 @@ explain (costs off, num_nodes off, nodes off, verbose on)  select * from c1 for 
          ->  Seq Scan on public.c1
                Output: a, b, d, e, ctid
 (6 rows)
+
+-- confirm that in various join scenarios for update gets to the remote query
+-- single table case
+ select * from t1 for update of t1 nowait;
+ val | val2 
+-----+------
+   1 |   11
+   2 |   11
+(2 rows)
+
+-- two table case
+ select * from t1, t2 where t1.val = t2.val for update nowait;
+ERROR:  FOR UPDATE is not allowed with joins
+ select * from t1, t2 where t1.val = t2.val for update;
+ERROR:  FOR UPDATE is not allowed with joins
+ select * from t1, t2 where t1.val = t2.val for share;
+ERROR:  FOR SHARE is not allowed with joins
+ select * from t1, t2 where t1.val = t2.val;
+ val | val2 | val | val2 
+-----+------+-----+------
+(0 rows)
+
+ select * from t1, t2;
+ val | val2 | val | val2 
+-----+------+-----+------
+   1 |   11 |   3 |   11
+   1 |   11 |   4 |   11
+   2 |   11 |   3 |   11
+   2 |   11 |   4 |   11
+(4 rows)
+
+ select * from t1, t2 for update;
+ERROR:  FOR UPDATE is not allowed with joins
+ select * from t1, t2 for update nowait;
+ERROR:  FOR UPDATE is not allowed with joins
+ select * from t1, t2 for share nowait;
+ERROR:  FOR SHARE is not allowed with joins
+ select * from t1, t2 for share;
+ERROR:  FOR SHARE is not allowed with joins
+ select * from t1, t2 for share of t2;
+ERROR:  FOR SHARE is not allowed with joins
+-- three table case
+ select * from t1, t2, t3;
+ val | val2 | val | val2 | val | val2 
+-----+------+-----+------+-----+------
+   1 |   11 |   3 |   11 |   5 |   11
+   1 |   11 |   3 |   11 |   6 |   11
+   1 |   11 |   4 |   11 |   5 |   11
+   1 |   11 |   4 |   11 |   6 |   11
+   2 |   11 |   3 |   11 |   5 |   11
+   2 |   11 |   3 |   11 |   6 |   11
+   2 |   11 |   4 |   11 |   5 |   11
+   2 |   11 |   4 |   11 |   6 |   11
+(8 rows)
+
+ select * from t1, t2, t3 for update;
+ERROR:  FOR UPDATE is not allowed with joins
+ select * from t1, t2, t3 for update of t1;
+ERROR:  FOR UPDATE is not allowed with joins
+ select * from t1, t2, t3 for update of t1,t3;
+ERROR:  FOR UPDATE is not allowed with joins
+ select * from t1, t2, t3 for update of t1,t3 nowait;
+ERROR:  FOR UPDATE is not allowed with joins
+ select * from t1, t2, t3 for share of t1,t2 nowait;
+ERROR:  FOR SHARE is not allowed with joins
+-- check a few subquery cases
+ select * from (select * from t1 for update of t1 nowait) as foo;
+ val | val2 
+-----+------
+   1 |   11
+   2 |   11
+(2 rows)
+
+ select * from t1 where val in (select val from t2 for update of t2 nowait) for update;
+ val | val2 
+-----+------
+(0 rows)
+
+ select * from t1 where val in (select val from t2 for update of t2 nowait);
+ val | val2 
+-----+------
+(0 rows)
+
+-- test multiple row marks
+ select * from t1, t2 for share of t2 for update of t1;
+ERROR:  FOR SHARE is not allowed with joins
+-- make sure FOR UPDATE takes prioriy over FOR SHARE when mentioned for the same table
+ select * from t1 for share of t1 for update of t1;
+ val | val2 
+-----+------
+   1 |   11
+   2 |   11
+(2 rows)
+
+ select * from t1 for update of t1 for share of t1;
+ val | val2 
+-----+------
+   1 |   11
+   2 |   11
+(2 rows)
+
+ select * from t1 for share of t1 for share of t1 for update of t1;
+ val | val2 
+-----+------
+   1 |   11
+   2 |   11
+(2 rows)
+
+ select * from t1 for share of t1 for share of t1 for share of t1;
+ val | val2 
+-----+------
+   1 |   11
+   2 |   11
+(2 rows)
+
+-- make sure NOWAIT is used in remote query even if it is not mentioned with FOR UPDATE clause
+ select * from t1 for share of t1 for share of t1 nowait for update of t1;
+ val | val2 
+-----+------
+   1 |   11
+   2 |   11
+(2 rows)
+
+-- same table , different aliases and different row marks for different aliases
+ select * from t1 a,t1 b for share of a for update of b;
+ERROR:  FOR SHARE is not allowed with joins
+-- test WITH queries
+-- join of a WITH table and a normal table
+ WITH q1 AS (SELECT * from t1 FOR UPDATE) SELECT * FROM q1,t2 FOR UPDATE;
+ERROR:  FOR UPDATE is not allowed with joins
+ WITH q1 AS (SELECT * from t1) SELECT * FROM q1;
+ val | val2 
+-----+------
+   1 |   11
+   2 |   11
+(2 rows)
+
+-- make sure row marks are no ops for queries on WITH tables
+ WITH q1 AS (SELECT * from t1) SELECT * FROM q1 FOR UPDATE;
+ val | val2 
+-----+------
+   1 |   11
+   2 |   11
+(2 rows)
+
+ WITH q1 AS (SELECT * from t1 FOR UPDATE) SELECT * FROM q1 FOR UPDATE;
+ val | val2 
+-----+------
+   1 |   11
+   2 |   11
+(2 rows)
 
 -- drop objects created
 drop table c1;
@@ -1098,24 +923,12 @@ commit prepared 'pt_1';
 -- ****  
 begin;
   select * from t1, t2, t3 order by 1 for update;
- val | val2 | val | val2 | val | val2 
------+------+-----+------+-----+------
-   1 |   11 |   3 |   11 |   5 |   11
-   1 |   11 |   3 |   11 |   6 |   11
-   1 |   11 |   4 |   11 |   5 |   11
-   1 |   11 |   4 |   11 |   6 |   11
-   2 |   11 |   3 |   11 |   5 |   11
-   2 |   11 |   3 |   11 |   6 |   11
-   2 |   11 |   4 |   11 |   5 |   11
-   2 |   11 |   4 |   11 |   6 |   11
-(8 rows)
-
+ERROR:  FOR UPDATE is not allowed with joins
 prepare transaction 'pt_1';
 select gid from pg_prepared_xacts where gid = 'pt_1';
- gid  
-------
- pt_1
-(1 row)
+ gid 
+-----
+(0 rows)
 
 select is_prepared_on_node('pt_1', 1); -- true
  is_prepared_on_node 
@@ -1124,6 +937,7 @@ select is_prepared_on_node('pt_1', 1); -- true
 (1 row)
 
 commit prepared 'pt_1';
+ERROR:  prepared transaction with identifier "pt_1" does not exist
 -- ****  
 begin;
   --WITH q1 AS (SELECT * from t1 order by 1 FOR UPDATE) SELECT * FROM q1,t2 order by 1 FOR UPDATE;
@@ -1190,16 +1004,12 @@ commit prepared 'pt_1';
 -- ****  
 begin;
   select * from t1, t2 where t1.val = t2.val for share;
- val | val2 | val | val2 
------+------+-----+------
-(0 rows)
-
+ERROR:  FOR SHARE is not allowed with joins
 prepare transaction 'pt_1';
 select gid from pg_prepared_xacts where gid = 'pt_1';
- gid  
-------
- pt_1
-(1 row)
+ gid 
+-----
+(0 rows)
 
 select is_prepared_on_node('pt_1', 1); -- true
  is_prepared_on_node 
@@ -1208,23 +1018,16 @@ select is_prepared_on_node('pt_1', 1); -- true
 (1 row)
 
 commit prepared 'pt_1';
+ERROR:  prepared transaction with identifier "pt_1" does not exist
 -- ****  
 begin;
   select * from t1, t2 for share of t2;
- val | val2 | val | val2 
------+------+-----+------
-   1 |   11 |   3 |   11
-   1 |   11 |   4 |   11
-   2 |   11 |   3 |   11
-   2 |   11 |   4 |   11
-(4 rows)
-
+ERROR:  FOR SHARE is not allowed with joins
 prepare transaction 'pt_1';
 select gid from pg_prepared_xacts where gid = 'pt_1';
- gid  
-------
- pt_1
-(1 row)
+ gid 
+-----
+(0 rows)
 
 select is_prepared_on_node('pt_1', 1); -- true
  is_prepared_on_node 
@@ -1233,6 +1036,7 @@ select is_prepared_on_node('pt_1', 1); -- true
 (1 row)
 
 commit prepared 'pt_1';
+ERROR:  prepared transaction with identifier "pt_1" does not exist
 -- ****  
 begin;
   select * from (select * from t1 for update of t1 nowait) as foo;
@@ -1301,20 +1105,12 @@ commit prepared 'pt_1';
 -- ****  
 begin;
   select * from t1, t2 for share of t2 for update of t1;
- val | val2 | val | val2 
------+------+-----+------
-   1 |   11 |   3 |   11
-   1 |   11 |   4 |   11
-   2 |   11 |   3 |   11
-   2 |   11 |   4 |   11
-(4 rows)
-
+ERROR:  FOR SHARE is not allowed with joins
 prepare transaction 'pt_1';
 select gid from pg_prepared_xacts where gid = 'pt_1';
- gid  
-------
- pt_1
-(1 row)
+ gid 
+-----
+(0 rows)
 
 select is_prepared_on_node('pt_1', 1); -- true
  is_prepared_on_node 
@@ -1323,6 +1119,7 @@ select is_prepared_on_node('pt_1', 1); -- true
 (1 row)
 
 commit prepared 'pt_1';
+ERROR:  prepared transaction with identifier "pt_1" does not exist
 -- ****  
 begin;
   select * from t1 for share of t1 for update of t1;
@@ -1441,20 +1238,12 @@ commit prepared 'pt_1';
 -- ****  
 begin;
   select * from t1 a,t1 b for share of a for update of b;
- val | val2 | val | val2 
------+------+-----+------
-   1 |   11 |   1 |   11
-   1 |   11 |   2 |   11
-   2 |   11 |   1 |   11
-   2 |   11 |   2 |   11
-(4 rows)
-
+ERROR:  FOR SHARE is not allowed with joins
 prepare transaction 'pt_1';
 select gid from pg_prepared_xacts where gid = 'pt_1';
- gid  
-------
- pt_1
-(1 row)
+ gid 
+-----
+(0 rows)
 
 select is_prepared_on_node('pt_1', 1); -- true
  is_prepared_on_node 
@@ -1463,6 +1252,7 @@ select is_prepared_on_node('pt_1', 1); -- true
 (1 row)
 
 commit prepared 'pt_1';
+ERROR:  prepared transaction with identifier "pt_1" does not exist
 -- ****  
 begin;
   select * from p1 order by 1 for update;
@@ -1589,24 +1379,12 @@ commit prepared 'pt_1';
 -- ****  
 begin;
   select * from t1, t2, t3 order by 1 for update;
- val | val2 | val | val2 | val | val2 
------+------+-----+------+-----+------
-   1 |   11 |   3 |   11 |   5 |   11
-   1 |   11 |   3 |   11 |   6 |   11
-   1 |   11 |   4 |   11 |   5 |   11
-   1 |   11 |   4 |   11 |   6 |   11
-   2 |   11 |   3 |   11 |   5 |   11
-   2 |   11 |   3 |   11 |   6 |   11
-   2 |   11 |   4 |   11 |   5 |   11
-   2 |   11 |   4 |   11 |   6 |   11
-(8 rows)
-
+ERROR:  FOR UPDATE is not allowed with joins
 prepare transaction 'pt_1';
 select gid from pg_prepared_xacts where gid = 'pt_1';
- gid  
-------
- pt_1
-(1 row)
+ gid 
+-----
+(0 rows)
 
 select is_prepared_on_node('pt_1', 1); -- true
  is_prepared_on_node 
@@ -1615,6 +1393,7 @@ select is_prepared_on_node('pt_1', 1); -- true
 (1 row)
 
 commit prepared 'pt_1';
+ERROR:  prepared transaction with identifier "pt_1" does not exist
 -- ****  
 begin;
   --WITH q1 AS (SELECT * from t1 order by 1 FOR UPDATE) SELECT * FROM q1,t2 order by 1 FOR UPDATE;
@@ -1681,16 +1460,12 @@ commit prepared 'pt_1';
 -- ****  
 begin;
   select * from t1, t2 where t1.val = t2.val for share;
- val | val2 | val | val2 
------+------+-----+------
-(0 rows)
-
+ERROR:  FOR SHARE is not allowed with joins
 prepare transaction 'pt_1';
 select gid from pg_prepared_xacts where gid = 'pt_1';
- gid  
-------
- pt_1
-(1 row)
+ gid 
+-----
+(0 rows)
 
 select is_prepared_on_node('pt_1', 1); -- true
  is_prepared_on_node 
@@ -1699,23 +1474,16 @@ select is_prepared_on_node('pt_1', 1); -- true
 (1 row)
 
 commit prepared 'pt_1';
+ERROR:  prepared transaction with identifier "pt_1" does not exist
 -- ****  
 begin;
   select * from t1, t2 for share of t2;
- val | val2 | val | val2 
------+------+-----+------
-   1 |   11 |   3 |   11
-   1 |   11 |   4 |   11
-   2 |   11 |   3 |   11
-   2 |   11 |   4 |   11
-(4 rows)
-
+ERROR:  FOR SHARE is not allowed with joins
 prepare transaction 'pt_1';
 select gid from pg_prepared_xacts where gid = 'pt_1';
- gid  
-------
- pt_1
-(1 row)
+ gid 
+-----
+(0 rows)
 
 select is_prepared_on_node('pt_1', 1); -- true
  is_prepared_on_node 
@@ -1724,6 +1492,7 @@ select is_prepared_on_node('pt_1', 1); -- true
 (1 row)
 
 commit prepared 'pt_1';
+ERROR:  prepared transaction with identifier "pt_1" does not exist
 -- ****  
 begin;
   select * from (select * from t1 for update of t1 nowait) as foo;
@@ -1792,20 +1561,12 @@ commit prepared 'pt_1';
 -- ****  
 begin;
   select * from t1, t2 for share of t2 for update of t1;
- val | val2 | val | val2 
------+------+-----+------
-   1 |   11 |   3 |   11
-   1 |   11 |   4 |   11
-   2 |   11 |   3 |   11
-   2 |   11 |   4 |   11
-(4 rows)
-
+ERROR:  FOR SHARE is not allowed with joins
 prepare transaction 'pt_1';
 select gid from pg_prepared_xacts where gid = 'pt_1';
- gid  
-------
- pt_1
-(1 row)
+ gid 
+-----
+(0 rows)
 
 select is_prepared_on_node('pt_1', 1); -- true
  is_prepared_on_node 
@@ -1814,6 +1575,7 @@ select is_prepared_on_node('pt_1', 1); -- true
 (1 row)
 
 commit prepared 'pt_1';
+ERROR:  prepared transaction with identifier "pt_1" does not exist
 -- ****  
 begin;
   select * from t1 for share of t1 for update of t1;
@@ -1932,20 +1694,12 @@ commit prepared 'pt_1';
 -- ****  
 begin;
   select * from t1 a,t1 b for share of a for update of b;
- val | val2 | val | val2 
------+------+-----+------
-   1 |   11 |   1 |   11
-   1 |   11 |   2 |   11
-   2 |   11 |   1 |   11
-   2 |   11 |   2 |   11
-(4 rows)
-
+ERROR:  FOR SHARE is not allowed with joins
 prepare transaction 'pt_1';
 select gid from pg_prepared_xacts where gid = 'pt_1';
- gid  
-------
- pt_1
-(1 row)
+ gid 
+-----
+(0 rows)
 
 select is_prepared_on_node('pt_1', 1); -- true
  is_prepared_on_node 
@@ -1954,6 +1708,7 @@ select is_prepared_on_node('pt_1', 1); -- true
 (1 row)
 
 commit prepared 'pt_1';
+ERROR:  prepared transaction with identifier "pt_1" does not exist
 -- ****  
 begin;
   select * from p1 order by 1 for update;
