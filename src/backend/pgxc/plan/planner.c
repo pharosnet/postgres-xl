@@ -278,6 +278,15 @@ pgxc_FQS_planner(Query *query, ParamListInfo boundParams)
 	if (query->utilityStmt &&
 		IsA(query->utilityStmt, DeclareCursorStmt))
 		return NULL;
+
+	/* Do not FQS EXEC DIRECT statements */
+	if (query->utilityStmt && IsA(query->utilityStmt, RemoteQuery))
+	{
+		RemoteQuery *stmt = (RemoteQuery *) query->utilityStmt;
+		if (stmt->exec_direct_type != EXEC_DIRECT_NONE)
+			return NULL;
+	}
+
 	/*
 	 * If the query can not be or need not be shipped to the Datanodes, don't
 	 * create any plan here. standard_planner() will take care of it.
