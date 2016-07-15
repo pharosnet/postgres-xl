@@ -1,0 +1,17 @@
+-- #16
+-- Windowing function throws an error when subquery has ORDER BY clause
+CREATE TABLE test (a int, b int);
+EXPLAIN SELECT last_value(a) OVER (PARTITION by b) FROM (SELECT * FROM test) AS s ORDER BY a;
+                                              QUERY PLAN                                               
+-------------------------------------------------------------------------------------------------------
+ Sort  (cost=192.41..198.06 rows=2260 width=8)
+   Sort Key: test.a
+   ->  WindowAgg  (cost=0.00..66.50 rows=2260 width=8)
+         ->  Remote Subquery Scan on all (datanode_1,datanode_2)  (cost=0.00..32.60 rows=2260 width=8)
+               ->  Sort  (cost=158.51..164.16 rows=2260 width=8)
+                     Sort Key: test.b
+                     ->  Seq Scan on test  (cost=0.00..32.60 rows=2260 width=8)
+(7 rows)
+
+EXPLAIN SELECT last_value(a) OVER (PARTITION by b) FROM (SELECT * FROM test  ORDER BY a) AS s ORDER BY a;
+DROP TABLE test;
