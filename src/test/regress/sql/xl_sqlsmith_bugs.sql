@@ -1,3 +1,77 @@
+-- #91
+-- SQLsmith: ERROR: int2_accum_inv called with NULL state
+
+SET sequence_range = 1;
+CREATE SEQUENCE xl_INSERT_SEQ;
+
+CREATE TABLE xl_funct (
+        a integer,
+        b INT DEFAULT nextval('xl_insert_seq')
+) DISTRIBUTE BY HASH (a);
+
+INSERT INTO xl_funct (a) VALUES (1);
+INSERT INTO xl_funct (a) VALUES (2);
+INSERT INTO xl_funct (a) VALUES (3);
+SELECT * FROM xl_funct;
+
+CREATE TABLE xl_join_t1 (val1 int, val2 int);
+CREATE TABLE xl_join_t2 (val1 int, val2 int);
+CREATE TABLE xl_join_t3 (val1 int, val2 int);
+INSERT INTO xl_join_t1 VALUES (1,10),(2,20);
+INSERT INTO xl_join_t2 VALUES (3,30),(4,40);
+INSERT INTO xl_join_t3 VALUES (5,50),(6,60);EXPLAIN SELECT * FROM xl_join_t1
+        INNER JOIN xl_join_t2 ON xl_join_t1.val1 = xl_join_t2.val2
+        INNER JOIN xl_join_t3 ON xl_join_t1.val1 = xl_join_t3.val1;
+SELECT * FROM xl_join_t1
+        INNER JOIN xl_join_t2 ON xl_join_t1.val1 = xl_join_t2.val2
+        INNER JOIN xl_join_t3 ON xl_join_t1.val1 = xl_join_t3.val1;
+
+select
+          subq_3.c1 as c0,
+          subq_9.c0 as c1
+        from
+          (select
+                  subq_2.c1 as c0,
+                  50 as c1
+                from
+                  pg_catalog.pg_pltemplate as sample_2 tablesample system (4.6) ,
+                  lateral (select
+                        sample_2.tmpldbacreate as c0,
+                        pg_catalog.pg_advisory_unlock_all() as c1,
+                        sample_2.tmplvalidator as c2
+                      from
+                        public.xl_join_t3 as sample_3 tablesample bernoulli (9.2)
+                      where sample_3.val1 <> pg_catalog.txid_current()
+                      limit 55) as subq_2
+                where 92 >= pg_catalog.pg_event_trigger_table_rewrite_reason()
+                limit 60) as subq_3
+            inner join (select
+                    sample_10.b as c0
+                  from
+                    public.xl_funct as sample_10 tablesample system (1.8)
+                  where sample_10.b < sample_10.a
+                  limit 42) as subq_9
+              right join (select
+                    41 as c0,
+                    sample_11.rngsubdiff as c1
+                  from
+                    pg_catalog.pg_range as sample_11 tablesample system (9.4)
+                  where (pg_catalog.numeric_accum_inv(
+                        cast(null as numeric_agg_state),
+
+
+                        cast(null as numeric)) is NULL)
+                    and (sample_11.rngsubopc <> sample_11.rngsubopc)
+                  limit 130) as subq_10
+              on (subq_9.c0 = subq_10.c0 )
+            on (subq_3.c1 = subq_10.c0 )
+        where subq_9.c0 <> subq_9.c0;
+DROP TABLE xl_join_t1;
+DROP TABLE xl_join_t2;
+DROP TABLE xl_join_t3;
+DROP SEQUENCE xl_INSERT_SEQ cascade;
+DROP TABLE xl_funct;
+
 -- #88
 -- SQLsmith: Error: unsupported data type for HASH locator:
 
