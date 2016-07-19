@@ -1,3 +1,43 @@
+-- #93
+-- SQLsmith: ERROR: invalid regexp option:
+select
+          subq_28.c0 as c0,
+          subq_29.c0 as c1
+        from
+          (select
+                  83 as c0,
+                  sample_76.nodeoids as c1,
+                  7 as c2
+                from
+                  pg_catalog.pgxc_class as sample_76 tablesample system (1)
+                where (select character_maximum_length from information_schema.domains limit 1 offset 36)
+         < sample_76.pchashbuckets) as subq_28
+            right join (select
+                  sample_77.objoid as c0,
+                  sample_77.objoid as c1,
+                  52 as c2,
+                  pg_catalog.random() as c3,
+                  sample_77.description as c4,
+                  sample_77.objsubid as c5,
+                  53 as c6,
+                  73 as c7,
+                  sample_77.objsubid as c8
+                from
+                  pg_catalog.pg_description as sample_77 tablesample bernoulli (4.5)
+                where sample_77.objoid <> sample_77.classoid
+                limit 174) as subq_29
+            on (subq_28.c0 = subq_29.c2 )
+        where (53 = pg_catalog.char_length(
+              cast(pg_catalog.regexp_replace(
+                cast(subq_29.c4 as text),
+                cast(subq_29.c4 as text),
+                cast(subq_29.c4 as text),
+                cast(pg_catalog.timeofday() as text)) as text)))
+          and ((subq_29.c7 is NULL)
+            or ((subq_28.c2 <= 68)
+              or ((select character_maximum_length from information_schema.domains limit 1 offset 39)
+         <= 100)))
+        limit 94;
 -- #91
 -- SQLsmith: ERROR: int2_accum_inv called with NULL state
 SET sequence_range = 1;
