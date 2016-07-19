@@ -95,4 +95,8 @@ extern int	bms_next_member(const Bitmapset *a, int prevbit);
 /* support for hashtables using Bitmapsets as keys: */
 extern uint32 bms_hash_value(const Bitmapset *a);
 
+#ifdef XCP
+extern int	bms_any_member(Bitmapset *a);
+#endif
+
 #endif   /* BITMAPSET_H */

@@ -967,3 +967,22 @@ bms_hash_value(const Bitmapset *a)
 	return DatumGetUInt32(hash_any((const unsigned char *) a->words,
 								   (lastword + 1) * sizeof(bitmapword)));
 }
+
+#ifdef XCP
+/*
+ * bms_any_member - return any member from the set randomly
+ *
+ * Returns -1 if set is empty.  NB: set is destructively modified!
+ *
+ * CAUTION: this destroys the content of "inputset".
+ */
+int
+bms_any_member(Bitmapset *a)
+{
+	int member;
+	int random = abs(rand()) % bms_num_members(a);
+	for (member = 0; member < random; member++)
+		bms_first_member(a);
+	return bms_first_member(a);
+}
+#endif

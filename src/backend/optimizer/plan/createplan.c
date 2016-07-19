@@ -4108,7 +4108,7 @@ make_remotesubplan(PlannerInfo *root,
 		if (bms_num_members(tmpset) > 1)
 		{
 			/* get one execution node TODO: load balancing */
-			nodenum = bms_first_member(tmpset);
+			nodenum = bms_any_member(tmpset);
 			node->nodeList = list_make1_int(nodenum);
 			node->execOnAll = true;
 		}
