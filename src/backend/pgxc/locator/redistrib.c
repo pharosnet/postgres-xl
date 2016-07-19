@@ -752,8 +752,14 @@ distrib_delete_hash(RedistribState *distribState, ExecNodes *exec_nodes)
 		/*
 		 * Then build the WHERE clause for deletion.
 		 * The condition that allows to keep the tuples on remote nodes
-		 * is of the type "RemoteNodeNumber != abs(hash_func(dis_col)) % NumDatanodes".
-		 * the remote Datanode has no knowledge of its position in cluster so this
+		 * is of the type "RemoteNodeNumber != (hash_func(dis_col)) %
+		 * NumDatanodes".
+		 *
+		 * (Earlier we were using abs(hashvalue), but that does not render the
+		 * same result as (unsigned int) (signed value). So we must do a modulo
+		 * 2^32 computation.
+		 *
+		 * The remote Datanode has no knowledge of its position in cluster so this
 		 * number needs to be compiled locally on Coordinator.
 		 * Taking the absolute value is necessary as hash may return a negative value.
 		 * For hash distributions a condition with correct hash function is used.
@@ -762,11 +768,11 @@ distrib_delete_hash(RedistribState *distribState, ExecNodes *exec_nodes)
 		 */
 		buf2 = makeStringInfo();
 		if (hashfuncname)
-			appendStringInfo(buf2, "%s WHERE abs(%s(%s)) %% %d != %d",
+			appendStringInfo(buf2, "%s WHERE ((2^32 + %s(%s))::bigint %% (2^32)::bigint) %% %d != %d",
 							 buf->data, hashfuncname, colname,
 							 list_length(locinfo->rl_nodeList), nodepos);
 		else
-			appendStringInfo(buf2, "%s WHERE abs(%s) %% %d != %d", buf->data, colname,
+			appendStringInfo(buf2, "%s WHERE ((2^32 + %s)::bigint %% (2^32)::bigint) %% %d != %d", buf->data, colname,
 							 list_length(locinfo->rl_nodeList), nodepos);
 
 		/* Then launch this single query */
