@@ -19,3 +19,12 @@ CREATE FUNCTION testf (x test) RETURNS INTEGER AS $$ SELECT 1; $$ LANGUAGE SQL;
 DROP FUNCTION testf (x test);
 DROP VIEW v;
 DROP TABLE test;
+
+
+-- #7
+-- "cache lookup failed" error
+CREATE TABLE test (a int, b int);
+CREATE VIEW v AS SELECT * FROM test;
+SELECT v FROM v;
+DROP VIEW v;
+DROP TABLE test;
