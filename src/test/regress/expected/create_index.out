@@ -2887,17 +2887,22 @@ SELECT * FROM tenk1
 EXPLAIN (NODES OFF, COSTS OFF)
 SELECT count(*) FROM tenk1
   WHERE hundred = 42 AND (thousand = 42 OR thousand = 99);
-                            QUERY PLAN                            
-------------------------------------------------------------------
+                                         QUERY PLAN                                          
+---------------------------------------------------------------------------------------------
  Aggregate
    ->  Remote Subquery Scan on all
          ->  Aggregate
                ->  Bitmap Heap Scan on tenk1
-                     Recheck Cond: (hundred = 42)
-                     Filter: ((thousand = 42) OR (thousand = 99))
-                     ->  Bitmap Index Scan on tenk1_hundred
-                           Index Cond: (hundred = 42)
-(8 rows)
+                     Recheck Cond: ((hundred = 42) AND ((thousand = 42) OR (thousand = 99)))
+                     ->  BitmapAnd
+                           ->  Bitmap Index Scan on tenk1_hundred
+                                 Index Cond: (hundred = 42)
+                           ->  BitmapOr
+                                 ->  Bitmap Index Scan on tenk1_thous_tenthous
+                                       Index Cond: (thousand = 42)
+                                 ->  Bitmap Index Scan on tenk1_thous_tenthous
+                                       Index Cond: (thousand = 99)
+(13 rows)
 
 SELECT count(*) FROM tenk1
   WHERE hundred = 42 AND (thousand = 42 OR thousand = 99);
