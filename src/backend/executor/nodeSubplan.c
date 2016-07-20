@@ -289,6 +289,7 @@ ExecScanSubPlan(SubPlanState *node,
 											   econtext,
 											   &(prm->isnull),
 											   NULL);
+		prm->done = true;
 		planstate->chgParam = bms_add_member(planstate->chgParam, paramid);
 	}
 
@@ -996,6 +997,7 @@ ExecSetParamPlan(SubPlanState *node, ExprContext *econtext)
 											   econtext,
 											   &(prm->isnull),
 											   NULL);
+		prm->done = true;
 		planstate->chgParam = bms_add_member(planstate->chgParam, paramid);
 	}
 
@@ -1017,6 +1019,7 @@ ExecSetParamPlan(SubPlanState *node, ExprContext *econtext)
 			ParamExecData *prm = &(econtext->ecxt_param_exec_vals[paramid]);
 
 			prm->execPlan = NULL;
+			prm->done = true;
 			prm->value = BoolGetDatum(true);
 			prm->isnull = false;
 			found = true;
@@ -1067,6 +1070,7 @@ ExecSetParamPlan(SubPlanState *node, ExprContext *econtext)
 			ParamExecData *prm = &(econtext->ecxt_param_exec_vals[paramid]);
 
 			prm->execPlan = NULL;
+			prm->done = true;
 			prm->value = heap_getattr(node->curTuple, i, tdesc,
 									  &(prm->isnull));
 			i++;
@@ -1090,6 +1094,7 @@ ExecSetParamPlan(SubPlanState *node, ExprContext *econtext)
 											econtext->ecxt_per_query_memory,
 											true);
 		prm->execPlan = NULL;
+		prm->done = true;
 		prm->value = node->curArray;
 		prm->isnull = false;
 	}
@@ -1102,6 +1107,7 @@ ExecSetParamPlan(SubPlanState *node, ExprContext *econtext)
 			ParamExecData *prm = &(econtext->ecxt_param_exec_vals[paramid]);
 
 			prm->execPlan = NULL;
+			prm->done = true;
 			prm->value = BoolGetDatum(false);
 			prm->isnull = false;
 		}
@@ -1114,6 +1120,7 @@ ExecSetParamPlan(SubPlanState *node, ExprContext *econtext)
 				ParamExecData *prm = &(econtext->ecxt_param_exec_vals[paramid]);
 
 				prm->execPlan = NULL;
+				prm->done = true;
 				prm->value = (Datum) 0;
 				prm->isnull = true;
 			}

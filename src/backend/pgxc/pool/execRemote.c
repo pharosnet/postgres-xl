@@ -5713,7 +5713,10 @@ static int encode_parameters(int nparams, RemoteParam *remoteparams,
 				/* ExecSetParamPlan should have processed this param... */
 				Assert(param->execPlan == NULL);
 			}
+			if (!param->done)
+				param->isnull = true;
 			append_param_data(&buf, ptype, param->value, param->isnull);
+
 		}
 	}
 

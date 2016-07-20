@@ -100,6 +100,7 @@ typedef struct ParamExecData
 	bool		isnull;
 #ifdef XCP
 	Oid			ptype;
+	bool		done;
 #endif
 } ParamExecData;
 
