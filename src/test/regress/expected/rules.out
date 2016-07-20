@@ -3950,7 +3950,7 @@ INSERT INTO hats
     SELECT * FROM data
 RETURNING *;
 ERROR:  unrecognized node type: 119
-EXPLAIN (costs off) WITH data(hat_name, hat_color) AS (
+EXPLAIN (nodes off, costs off) WITH data(hat_name, hat_color) AS (
     VALUES ('h8', 'green'),
         ('h9', 'blue'),
         ('h7', 'forbidden')
@@ -3960,14 +3960,14 @@ INSERT INTO hats
 RETURNING *;
                                               QUERY PLAN                                               
 -------------------------------------------------------------------------------------------------------
- Remote Subquery Scan on all (datanode_1,datanode_2)
+ Remote Subquery Scan on all
    ->  Insert on hat_data
          Conflict Resolution: UPDATE
          Conflict Arbiter Indexes: hat_data_unique_idx
          Conflict Filter: ((excluded.hat_color <> 'forbidden'::bpchar) AND (hat_data.* <> excluded.*))
          CTE data
            ->  Values Scan on "*VALUES*"
-         ->  Remote Subquery Scan on all (datanode_1)
+         ->  Remote Subquery Scan on all
                Distribute results by H: hat_name
                ->  CTE Scan on data
 (10 rows)

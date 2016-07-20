@@ -1131,7 +1131,7 @@ WITH data(hat_name, hat_color) AS (
 INSERT INTO hats
     SELECT * FROM data
 RETURNING *;
-EXPLAIN (costs off) WITH data(hat_name, hat_color) AS (
+EXPLAIN (nodes off, costs off) WITH data(hat_name, hat_color) AS (
     VALUES ('h8', 'green'),
         ('h9', 'blue'),
         ('h7', 'forbidden')
