@@ -20,18 +20,13 @@ SELECT * from xl_funct2;
 
 --STABLE functions
 -- checking STABLE function in DEFAULT of non-distribution column
-create table xl_users (userid text, seq int, name text);
-insert into xl_users values ('id',1,'pallavi');
-insert into xl_users values ('id2',2,'xyz');
-
-create or replace function xl_get_first_user() returns text as
-$$ SELECT name FROM xl_users ORDER BY userid LIMIT 1; $$
-language sql stable;
+create function xl_nochange(text) returns text
+  as 'select $1 limit 1' language sql stable;
 
 CREATE TABLE xl_funct3(
 	a integer,
 	b integer,
-	c text DEFAULT xl_get_first_user()
+	c text DEFAULT xl_nochange('hello')
 ) DISTRIBUTE BY HASH(a);
 
 INSERT INTO xl_funct3(a,b) VALUES (1,2);--c should be pallavi
@@ -43,7 +38,7 @@ SELECT * from xl_funct3;
 CREATE TABLE xl_funct4(
 	a integer,
 	b integer,
-	c text DEFAULT xl_get_first_user()
+	c text DEFAULT xl_nochange('hello')
 ) DISTRIBUTE BY HASH(c);
 
 INSERT INTO xl_funct4(a,b) VALUES (1,2);--c should be pallavi
@@ -101,7 +96,6 @@ DROP SEQUENCE xl_INSERT_SEQ;
 DROP TABLE xl_funct2;
 DROP TABLE xl_funct3;
 DROP TABLE xl_funct4;
-DROP TABLE xl_users;
-DROP FUNCTION xl_get_first_user();
+DROP FUNCTION xl_nochange(text);
 DROP TABLE xl_funct5;
 DROP FUNCTION xl_get_curr_decade();
