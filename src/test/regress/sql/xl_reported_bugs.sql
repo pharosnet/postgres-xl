@@ -1,3 +1,32 @@
+-- #9
+-- Fails to see DDL's effect inside a function
+create function xl_getint() returns integer as $$
+declare
+	i integer;
+BEGIN
+	create table inttest(a int, b int);
+	insert into inttest values (1,1);
+	select a into i from inttest limit 1;
+	RETURN i;
+END;$$ language plpgsql;
+
+select xl_getint();
+select * from inttest;
+
+create function xl_cleanup() returns integer as $$
+declare
+	i integer;
+BEGIN
+	drop function xl_getint();
+	drop table inttest;
+	select a into i from inttest limit 1;
+	RETURN i;
+END;$$ language plpgsql;
+
+select xl_cleanup();
+
+drop function xl_cleanup();
+
 -- #4
 -- Tableoid to relation name mapping broken
 create table cities (
