@@ -1,3 +1,11 @@
+-- #13
+-- INSERT query with SELECT part using joins on OID fails to insert all rows correctly
+create table tmp_films(a int, b text default 'a_tmp_film') with oids;
+create table films(a int, b text default 'a_film') with oids;
+insert into tmp_films select generate_series(1, 10000);-- 10K entries
+select count(*) from tmp_films;
+insert into films select * from tmp_films where oid >= (select oid from tmp_films order by oid limit 1);
+select count(*) from films;
 -- #9
 -- Fails to see DDL's effect inside a function
 create function xl_getint() returns integer as $$
