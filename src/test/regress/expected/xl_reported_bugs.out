@@ -1,3 +1,14 @@
+-- #74
+-- SQL error codes are not correctly sent back to the client when dealing with error on COPY protocol
+\set VERBOSITY verbose
+create table copytbl(a integer, b text default 'a_copytbl', primary key (a));
+insert into copytbl select generate_series(1,200);
+COPY copytbl (a, b) from stdin;
+ERROR:  23505: duplicate key value violates unique constraint "copytbl_pkey"
+DETAIL:  Key (a)=(1) already exists.
+LOCATION:  pgxc_node_report_error, execRemote.c:6284
+drop table copytbl;
+\set VERBOSITY default
 -- #13
 -- INSERT query with SELECT part using joins on OID fails to insert all rows correctly
 create table tmp_films(a int, b text default 'a_tmp_film') with oids;

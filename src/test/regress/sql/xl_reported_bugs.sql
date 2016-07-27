@@ -1,3 +1,17 @@
+-- #74
+-- SQL error codes are not correctly sent back to the client when dealing with error on COPY protocol
+\set VERBOSITY verbose
+create table copytbl(a integer, b text default 'a_copytbl', primary key (a));
+insert into copytbl select generate_series(1,200);
+COPY copytbl (a, b) from stdin;
+10000	789
+10001	789
+1	789
+10002	789
+10003	789
+\.
+drop table copytbl;
+\set VERBOSITY default
 -- #13
 -- INSERT query with SELECT part using joins on OID fails to insert all rows correctly
 create table tmp_films(a int, b text default 'a_tmp_film') with oids;
