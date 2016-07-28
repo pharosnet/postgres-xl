@@ -1,3 +1,12 @@
+-- #6
+-- REFRESH MATERIALISED VIEW CONCURRENTLY gives error
+CREATE TABLE t (a int, b int);
+CREATE MATERIALIZED VIEW mvt AS SELECT * FROM t;
+CREATE UNIQUE INDEX mvidx ON mvt(a);
+REFRESH MATERIALIZED VIEW mvt;
+REFRESH MATERIALIZED VIEW CONCURRENTLY mvt;
+DROP MATERIALIZED VIEW mvt;
+DROP TABLE t;
 -- #74
 -- SQL error codes are not correctly sent back to the client when dealing with error on COPY protocol
 \set VERBOSITY verbose
