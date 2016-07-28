@@ -1,3 +1,11 @@
+-- #27
+-- Distribution column can be dropped for MODULO distribution tables.
+CREATE TABLE xl_at2m (
+    product_no INT8,
+    product_id INT2
+) DISTRIBUTE BY MODULO (product_id);
+ALTER TABLE xl_at2m DROP COLUMN product_id;
+DROP TABLE xl_at2m;
 -- #6
 -- REFRESH MATERIALISED VIEW CONCURRENTLY gives error
 CREATE TABLE t (a int, b int);

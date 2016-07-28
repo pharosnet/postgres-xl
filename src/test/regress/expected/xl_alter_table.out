@@ -78,7 +78,6 @@ ALTER TABLE xl_at3h DELETE NODE (datanode_2);
 ALTER TABLE xl_at3h ADD NODE (datanode_2);
 ALTER TABLE xl_at3h DISTRIBUTE BY REPLICATION; 
 -- MODULO Distributed table:
--- Distribution column cannot be dropped (BUG: It can be dropped now. Test Fails). 
 CREATE TABLE xl_at2m (
     product_no INT8,
     product_id INT2
@@ -100,7 +99,6 @@ ALTER TABLE xl_at2m RENAME COLUMN product_id TO product_identifier;
 ALTER TABLE xl_at2m RENAME TO xl_at3m;
 ALTER TABLE xl_at3m DELETE NODE (datanode_2);
 ALTER TABLE xl_at3m ADD NODE (datanode_2);
-ALTER TABLE xl_at3m DROP COLUMN product_identifier;--bug - distribution column can be dropped.
 ALTER TABLE xl_at3m DISTRIBUTE BY REPLICATION;
 DROP TABLE xl_at;
 DROP TABLE xl_at1;
