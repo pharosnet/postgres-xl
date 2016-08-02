@@ -758,7 +758,8 @@ vac_estimate_reltuples(Relation relation, bool is_analyze,
  */
 void
 vac_update_relstats(Relation relation,
-					BlockNumber num_pages, double num_tuples,
+					BlockNumber num_pages,
+					double num_tuples,
 					BlockNumber num_all_visible_pages,
 					bool hasindex, TransactionId frozenxid,
 					MultiXactId minmulti,
@@ -1603,7 +1604,8 @@ make_relation_tle(Oid reloid, const char *relname, const char *column)
  */
 static int
 get_remote_relstat(char *nspname, char *relname, bool replicated,
-				   int32 *pages, float4 *tuples, TransactionId *frozenXid)
+				   int32 *pages, int32 *allvisiblepages,
+				   float4 *tuples, TransactionId *frozenXid)
 {
 	StringInfoData query;
 	EState 	   *estate;
@@ -1613,12 +1615,14 @@ get_remote_relstat(char *nspname, char *relname, bool replicated,
 	TupleTableSlot *result;
 	int			validpages,
 				validtuples,
-				validfrozenxids;
+				validfrozenxids,
+				validallvisiblepages;
 
 	/* Make up query string */
 	initStringInfo(&query);
 	appendStringInfo(&query, "SELECT c.relpages, "
 									"c.reltuples, "
+									"c.relallvisible, "
 									"c.relfrozenxid "
 							 "FROM pg_class c JOIN pg_namespace n "
 							 "ON c.relnamespace = n.oid "
@@ -1647,6 +1651,10 @@ get_remote_relstat(char *nspname, char *relname, bool replicated,
 	step->scan.plan.targetlist = lappend(step->scan.plan.targetlist,
 										 make_relation_tle(RelationRelationId,
 														   "pg_class",
+														   "relallvisible"));
+	step->scan.plan.targetlist = lappend(step->scan.plan.targetlist,
+										 make_relation_tle(RelationRelationId,
+														   "pg_class",
 														   "relfrozenxid"));
 
 	/* Execute query on the data nodes */
@@ -1660,9 +1668,11 @@ get_remote_relstat(char *nspname, char *relname, bool replicated,
 	MemoryContextSwitchTo(oldcontext);
 	/* get ready to combine results */
 	*pages = 0;
+	*allvisiblepages = 0;
 	*tuples = 0.0;
 	*frozenXid = InvalidTransactionId;
 	validpages = 0;
+	validallvisiblepages = 0;
 	validtuples = 0;
 	validfrozenxids = 0;
 	result = ExecRemoteQuery(node);
@@ -1683,7 +1693,13 @@ get_remote_relstat(char *nspname, char *relname, bool replicated,
 			validtuples++;
 			*tuples += DatumGetFloat4(value);
 		}
-		value = slot_getattr(result, 3, &isnull); /* relfrozenxid */
+		value = slot_getattr(result, 3, &isnull); /* relallvisible */
+		if (!isnull)
+		{
+			validallvisiblepages++;
+			*allvisiblepages += DatumGetInt32(value);
+		}
+		value = slot_getattr(result, 4, &isnull); /* relfrozenxid */
 		if (!isnull)
 		{
 			/*
@@ -1718,6 +1734,9 @@ get_remote_relstat(char *nspname, char *relname, bool replicated,
 
 		if (validtuples > 0)
 			*tuples /= validtuples;
+
+		if (validallvisiblepages > 0)
+			*allvisiblepages /= validallvisiblepages;
 	}
 
 	if (validfrozenxids < validpages || validfrozenxids < validtuples)
@@ -1751,6 +1770,7 @@ vacuum_rel_coordinator(Relation onerel, bool is_outer)
 	char 	   *relname;
 	/* fields to combine relation statistics */
 	int32		num_pages;
+	int32		num_allvisible_pages;
 	float4		num_tuples;
 	TransactionId min_frozenxid;
 	bool		hasindex;
@@ -1769,7 +1789,8 @@ vacuum_rel_coordinator(Relation onerel, bool is_outer)
 	 * returning correct stats.
 	 */
 	rel_nodes = get_remote_relstat(nspname, relname, replicated,
-								   &num_pages, &num_tuples, &min_frozenxid);
+								   &num_pages, &num_allvisible_pages,
+								   &num_tuples, &min_frozenxid);
 	if (rel_nodes > 0)
 	{
 		int			nindexes;
@@ -1786,7 +1807,7 @@ vacuum_rel_coordinator(Relation onerel, bool is_outer)
 			/* Fetch index stats */
 			for (i = 0; i < nindexes; i++)
 			{
-				int32	idx_pages;
+				int32	idx_pages, idx_allvisible_pages;
 				float4	idx_tuples;
 				TransactionId idx_frozenxid;
 				int idx_nodes;
@@ -1796,7 +1817,8 @@ vacuum_rel_coordinator(Relation onerel, bool is_outer)
 				nspname = get_namespace_name(RelationGetNamespace(Irel[i]));
 				/* Index is replicated if parent relation is replicated */
 				idx_nodes = get_remote_relstat(nspname, relname, replicated,
-										&idx_pages, &idx_tuples, &idx_frozenxid);
+										&idx_pages, &idx_allvisible_pages,
+										&idx_tuples, &idx_frozenxid);
 				if (idx_nodes > 0)
 				{
 					/*
@@ -1837,7 +1859,7 @@ vacuum_rel_coordinator(Relation onerel, bool is_outer)
 		vac_update_relstats(onerel,
 							(BlockNumber) num_pages,
 							(double) num_tuples,
-							visibilitymap_count(onerel),
+							num_allvisible_pages,
 							hasindex,
 							min_frozenxid,
 							InvalidMultiXactId,

@@ -2423,7 +2423,7 @@ select count(*) from tenk1 a, tenk1 b
                      Hash Cond: (a.hundred = b.thousand)
                      ->  Remote Subquery Scan on all (datanode_1,datanode_2)
                            Distribute results by H: hundred
-                           ->  Seq Scan on tenk1 a
+                           ->  Index Only Scan using tenk1_hundred on tenk1 a
                      ->  Hash
                            ->  Remote Subquery Scan on all (datanode_1,datanode_2)
                                  Distribute results by H: thousand
@@ -2613,7 +2613,7 @@ prepare foo(bool) as
 execute foo(true);
  count 
 -------
- 10998
+ 10000
 (1 row)
 
 execute foo(false);
@@ -4706,19 +4706,18 @@ select * from generate_series(100,200) g,
 explain (num_nodes off, nodes off, costs off)
   select count(*) from tenk1 a,
     tenk1 b join lateral (values(a.unique1)) ss(x) on b.unique2 = ss.x;
-                            QUERY PLAN                            
-------------------------------------------------------------------
+                                  QUERY PLAN                                  
+------------------------------------------------------------------------------
  Aggregate
    ->  Remote Subquery Scan on all
          ->  Aggregate
-               ->  Hash Join
-                     Hash Cond: (a.unique1 = b.unique2)
-                     ->  Seq Scan on tenk1 a
-                     ->  Hash
-                           ->  Remote Subquery Scan on all
-                                 Distribute results by H: unique2
-                                 ->  Seq Scan on tenk1 b
-(10 rows)
+               ->  Merge Join
+                     Merge Cond: (b.unique2 = a.unique1)
+                     ->  Remote Subquery Scan on all
+                           Distribute results by H: unique2
+                           ->  Index Only Scan using tenk1_unique2 on tenk1 b
+                     ->  Index Only Scan using tenk1_unique1 on tenk1 a
+(9 rows)
 
 select count(*) from tenk1 a,
   tenk1 b join lateral (values(a.unique1)) ss(x) on b.unique2 = ss.x;
@@ -4731,18 +4730,18 @@ select count(*) from tenk1 a,
 explain (num_nodes off, nodes off, costs off)
   select count(*) from tenk1 a,
     tenk1 b join lateral (values(a.unique1),(-1)) ss(x) on b.unique2 = ss.x;
-                     QUERY PLAN                      
------------------------------------------------------
+                               QUERY PLAN                               
+------------------------------------------------------------------------
  Aggregate
    ->  Hash Join
          Hash Cond: ("*VALUES*".column1 = b.unique2)
          ->  Nested Loop
                ->  Remote Subquery Scan on all
-                     ->  Seq Scan on tenk1 a
+                     ->  Index Only Scan using tenk1_unique1 on tenk1 a
                ->  Values Scan on "*VALUES*"
          ->  Hash
                ->  Remote Subquery Scan on all
-                     ->  Seq Scan on tenk1 b
+                     ->  Index Only Scan using tenk1_unique2 on tenk1 b
 (10 rows)
 
 select count(*) from tenk1 a,
