@@ -345,29 +345,42 @@ pgxc_redist_add_reindex(RedistribState *distribState)
 static void
 distrib_execute_command(RedistribState *distribState, RedistribCommand *command)
 {
+	struct rusage		start_r;
+	struct timeval		start_t;
+	char				*command_str;
+
+	ResetUsageCommon(&start_r, &start_t);
+
 	/* Execute redistribution command */
 	switch (command->type)
 	{
 		case DISTRIB_COPY_TO:
 			distrib_copy_to(distribState);
+			command_str = "Redistribution step: fetch remote tuples";
 			break;
 		case DISTRIB_COPY_FROM:
 			distrib_copy_from(distribState, command->execNodes);
+			command_str = "Redistribution step: distribute tuples";
 			break;
 		case DISTRIB_TRUNCATE:
 			distrib_truncate(distribState, command->execNodes);
+			command_str = "Redistribution step: truncate relation";
 			break;
 		case DISTRIB_REINDEX:
 			distrib_reindex(distribState, command->execNodes);
+			command_str = "Redistribution step: reindex relation";
 			break;
 		case DISTRIB_DELETE_HASH:
 		case DISTRIB_DELETE_MODULO:
 			distrib_delete_hash(distribState, command->execNodes);
+			command_str = "Redistribution step: delete tuples";
 			break;
 		case DISTRIB_NONE:
 		default:
 			Assert(0); /* Should not happen */
 	}
+
+	ShowUsageCommon(command_str, &start_r, &start_t);
 }
 
 
@@ -415,6 +428,8 @@ distrib_copy_to(RedistribState *distribState)
 
 	/* Create tuplestore storage */
 	store = tuplestore_begin_message(false, work_mem);
+
+	tuplestore_collect_stat(store, "Redistribute_TS");
 
 	/* Then get rows and copy them to the tuplestore used for redistribution */
 	DataNodeCopyStore(
@@ -824,7 +839,8 @@ FreeRedistribState(RedistribState *state)
 	if (list_length(state->commands) > 0)
 		list_free(state->commands);
 	if (state->store)
-		tuplestore_clear(state->store);
+		tuplestore_end(state->store);
+	pfree(state);
 }
 
 /*
