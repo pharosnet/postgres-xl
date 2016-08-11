@@ -923,10 +923,14 @@ PostmasterMain(int argc, char *argv[])
 	if (output_config_variable != NULL)
 	{
 		/*
-		 * permission is handled because the user is reading inside the data
-		 * dir
+		 * "-C guc" was specified, so print GUC's value and exit.  No extra
+		 * permission check is needed because the user is reading inside the
+		 * data dir.
 		 */
-		puts(GetConfigOption(output_config_variable, false, false));
+		const char *config_val = GetConfigOption(output_config_variable,
+												 false, false);
+
+		puts(config_val ? config_val : "");
 		ExitPostmaster(0);
 	}
 
@@ -5017,8 +5021,6 @@ SubPostmasterMain(int argc, char *argv[])
 		/* do this as early as possible; in particular, before InitProcess() */
 		IsBackgroundWorker = true;
 
-		InitPostmasterChild();
-
 		/* Close the postmaster's sockets */
 		ClosePostmasterPorts(false);
 
@@ -5031,8 +5033,10 @@ SubPostmasterMain(int argc, char *argv[])
 		/* Attach process to shared data structures */
 		CreateSharedMemoryAndSemaphores(false, 0);
 
+		/* Fetch MyBgworkerEntry from shared memory */
 		shmem_slot = atoi(argv[1] + 15);
 		MyBgworkerEntry = BackgroundWorkerEntry(shmem_slot);
+
 		StartBackgroundWorker();
 	}
 	if (strcmp(argv[1], "--forkarch") == 0)

@@ -88,7 +88,7 @@
       <entry><type>smallint</type></entry>
       <entry></entry>
       <entry>Fork number within the relation;  see
-      <filename>include/storage/relfilenode.h</></entry>
+      <filename>include/common/relpath.h</></entry>
      </row>
 
      <row>

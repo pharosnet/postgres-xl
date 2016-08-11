@@ -2466,6 +2466,7 @@ finalize_plan(PlannerInfo *root, Plan *plan, Bitmapset *valid_params,
 								  &context);
 				finalize_primnode((Node *) mtplan->onConflictWhere,
 								  &context);
+				/* exclRelTlist contains only Vars, doesn't need examination */
 				foreach(l, mtplan->plans)
 				{
 					context.paramids =
