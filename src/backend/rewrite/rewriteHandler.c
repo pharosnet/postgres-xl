@@ -4055,7 +4055,8 @@ QueryRewriteCTAS(Query *parsetree)
 	else
 		appendStringInfo(&cquery, "INSERT INTO %s", relation->relname);
 
-	appendStringInfo(&cquery, " %s", selectstr);
+	appendStringInfo(&cquery, " %s %s", selectstr,
+			into->skipData ? "LIMIT 0" : "");
 
 	raw_parsetree_list = pg_parse_query(cquery.data);
 	return pg_analyze_and_rewrite(linitial(raw_parsetree_list), cquery.data,
