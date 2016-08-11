@@ -6833,6 +6833,9 @@ set_config_option(const char *name, const char *value,
 		if (value && strcmp("transaction_isolation", name) == 0)
 			value = quote_identifier(value);
 
+		if (value && strcmp("default_transaction_isolation", name) == 0)
+			value = quote_identifier(value);
+
 		/*
 		 * Quote value if it is including memory or time units
 		 */
