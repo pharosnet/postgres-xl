@@ -3094,6 +3094,32 @@ preprocess_rowmarks(PlannerInfo *root)
 		 */
 		CheckSelectLocking(parse, ((RowMarkClause *)
 								   linitial(parse->rowMarks))->strength);
+#ifdef XCP
+		if (parse->jointree)
+		{
+			Bitmapset  *baserels = get_base_rel_indexes((Node *) parse->jointree);;
+			int x, num_rels = 0;
+			bool dist_found = false;
+
+			while ((x = bms_first_member(baserels)) >= 0)
+			{
+				RangeTblEntry *rte = rt_fetch(x, parse->rtable);
+				RelationLocInfo *locinfo = NULL;
+				if (OidIsValid(rte->relid))
+					locinfo = GetRelationLocInfo(rte->relid);
+				if (locinfo && !IsRelationReplicated(locinfo))
+					dist_found = true;
+				num_rels++;
+			}
+
+			if (dist_found && num_rels > 1)
+				ereport(ERROR,
+						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+						 errmsg("%s is not allowed with joins",
+							 LCS_asString(((RowMarkClause *)
+									 linitial(parse->rowMarks))->strength))));
+		}
+#endif
 	}
 	else
 	{
@@ -3154,6 +3180,7 @@ preprocess_rowmarks(PlannerInfo *root)
 
 		prowmarks = lappend(prowmarks, newrc);
 	}
+
 
 	/*
 	 * Now, add rowmarks for any non-target, non-locked base relations.

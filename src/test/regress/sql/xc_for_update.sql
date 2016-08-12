@@ -57,6 +57,13 @@ explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1, t2 
 explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1, t2 for share;
 explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1, t2 for share of t2;
 
+explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1 join t2 on (t1.val = t2.val) for share;
+explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1 left join t2 on (t1.val = t2.val) for share;
+explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1 right join t2 on (t1.val = t2.val) for share;
+select * from t1 join t2 on (t1.val = t2.val) for share;
+select * from t1 left join t2 on (t1.val = t2.val) for share;
+select * from t1 right join t2 on (t1.val = t2.val) for share;
+
 -- three table case
 explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1, t2, t3;
 explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1, t2, t3 for update;
@@ -64,6 +71,15 @@ explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1, t2,
 explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1, t2, t3 for update of t1,t3;
 explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1, t2, t3 for update of t1,t3 nowait;
 explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1, t2, t3 for share of t1,t2 nowait;
+
+explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1 join t2 on (t1.val2 = t2.val2) join t3 on (t1.val2 = t3.val2);
+explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1 join t2 on (t1.val2 = t2.val2) join t3 on (t1.val2 = t3.val2) for update;
+explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1 join t2 on (t1.val2 = t2.val2) join t3 on (t1.val2 = t3.val2) for update of t1;
+explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1 join t2 on (t1.val2 = t2.val2) join t3 on (t1.val2 = t3.val2) for update of t1,t3;
+select * from t1 join t2 on (t1.val2 = t2.val2) join t3 on (t1.val2 = t3.val2);
+select * from t1 join t2 on (t1.val2 = t2.val2) join t3 on (t1.val2 = t3.val2) for update;
+select * from t1 join t2 on (t1.val2 = t2.val2) join t3 on (t1.val2 = t3.val2) for update of t1;
+select * from t1 join t2 on (t1.val2 = t2.val2) join t3 on (t1.val2 = t3.val2) for update of t1,t3;
 
 -- check a few subquery cases
 explain (costs off, num_nodes off, nodes off, verbose on)  select * from (select * from t1 for update of t1 nowait) as foo;

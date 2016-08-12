@@ -159,6 +159,18 @@ explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1, t2 
 ERROR:  FOR SHARE is not allowed with joins
 explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1, t2 for share of t2;
 ERROR:  FOR SHARE is not allowed with joins
+explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1 join t2 on (t1.val = t2.val) for share;
+ERROR:  FOR SHARE is not allowed with joins
+explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1 left join t2 on (t1.val = t2.val) for share;
+ERROR:  FOR SHARE is not allowed with joins
+explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1 right join t2 on (t1.val = t2.val) for share;
+ERROR:  FOR SHARE is not allowed with joins
+select * from t1 join t2 on (t1.val = t2.val) for share;
+ERROR:  FOR SHARE is not allowed with joins
+select * from t1 left join t2 on (t1.val = t2.val) for share;
+ERROR:  FOR SHARE is not allowed with joins
+select * from t1 right join t2 on (t1.val = t2.val) for share;
+ERROR:  FOR SHARE is not allowed with joins
 -- three table case
 explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1, t2, t3;
                          QUERY PLAN                          
@@ -195,6 +207,72 @@ explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1, t2,
 ERROR:  FOR UPDATE is not allowed with joins
 explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1, t2, t3 for share of t1,t2 nowait;
 ERROR:  FOR SHARE is not allowed with joins
+explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1 join t2 on (t1.val2 = t2.val2) join t3 on (t1.val2 = t3.val2);
+                             QUERY PLAN                              
+---------------------------------------------------------------------
+ Remote Subquery Scan on all
+   Output: t1.val, t1.val2, t2.val, t2.val2, t3.val, t3.val2
+   ->  Merge Join
+         Output: t1.val, t1.val2, t2.val, t2.val2, t3.val, t3.val2
+         Merge Cond: (t3.val2 = t1.val2)
+         ->  Remote Subquery Scan on all
+               Output: t3.val, t3.val2
+               Distribute results by H: val2
+               ->  Sort
+                     Output: t3.val, t3.val2
+                     Sort Key: t3.val2
+                     ->  Seq Scan on public.t3
+                           Output: t3.val, t3.val2
+         ->  Materialize
+               Output: t1.val, t1.val2, t2.val, t2.val2
+               ->  Merge Join
+                     Output: t1.val, t1.val2, t2.val, t2.val2
+                     Merge Cond: (t1.val2 = t2.val2)
+                     ->  Remote Subquery Scan on all
+                           Output: t1.val, t1.val2
+                           Distribute results by H: val2
+                           ->  Sort
+                                 Output: t1.val, t1.val2
+                                 Sort Key: t1.val2
+                                 ->  Seq Scan on public.t1
+                                       Output: t1.val, t1.val2
+                     ->  Materialize
+                           Output: t2.val, t2.val2
+                           ->  Remote Subquery Scan on all
+                                 Output: t2.val, t2.val2
+                                 Distribute results by H: val2
+                                 ->  Sort
+                                       Output: t2.val, t2.val2
+                                       Sort Key: t2.val2
+                                       ->  Seq Scan on public.t2
+                                             Output: t2.val, t2.val2
+(36 rows)
+
+explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1 join t2 on (t1.val2 = t2.val2) join t3 on (t1.val2 = t3.val2) for update;
+ERROR:  FOR UPDATE is not allowed with joins
+explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1 join t2 on (t1.val2 = t2.val2) join t3 on (t1.val2 = t3.val2) for update of t1;
+ERROR:  FOR UPDATE is not allowed with joins
+explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1 join t2 on (t1.val2 = t2.val2) join t3 on (t1.val2 = t3.val2) for update of t1,t3;
+ERROR:  FOR UPDATE is not allowed with joins
+select * from t1 join t2 on (t1.val2 = t2.val2) join t3 on (t1.val2 = t3.val2);
+ val | val2 | val | val2 | val | val2 
+-----+------+-----+------+-----+------
+   1 |   11 |   3 |   11 |   5 |   11
+   1 |   11 |   4 |   11 |   5 |   11
+   2 |   11 |   3 |   11 |   5 |   11
+   2 |   11 |   4 |   11 |   5 |   11
+   1 |   11 |   3 |   11 |   6 |   11
+   1 |   11 |   4 |   11 |   6 |   11
+   2 |   11 |   3 |   11 |   6 |   11
+   2 |   11 |   4 |   11 |   6 |   11
+(8 rows)
+
+select * from t1 join t2 on (t1.val2 = t2.val2) join t3 on (t1.val2 = t3.val2) for update;
+ERROR:  FOR UPDATE is not allowed with joins
+select * from t1 join t2 on (t1.val2 = t2.val2) join t3 on (t1.val2 = t3.val2) for update of t1;
+ERROR:  FOR UPDATE is not allowed with joins
+select * from t1 join t2 on (t1.val2 = t2.val2) join t3 on (t1.val2 = t3.val2) for update of t1,t3;
+ERROR:  FOR UPDATE is not allowed with joins
 -- check a few subquery cases
 explain (costs off, num_nodes off, nodes off, verbose on)  select * from (select * from t1 for update of t1 nowait) as foo;
                       QUERY PLAN                      
@@ -210,30 +288,7 @@ explain (costs off, num_nodes off, nodes off, verbose on)  select * from (select
 (8 rows)
 
 explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1 where val in (select val from t2 for update of t2 nowait) for update;
-                                  QUERY PLAN                                  
-------------------------------------------------------------------------------
- Remote Subquery Scan on all
-   Output: t1.val, t1.val2, t1.ctid, "ANY_subquery".*
-   ->  LockRows
-         Output: t1.val, t1.val2, t1.ctid, "ANY_subquery".*
-         ->  Hash Join
-               Output: t1.val, t1.val2, t1.ctid, "ANY_subquery".*
-               Hash Cond: (t1.val = "ANY_subquery".val)
-               ->  Seq Scan on public.t1
-                     Output: t1.val, t1.val2, t1.ctid
-               ->  Hash
-                     Output: "ANY_subquery".*, "ANY_subquery".val
-                     ->  HashAggregate
-                           Output: "ANY_subquery".*, "ANY_subquery".val
-                           Group Key: "ANY_subquery".val
-                           ->  Subquery Scan on "ANY_subquery"
-                                 Output: "ANY_subquery".*, "ANY_subquery".val
-                                 ->  LockRows
-                                       Output: t2.val, t2.ctid
-                                       ->  Seq Scan on public.t2
-                                             Output: t2.val, t2.ctid
-(20 rows)
-
+ERROR:  FOR UPDATE is not allowed with joins
 explain (costs off, num_nodes off, nodes off, verbose on)  select * from t1 where val in (select val from t2 for update of t2 nowait);
                           QUERY PLAN                           
 ---------------------------------------------------------------
@@ -478,10 +533,7 @@ ERROR:  FOR SHARE is not allowed with joins
 (2 rows)
 
  select * from t1 where val in (select val from t2 for update of t2 nowait) for update;
- val | val2 
------+------
-(0 rows)
-
+ERROR:  FOR UPDATE is not allowed with joins
  select * from t1 where val in (select val from t2 for update of t2 nowait);
  val | val2 
 -----+------
@@ -923,12 +975,24 @@ commit prepared 'pt_1';
 -- ****  
 begin;
   select * from t1, t2, t3 order by 1 for update;
-ERROR:  FOR UPDATE is not allowed with joins
+ val | val2 | val | val2 | val | val2 
+-----+------+-----+------+-----+------
+   1 |   11 |   3 |   11 |   5 |   11
+   1 |   11 |   3 |   11 |   6 |   11
+   1 |   11 |   4 |   11 |   5 |   11
+   1 |   11 |   4 |   11 |   6 |   11
+   2 |   11 |   3 |   11 |   5 |   11
+   2 |   11 |   3 |   11 |   6 |   11
+   2 |   11 |   4 |   11 |   5 |   11
+   2 |   11 |   4 |   11 |   6 |   11
+(8 rows)
+
 prepare transaction 'pt_1';
 select gid from pg_prepared_xacts where gid = 'pt_1';
- gid 
------
-(0 rows)
+ gid  
+------
+ pt_1
+(1 row)
 
 select is_prepared_on_node('pt_1', 1); -- true
  is_prepared_on_node 
@@ -937,7 +1001,6 @@ select is_prepared_on_node('pt_1', 1); -- true
 (1 row)
 
 commit prepared 'pt_1';
-ERROR:  prepared transaction with identifier "pt_1" does not exist
 -- ****  
 begin;
   --WITH q1 AS (SELECT * from t1 order by 1 FOR UPDATE) SELECT * FROM q1,t2 order by 1 FOR UPDATE;
@@ -1004,12 +1067,16 @@ commit prepared 'pt_1';
 -- ****  
 begin;
   select * from t1, t2 where t1.val = t2.val for share;
-ERROR:  FOR SHARE is not allowed with joins
+ val | val2 | val | val2 
+-----+------+-----+------
+(0 rows)
+
 prepare transaction 'pt_1';
 select gid from pg_prepared_xacts where gid = 'pt_1';
- gid 
------
-(0 rows)
+ gid  
+------
+ pt_1
+(1 row)
 
 select is_prepared_on_node('pt_1', 1); -- true
  is_prepared_on_node 
@@ -1018,16 +1085,23 @@ select is_prepared_on_node('pt_1', 1); -- true
 (1 row)
 
 commit prepared 'pt_1';
-ERROR:  prepared transaction with identifier "pt_1" does not exist
 -- ****  
 begin;
   select * from t1, t2 for share of t2;
-ERROR:  FOR SHARE is not allowed with joins
+ val | val2 | val | val2 
+-----+------+-----+------
+   1 |   11 |   3 |   11
+   1 |   11 |   4 |   11
+   2 |   11 |   3 |   11
+   2 |   11 |   4 |   11
+(4 rows)
+
 prepare transaction 'pt_1';
 select gid from pg_prepared_xacts where gid = 'pt_1';
- gid 
------
-(0 rows)
+ gid  
+------
+ pt_1
+(1 row)
 
 select is_prepared_on_node('pt_1', 1); -- true
  is_prepared_on_node 
@@ -1036,7 +1110,6 @@ select is_prepared_on_node('pt_1', 1); -- true
 (1 row)
 
 commit prepared 'pt_1';
-ERROR:  prepared transaction with identifier "pt_1" does not exist
 -- ****  
 begin;
   select * from (select * from t1 for update of t1 nowait) as foo;
@@ -1105,12 +1178,20 @@ commit prepared 'pt_1';
 -- ****  
 begin;
   select * from t1, t2 for share of t2 for update of t1;
-ERROR:  FOR SHARE is not allowed with joins
+ val | val2 | val | val2 
+-----+------+-----+------
+   1 |   11 |   3 |   11
+   1 |   11 |   4 |   11
+   2 |   11 |   3 |   11
+   2 |   11 |   4 |   11
+(4 rows)
+
 prepare transaction 'pt_1';
 select gid from pg_prepared_xacts where gid = 'pt_1';
- gid 
------
-(0 rows)
+ gid  
+------
+ pt_1
+(1 row)
 
 select is_prepared_on_node('pt_1', 1); -- true
  is_prepared_on_node 
@@ -1119,7 +1200,6 @@ select is_prepared_on_node('pt_1', 1); -- true
 (1 row)
 
 commit prepared 'pt_1';
-ERROR:  prepared transaction with identifier "pt_1" does not exist
 -- ****  
 begin;
   select * from t1 for share of t1 for update of t1;
@@ -1238,12 +1318,20 @@ commit prepared 'pt_1';
 -- ****  
 begin;
   select * from t1 a,t1 b for share of a for update of b;
-ERROR:  FOR SHARE is not allowed with joins
+ val | val2 | val | val2 
+-----+------+-----+------
+   1 |   11 |   1 |   11
+   1 |   11 |   2 |   11
+   2 |   11 |   1 |   11
+   2 |   11 |   2 |   11
+(4 rows)
+
 prepare transaction 'pt_1';
 select gid from pg_prepared_xacts where gid = 'pt_1';
- gid 
------
-(0 rows)
+ gid  
+------
+ pt_1
+(1 row)
 
 select is_prepared_on_node('pt_1', 1); -- true
  is_prepared_on_node 
@@ -1252,7 +1340,6 @@ select is_prepared_on_node('pt_1', 1); -- true
 (1 row)
 
 commit prepared 'pt_1';
-ERROR:  prepared transaction with identifier "pt_1" does not exist
 -- ****  
 begin;
   select * from p1 order by 1 for update;
@@ -1379,12 +1466,24 @@ commit prepared 'pt_1';
 -- ****  
 begin;
   select * from t1, t2, t3 order by 1 for update;
-ERROR:  FOR UPDATE is not allowed with joins
+ val | val2 | val | val2 | val | val2 
+-----+------+-----+------+-----+------
+   1 |   11 |   3 |   11 |   5 |   11
+   1 |   11 |   3 |   11 |   6 |   11
+   1 |   11 |   4 |   11 |   5 |   11
+   1 |   11 |   4 |   11 |   6 |   11
+   2 |   11 |   3 |   11 |   5 |   11
+   2 |   11 |   3 |   11 |   6 |   11
+   2 |   11 |   4 |   11 |   5 |   11
+   2 |   11 |   4 |   11 |   6 |   11
+(8 rows)
+
 prepare transaction 'pt_1';
 select gid from pg_prepared_xacts where gid = 'pt_1';
- gid 
------
-(0 rows)
+ gid  
+------
+ pt_1
+(1 row)
 
 select is_prepared_on_node('pt_1', 1); -- true
  is_prepared_on_node 
@@ -1393,7 +1492,6 @@ select is_prepared_on_node('pt_1', 1); -- true
 (1 row)
 
 commit prepared 'pt_1';
-ERROR:  prepared transaction with identifier "pt_1" does not exist
 -- ****  
 begin;
   --WITH q1 AS (SELECT * from t1 order by 1 FOR UPDATE) SELECT * FROM q1,t2 order by 1 FOR UPDATE;
@@ -1460,12 +1558,16 @@ commit prepared 'pt_1';
 -- ****  
 begin;
   select * from t1, t2 where t1.val = t2.val for share;
-ERROR:  FOR SHARE is not allowed with joins
+ val | val2 | val | val2 
+-----+------+-----+------
+(0 rows)
+
 prepare transaction 'pt_1';
 select gid from pg_prepared_xacts where gid = 'pt_1';
- gid 
------
-(0 rows)
+ gid  
+------
+ pt_1
+(1 row)
 
 select is_prepared_on_node('pt_1', 1); -- true
  is_prepared_on_node 
@@ -1474,16 +1576,23 @@ select is_prepared_on_node('pt_1', 1); -- true
 (1 row)
 
 commit prepared 'pt_1';
-ERROR:  prepared transaction with identifier "pt_1" does not exist
 -- ****  
 begin;
   select * from t1, t2 for share of t2;
-ERROR:  FOR SHARE is not allowed with joins
+ val | val2 | val | val2 
+-----+------+-----+------
+   1 |   11 |   3 |   11
+   1 |   11 |   4 |   11
+   2 |   11 |   3 |   11
+   2 |   11 |   4 |   11
+(4 rows)
+
 prepare transaction 'pt_1';
 select gid from pg_prepared_xacts where gid = 'pt_1';
- gid 
------
-(0 rows)
+ gid  
+------
+ pt_1
+(1 row)
 
 select is_prepared_on_node('pt_1', 1); -- true
  is_prepared_on_node 
@@ -1492,7 +1601,6 @@ select is_prepared_on_node('pt_1', 1); -- true
 (1 row)
 
 commit prepared 'pt_1';
-ERROR:  prepared transaction with identifier "pt_1" does not exist
 -- ****  
 begin;
   select * from (select * from t1 for update of t1 nowait) as foo;
@@ -1561,12 +1669,20 @@ commit prepared 'pt_1';
 -- ****  
 begin;
   select * from t1, t2 for share of t2 for update of t1;
-ERROR:  FOR SHARE is not allowed with joins
+ val | val2 | val | val2 
+-----+------+-----+------
+   1 |   11 |   3 |   11
+   1 |   11 |   4 |   11
+   2 |   11 |   3 |   11
+   2 |   11 |   4 |   11
+(4 rows)
+
 prepare transaction 'pt_1';
 select gid from pg_prepared_xacts where gid = 'pt_1';
- gid 
------
-(0 rows)
+ gid  
+------
+ pt_1
+(1 row)
 
 select is_prepared_on_node('pt_1', 1); -- true
  is_prepared_on_node 
@@ -1575,7 +1691,6 @@ select is_prepared_on_node('pt_1', 1); -- true
 (1 row)
 
 commit prepared 'pt_1';
-ERROR:  prepared transaction with identifier "pt_1" does not exist
 -- ****  
 begin;
   select * from t1 for share of t1 for update of t1;
@@ -1694,12 +1809,20 @@ commit prepared 'pt_1';
 -- ****  
 begin;
   select * from t1 a,t1 b for share of a for update of b;
-ERROR:  FOR SHARE is not allowed with joins
+ val | val2 | val | val2 
+-----+------+-----+------
+   1 |   11 |   1 |   11
+   1 |   11 |   2 |   11
+   2 |   11 |   1 |   11
+   2 |   11 |   2 |   11
+(4 rows)
+
 prepare transaction 'pt_1';
 select gid from pg_prepared_xacts where gid = 'pt_1';
- gid 
------
-(0 rows)
+ gid  
+------
+ pt_1
+(1 row)
 
 select is_prepared_on_node('pt_1', 1); -- true
  is_prepared_on_node 
@@ -1708,7 +1831,6 @@ select is_prepared_on_node('pt_1', 1); -- true
 (1 row)
 
 commit prepared 'pt_1';
-ERROR:  prepared transaction with identifier "pt_1" does not exist
 -- ****  
 begin;
   select * from p1 order by 1 for update;
