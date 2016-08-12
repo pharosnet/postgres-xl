@@ -71,3 +71,18 @@ SELECT 1234567890::int4::money;
 SELECT 12345678901234567::int8::money;
 SELECT (-1234567890)::int4::money;
 SELECT (-12345678901234567)::int8::money;
+
+INSERT INTO money_data VALUES ('$223.459');
+INSERT INTO money_data VALUES ('$323.459');
+INSERT INTO money_data VALUES ('$423.459');
+INSERT INTO money_data VALUES ('$523.459');
+SELECT sum(m) FROM money_data;
+
+CREATE TABLE money_data2 (a int, m money);
+INSERT INTO money_data2 VALUES (1, '$123.459');
+INSERT INTO money_data2 VALUES (2, '$223.459');
+INSERT INTO money_data2 VALUES (3, '$323.459');
+INSERT INTO money_data2 VALUES (4, '$423.459');
+INSERT INTO money_data2 VALUES (5, '$523.459');
+SELECT sum(m) FROM money_data2;
+DROP TABLE money_data2;

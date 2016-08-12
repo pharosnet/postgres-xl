@@ -161,7 +161,7 @@ DATA(insert ( 2108	n 0 int4_sum		int8_sum_to_int8	-				int4_avg_accum	int4_avg_a
 DATA(insert ( 2109	n 0 int2_sum		int8_sum_to_int8	-				int2_avg_accum	int2_avg_accum_inv int2int4_sum f f 0	20	20	0	1016	0	_null_	_null_	"{0,0}" ));
 DATA(insert ( 2110	n 0 float4pl		float4pl	-				-				-				-				f f 0	700		700	0	0		0	_null_	_null_	_null_ ));
 DATA(insert ( 2111	n 0 float8pl		float8pl	-				-				-				-				f f 0	701		701	0	0		0	_null_	_null_	_null_ ));
-DATA(insert ( 2112	n 0 cash_pl			cash_pl	-				cash_pl			cash_mi			-				f f 0	790		0	790	790		0	_null_	_null_	_null_ ));
+DATA(insert ( 2112	n 0 cash_pl			cash_pl	-				cash_pl cash_mi -				f f 0	790		790	0	790		0	_null_	_null_	_null_ ));
 DATA(insert ( 2113	n 0 interval_pl		interval_pl	-				interval_pl		interval_mi		-				f f 0	1186	1186	0	1186	0	_null_	_null_	_null_ ));
 DATA(insert ( 2114	n 0 numeric_avg_accum	numeric_collect	numeric_sum numeric_avg_accum numeric_accum_inv numeric_sum f f 0	7018	7018	128 7018	128 _null_	_null_	_null_ ));
 
