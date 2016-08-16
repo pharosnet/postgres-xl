@@ -1,5 +1,84 @@
 <!-- doc/src/sgml/release-9.5.sgml -->
 <!-- See header comment in release.sgml about typical markup -->
+ <sect1 id="release-xl-9-5r1.3">
+  <title>Postgres-XL Release 9.5r1.3</title>
+
+  <note>
+  <title>Release Date</title>
+  <simpara>2016-08-16</simpara>
+  </note>
+  <para>
+   This release includes all the bug fixes and security fixes from PostgreSQL
+9.5.4. In addition, there are a few Postgres-XL specific bug fixes in this
+release. For information about new features in the Postgres-XL 9.5r1 major release, see
+   <xref linkend="release-xl-9-5r1">.
+  </para>
+  <sect2>
+   <title>Migration to Version Postgres-XL 9.5r1.3</title>
+   <para>
+    A dump/restore is not required for those running Postgres-XL 9.5r1.2.
+Unfortunately, one commit between Postgres-XL 9.5r1.1 and Postgres-XL 9.5r1.2 has caused breakage for those
+upgrading from either Postgres-XL 9.5r1 or Postgres-XL 9.5r1.1 release. We
+would encourage a dump/restore if you are upgrading from one of those releases.
+Since the breakage is limited to views/rules, you may also try to just dump and
+recreate those objects.
+   </para>
+   <para>
+    For those who are running Postgres-XL 9.5r1.2, there is no need for
+dump/restore.
+   </para>
+  </sect2>
+  <sect2>
+   <title>Changes</title>
+   <itemizedlist>
+    <listitem>
+     <para>
+      Fix a bug in handling of ON COMMIT actions.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Correct aggregation definition for <literal>money</literal> datatype.
+     </para>
+     <para>
+      This makes a slight change to pg_aggregate entry for <literal>money</literal>. This
+will be reflected in the freshly created database directories. For existing
+clusters, this can be fixed by making a similar change to the catalog on all
+nodes.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Disallow FOR UPDATE/SHARE for queries using SQL JOIN syntax, except for
+queries that only access replicated tables.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Honour WITH NO DATA clause of CREATE TABLE AS and create such tables
+without any data.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Ensure REPEATABLE READ phrase is double quoted while sending down
+<literal>default_transaction_isolation</literal> GUC to the remote nodes.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Ensure that statistics about all-visible pages is properly updated at the
+coordinator for better query planning.
+     </para>
+    </listitem>
+   </itemizedlist>
+ </sect2>
+</sect1>
 
  <sect1 id="release-xl-9-5r1.2">
   <title>Postgres-XL Release 9.5r1.2</title>
@@ -15,7 +94,7 @@
    <xref linkend="release-xl-9-5r1">.
   </para>
   <sect2>
-   <title>Migration to Version Postgres-XL 9.5r1.1</title>
+   <title>Migration to Version Postgres-XL 9.5r1.2</title>
    <para>
     A dump/restore is not required for those running Postgres-XL 9.5r1 or
 Postgres-XL 9.5r1.1
