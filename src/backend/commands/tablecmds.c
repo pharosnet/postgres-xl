@@ -12396,6 +12396,16 @@ PreCommit_on_commit_actions(void)
 	ListCell   *l;
 	List	   *oids_to_truncate = NIL;
 
+#ifdef XCP
+	/*
+	 * If we are being called outside a valid transaction, do nothing. This can
+	 * only happen when the function gets called while we are still processing
+	 * CommitTransaction/PrepareTransaction
+	 */
+	if (GetTopTransactionIdIfAny() == InvalidTransactionId)
+		return;
+#endif
+
 	foreach(l, on_commits)
 	{
 		OnCommitItem *oc = (OnCommitItem *) lfirst(l);
