@@ -103,6 +103,17 @@ typedef enum
 
 extern void PoolPingNodes(void);
 
+
+/* Determine if given function is shippable */
+static bool pgxc_is_func_shippable(Oid funcid);
+/* Check equijoin conditions on given relations */
+static Expr *pgxc_find_dist_equijoin_qual(Relids varnos_1, Relids varnos_2,
+								Oid distcol_type, Node *quals, List *rtable);
+/* Merge given execution nodes based on join shippability conditions */
+static ExecNodes *pgxc_merge_exec_nodes(ExecNodes *en1, ExecNodes *en2);
+/* Check if given Query includes distribution column */
+static bool pgxc_query_has_distcolgrouping(Query *query);
+
 /* Manipulation of shippability reason */
 static bool pgxc_test_shippability_reason(Shippability_context *context,
 										  ShippabilityStat reason);
@@ -578,7 +589,7 @@ retry_pools:
 	return rel_exec_nodes;
 }
 
-bool
+static bool
 pgxc_query_has_distcolgrouping(Query *query)
 {
 	ListCell	*lcell;
@@ -1434,7 +1445,7 @@ pgxc_is_expr_shippable(Expr *node, bool *has_aggs)
  * pgxc_is_func_shippable
  * Determine if a function is shippable
  */
-bool
+static bool
 pgxc_is_func_shippable(Oid funcid)
 {
 	/*
@@ -1449,7 +1460,7 @@ pgxc_is_func_shippable(Oid funcid)
  * pgxc_find_dist_equijoin_qual
  * Check equijoin conditions on given relations
  */
-Expr *
+static Expr *
 pgxc_find_dist_equijoin_qual(Relids varnos_1,
 		Relids varnos_2, Oid distcol_type, Node *quals, List *rtable)
 {
@@ -1538,7 +1549,7 @@ pgxc_find_dist_equijoin_qual(Relids varnos_1,
  * exec_node corresponds to the JOIN of respective relations.
  * If both exec_nodes can not be merged, it returns NULL.
  */
-ExecNodes *
+static ExecNodes *
 pgxc_merge_exec_nodes(ExecNodes *en1, ExecNodes *en2)
 {
 	ExecNodes	*merged_en = makeNode(ExecNodes);
@@ -1668,291 +1679,6 @@ pgxc_merge_exec_nodes(ExecNodes *en1, ExecNodes *en2)
 	return NULL;
 }
 
-
-/*
- * pgxc_check_index_shippability
- * Check shippability of index described by given conditions. This generic
- * function can be called even if the index is not yet defined.
- */
-bool
-pgxc_check_index_shippability(RelationLocInfo *relLocInfo,
-							  bool is_primary,
-							  bool is_unique,
-							  bool is_exclusion,
-							  List *indexAttrs,
-							  List *indexExprs)
-{
-	bool		result = true;
-	ListCell   *lc;
-
-	/*
-	 * Leave if no locator information, in this case shippability has no
-	 * meaning.
-	 */
-	if (!relLocInfo)
-		return result;
-
-	/*
-	 * Scan the expressions used in index and check the shippability of each
-	 * of them. If only one is not-shippable, the index is considered as non
-	 * shippable. It is important to check the shippability of the expressions
-	 * before refining scan on the index columns and distribution type of
-	 * parent relation.
-	 */
-	foreach(lc, indexExprs)
-	{
-		if (!pgxc_is_expr_shippable((Expr *) lfirst(lc), NULL))
-		{
-			/* One of the expressions is not shippable, so leave */
-			result = false;
-			goto finish;
-		}
-	}
-
-	/*
-	 * Check if relation is distributed on a single node, in this case
-	 * the constraint can be shipped in all the cases.
-	 */
-	if (list_length(relLocInfo->rl_nodeList) == 1)
-		return result;
-
-	/*
-	 * Check the case of EXCLUSION index.
-	 * EXCLUSION constraints are shippable only for replicated relations as
-	 * such constraints need that one tuple is checked on all the others, and
-	 * if this tuple is correctly excluded of the others, the constraint is
-	 * verified.
-	 */
-	if (is_exclusion)
-	{
-		if (!IsRelationReplicated(relLocInfo))
-		{
-			result = false;
-			goto finish;
-		}
-	}
-
-	/*
-	 * Check the case of PRIMARY KEY INDEX and UNIQUE index.
-	 * Those constraints are shippable if the parent relation is replicated
-	 * or if the column
-	 */
-	if (is_unique ||
-		is_primary)
-	{
-		/*
-		 * Perform different checks depending on distribution type of parent
-		 * relation.
-		 */
-		switch(relLocInfo->locatorType)
-		{
-			case LOCATOR_TYPE_REPLICATED:
-				/* In the replicated case this index is shippable */
-				result = true;
-				break;
-
-			case LOCATOR_TYPE_RROBIN:
-				/*
-				 * Index on roundrobin parent table cannot be safely shipped
-				 * because of the random behavior of data balancing.
-				 */
-				result = false;
-				break;
-
-			case LOCATOR_TYPE_HASH:
-			case LOCATOR_TYPE_MODULO:
-				/*
-				 * Unique indexes on Hash and Modulo tables are shippable if the
-				 * index expression contains all the distribution expressions of
-				 * its parent relation.
-				 *
-				 * Here is a short example with concatenate that cannot be
-				 * shipped:
-				 * CREATE TABLE aa (a text, b text) DISTRIBUTE BY HASH(a);
-				 * CREATE UNIQUE INDEX aap ON aa((a || b));
-				 * INSERT INTO aa VALUES ('a', 'abb');
-				 * INSERT INTO aa VALUES ('aab', b); -- no error ??!
-				 * The output uniqueness is not guaranteed as both INSERT will
-				 * go to different nodes. For such simple reasons unique
-				 * indexes on distributed tables are not shippable.
-				 * Shippability is not even ensured if all the expressions
-				 * used as Var are only distributed columns as the hash output of
-				 * their value combination does not ensure that query will
-				 * be directed to the correct remote node. Uniqueness is not even
-				 * protected if the index expression contains only the distribution
-				 * column like for that with a cluster of 2 Datanodes:
-				 * CREATE TABLE aa (a int) DISTRIBUTE BY HASH(a);
-				 * CREATE UNIQUE INDEX aap ON (abs(a));
-				 * INSERT INTO aa (2); -- to Datanode 1
-				 * INSERT INTO aa (-2); -- to Datanode 2, breaks uniqueness
-				 *
-				 * PGXCTODO: for the time being distribution key can only be
-				 * defined on a single column, so this will need to be changed
-				 * onde a relation distribution will be able to be defined based
-				 * on an expression of multiple columns.
-				 */
-
-				/* Index contains expressions, it cannot be shipped safely */
-				if (indexExprs != NIL)
-				{
-					result = false;
-					break;
-				}
-
-				/* Nothing to do if no attributes */
-				if (indexAttrs == NIL)
-					break;
-
-				/*
-				 * Check that distribution column is included in the list of
-				 * index columns.
-				 */
-				if (!list_member_int(indexAttrs, relLocInfo->partAttrNum))
-				{
-					/*
-					 * Distribution column is not in index column list
-					 * So index can be enforced remotely.
-					 */
-					result = false;
-					break;
-				}
-
-				/*
-				 * by being here we are now sure that the index can be enforced
-				 * remotely as the distribution column is included in index.
-				 */
-				break;
-
-			/* Those types are not supported yet */
-			case LOCATOR_TYPE_RANGE:
-			case LOCATOR_TYPE_NONE:
-			case LOCATOR_TYPE_DISTRIBUTED:
-			case LOCATOR_TYPE_CUSTOM:
-			default:
-				/* Should not come here */
-				Assert(0);
-		}
-	}
-
-finish:
-	return result;
-}
-
-
-/*
- * pgxc_check_fk_shippabilily
- * Check the shippability of a parent and a child relation based on the
- * distribution of each and the columns that are used to reference to
- * parent and child relation. This can be used for inheritance or foreign
- * key shippability evaluation.
- */
-bool
-pgxc_check_fk_shippability(RelationLocInfo *parentLocInfo,
-						   RelationLocInfo *childLocInfo,
-						   List *parentRefs,
-						   List *childRefs)
-{
-	bool result = true;
-
-	Assert(list_length(parentRefs) == list_length(childRefs));
-
-	/*
-	 * If either child or parent have no relation data, shippability makes
-	 * no sense.
-	 */
-	if (!parentLocInfo || !childLocInfo)
-		return result;
-
-	/* In the case of a child referencing to itself, constraint is shippable */
-	if (IsLocatorInfoEqual(parentLocInfo, childLocInfo))
-		return result;
-
-	/* Now begin the evaluation */
-	switch (parentLocInfo->locatorType)
-	{
-		case LOCATOR_TYPE_REPLICATED:
-			/*
-			 * If the parent relation is replicated, the child relation can
-			 * always refer to it on all the nodes.
-			 */
-			result = true;
-			break;
-
-		case LOCATOR_TYPE_RROBIN:
-			/*
-			 * If the parent relation is based on roundrobin, the child
-			 * relation cannot be enforced on remote nodes before of the
-			 * random behavior of data balancing.
-			 */
-			result = false;
-			break;
-
-		case LOCATOR_TYPE_HASH:
-		case LOCATOR_TYPE_MODULO:
-			/*
-			 * If parent table is distributed, the child table can reference
-			 * to its parent safely if the following conditions are satisfied:
-			 * - parent and child are both hash-based, or both modulo-based
-			 * - parent reference columns contain the distribution column
-			 *   of the parent relation
-			 * - child reference columns contain the distribution column
-			 *   of the child relation
-			 * - both child and parent map the same nodes for data location
-			 */
-
-			/* A replicated child cannot refer to a distributed parent */
-			if (IsRelationReplicated(childLocInfo))
-			{
-				result = false;
-				break;
-			}
-
-			/*
-			 * Parent and child need to have the same distribution type:
-			 * hash or modulo.
-			 */
-			if (parentLocInfo->locatorType != childLocInfo->locatorType)
-			{
-				result = false;
-				break;
-			}
-
-			/*
-			 * Parent and child need to have their data located exactly
-			 * on the same list of nodes.
-			 */
-			if (list_difference_int(childLocInfo->rl_nodeList, parentLocInfo->rl_nodeList) ||
-				list_difference_int(parentLocInfo->rl_nodeList, childLocInfo->rl_nodeList))
-			{
-				result = false;
-				break;
-			}
-
-			/*
-			 * Check that child and parents are referenced using their
-			 * distribution column.
-			 */
-			if (!list_member_int(childRefs, childLocInfo->partAttrNum) ||
-				!list_member_int(parentRefs, parentLocInfo->partAttrNum))
-			{
-				result = false;
-				break;
-			}
-
-			/* By being here, parent-child constraint can be shipped correctly */
-			break;
-
-		case LOCATOR_TYPE_RANGE:
-		case LOCATOR_TYPE_NONE:
-		case LOCATOR_TYPE_DISTRIBUTED:
-		case LOCATOR_TYPE_CUSTOM:
-		default:
-			/* Should not come here */
-			Assert(0);
-	}
-
-	return result;
-}
 
 /*
  * pgxc_is_join_reducible
