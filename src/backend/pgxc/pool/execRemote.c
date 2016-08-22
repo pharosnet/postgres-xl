@@ -57,8 +57,6 @@
 #include "parser/parsetree.h"
 #include "pgxc/xc_maintenance_mode.h"
 
-/* Enforce the use of two-phase commit when temporary objects are used */
-bool EnforceTwoPhaseCommit = true;
 /*
  * We do not want it too long, when query is terminating abnormally we just
  * want to read in already available data, if datanode connection will reach a

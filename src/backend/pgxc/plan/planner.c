@@ -61,8 +61,6 @@
 #include "utils/timestamp.h"
 #include "utils/date.h"
 
-/* Forbid unsafe SQL statements */
-bool		StrictStatementChecking = true;
 
 static bool contains_temp_tables(List *rtable);
 static PlannedStmt *pgxc_FQS_planner(Query *query, ParamListInfo boundParams);

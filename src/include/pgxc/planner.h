@@ -207,9 +207,6 @@ typedef enum
 	SS_UPDATES_DISTRIBUTION_COLUMN	/* query updates distribution column */
 } ShippabilityStat;
 
-/* forbid SQL if unsafe, useful to turn off for development */
-extern bool StrictStatementChecking;
-
 extern bool pgxc_shippability_walker(Node *node, Shippability_context *sc_context);
 extern bool pgxc_test_shippability_reason(Shippability_context *context,
 											ShippabilityStat reason);

@@ -1729,25 +1729,6 @@ static struct config_bool ConfigureNamesBool[] =
 		check_persistent_connections, NULL, NULL
 	},
 	{
-		{"strict_statement_checking", PGC_USERSET, DEVELOPER_OPTIONS,
-			gettext_noop("Forbid statements that are not safe for the cluster"),
-			NULL
-		},
-		&StrictStatementChecking,
-		true,
-		NULL, NULL, NULL
-	},
-	{
-		{"enforce_two_phase_commit", PGC_SUSET, XC_HOUSEKEEPING_OPTIONS,
-			gettext_noop("Enforce the use of two-phase commit on transactions that"
-					"made use of temporary objects"),
-			NULL
-		},
-		&EnforceTwoPhaseCommit,
-		true,
-		NULL, NULL, NULL
-	},
-	{
 		{"xc_maintenance_mode", PGC_SUSET, XC_HOUSEKEEPING_OPTIONS,
 		    gettext_noop("Turn on XC maintenance mode."),
 		 	gettext_noop("Can set ON by SET command by superuser.")
