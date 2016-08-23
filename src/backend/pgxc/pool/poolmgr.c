@@ -341,7 +341,7 @@ static void
 GetPoolManagerHandle(void)
 {
 	PoolHandle *handle;
-	int			fdsock;
+	int			fdsock = -1;
 
 	if (poolHandle)
 		/* already connected */
@@ -398,8 +398,19 @@ GetPoolManagerHandle(void)
 	}
 #endif
 
-	/* Allocate handle */
 	/*
+	 * Actual connection errors should be reported by the block above,
+	 * but perhaps we haven't actually executed it - either because
+	 * the Unix_socket_directories is not set, or because there's no
+	 * support for UNIX_SOCKETS. Just bail out in that case.
+	 */
+	if (fdsock < 0)
+		ereport(ERROR,
+				(errmsg("failed to connect to pool manager: %m")));
+
+	/*
+	 * Allocate handle
+	 *
 	 * XXX we may change malloc here to palloc but first ensure
 	 * the CurrentMemoryContext is properly set.
 	 * The handle allocated just before new session is forked off and
@@ -408,11 +419,9 @@ GetPoolManagerHandle(void)
 	 */
 	handle = (PoolHandle *) malloc(sizeof(PoolHandle));
 	if (!handle)
-	{
 		ereport(ERROR,
 				(errcode(ERRCODE_OUT_OF_MEMORY),
 				 errmsg("out of memory")));
-	}
 
 	handle->port.fdsock = fdsock;
 	handle->port.RecvLength = 0;
