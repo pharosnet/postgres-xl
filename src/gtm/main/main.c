@@ -2320,8 +2320,8 @@ void
 GTM_RestoreTxnInfo(FILE *ctlf, GlobalTransactionId next_gxid,
 		struct GTM_RestoreContext *context, bool force_xid)
 {
-	GlobalTransactionId saved_gxid;
-	GlobalTransactionId saved_global_xmin;
+	GlobalTransactionId saved_gxid = InvalidGlobalTransactionId;
+	GlobalTransactionId saved_global_xmin = InvalidGlobalTransactionId;
 
 	if (ctlf)
 	{
