@@ -1326,10 +1326,9 @@ slot_deform_datarow(TupleTableSlot *slot)
 				data = MemoryContextAlloc(slot->tts_drowcxt, data_length);
 				memcpy(data, val, data_length);
 
-				if (slot->tts_values[i])
-					pfree(slot->tts_values[i]);
+				pfree(val);
 
-				slot->tts_values[i] = (Datum) data;
+				slot->tts_values[i] = PointerGetDatum(data);
 			}
 		}
 	}
