@@ -2884,12 +2884,8 @@ static bool
 DoRefreshRemoteHandles(void)
 {
 	List			*altered = NIL, *deleted = NIL, *added = NIL;
-	List			*shmoids = NIL;
-	Oid				*coOids, *dnOids, *allOids, nodeoid;
-	int				numDNodes;
-	int				i, numCoords, total_nodes;
-	NodeDefinition	*nodeDef;
-	PGXCNodeHandle	*handle;
+	Oid				*coOids, *dnOids;
+	int				numCoords, numDNodes, total_nodes;
 	bool			res = true;
 
 	HandlesRefreshPending = false;
@@ -2899,107 +2895,114 @@ DoRefreshRemoteHandles(void)
 	total_nodes = numCoords + numDNodes;
 	if (total_nodes > 0)
 	{
-		allOids = (Oid *)palloc(total_nodes * sizeof(Oid));
+		int		i;
+		List   *shmoids = NIL;
+		Oid	   *allOids = (Oid *)palloc(total_nodes * sizeof(Oid));
 
-		for (i = 0; i < numCoords; i++)
-			allOids[i] = coOids[i];
+		/* build array with Oids of all nodes (coordinators first) */
+		memcpy(allOids, coOids, numCoords * sizeof(Oid));
+		memcpy(allOids + numCoords, dnOids, numDNodes * sizeof(Oid));
 
-		for (i = 0; i + numCoords < total_nodes; i++)
-			allOids[i + numCoords] = dnOids[i];
-	}
+		LWLockAcquire(NodeTableLock, LW_SHARED);
 
-	LWLockAcquire(NodeTableLock, LW_SHARED);
-	for (i = 0; i < total_nodes; i++)
-	{
-		int nid;
-		Oid nodeoid;
-		char ntype = PGXC_NODE_NONE;
-
-		nodeoid = allOids[i];
-		shmoids = lappend_oid(shmoids, nodeoid);
-
-		nodeDef = PgxcNodeGetDefinition(nodeoid);
-		/*
-		 * identify an entry with this nodeoid. If found
-		 * compare the name/host/port entries. If the name is
-		 * same and other info is different, it's an ALTER.
-		 * If the local entry does not exist in the shmem, it's
-		 * a DELETE. If the entry from shmem does not exist
-		 * locally, it's an ADDITION
-		 */
-		nid = PGXCNodeGetNodeId(nodeoid, &ntype);
-
-		if (nid == -1)
+		for (i = 0; i < total_nodes; i++)
 		{
-			/* a new node has been added to the shmem */
-			added = lappend_oid(added, nodeoid);
-			elog(LOG, "Node added: name (%s) host (%s) port (%d)",
-				 NameStr(nodeDef->nodename), NameStr(nodeDef->nodehost),
-				 nodeDef->nodeport);
-		}
-		else
-		{
-			if (ntype == PGXC_NODE_COORDINATOR)
-				handle = &co_handles[nid];
-			else if (ntype == PGXC_NODE_DATANODE)
-				handle = &dn_handles[nid];
-			else
-				elog(ERROR, "Node with non-existent node type!");
+			NodeDefinition	*nodeDef;
+			PGXCNodeHandle	*handle;
 
+			int nid;
+			Oid nodeoid;
+			char ntype = PGXC_NODE_NONE;
+
+			nodeoid = allOids[i];
+			shmoids = lappend_oid(shmoids, nodeoid);
+
+			nodeDef = PgxcNodeGetDefinition(nodeoid);
 			/*
-			 * compare name, host, port to see if this node
-			 * has been ALTERed
+			 * identify an entry with this nodeoid. If found
+			 * compare the name/host/port entries. If the name is
+			 * same and other info is different, it's an ALTER.
+			 * If the local entry does not exist in the shmem, it's
+			 * a DELETE. If the entry from shmem does not exist
+			 * locally, it's an ADDITION
 			 */
-			if (strncmp(handle->nodename, NameStr(nodeDef->nodename), NAMEDATALEN)
-				!= 0 ||
-				strncmp(handle->nodehost, NameStr(nodeDef->nodehost), NAMEDATALEN)
-				!= 0 ||
-				handle->nodeport != nodeDef->nodeport)
+			nid = PGXCNodeGetNodeId(nodeoid, &ntype);
+
+			if (nid == -1)
 			{
-				elog(LOG, "Node altered: old name (%s) old host (%s) old port (%d)"
-						" new name (%s) new host (%s) new port (%d)",
-					 handle->nodename, handle->nodehost, handle->nodeport,
+				/* a new node has been added to the shmem */
+				added = lappend_oid(added, nodeoid);
+				elog(LOG, "Node added: name (%s) host (%s) port (%d)",
 					 NameStr(nodeDef->nodename), NameStr(nodeDef->nodehost),
 					 nodeDef->nodeport);
-				altered = lappend_oid(altered, nodeoid);
 			}
-			/* else do nothing */
-		}
-		pfree(nodeDef);
-	}
+			else
+			{
+				if (ntype == PGXC_NODE_COORDINATOR)
+					handle = &co_handles[nid];
+				else if (ntype == PGXC_NODE_DATANODE)
+					handle = &dn_handles[nid];
+				else
+					elog(ERROR, "Node with non-existent node type!");
 
-	/*
-	 * Any entry in backend area but not in shmem means that it has
-	 * been deleted
-	 */
-	for (i = 0; i < NumCoords; i++)
-	{
-		handle = &co_handles[i];
-		nodeoid = handle->nodeoid;
-		if (!list_member_oid(shmoids, nodeoid))
-		{
-			deleted = lappend_oid(deleted, nodeoid);
-			elog(LOG, "Node deleted: name (%s) host (%s) port (%d)",
-				 handle->nodename, handle->nodehost, handle->nodeport);
+				/*
+				 * compare name, host, port to see if this node
+				 * has been ALTERed
+				 */
+				if (strncmp(handle->nodename, NameStr(nodeDef->nodename), NAMEDATALEN) != 0 ||
+					strncmp(handle->nodehost, NameStr(nodeDef->nodehost), NAMEDATALEN) != 0 ||
+					handle->nodeport != nodeDef->nodeport)
+				{
+					elog(LOG, "Node altered: old name (%s) old host (%s) old port (%d)"
+							" new name (%s) new host (%s) new port (%d)",
+						 handle->nodename, handle->nodehost, handle->nodeport,
+						 NameStr(nodeDef->nodename), NameStr(nodeDef->nodehost),
+						 nodeDef->nodeport);
+					altered = lappend_oid(altered, nodeoid);
+				}
+				/* else do nothing */
+			}
+			pfree(nodeDef);
 		}
-	}
-	for (i = 0; i < NumDataNodes; i++)
-	{
-		handle = &dn_handles[i];
-		nodeoid = handle->nodeoid;
-		if (!list_member_oid(shmoids, nodeoid))
-		{
-			deleted = lappend_oid(deleted, nodeoid);
-			elog(LOG, "Node deleted: name (%s) host (%s) port (%d)",
-				 handle->nodename, handle->nodehost, handle->nodeport);
-		}
-	}
-	LWLockRelease(NodeTableLock);
 
-	/* Release palloc'ed memory */
-	pfree(coOids);
-	pfree(dnOids);
-	pfree(allOids);
+		/*
+		 * Any entry in backend area but not in shmem means that it has
+		 * been deleted
+		 */
+		for (i = 0; i < NumCoords; i++)
+		{
+			PGXCNodeHandle	*handle = &co_handles[i];
+			Oid nodeoid = handle->nodeoid;
+
+			if (!list_member_oid(shmoids, nodeoid))
+			{
+				deleted = lappend_oid(deleted, nodeoid);
+				elog(LOG, "Node deleted: name (%s) host (%s) port (%d)",
+					 handle->nodename, handle->nodehost, handle->nodeport);
+			}
+		}
+
+		for (i = 0; i < NumDataNodes; i++)
+		{
+			PGXCNodeHandle	*handle = &dn_handles[i];
+			Oid nodeoid = handle->nodeoid;
+
+			if (!list_member_oid(shmoids, nodeoid))
+			{
+				deleted = lappend_oid(deleted, nodeoid);
+				elog(LOG, "Node deleted: name (%s) host (%s) port (%d)",
+					 handle->nodename, handle->nodehost, handle->nodeport);
+			}
+		}
+
+		LWLockRelease(NodeTableLock);
+
+		/* Release palloc'ed memory */
+		pfree(coOids);
+		pfree(dnOids);
+		pfree(allOids);
+		list_free(shmoids);
+	}
 
 	if (deleted != NIL || added != NIL)
 	{
@@ -3015,10 +3018,10 @@ DoRefreshRemoteHandles(void)
 	else
 		PgxcNodeRefreshBackendHandlesShmem(altered);
 
-	list_free(shmoids);
 	list_free(altered);
 	list_free(added);
 	list_free(deleted);
+
 	return res;
 }
 
