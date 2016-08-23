@@ -2387,7 +2387,7 @@ grow_pool(DatabasePool *dbPool, Oid node)
 					 errmsg("failed to connect to node, connection string (%s),"
 						  " connection error (%s)",
 						  nodePool->connstr,
-						  PQerrorMessage(slot->conn))));
+						  PQerrorMessage((PGconn*) slot->conn))));
 			destroy_slot(slot);
 			/*
 			 * If we failed to connect probably number of connections on the
