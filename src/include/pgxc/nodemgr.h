@@ -41,12 +41,6 @@ typedef struct
 	bool		nodeishealthy;
 } NodeDefinition;
 
-typedef struct
-{
-	Oid			nodeoid;
-	bool		nodeishealthy;
-} NodeHealthStatus;
-
 extern void NodeTablesShmemInit(void);
 extern Size NodeTablesShmemSize(void);
 

@@ -326,10 +326,14 @@ PgxcNodeListAndCount(void)
 	Relation rel;
 	HeapScanDesc scan;
 	HeapTuple   tuple;
-	NodeHealthStatus *nodehealth;
-	int	numNodes = 0;
+	NodeDefinition *nodes = NULL;
+	int	numNodes;
 
 	LWLockAcquire(NodeTableLock, LW_EXCLUSIVE);
+
+	numNodes = *shmemNumCoords + *shmemNumDataNodes;
+
+	Assert((*shmemNumCoords >= 0) && (*shmemNumDataNodes >= 0));
 
 	/*
 	 * Save the existing health status values because nodes
@@ -337,26 +341,17 @@ PgxcNodeListAndCount(void)
 	 * nodeoid, status. No need to differentiate between
 	 * coords and datanodes since oids will be unique anyways
 	 */
-	if (*shmemNumDataNodes != 0 || *shmemNumCoords != 0)
+	if (numNodes > 0)
 	{
-		int i, j;
+		nodes = (NodeDefinition*)palloc(numNodes * sizeof(NodeDefinition));
 
-		numNodes = *shmemNumCoords + *shmemNumDataNodes;
-		nodehealth = palloc0(
-					numNodes * sizeof(NodeHealthStatus));
+		/* XXX It's possible to call memcpy with */
+		if (*shmemNumCoords > 0)
+			memcpy(nodes, coDefs, *shmemNumCoords * sizeof(NodeDefinition));
 
-		for (i = 0; i < *shmemNumCoords; i++)
-		{
-			nodehealth[i].nodeoid = coDefs[i].nodeoid;
-			nodehealth[i].nodeishealthy = coDefs[i].nodeishealthy;
-		}
-
-		j = i;
-		for (i = 0; i < *shmemNumDataNodes; i++)
-		{
-			nodehealth[j].nodeoid = dnDefs[i].nodeoid;
-			nodehealth[j++].nodeishealthy = dnDefs[i].nodeishealthy;
-		}
+		if (*shmemNumDataNodes > 0)
+			memcpy(nodes + *shmemNumCoords, dnDefs,
+				   *shmemNumDataNodes * sizeof(NodeDefinition));
 	}
 
 	*shmemNumCoords = 0;
@@ -404,9 +399,9 @@ PgxcNodeListAndCount(void)
 		node->nodeishealthy = true;
 		for (i = 0; i < numNodes; i++)
 		{
-			if (nodehealth[i].nodeoid == node->nodeoid)
+			if (nodes[i].nodeoid == node->nodeoid)
 			{
-				node->nodeishealthy = nodehealth[i].nodeishealthy;
+				node->nodeishealthy = nodes[i].nodeishealthy;
 				break;
 			}
 		}
@@ -418,7 +413,7 @@ PgxcNodeListAndCount(void)
 			*shmemNumCoords, *shmemNumDataNodes);
 
 	if (numNodes)
-		pfree(nodehealth);
+		pfree(nodes);
 
 	/* Finally sort the lists */
 	if (*shmemNumCoords > 1)
