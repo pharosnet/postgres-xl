@@ -1198,7 +1198,6 @@ slot_deform_tuple(TupleTableSlot *slot, int natts)
 	slot->tts_slow = slow;
 }
 
-#ifdef PGXC
 /*
  * slot_deform_datarow
  * 		Extract data from the DataRow message into Datum/isnull arrays.
@@ -1304,14 +1303,7 @@ slot_deform_datarow(TupleTableSlot *slot)
 				if (attr->attlen == -1)
 				{
 					/* varlena */
-					if (VARATT_IS_EXTERNAL(val))
-						/* no alignment, since it's short by definition */
-						data_length = VARSIZE_EXTERNAL(val);
-					else if (VARATT_IS_SHORT(val))
-						/* no alignment for short varlenas */
-						data_length = VARSIZE_SHORT(val);
-					else
-						data_length = VARSIZE(val);
+					data_length = VARSIZE_ANY(val);
 				}
 				else if (attr->attlen == -2)
 				{
@@ -1338,7 +1330,6 @@ slot_deform_datarow(TupleTableSlot *slot)
 	slot->tts_nvalid = attnum;
 
 }
-#endif
 
 /*
  * slot_getattr
