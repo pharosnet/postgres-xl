@@ -1171,32 +1171,217 @@ PoolManagerRefreshConnectionInfo(void)
 	return false;
 }
 
+static void
+handle_abort(PoolAgent * agent, StringInfo s)
+{
+	int		len;
+	int	   *pids;
+	const char *database = NULL;
+	const char *user_name = NULL;
+
+	pool_getmessage(&agent->port, s, 0);
+	len = pq_getmsgint(s, 4);
+	if (len > 0)
+		database = pq_getmsgbytes(s, len);
+
+	len = pq_getmsgint(s, 4);
+	if (len > 0)
+		user_name = pq_getmsgbytes(s, len);
+
+	pq_getmsgend(s);
+
+	pids = abort_pids(&len, agent->pid, database, user_name);
+
+	pool_sendpids(&agent->port, pids, len);
+	if (pids)
+		pfree(pids);
+}
+
+static void
+handle_connect(PoolAgent * agent, StringInfo s)
+{
+	int	len;
+	const char *database = NULL;
+	const char *user_name = NULL;
+	const char *pgoptions = NULL;
+
+	pool_getmessage(&agent->port, s, 0);
+	agent->pid = pq_getmsgint(s, 4);
+
+	len = pq_getmsgint(s, 4);
+	database = pq_getmsgbytes(s, len);
+
+	len = pq_getmsgint(s, 4);
+	user_name = pq_getmsgbytes(s, len);
+
+	len = pq_getmsgint(s, 4);
+	pgoptions = pq_getmsgbytes(s, len);
+
+	/*
+	 * Coordinator pool is not initialized.
+	 * With that it would be impossible to create a Database by default.
+	 */
+	agent_init(agent, database, user_name, pgoptions);
+	pq_getmsgend(s);
+}
+
+static void
+handle_clean_connection(PoolAgent * agent, StringInfo s)
+{
+	int i, len, res;
+	int	datanodecount, coordcount;
+	const char *database = NULL;
+	const char *user_name = NULL;
+	List	   *nodelist = NIL;
+
+	pool_getmessage(&agent->port, s, 0);
+
+	/* It is possible to clean up only datanode connections */
+	datanodecount = pq_getmsgint(s, 4);
+	for (i = 0; i < datanodecount; i++)
+	{
+		/* Translate index to Oid */
+		int index = pq_getmsgint(s, 4);
+		Oid node = agent->dn_conn_oids[index];
+		nodelist = lappend_oid(nodelist, node);
+	}
+
+	/* It is possible to clean up only coordinator connections */
+	coordcount = pq_getmsgint(s, 4);
+	for (i = 0; i < coordcount; i++)
+	{
+		/* Translate index to Oid */
+		int index = pq_getmsgint(s, 4);
+		Oid node = agent->coord_conn_oids[index];
+		nodelist = lappend_oid(nodelist, node);
+	}
+
+	len = pq_getmsgint(s, 4);
+	if (len > 0)
+		database = pq_getmsgbytes(s, len);
+
+	len = pq_getmsgint(s, 4);
+	if (len > 0)
+		user_name = pq_getmsgbytes(s, len);
+
+	pq_getmsgend(s);
+
+	/* Clean up connections here */
+	res = clean_connection(nodelist, database, user_name);
+
+	list_free(nodelist);
+
+	/* Send success result */
+	pool_sendres(&agent->port, res);
+}
+
+static void
+handle_get_connections(PoolAgent * agent, StringInfo s)
+{
+	int		i;
+	int	   *fds, *pids = NULL;
+	int		datanodecount, coordcount;
+	List   *datanodelist = NIL;
+	List   *coordlist = NIL;
+
+	/*
+	 * Length of message is caused by:
+	 * - Message header = 4bytes
+	 * - List of Datanodes = NumPoolDataNodes * 4bytes (max)
+	 * - List of Coordinators = NumPoolCoords * 4bytes (max)
+	 * - Number of Datanodes sent = 4bytes
+	 * - Number of Coordinators sent = 4bytes
+	 * It is better to send in a same message the list of Co and Dn at the same
+	 * time, this permits to reduce interactions between postmaster and pooler
+	 */
+	pool_getmessage(&agent->port, s, 4 * agent->num_dn_connections + 4 * agent->num_coord_connections + 12);
+
+	datanodecount = pq_getmsgint(s, 4);
+	for (i = 0; i < datanodecount; i++)
+		datanodelist = lappend_int(datanodelist, pq_getmsgint(s, 4));
+
+	/* It is possible that no Coordinators are involved in the transaction */
+	coordcount = pq_getmsgint(s, 4);
+	for (i = 0; i < coordcount; i++)
+		coordlist = lappend_int(coordlist, pq_getmsgint(s, 4));
+
+	pq_getmsgend(s);
+
+	Assert(datanodecount >= 0 && coordcount >= 0);
+
+	/*
+	 * In case of error agent_acquire_connections will log the error and
+	 * return NULL.
+	 */
+	fds = agent_acquire_connections(agent, datanodelist, coordlist, &pids);
+
+	list_free(datanodelist);
+	list_free(coordlist);
+
+	pool_sendfds(&agent->port, fds, fds ? datanodecount + coordcount : 0);
+	if (fds)
+		pfree(fds);
+
+	/*
+	 * Also send the PIDs of the remote backend processes serving
+	 * these connections
+	 */
+	pool_sendpids(&agent->port, pids, pids ? datanodecount + coordcount : 0);
+	if (pids)
+		pfree(pids);
+}
+
+static void
+handle_query_cancel(PoolAgent * agent, StringInfo s)
+{
+	int		i;
+	int		datanodecount, coordcount;
+	List   *datanodelist = NIL;
+	List   *coordlist = NIL;
+
+	/*
+	 * Length of message is caused by:
+	 * - Message header = 4bytes
+	 * - List of Datanodes = NumPoolDataNodes * 4bytes (max)
+	 * - List of Coordinators = NumPoolCoords * 4bytes (max)
+	 * - Number of Datanodes sent = 4bytes
+	 * - Number of Coordinators sent = 4bytes
+	 */
+	pool_getmessage(&agent->port, s, 4 * agent->num_dn_connections + 4 * agent->num_coord_connections + 12);
+
+	datanodecount = pq_getmsgint(s, 4);
+	for (i = 0; i < datanodecount; i++)
+		datanodelist = lappend_int(datanodelist, pq_getmsgint(s, 4));
+
+	coordcount = pq_getmsgint(s, 4);
+	/* It is possible that no Coordinators are involved in the transaction */
+	for (i = 0; i < coordcount; i++)
+		coordlist = lappend_int(coordlist, pq_getmsgint(s, 4));
+
+	pq_getmsgend(s);
+
+	cancel_query_on_connections(agent, datanodelist, coordlist);
+	list_free(datanodelist);
+	list_free(coordlist);
+
+	/* Send success result */
+	pool_sendres(&agent->port, QUERY_CANCEL_COMPLETED);
+}
+
 /*
  * Handle messages to agent
  */
 static void
 agent_handle_input(PoolAgent * agent, StringInfo s)
 {
-	int			qtype;
+	/* read byte from the buffer (and recv if empty) */
+	int	qtype = pool_getbyte(&agent->port);
 
-	qtype = pool_getbyte(&agent->port);
 	/*
 	 * We can have multiple messages, so handle them all
 	 */
 	for (;;)
 	{
-		const char *database = NULL;
-		const char *user_name = NULL;
-		const char *pgoptions = NULL;
-		int			datanodecount;
-		int			coordcount;
-		List	   *nodelist = NIL;
-		List	   *datanodelist = NIL;
-		List	   *coordlist = NIL;
-		int		   *fds;
-		int		   *pids;
-		int			i, len, res;
-
 		/*
 		 * During a pool cleaning, Abort, Connect and Get Connections messages
 		 * are not allowed on pooler side.
@@ -1212,38 +1397,10 @@ agent_handle_input(PoolAgent * agent, StringInfo s)
 		switch (qtype)
 		{
 			case 'a':			/* ABORT */
-				pool_getmessage(&agent->port, s, 0);
-				len = pq_getmsgint(s, 4);
-				if (len > 0)
-					database = pq_getmsgbytes(s, len);
-
-				len = pq_getmsgint(s, 4);
-				if (len > 0)
-					user_name = pq_getmsgbytes(s, len);
-
-				pq_getmsgend(s);
-
-				pids = abort_pids(&len, agent->pid, database, user_name);
-
-				pool_sendpids(&agent->port, pids, len);
-				if (pids)
-					pfree(pids);
+				handle_abort(agent, s);
 				break;
 			case 'c':			/* CONNECT */
-				pool_getmessage(&agent->port, s, 0);
-				agent->pid = pq_getmsgint(s, 4);
-				len = pq_getmsgint(s, 4);
-				database = pq_getmsgbytes(s, len);
-				len = pq_getmsgint(s, 4);
-				user_name = pq_getmsgbytes(s, len);
-				len = pq_getmsgint(s, 4);
-				pgoptions = pq_getmsgbytes(s, len);
-				/*
-				 * Coordinator pool is not initialized.
-				 * With that it would be impossible to create a Database by default.
-				 */
-				agent_init(agent, database, user_name, pgoptions);
-				pq_getmsgend(s);
+				handle_connect(agent, s);
 				break;
 			case 'd':			/* DISCONNECT */
 				pool_getmessage(&agent->port, s, 4);
@@ -1251,111 +1408,14 @@ agent_handle_input(PoolAgent * agent, StringInfo s)
 				pq_getmsgend(s);
 				break;
 			case 'f':			/* CLEAN CONNECTION */
-				pool_getmessage(&agent->port, s, 0);
-				datanodecount = pq_getmsgint(s, 4);
-				/* It is possible to clean up only datanode connections */
-				for (i = 0; i < datanodecount; i++)
-				{
-					/* Translate index to Oid */
-					int index = pq_getmsgint(s, 4);
-					Oid node = agent->dn_conn_oids[index];
-					nodelist = lappend_oid(nodelist, node);
-				}
-				coordcount = pq_getmsgint(s, 4);
-				/* It is possible to clean up only coordinator connections */
-				for (i = 0; i < coordcount; i++)
-				{
-					/* Translate index to Oid */
-					int index = pq_getmsgint(s, 4);
-					Oid node = agent->coord_conn_oids[index];
-					nodelist = lappend_oid(nodelist, node);
-				}
-				len = pq_getmsgint(s, 4);
-				if (len > 0)
-					database = pq_getmsgbytes(s, len);
-				len = pq_getmsgint(s, 4);
-				if (len > 0)
-					user_name = pq_getmsgbytes(s, len);
-
-				pq_getmsgend(s);
-
-				/* Clean up connections here */
-				res = clean_connection(nodelist, database, user_name);
-
-				list_free(nodelist);
-
-				/* Send success result */
-				pool_sendres(&agent->port, res);
+				handle_clean_connection(agent, s);
 				break;
 			case 'g':			/* GET CONNECTIONS */
-				/*
-				 * Length of message is caused by:
-				 * - Message header = 4bytes
-				 * - List of Datanodes = NumPoolDataNodes * 4bytes (max)
-				 * - List of Coordinators = NumPoolCoords * 4bytes (max)
-				 * - Number of Datanodes sent = 4bytes
-				 * - Number of Coordinators sent = 4bytes
-				 * It is better to send in a same message the list of Co and Dn at the same
-				 * time, this permits to reduce interactions between postmaster and pooler
-				 */
-				pool_getmessage(&agent->port, s, 4 * agent->num_dn_connections + 4 * agent->num_coord_connections + 12);
-				datanodecount = pq_getmsgint(s, 4);
-				for (i = 0; i < datanodecount; i++)
-					datanodelist = lappend_int(datanodelist, pq_getmsgint(s, 4));
-				coordcount = pq_getmsgint(s, 4);
-				/* It is possible that no Coordinators are involved in the transaction */
-				for (i = 0; i < coordcount; i++)
-					coordlist = lappend_int(coordlist, pq_getmsgint(s, 4));
-				pq_getmsgend(s);
-
-				/*
-				 * In case of error agent_acquire_connections will log
-				 * the error and return NULL
-				 */
-				pids = NULL;
-				fds = agent_acquire_connections(agent, datanodelist, coordlist,
-						&pids);
-				list_free(datanodelist);
-				list_free(coordlist);
-
-				pool_sendfds(&agent->port, fds, fds ? datanodecount + coordcount : 0);
-				if (fds)
-					pfree(fds);
-
-				/*
-				 * Also send the PIDs of the remote backend processes serving
-				 * these connections
-				 */
-				pool_sendpids(&agent->port, pids, pids ? datanodecount + coordcount : 0);
-				if (pids)
-					pfree(pids);
+				handle_get_connections(agent, s);
 				break;
 
 			case 'h':			/* Cancel SQL Command in progress on specified connections */
-				/*
-				 * Length of message is caused by:
-				 * - Message header = 4bytes
-				 * - List of Datanodes = NumPoolDataNodes * 4bytes (max)
-				 * - List of Coordinators = NumPoolCoords * 4bytes (max)
-				 * - Number of Datanodes sent = 4bytes
-				 * - Number of Coordinators sent = 4bytes
-				 */
-				pool_getmessage(&agent->port, s, 4 * agent->num_dn_connections + 4 * agent->num_coord_connections + 12);
-				datanodecount = pq_getmsgint(s, 4);
-				for (i = 0; i < datanodecount; i++)
-					datanodelist = lappend_int(datanodelist, pq_getmsgint(s, 4));
-				coordcount = pq_getmsgint(s, 4);
-				/* It is possible that no Coordinators are involved in the transaction */
-				for (i = 0; i < coordcount; i++)
-					coordlist = lappend_int(coordlist, pq_getmsgint(s, 4));
-				pq_getmsgend(s);
-
-				cancel_query_on_connections(agent, datanodelist, coordlist);
-				list_free(datanodelist);
-				list_free(coordlist);
-
-				/* Send success result */
-				pool_sendres(&agent->port, QUERY_CANCEL_COMPLETED);
+				handle_query_cancel(agent, s);
 				break;
 			case 'o':			/* Lock/unlock pooler */
 				pool_getmessage(&agent->port, s, 8);
@@ -1363,26 +1423,6 @@ agent_handle_input(PoolAgent * agent, StringInfo s)
 				pq_getmsgend(s);
 				break;
 			case 'p':			/* Reload connection info */
-				/*
-				 * Connection information reloaded concerns all the database pools.
-				 * A database pool is reloaded as follows for each remote node:
-				 * - node pool is deleted if the node has been deleted from catalog.
-				 *   Subsequently all its connections are dropped.
-				 * - node pool is deleted if its port or host information is changed.
-				 *   Subsequently all its connections are dropped.
-				 * - node pool is kept unchanged with existing connection information
-				 *   is not changed. However its index position in node pool is changed
-				 *   according to the alphabetical order of the node name in new
-				 *   cluster configuration.
-				 * Backend sessions are responsible to reconnect to the pooler to update
-				 * their agent with newest connection information.
-				 * The session invocating connection information reload is reconnected
-				 * and uploaded automatically after database pool reload.
-				 * Other server sessions are signaled to reconnect to pooler and update
-				 * their connection information separately.
-				 * During reload process done internally on pooler, pooler is locked
-				 * to forbid new connection requests.
-				 */
 				pool_getmessage(&agent->port, s, 4);
 				pq_getmsgend(s);
 
@@ -1391,21 +1431,11 @@ agent_handle_input(PoolAgent * agent, StringInfo s)
 				break;
 			case 'R':			/* Refresh connection info */
 				/*
-				 * Connection information refresh concerns all the database pools.
-				 * A database pool is refreshed as follows for each remote node:
-				 * - node pool is deleted if its port or host information is changed.
-				 *   Subsequently all its connections are dropped.
-				 *
-				 * If any other type of activity is found, we error out
 				 */
 				pool_getmessage(&agent->port, s, 4);
 				pq_getmsgend(s);
 
-				/* Refresh the pools */
-				res = refresh_database_pools(agent);
-
-				/* Send result */
-				pool_sendres(&agent->port, res);
+				pool_sendres(&agent->port, refresh_database_pools(agent));
 				break;
 			case 'P':			/* Ping connection info */
 				/*
@@ -1425,10 +1455,7 @@ agent_handle_input(PoolAgent * agent, StringInfo s)
 				pq_getmsgend(s);
 
 				/* Check cached info consistency */
-				res = node_info_check(agent);
-
-				/* Send result */
-				pool_sendres(&agent->port, res);
+				pool_sendres(&agent->port, node_info_check(agent));
 				break;
 			case 'r':			/* RELEASE CONNECTIONS */
 				{
@@ -1440,11 +1467,24 @@ agent_handle_input(PoolAgent * agent, StringInfo s)
 					agent_release_connections(agent, destroy);
 				}
 				break;
-			default:			/* EOF or protocol violation */
+			case EOF:			/* EOF */
 				agent_destroy(agent);
 				return;
+			default:			/* protocol violation */
+				agent_destroy(agent);
+				ereport(WARNING,
+					(errmsg("agent protocol violation, received byte %c", qtype)));
+				return;
 		}
-		/* avoid reading from connection */
+
+		/*
+		 * check if there are more data in the buffer (but don't recv
+		 * additional data), to avoid reading from a closed connection
+		 *
+		 * XXX I wonder whether this is correct, because it means we
+		 * won't call agent_destroy() in this case (unlike when handling
+		 * the message in the switch above).
+		 */
 		if ((qtype = pool_pollbyte(&agent->port)) == EOF)
 			break;
 	}
@@ -1939,7 +1979,32 @@ insert_database_pool(DatabasePool *databasePool)
 }
 
 /*
- * Rebuild information of database pools
+ * reload_database_pools
+ *	rebuild connection information for all database pools
+ *
+ * A database pool is reloaded as follows for each remote node:
+ *
+ * - node pool is deleted if the node has been deleted from catalog.
+ *   Subsequently all its connections are dropped.
+ *
+ * - node pool is deleted if its port or host information is changed.
+ *   Subsequently all its connections are dropped.
+ *
+ * - node pool is kept unchanged with existing connection information
+ *   is not changed. However its index position in node pool is changed
+ *   according to the alphabetical order of the node name in new
+ *   cluster configuration.
+ *
+ * Backend sessions are responsible to reconnect to the pooler to update
+ * their agent with newest connection information.
+ *
+ * The session invocating connection information reload is reconnected
+ * and uploaded automatically after database pool reload. Other server
+ * sessions are signaled to reconnect to pooler and update their
+ * connection information separately.
+ *
+ * During reload process done internally on pooler, pooler is locked
+ * to forbid new connection requests.
  */
 static void
 reload_database_pools(PoolAgent *agent)
@@ -1999,7 +2064,19 @@ reload_database_pools(PoolAgent *agent)
 }
 
 /*
- * Refresh information of database pools
+ * refresh_database_pools
+ *		refresh information for all database pools
+ *
+ * Connection information refresh concerns all the database pools.
+ * A database pool is refreshed as follows for each remote node:
+ *
+ * - node pool is deleted if its port or host information is changed.
+ *   Subsequently all its connections are dropped.
+ *
+ * If any other type of activity is found, we error out.
+ *
+ * XXX I don't see any cases that would error out. Isn't the comment
+ * simply obsolete?
  */
 static int
 refresh_database_pools(PoolAgent *agent)
