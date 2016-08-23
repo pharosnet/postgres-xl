@@ -1312,6 +1312,7 @@ agent_handle_input(PoolAgent * agent, StringInfo s)
 				 * In case of error agent_acquire_connections will log
 				 * the error and return NULL
 				 */
+				pids = NULL;
 				fds = agent_acquire_connections(agent, datanodelist, coordlist,
 						&pids);
 				list_free(datanodelist);
