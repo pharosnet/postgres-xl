@@ -2732,7 +2732,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 						((root->distribution->distributionType == 'H' &&
 						 bms_num_members(root->distribution->restrictNodes) == 1) ||
 						 (root->distribution->distributionType == 'R' &&
-						  !contain_mutable_functions(result_plan->targetlist)))))
+						  !contain_mutable_functions((Node *)result_plan->targetlist)))))
 				result_plan = (Plan *) make_remotesubplan(root,
 														  result_plan,
 														  root->distribution,
@@ -3094,10 +3094,10 @@ preprocess_rowmarks(PlannerInfo *root)
 		 */
 		CheckSelectLocking(parse, ((RowMarkClause *)
 								   linitial(parse->rowMarks))->strength);
-#ifdef XCP
+
 		if (parse->jointree)
 		{
-			Bitmapset  *baserels = get_base_rel_indexes((Node *) parse->jointree);;
+			Bitmapset  *baserels = get_base_rel_indexes((Node *) parse->jointree);
 			int x, num_rels = 0;
 			bool dist_found = false;
 
@@ -3119,7 +3119,6 @@ preprocess_rowmarks(PlannerInfo *root)
 							 LCS_asString(((RowMarkClause *)
 									 linitial(parse->rowMarks))->strength))));
 		}
-#endif
 	}
 	else
 	{
