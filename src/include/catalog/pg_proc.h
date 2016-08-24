@@ -5300,10 +5300,6 @@ DATA(insert OID = 7024 (  pgxc_is_inprogress	PGNSP PGUID 12 1 1 0 0 f f f f t t 
 DESCR("is given GXID in progress?");
 DATA(insert OID = 7011 ( pgxc_lock_for_backup PGNSP PGUID 12 1 0 0 0 f f f f t f v 0 0 16 "" _null_ _null_ _null_ _null_ _null_ pgxc_lock_for_backup _null_ _null_ _null_ ));
 DESCR("lock the cluster for taking backup");
-#ifdef XCP
-DATA(insert OID = 7012 ( stormdb_promote_standby	PGNSP PGUID 12 1 0 0 0 f f f f t f v 0 0 2278 "" _null_ _null_ _null_ _null_ _null_ stormdb_promote_standby _null_ _null_ _null_ ));
-DESCR("touch trigger file on a standby machine to end replication");
-#endif
 DATA(insert OID = 7014 ( numeric_agg_state_in				PGNSP PGUID 12 1 0 0 0 f f f f t f i 1 0 7018 "2275" _null_ _null_ _null_ _null_ _null_ numeric_agg_state_in _null_ _null_ _null_ ));
 DESCR("I/O");
 DATA(insert OID = 7015 ( numeric_agg_state_out			PGNSP PGUID 12 1 0 0 0 f f f f t f i 1 0 2275 "7018" _null_ _null_ _null_ _null_ _null_ numeric_agg_state_out _null_ _null_ _null_ ));
