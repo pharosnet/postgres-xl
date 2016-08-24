@@ -54,10 +54,10 @@
 #include "pgxc/remotecopy.h"
 #include "nodes/nodes.h"
 #include "pgxc/poolmgr.h"
-#include "pgxc/postgresql_fdw.h"
 #include "catalog/pgxc_node.h"
 #endif
 #include "nodes/makefuncs.h"
+#include "optimizer/pgxcship.h"
 #include "rewrite/rewriteHandler.h"
 #include "storage/fd.h"
 #include "tcop/tcopprot.h"

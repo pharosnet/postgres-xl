@@ -46,7 +46,6 @@
 #include "pgxc/locator.h"
 #include "pgxc/nodemgr.h"
 #include "pgxc/planner.h"
-#include "pgxc/postgresql_fdw.h"
 #include "tcop/pquery.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
