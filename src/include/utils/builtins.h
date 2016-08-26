@@ -728,7 +728,6 @@ extern Datum pg_get_function_identity_arguments(PG_FUNCTION_ARGS);
 extern Datum pg_get_function_result(PG_FUNCTION_ARGS);
 extern Datum pg_get_function_arg_default(PG_FUNCTION_ARGS);
 #ifdef PGXC
-extern List *deparse_context_for_remotequery(Alias *aliasname, Oid relid);
 extern void get_query_def_from_valuesList(Query *query, StringInfo buf);
 extern void deparse_query(Query *query, StringInfo buf, List *parentnamespace,
 		bool finalise_aggs, bool sortgroup_colno);

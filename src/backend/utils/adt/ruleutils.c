@@ -176,9 +176,6 @@ typedef struct
 	List	   *outer_tlist;	/* referent for OUTER_VAR Vars */
 	List	   *inner_tlist;	/* referent for INNER_VAR Vars */
 	List	   *index_tlist;	/* referent for INDEX_VAR Vars */
-#ifdef PGXC
-	bool		remotequery;	/* deparse context for remote query */
-#endif
 } deparse_namespace;
 
 /*
@@ -2580,45 +2577,12 @@ deparse_context_for(const char *aliasname, Oid relid)
 	/* Build one-element rtable */
 	dpns->rtable = list_make1(rte);
 	dpns->ctes = NIL;
-#ifdef PGXC
-	dpns->remotequery = false;
-#endif
 	set_rtable_names(dpns, NIL, NULL);
 	set_simple_column_names(dpns);
 
 	/* Return a one-deep namespace stack */
 	return list_make1(dpns);
 }
-
-#ifdef PGXC
-List *
-deparse_context_for_remotequery(Alias *aliasname, Oid relid)
-{
-	deparse_namespace *dpns;
-	RangeTblEntry *rte;
-
-	dpns = (deparse_namespace *) palloc(sizeof(deparse_namespace));
-
-	/* Build a minimal RTE for the rel */
-	rte = makeNode(RangeTblEntry);
-	rte->rtekind = RTE_RELATION;
-	rte->relid = relid;
-	rte->eref = aliasname;
-	rte->inh = false;
-	rte->inFromCl = true;
-
-	/* Build one-element rtable */
-	dpns->rtable = list_make1(rte);
-	dpns->ctes = NIL;
-	dpns->planstate = NULL;
-	dpns->ancestors = NIL;
-	dpns->outer_planstate = dpns->inner_planstate = NULL;
-	dpns->remotequery = true;
-
-	/* Return a one-deep namespace stack */
-	return list_make1(dpns);
-}
-#endif
 
 /*
  * deparse_context_for_plan_rtable - Build deparse context for a plan's rtable
@@ -2744,7 +2708,6 @@ deparse_context_for_plan(Node *plan, List *ancestors,
 	/* Initialize fields that stay the same across the whole plan tree */
 	dpns->rtable = rtable;
 	dpns->ctes = NIL;
-	dpns->remotequery = false;
 
 	/* Set our attention on the specific plan node passed in */
 	set_deparse_plan(dpns, (Plan *) plan);
@@ -2993,10 +2956,6 @@ set_deparse_for_query(deparse_namespace *dpns, Query *query,
 	memset(dpns, 0, sizeof(deparse_namespace));
 	dpns->rtable = query->rtable;
 	dpns->ctes = query->cteList;
-
-#ifdef PGXC
-	dpns->remotequery = false;
-#endif
 
 	/* Assign a unique relation alias to each RTE */
 	set_rtable_names(dpns, parent_namespaces, NULL);
@@ -4536,7 +4495,6 @@ get_query_def_from_valuesList(Query *query, StringInfo buf)
 	dpns.planstate = NULL;
 	dpns.ancestors = NIL;
 	dpns.outer_planstate = dpns.inner_planstate = NULL;
-	dpns.remotequery = false;
 
 	/*
 	 * If it's an INSERT ... SELECT or VALUES (...), (...), ... there will be
@@ -6458,14 +6416,6 @@ get_variable(Var *var, int levelsup, bool istoplevel, deparse_context *context)
 	 * down into the subplans, or INDEX_VAR, which is resolved similarly. Also
 	 * find the aliases previously assigned for this RTE.
 	 */
-#ifdef PGXC
-	if (dpns->remotequery)
-	{
-		rte = rt_fetch(1, dpns->rtable);
-		attnum = var->varattno;
-	}
-	else
-#endif
 	if (var->varno >= 1 && var->varno <= list_length(dpns->rtable))
 	{
 		rte = rt_fetch(var->varno, dpns->rtable);
