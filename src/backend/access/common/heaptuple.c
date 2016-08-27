@@ -1201,13 +1201,21 @@ slot_deform_tuple(TupleTableSlot *slot, int natts)
 /*
  * slot_deform_datarow
  * 		Extract data from the DataRow message into Datum/isnull arrays.
- * 		We always extract all atributes, as specified in tts_tupleDescriptor,
- * 		because there is no easy way to find random attribute in the DataRow.
+ *
+ * We always extract all atributes, as specified in tts_tupleDescriptor,
+ * because there is no easy way to find random attribute in the DataRow.
+ *
+ * XXX There's an opportunity for optimization - we might extract only the
+ * attributes we already need (up to some attnum), and keep a pointer to
+ * the next byte in the DataRow message. On the next call we can either
+ * return immediately if the attnum is already extracted, or deform next
+ * chunk of the message. Not sure if this is worth the effort, as we're
+ * likely to extract all attributes from the message eventually.
  */
 static void
 slot_deform_datarow(TupleTableSlot *slot)
 {
-	int attnum;
+	int natts;
 	int i;
 	int 		col_count;
 	char	   *cur = slot->tts_datarow->msg;
@@ -1219,17 +1227,17 @@ slot_deform_datarow(TupleTableSlot *slot)
 	if (slot->tts_tupleDescriptor == NULL || slot->tts_datarow == NULL)
 		return;
 
-	attnum = slot->tts_tupleDescriptor->natts;
+	natts = slot->tts_tupleDescriptor->natts;
 
 	/* fastpath: exit if values already extracted */
-	if (slot->tts_nvalid == attnum)
+	if (slot->tts_nvalid == natts)
 		return;
 
 	memcpy(&n16, cur, 2);
 	cur += 2;
 	col_count = ntohs(n16);
 
-	if (col_count != attnum)
+	if (col_count != natts)
 		ereport(ERROR,
 				(errcode(ERRCODE_DATA_CORRUPTED),
 				 errmsg("Tuple does not match the descriptor")));
@@ -1258,7 +1266,7 @@ slot_deform_datarow(TupleTableSlot *slot)
 	}
 
 	buffer = makeStringInfo();
-	for (i = 0; i < attnum; i++)
+	for (i = 0; i < natts; i++)
 	{
 		Form_pg_attribute attr = slot->tts_tupleDescriptor->attrs[i];
 		int len;
@@ -1327,8 +1335,7 @@ slot_deform_datarow(TupleTableSlot *slot)
 	pfree(buffer->data);
 	pfree(buffer);
 
-	slot->tts_nvalid = attnum;
-
+	slot->tts_nvalid = natts;
 }
 
 /*
