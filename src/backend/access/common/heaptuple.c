@@ -1224,8 +1224,8 @@ slot_deform_datarow(TupleTableSlot *slot)
 	uint32		n32;
 	MemoryContext oldcontext;
 
-	if (slot->tts_tupleDescriptor == NULL || slot->tts_datarow == NULL)
-		return;
+	Assert(slot->tts_tupleDescriptor != NULL);
+	Assert(slot->tts_datarow != NULL);
 
 	natts = slot->tts_tupleDescriptor->natts;
 
