@@ -1181,6 +1181,7 @@ typedef struct RemoteQueryPath
 {
 	Path			path;
 	ExecNodes		*rqpath_en;		/* List of datanodes to execute the query on */
+
 	/*
 	 * If the path represents a JOIN rel, leftpath and rightpath represent the
 	 * RemoteQuery paths for left (outer) and right (inner) side of the JOIN
@@ -1194,15 +1195,15 @@ typedef struct RemoteQueryPath
 												 * the JOIN information is
 												 * available
 												 */
-	bool					rqhas_unshippable_qual; /* TRUE if there is at least
+	bool					has_unshippable_qual;	/* TRUE if there is at least
 													 * one qual which can not be
 													 * shipped to the datanodes
 													 */
-	bool					rqhas_temp_rel;			/* TRUE if one of the base relations
+	bool					has_temp_rel;			/* TRUE if one of the base relations
 													 * involved in this path is a temporary
 													 * table.
 													 */
-	bool					rqhas_unshippable_tlist;/* TRUE if there is at least one
+	bool					has_unshippable_tlist;	/* TRUE if there is at least one
 													 * targetlist entry which is
 													 * not completely shippable.
 													 */

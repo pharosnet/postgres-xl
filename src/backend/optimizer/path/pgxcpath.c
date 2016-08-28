@@ -28,17 +28,21 @@ static RemoteQueryPath *create_remotequery_path(PlannerInfo *root, RelOptInfo *r
 								List *join_restrictlist);
 /*
  * create_remotequery_path
- *	  Creates a path for given RelOptInfo (for base rel or a join rel) so that
- *	  the results corresponding to this RelOptInfo are obtained by querying
- *	  datanode/s. When RelOptInfo represents a JOIN, we leftpath and rightpath
- *	  represents the RemoteQuery paths for left and right relations resp,
- *	  jointype gives the type of JOIN and join_restrictlist gives the
- *	  restrictinfo list for the JOIN. For a base relation, these should be
- *	  NULL.
- *	  ExecNodes is the set of datanodes to which the query should be sent to.
- *	  This function also marks the path with shippability of the quals.
- *	  If any of the relations involved in this path is a temporary relation,
- *	  record that fact.
+ *	  Creates a RemoteQuery path for a given RelOptInfo.
+ *
+ * The path buils the RelOptInfo data by querying datanode(s). For RelOptInfo
+ * representing a JOIN, the left/right paths represent the RemoteQuery paths
+ * for left and right relations, the jointype identifies the type of JOIN, and
+ * join_restrictlist contains the restrictinfo list for the JOIN.
+ *
+ * For a base relation, these parameters should be NULL.
+ *
+ * ExecNodes is the set of datanodes to which the query should be sent to.
+ *
+ * This function also marks the path with shippability of the quals.
+ *
+ * If any of the relations involved in this path is a temporary relation,
+ * record that fact.
  */
 static RemoteQueryPath *
 create_remotequery_path(PlannerInfo *root, RelOptInfo *rel, ExecNodes *exec_nodes,
@@ -55,7 +59,7 @@ create_remotequery_path(PlannerInfo *root, RelOptInfo *rel, ExecNodes *exec_node
 	rqpath->path.parent = rel;
 	/* PGXC_TODO: do we want to care about it */
 	rqpath->path.param_info = NULL;
-	rqpath->path.pathkeys = NIL;	/* result is always unordered */
+	rqpath->path.pathkeys = NIL;	/* result is always unsorted */
 	rqpath->rqpath_en = exec_nodes;
 	rqpath->leftpath = leftpath;
 	rqpath->rightpath = rightpath;
@@ -71,7 +75,7 @@ create_remotequery_path(PlannerInfo *root, RelOptInfo *rel, ExecNodes *exec_node
 			if (rte->rtekind != RTE_RELATION)
 				elog(ERROR, "can not create remote path for ranges of type %d",
 							rte->rtekind);
-			rqpath->rqhas_temp_rel = IsTempTable(rte->relid);
+			rqpath->has_temp_rel = IsTempTable(rte->relid);
 			unshippable_quals = !pgxc_is_expr_shippable((Expr *)extract_actual_clauses(rel->baserestrictinfo, false),
 														NULL);
 		}
@@ -79,8 +83,8 @@ create_remotequery_path(PlannerInfo *root, RelOptInfo *rel, ExecNodes *exec_node
 
 		case RELOPT_JOINREL:
 		{
-			rqpath->rqhas_temp_rel = leftpath->rqhas_temp_rel ||
-									rightpath->rqhas_temp_rel;
+			rqpath->has_temp_rel = leftpath->has_temp_rel ||
+									rightpath->has_temp_rel;
 			unshippable_quals = !pgxc_is_expr_shippable((Expr *)extract_actual_clauses(join_restrictlist, false),
 														NULL);
 		}
@@ -90,7 +94,8 @@ create_remotequery_path(PlannerInfo *root, RelOptInfo *rel, ExecNodes *exec_node
 			elog(ERROR, "can not create remote path for relation of type %d",
 							rel->reloptkind);
 	}
-	rqpath->rqhas_unshippable_qual = unshippable_quals;
+
+	rqpath->has_unshippable_qual = unshippable_quals;
 
 	/* PGXCTODO - set cost properly */
 	cost_remotequery(rqpath, root, rel);
@@ -191,7 +196,7 @@ create_joinrel_rqpath(PlannerInfo *root, RelOptInfo *joinrel,
 	 * but evaluating the qual on join result. But we don't attempt it for now
 	 */
 	if (!innerpath || !outerpath ||
-		innerpath->rqhas_unshippable_qual || outerpath->rqhas_unshippable_qual)
+		innerpath->has_unshippable_qual || outerpath->has_unshippable_qual)
 		return;
 
 	inner_en = innerpath->rqpath_en;
