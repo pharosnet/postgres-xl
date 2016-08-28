@@ -69,6 +69,17 @@ create_remotequery_path(PlannerInfo *root, RelOptInfo *rel, ExecNodes *exec_node
 	switch (rel->reloptkind)
 	{
 		case RELOPT_BASEREL:
+
+			/*
+			 * For baserels, the left/right path and restrictlist should be NULL.
+			 *
+			 * XXX I'm not sure if the same is true for other non-join rels, so
+			 * let's only add it for the RELOPT_BASEREL case.
+			 */
+			Assert(leftpath == NULL && rightpath == NULL && join_restrictlist == NIL);
+
+			/* fall-through */
+
 		case RELOPT_OTHER_MEMBER_REL:
 		{
 			RangeTblEntry *rte = rt_fetch(rel->relid, root->parse->rtable);
