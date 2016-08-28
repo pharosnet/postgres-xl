@@ -123,11 +123,7 @@ bool		enable_nestloop = true;
 bool		enable_material = true;
 bool		enable_mergejoin = true;
 bool		enable_hashjoin = true;
-#ifdef PGXC
 bool		enable_fast_query_shipping = true;
-bool		enable_remotejoin = true;
-bool		enable_remotegroup = true;
-#endif
 
 typedef struct
 {
