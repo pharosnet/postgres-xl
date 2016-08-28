@@ -1,13 +1,12 @@
 /*-------------------------------------------------------------------------
  *
- * rquerypath.c
- *	  Routines to find possible remote query paths for various relations and
- *	  their costs.
+ * pgxcpath.c
+ *	  Routines to find possible remote query paths for various relation types.
  *
  * Portions Copyright (c) 2012 Postgres-XC Development Group
  *
  * IDENTIFICATION
- *	  src/backend/optimizer/path/rquerypath.c
+ *	  src/backend/optimizer/path/pgxcpath.c
  *
  *-------------------------------------------------------------------------
  */
