@@ -79,7 +79,7 @@ static Result *create_result_plan(PlannerInfo *root, ResultPath *best_path);
 static Material *create_material_plan(PlannerInfo *root, MaterialPath *best_path);
 static Plan *create_unique_plan(PlannerInfo *root, UniquePath *best_path);
 #ifdef XCP
-static void adjustSubplanDistribution(PlannerInfo *root, Distribution *pathd,
+static void adjust_subplan_distribution(PlannerInfo *root, Distribution *pathd,
 						  Distribution *subd);
 static RemoteSubplan *create_remotescan_plan(PlannerInfo *root,
 					   RemoteSubPath *best_path);
@@ -240,7 +240,7 @@ create_plan(PlannerInfo *root, Path *best_path)
 	root->curOuterParams = NIL;
 #ifdef XCP
 	root->curOuterRestrict = NULL;
-	adjustSubplanDistribution(root, root->distribution,
+	adjust_subplan_distribution(root, root->distribution,
 							  best_path->distribution);
 #endif
 
@@ -1157,11 +1157,11 @@ create_unique_plan(PlannerInfo *root, UniquePath *best_path)
 
 #ifdef XCP
 /*
- * adjustSubplanDistribution
+ * adjust_subplan_distribution
  * 	Make sure the distribution of the subplan is matching to the consumers.
  */
 static void
-adjustSubplanDistribution(PlannerInfo *root, Distribution *pathd,
+adjust_subplan_distribution(PlannerInfo *root, Distribution *pathd,
 						  Distribution *subd)
 {
 	/* Replace path restriction with actual */
@@ -1249,7 +1249,7 @@ create_remotescan_plan(PlannerInfo *root,
 	 */
 	saverestrict = root->curOuterRestrict;
 
-	adjustSubplanDistribution(root, best_path->path.distribution,
+	adjust_subplan_distribution(root, best_path->path.distribution,
 							  best_path->subpath->distribution);
 
 	subplan = create_plan_recurse(root, best_path->subpath);
