@@ -5,7 +5,6 @@
  *	  wherein you authenticate a user by seeing what IP address the system
  *	  says he comes from and choosing authentication method based on it).
  *
- * Portions Copyright (c) 2012-2014, TransLattice, Inc.
  * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
@@ -2234,93 +2233,3 @@ hba_getauthmethod(hbaPort *port)
 {
 	check_hba(port);
 }
-
-#ifdef XCP
-/*
- * NB the only way to free allocated lines is to reset or delete current memory
- * context, so caller is responsible for setting it up properly to avoid leak.
- * However, if function fails it would release working memory.
- * Basically the function does the same as load_hba(), but it does not set
- * the static variables.
- */
-List* get_parsed_hba(void) {
-	FILE	   *file;
-	List	   *hba_lines = NIL;
-	List	   *hba_line_nums = NIL;
-	List	   *hba_raw_lines = NIL;
-	ListCell   *line,
-			   *line_num,
-			   *raw_line;
-	List	   *new_parsed_lines = NIL;
-	bool		ok = true;
-	MemoryContext	linecxt;
-	MemoryContext	oldcxt;
-	MemoryContext	hbacxt;
-
-	file = AllocateFile(HbaFileName, "r");
-	if (file == NULL)
-	{
-		ereport(LOG,
-				(errcode_for_file_access(),
-				 errmsg("could not open configuration file \"%s\": %m",
-						HbaFileName)));
-
-		/*
-		 * Caller will take care of making this a FATAL error in case this is
-		 * the initial startup. If it happens on reload, we just keep the old
-		 * version around.
-		 */
-		return NULL;
-	}
-
-	linecxt = tokenize_file(HbaFileName, file, &hba_lines, &hba_line_nums, &hba_raw_lines);
-	FreeFile(file);
-
-	/* Now parse all the lines */
-	hbacxt = AllocSetContextCreate(CurrentMemoryContext,
-								   "hba parser context",
-								   ALLOCSET_DEFAULT_MINSIZE,
-								   ALLOCSET_DEFAULT_MINSIZE,
-								   ALLOCSET_DEFAULT_MAXSIZE);
-	oldcxt = MemoryContextSwitchTo(hbacxt);
-	forthree(line, hba_lines, line_num, hba_line_nums, raw_line, hba_raw_lines)
-	{
-		HbaLine    *newline;
-
-		if ((newline = parse_hba_line(lfirst(line), lfirst_int(line_num), lfirst(raw_line))) == NULL)
-		{
-			/*
-			 * Parse error in the file, so indicate there's a problem.  NB: a
-			 * problem in a line will free the memory for all previous lines as
-			 * well!
-			 */
-			MemoryContextReset(hbacxt);
-			new_parsed_lines = NIL;
-			ok = false;
-
-			/*
-			 * Keep parsing the rest of the file so we can report errors on
-			 * more than the first row. Error has already been reported in the
-			 * parsing function, so no need to log it here.
-			 */
-			continue;
-		}
-
-		new_parsed_lines = lappend(new_parsed_lines, newline);
-	}
-
-	/* Free tokenizer memory */
-	MemoryContextDelete(linecxt);
-	MemoryContextSwitchTo(oldcxt);
-
-	if (!ok)
-	{
-		/* Parsing failed at one or more rows, so bail out */
-		MemoryContextDelete(hbacxt);
-		return NIL;
-	}
-
-	/* Loaded new file successfully, return */
-	return parsed_hba_lines;
-}
-#endif
