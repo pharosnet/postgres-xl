@@ -136,9 +136,6 @@ datumCopy(Datum value, bool typByVal, int typLen)
 		/* It is a varlena datatype */
 		struct varlena *vl = (struct varlena *) DatumGetPointer(value);
 
-		if (!vl)
-			return PointerGetDatum(NULL);
-
 		if (VARATT_IS_EXTERNAL_EXPANDED(vl))
 		{
 			/* Flatten into the caller's memory context */
