@@ -807,7 +807,8 @@ standard_ProcessUtility(Node *parsetree,
 					DropDBCleanConnection(stmt->dbname);
 
 					/* Clean also remote Coordinators */
-					sprintf(query, "CLEAN CONNECTION TO ALL FOR DATABASE %s;", stmt->dbname);
+					sprintf(query, "CLEAN CONNECTION TO ALL FOR DATABASE %s;",
+							quote_identifier(stmt->dbname));
 
 					ExecUtilityStmtOnNodes(query, NULL, sentToRemote, true, EXEC_ON_ALL_NODES, false);
 				}
