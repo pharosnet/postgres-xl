@@ -37,7 +37,11 @@ include $(top_srcdir)/contrib/contrib-global.mk
 endif
 
 pgxc_ctl_bash.c: pgxc_ctl_conf_part_full pgxc_ctl_conf_part_minimal pgxc_ctl_conf_part_empty pgxc_ctl_bash_2
-	$(top_srcdir)/$(subdir)/make_signature
+	cd $(top_srcdir)/$(subdir) && ./make_signature
+ifeq ($(vpath_build),yes)
+	mv $(top_srcdir)/$(subdir)/signature.h .
+	mv $(top_srcdir)/$(subdir)/pgxc_ctl_bash.c .
+endif
 
 clean: clean-script
 
