@@ -1466,6 +1466,9 @@ _outRemoteStmt(StringInfo str, const RemoteStmt *node)
 		appendStringInfo(str, " :paramid");
 		appendStringInfo(str, " %d", rparam->paramid);
 
+		appendStringInfo(str, " :paramused");
+		appendStringInfo(str, " %d", rparam->paramused);
+
 		appendStringInfo(str, " :paramtype");
 		if (portable_output)
 		{

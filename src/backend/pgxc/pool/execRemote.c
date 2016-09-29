@@ -5383,16 +5383,32 @@ ExecInitRemoteSubplan(RemoteSubplan *node, EState *estate, int eflags)
 					 */
 					if (!OidIsValid(param->ptype) && ext_params->paramFetch)
 						(*ext_params->paramFetch) (ext_params, i + 1);
+
 					/*
-					 * If parameter type is still not defined assume it is
-					 * unused
+					 * If the parameter type is still not defined, assume that
+					 * it is unused. But we put a default INT4OID type for such
+					 * unused parameters to keep the parameter pushdown code
+					 * happy.
+					 *
+					 * These unused parameters are never accessed during
+					 * execution and we will just a null value for these
+					 * "dummy" parameters. But including them here ensures that
+					 * we send down the parameters in the correct order and at
+					 * the position that the datanode needs
 					 */
-					if (!OidIsValid(param->ptype))
-						continue;
+					if (OidIsValid(param->ptype))
+					{
+						rstmt.remoteparams[paramno].paramused = 1;
+						rstmt.remoteparams[paramno].paramtype = param->ptype;
+					}
+					else
+					{
+						rstmt.remoteparams[paramno].paramused = 0;
+						rstmt.remoteparams[paramno].paramtype = INT4OID;
+					}
 
 					rstmt.remoteparams[paramno].paramkind = PARAM_EXTERN;
 					rstmt.remoteparams[paramno].paramid = i + 1;
-					rstmt.remoteparams[paramno].paramtype = param->ptype;
 					paramno++;
 				}
 				/* store actual number of parameters */
@@ -5411,6 +5427,7 @@ ExecInitRemoteSubplan(RemoteSubplan *node, EState *estate, int eflags)
 					rstmt.remoteparams[paramno].paramkind = PARAM_EXEC;
 					rstmt.remoteparams[paramno].paramid = i;
 					rstmt.remoteparams[paramno].paramtype = prmdata->ptype;
+					rstmt.remoteparams[paramno].paramused = 1;
 					/* Will scan plan tree to find out data type of the param */
 					if (prmdata->ptype == InvalidOid)
 						defineParams = bms_add_member(defineParams, i);
@@ -5624,9 +5641,13 @@ ExecFinishInitRemoteSubplan(RemoteSubplanState *node)
 
 
 static void
-append_param_data(StringInfo buf, Oid ptype, Datum value, bool isnull)
+append_param_data(StringInfo buf, Oid ptype, int pused, Datum value, bool isnull)
 {
 	uint32 n32;
+
+	/* Assume unused parameters to have null values */
+	if (!pused)
+		ptype = INT4OID;
 
 	if (isnull)
 	{
@@ -5693,11 +5714,12 @@ static int encode_parameters(int nparams, RemoteParam *remoteparams,
 	{
 		RemoteParam *rparam = &remoteparams[i];
 		int ptype = rparam->paramtype;
+		int pused = rparam->paramused;
 		if (rparam->paramkind == PARAM_EXTERN)
 		{
 			ParamExternData *param;
 			param = &(estate->es_param_list_info->params[rparam->paramid - 1]);
-			append_param_data(&buf, ptype, param->value, param->isnull);
+			append_param_data(&buf, ptype, pused, param->value, param->isnull);
 		}
 		else
 		{
@@ -5713,7 +5735,7 @@ static int encode_parameters(int nparams, RemoteParam *remoteparams,
 			}
 			if (!param->done)
 				param->isnull = true;
-			append_param_data(&buf, ptype, param->value, param->isnull);
+			append_param_data(&buf, ptype, pused, param->value, param->isnull);
 
 		}
 	}

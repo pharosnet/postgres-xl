@@ -5599,3 +5599,26 @@ end;
 $$;
 ERROR:  Internal subtransactions not supported in Postgres-XL
 CONTEXT:  PL/pgSQL function inline_code_block line 2 during statement block entry
+-- Check parameter handling
+BEGIN;
+DROP TABLE IF EXISTS testcase_13;
+NOTICE:  table "testcase_13" does not exist, skipping
+CREATE TABLE testcase_13 (patient_id integer);
+INSERT INTO testcase_13 VALUES (1);
+DO $$
+DECLARE
+ r RECORD;
+BEGIN
+FOR r IN SELECT * FROM testcase_13 LOOP
+    RAISE INFO 'r.patient_id=%', r.patient_id;
+    IF   (SELECT EXISTS (
+            SELECT FROM testcase_13 WHERE patient_id = r.patient_id
+        ))
+       THEN
+          RAISE INFO 'condition true';
+    END IF;
+  END LOOP;
+END $$;
+INFO:  r.patient_id=1
+INFO:  condition true
+ROLLBACK;

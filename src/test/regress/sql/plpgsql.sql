@@ -4477,3 +4477,25 @@ exception when others then
   null; -- do nothing
 end;
 $$;
+
+
+-- Check parameter handling
+BEGIN;
+DROP TABLE IF EXISTS testcase_13;
+CREATE TABLE testcase_13 (patient_id integer);
+INSERT INTO testcase_13 VALUES (1);
+DO $$
+DECLARE
+ r RECORD;
+BEGIN
+FOR r IN SELECT * FROM testcase_13 LOOP
+    RAISE INFO 'r.patient_id=%', r.patient_id;
+    IF   (SELECT EXISTS (
+            SELECT FROM testcase_13 WHERE patient_id = r.patient_id
+        ))
+       THEN
+          RAISE INFO 'condition true';
+    END IF;
+  END LOOP;
+END $$;
+ROLLBACK;

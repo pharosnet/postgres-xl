@@ -160,6 +160,7 @@ typedef struct RemoteParam
 	ParamKind 	paramkind;		/* kind of parameter */
 	int			paramid;		/* numeric ID for parameter */
 	Oid			paramtype;		/* pg_type OID of parameter's datatype */
+	int			paramused;		/* is param used */
 } RemoteParam;
 
 
