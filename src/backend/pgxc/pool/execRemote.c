@@ -4242,8 +4242,16 @@ FinishRemotePreparedTransaction(char *prepareGID, bool commit)
 	 * single call, it doesn't look nicer and create confusion. We should
 	 * probably split them into two parts. This is used only for explicit 2PC
 	 * which should not be very common in XC
+	 *
+	 * In xc_maintenance_mode mode, we don't fail if the GTM does not have
+	 * knowledge about the prepared transaction. That may happen for various
+	 * reasons such that an earlier attempt cleaned up it from GTM or GTM was
+	 * restarted in between. The xc_maintenance_mode is a kludge to come out of
+	 * such situations. So it seems alright to not be too strict about the
+	 * state
 	 */
-	if (GetGIDDataGTM(prepareGID, &gxid, &prepare_gxid, &nodestring) < 0)
+	if ((GetGIDDataGTM(prepareGID, &gxid, &prepare_gxid, &nodestring) < 0) &&
+		!xc_maintenance_mode)
 		ereport(ERROR,
 				(errcode(ERRCODE_INTERNAL_ERROR),
 				 errmsg("prepared transaction with identifier \"%s\" does not exist",
