@@ -967,6 +967,7 @@ int add_coordinatorMaster(char *name, char *host, int port, int pooler,
 	int size, idx;
 	char port_s[MAXTOKEN+1];
 	char pooler_s[MAXTOKEN+1];
+	char max_wal_senders_s[MAXTOKEN+1];
 	int gtmPxyIdx;
 	int connCordIndx;
 	char *gtmHost;
@@ -1039,12 +1040,13 @@ int add_coordinatorMaster(char *name, char *host, int port, int pooler,
 	 */
 	snprintf(port_s, MAXTOKEN, "%d", port);
 	snprintf(pooler_s, MAXTOKEN, "%d", pooler);
+	snprintf(max_wal_senders_s, MAXTOKEN, "%d", getDefaultWalSender(true));
 	assign_arrayEl(VAR_coordNames, idx, name, NULL);
 	assign_arrayEl(VAR_coordMasterServers, idx, host, NULL);
 	assign_arrayEl(VAR_coordPorts, idx, port_s, "-1");
 	assign_arrayEl(VAR_poolerPorts, idx, pooler_s, NULL);
 	assign_arrayEl(VAR_coordMasterDirs, idx, dir, NULL);
-	assign_arrayEl(VAR_coordMaxWALSenders, idx, aval(VAR_coordMaxWALSenders)[0], "-1");	/* Could be vulnerable */
+	assign_arrayEl(VAR_coordMaxWALSenders, idx, max_wal_senders_s, NULL);
 	assign_arrayEl(VAR_coordSlaveServers, idx, "none", NULL);
 	assign_arrayEl(VAR_coordSlavePorts, idx, "none", NULL);
 	assign_arrayEl(VAR_coordSlavePoolerPorts, idx, "none", NULL);

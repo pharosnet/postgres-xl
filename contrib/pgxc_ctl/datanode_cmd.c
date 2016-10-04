@@ -964,7 +964,8 @@ int add_datanodeMaster(char *name, char *host, int port, int pooler, char *dir,
 	FILE *f, *lockf;
 	int size, idx;
 	char port_s[MAXTOKEN+1];
-    char pooler_s[MAXTOKEN+1];
+	char pooler_s[MAXTOKEN+1];
+	char max_wal_senders_s[MAXTOKEN+1];
 	int gtmPxyIdx;
 	int connCordIdx;
 	char *gtmHost;
@@ -1072,13 +1073,14 @@ int add_datanodeMaster(char *name, char *host, int port, int pooler, char *dir,
 	 */
 	snprintf(port_s, MAXTOKEN, "%d", port);
 	snprintf(pooler_s, MAXTOKEN, "%d", pooler);
+	snprintf(max_wal_senders_s, MAXTOKEN, "%d", getDefaultWalSender(false));
 	assign_arrayEl(VAR_datanodeNames, idx, name, NULL);
 	assign_arrayEl(VAR_datanodeMasterServers, idx, host, NULL);
 	assign_arrayEl(VAR_datanodePorts, idx, port_s, "-1");
 	assign_arrayEl(VAR_datanodePoolerPorts, idx, pooler_s, "-1");
 	assign_arrayEl(VAR_datanodeMasterDirs, idx, dir, NULL);
 	assign_arrayEl(VAR_datanodeMasterWALDirs, idx, waldir, NULL);
-	assign_arrayEl(VAR_datanodeMaxWALSenders, idx, aval(VAR_datanodeMaxWALSenders)[0], NULL);	/* Could be vulnerable */
+	assign_arrayEl(VAR_datanodeMaxWALSenders, idx, max_wal_senders_s, NULL);
  	if (isVarYes(VAR_datanodeSlave))
 	{
 		assign_arrayEl(VAR_datanodeSlaveServers, idx, "none", NULL);
