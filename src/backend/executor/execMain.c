@@ -218,6 +218,7 @@ standard_ExecutorStart(QueryDesc *queryDesc, int eflags)
 				prmdata->value = extparams->params[i].value;
 				prmdata->isnull = extparams->params[i].isnull;
 				prmdata->ptype = extparams->params[i].ptype;
+				prmdata->done = true;
 			}
 			/*
 			 * Truncate exec parameters from the list of received parameters
@@ -2850,6 +2851,8 @@ EvalPlanQualStart(EPQState *epqstate, EState *parentestate, Plan *planTree)
 				parentestate->es_param_exec_vals[i].value;
 			estate->es_param_exec_vals[i].isnull =
 				parentestate->es_param_exec_vals[i].isnull;
+			estate->es_param_exec_vals[i].done =
+				parentestate->es_param_exec_vals[i].done;
 		}
 	}
 

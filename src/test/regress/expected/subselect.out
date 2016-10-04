@@ -901,3 +901,83 @@ select nextval('ts1');
       11
 (1 row)
 
+SELECT setseed(0);
+ setseed 
+---------
+ 
+(1 row)
+
+-- DROP TABLE IF EXISTS asd ;
+CREATE TABLE IF NOT EXISTS asd  AS
+SELECT clientid::numeric(20),
+ (clientid / 20 )::integer::numeric(20) as userid,
+ cts + ((random()* 3600 *24 )||'sec')::interval as cts,
+ (ARRAY['A','B','C','D','E','F'])[(random()*5+1)::integer] as state,
+ 0 as dim,
+ ((ARRAY['Cat','Dog','Duck'])[(clientid / 10  )% 3  +1 ]) ::text as app_name,
+  md5(random()::text) as new_value,
+ ((ARRAY['A','B'])[(clientid / 10  )% 2  +1 ]) ::text as platform
+ FROM generate_series('2016-01-01'::timestamp,'2016-10-01'::timestamp,interval '15 day') cts , generate_series( 1000,2000,10) clientid , generate_series(1,6) t
+ORDER BY new_value
+;
+SELECT dates::timestamp as dates ,B.platform,B.app_name, B.clientid, B.userid,
+	B.cts, B.state as state, 
+	B.new_value 
+FROM ( VALUES
+('2016.08.30. 08:52:43') ,('2016.08.29. 04:57:12') ,('2016.08.26. 08:15:05') ,
+('2016.08.24. 11:49:51') ,('2016.08.22. 08:45:29') ,('2016.08.21. 04:53:47') ,('2016.08.20. 08:44:03')
+) AS D (dates)
+JOIN
+( SELECT DISTINCT clientid FROM asd
+	WHERE userid=74 ) C ON True
+INNER JOIN LATERAL (
+	SELECT DISTINCT ON (clientid,app_name,platform,state,dim) x.*
+	FROM asd x
+	INNER JOIN (SELECT p.clientid,p.app_name,p.platform , p.state, p.dim ,
+	     MAX(p.cts) AS selected_cts
+		FROM asd p
+		where cts<D.dates::timestamp and state in
+		('A','B')
+	GROUP BY p.clientid,p.app_name,p.platform,p.state,p.dim) y
+	ON y.clientid = x.clientid
+	AND y.selected_cts = x.cts
+	AND y.platform = x.platform
+	AND y.app_name=x.app_name
+	AND y.state=x.state
+	AND y.dim = x.dim
+	and x.clientid = C.clientid
+) B ON True
+ORDER BY dates desc, state;
+          dates           | platform | app_name | clientid | userid |               cts               | state |            new_value             
+--------------------------+----------+----------+----------+--------+---------------------------------+-------+----------------------------------
+ Tue Aug 30 08:52:43 2016 | A        | Dog      |     1480 |     74 | Wed Jun 29 03:18:06.706316 2016 | A     | 7e843b8fd42acc050eb49116e15006e1
+ Tue Aug 30 08:52:43 2016 | B        | Duck     |     1490 |     74 | Sun Aug 28 23:00:45.390111 2016 | A     | ecaed3db1bda049f61b22a59afeba67b
+ Tue Aug 30 08:52:43 2016 | A        | Dog      |     1480 |     74 | Sun Aug 28 20:02:57.919909 2016 | B     | 217e610c59ec188e65e234a703d2b036
+ Tue Aug 30 08:52:43 2016 | B        | Duck     |     1490 |     74 | Sat Aug 13 16:21:35.673224 2016 | B     | 46085cbf5ea67a75a8f0d25265cf2c80
+ Mon Aug 29 04:57:12 2016 | A        | Dog      |     1480 |     74 | Wed Jun 29 03:18:06.706316 2016 | A     | 7e843b8fd42acc050eb49116e15006e1
+ Mon Aug 29 04:57:12 2016 | B        | Duck     |     1490 |     74 | Sun Aug 28 23:00:45.390111 2016 | A     | ecaed3db1bda049f61b22a59afeba67b
+ Mon Aug 29 04:57:12 2016 | A        | Dog      |     1480 |     74 | Sun Aug 28 20:02:57.919909 2016 | B     | 217e610c59ec188e65e234a703d2b036
+ Mon Aug 29 04:57:12 2016 | B        | Duck     |     1490 |     74 | Sat Aug 13 16:21:35.673224 2016 | B     | 46085cbf5ea67a75a8f0d25265cf2c80
+ Fri Aug 26 08:15:05 2016 | B        | Duck     |     1490 |     74 | Sat Aug 13 23:21:41.726407 2016 | A     | 21b99ddb90745919d84bce594fd99882
+ Fri Aug 26 08:15:05 2016 | A        | Dog      |     1480 |     74 | Wed Jun 29 03:18:06.706316 2016 | A     | 7e843b8fd42acc050eb49116e15006e1
+ Fri Aug 26 08:15:05 2016 | B        | Duck     |     1490 |     74 | Sat Aug 13 16:21:35.673224 2016 | B     | 46085cbf5ea67a75a8f0d25265cf2c80
+ Fri Aug 26 08:15:05 2016 | A        | Dog      |     1480 |     74 | Sat Aug 13 18:27:45.405411 2016 | B     | 1c0506aaba048c5b3a4fa12b7d6a216c
+ Wed Aug 24 11:49:51 2016 | A        | Dog      |     1480 |     74 | Wed Jun 29 03:18:06.706316 2016 | A     | 7e843b8fd42acc050eb49116e15006e1
+ Wed Aug 24 11:49:51 2016 | B        | Duck     |     1490 |     74 | Sat Aug 13 23:21:41.726407 2016 | A     | 21b99ddb90745919d84bce594fd99882
+ Wed Aug 24 11:49:51 2016 | A        | Dog      |     1480 |     74 | Sat Aug 13 18:27:45.405411 2016 | B     | 1c0506aaba048c5b3a4fa12b7d6a216c
+ Wed Aug 24 11:49:51 2016 | B        | Duck     |     1490 |     74 | Sat Aug 13 16:21:35.673224 2016 | B     | 46085cbf5ea67a75a8f0d25265cf2c80
+ Mon Aug 22 08:45:29 2016 | B        | Duck     |     1490 |     74 | Sat Aug 13 23:21:41.726407 2016 | A     | 21b99ddb90745919d84bce594fd99882
+ Mon Aug 22 08:45:29 2016 | A        | Dog      |     1480 |     74 | Wed Jun 29 03:18:06.706316 2016 | A     | 7e843b8fd42acc050eb49116e15006e1
+ Mon Aug 22 08:45:29 2016 | B        | Duck     |     1490 |     74 | Sat Aug 13 16:21:35.673224 2016 | B     | 46085cbf5ea67a75a8f0d25265cf2c80
+ Mon Aug 22 08:45:29 2016 | A        | Dog      |     1480 |     74 | Sat Aug 13 18:27:45.405411 2016 | B     | 1c0506aaba048c5b3a4fa12b7d6a216c
+ Sun Aug 21 04:53:47 2016 | B        | Duck     |     1490 |     74 | Sat Aug 13 23:21:41.726407 2016 | A     | 21b99ddb90745919d84bce594fd99882
+ Sun Aug 21 04:53:47 2016 | A        | Dog      |     1480 |     74 | Wed Jun 29 03:18:06.706316 2016 | A     | 7e843b8fd42acc050eb49116e15006e1
+ Sun Aug 21 04:53:47 2016 | B        | Duck     |     1490 |     74 | Sat Aug 13 16:21:35.673224 2016 | B     | 46085cbf5ea67a75a8f0d25265cf2c80
+ Sun Aug 21 04:53:47 2016 | A        | Dog      |     1480 |     74 | Sat Aug 13 18:27:45.405411 2016 | B     | 1c0506aaba048c5b3a4fa12b7d6a216c
+ Sat Aug 20 08:44:03 2016 | A        | Dog      |     1480 |     74 | Wed Jun 29 03:18:06.706316 2016 | A     | 7e843b8fd42acc050eb49116e15006e1
+ Sat Aug 20 08:44:03 2016 | B        | Duck     |     1490 |     74 | Sat Aug 13 23:21:41.726407 2016 | A     | 21b99ddb90745919d84bce594fd99882
+ Sat Aug 20 08:44:03 2016 | B        | Duck     |     1490 |     74 | Sat Aug 13 16:21:35.673224 2016 | B     | 46085cbf5ea67a75a8f0d25265cf2c80
+ Sat Aug 20 08:44:03 2016 | A        | Dog      |     1480 |     74 | Sat Aug 13 18:27:45.405411 2016 | B     | 1c0506aaba048c5b3a4fa12b7d6a216c
+(28 rows)
+
+DROP TABLE asd;

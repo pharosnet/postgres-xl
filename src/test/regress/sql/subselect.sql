@@ -494,3 +494,51 @@ select * from
   order by 1;
 
 select nextval('ts1');
+
+SELECT setseed(0);
+
+-- DROP TABLE IF EXISTS asd ;
+
+CREATE TABLE IF NOT EXISTS asd  AS
+SELECT clientid::numeric(20),
+ (clientid / 20 )::integer::numeric(20) as userid,
+ cts + ((random()* 3600 *24 )||'sec')::interval as cts,
+ (ARRAY['A','B','C','D','E','F'])[(random()*5+1)::integer] as state,
+ 0 as dim,
+ ((ARRAY['Cat','Dog','Duck'])[(clientid / 10  )% 3  +1 ]) ::text as app_name,
+  md5(random()::text) as new_value,
+ ((ARRAY['A','B'])[(clientid / 10  )% 2  +1 ]) ::text as platform
+ FROM generate_series('2016-01-01'::timestamp,'2016-10-01'::timestamp,interval '15 day') cts , generate_series( 1000,2000,10) clientid , generate_series(1,6) t
+ORDER BY new_value
+;
+
+SELECT dates::timestamp as dates ,B.platform,B.app_name, B.clientid, B.userid,
+	B.cts, B.state as state, 
+	B.new_value 
+FROM ( VALUES
+('2016.08.30. 08:52:43') ,('2016.08.29. 04:57:12') ,('2016.08.26. 08:15:05') ,
+('2016.08.24. 11:49:51') ,('2016.08.22. 08:45:29') ,('2016.08.21. 04:53:47') ,('2016.08.20. 08:44:03')
+) AS D (dates)
+JOIN
+( SELECT DISTINCT clientid FROM asd
+	WHERE userid=74 ) C ON True
+INNER JOIN LATERAL (
+	SELECT DISTINCT ON (clientid,app_name,platform,state,dim) x.*
+	FROM asd x
+	INNER JOIN (SELECT p.clientid,p.app_name,p.platform , p.state, p.dim ,
+	     MAX(p.cts) AS selected_cts
+		FROM asd p
+		where cts<D.dates::timestamp and state in
+		('A','B')
+	GROUP BY p.clientid,p.app_name,p.platform,p.state,p.dim) y
+	ON y.clientid = x.clientid
+	AND y.selected_cts = x.cts
+	AND y.platform = x.platform
+	AND y.app_name=x.app_name
+	AND y.state=x.state
+	AND y.dim = x.dim
+	and x.clientid = C.clientid
+) B ON True
+ORDER BY dates desc, state;
+
+DROP TABLE asd;
