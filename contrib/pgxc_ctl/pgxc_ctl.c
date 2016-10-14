@@ -49,6 +49,7 @@
 #include <getopt.h>
 
 #include "config.h"
+#include "pg_config.h"
 #include "variables.h"
 #include "pgxc_ctl.h"
 #include "bash_handler.h"
@@ -67,7 +68,6 @@ char pgxc_ctl_config_path[MAXPATH+1];
 char progname[MAXPATH+1];
 char *myName;
 char *defaultDatabase;
-#define versionString "V9.2 for Postgres-XL 9.2"
 
 FILE *inF;
 FILE *outF;
@@ -603,7 +603,7 @@ int main(int argc, char *argv[])
 
 static void print_version(void)
 {
-	printf("Pgxc_ctl %s\n", versionString);
+	printf("Pgxc_ctl %s\n", PG_VERSION);
 }
 
 static void print_help(void)
