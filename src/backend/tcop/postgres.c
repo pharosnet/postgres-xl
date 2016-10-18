@@ -2539,7 +2539,11 @@ check_log_duration(char *msec_str, bool was_logged)
 		int			msecs;
 		bool		exceeded;
 
-		TimestampDifference(GetCurrentStatementStartTimestamp(),
+		/*
+		 * Since GetCurrentTimestamp() returns OS time, use local time for
+		 * statement-start for accurate comparison
+		 */
+		TimestampDifference(GetCurrentLocalStatementStartTimestamp(),
 							GetCurrentTimestamp(),
 							&secs, &usecs);
 		msecs = usecs / 1000;

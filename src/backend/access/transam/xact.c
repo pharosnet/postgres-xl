@@ -929,6 +929,16 @@ GetCurrentStatementStartTimestamp(void)
 #endif
 }
 
+#ifdef XCP
+/*
+ *	GetCurrentLocalStatementStartTimestamp
+ */
+TimestampTz
+GetCurrentLocalStatementStartTimestamp(void)
+{
+	return stmtStartTimestamp;
+}
+#endif
 /*
  *	GetCurrentTransactionStopTimestamp
  *

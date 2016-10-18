@@ -341,6 +341,9 @@ extern bool SubTransactionIsActive(SubTransactionId subxid);
 extern CommandId GetCurrentCommandId(bool used);
 extern TimestampTz GetCurrentTransactionStartTimestamp(void);
 extern TimestampTz GetCurrentStatementStartTimestamp(void);
+#ifdef XCP
+extern TimestampTz GetCurrentLocalStatementStartTimestamp(void);
+#endif
 extern TimestampTz GetCurrentTransactionStopTimestamp(void);
 extern void SetCurrentStatementStartTimestamp(void);
 #ifdef PGXC
