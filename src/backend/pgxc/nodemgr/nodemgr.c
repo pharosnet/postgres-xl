@@ -37,6 +37,7 @@
 #define MAX_TRIES_FOR_NID	200
 
 static Datum generate_node_id(const char *node_name);
+static void count_coords_datanodes(Relation rel, int *num_coord, int *num_dns);
 
 /*
  * GUC parameters.
@@ -222,7 +223,7 @@ check_node_options(const char *node_name, List *options, char **node_host,
 	if (*node_type == PGXC_NODE_DATANODE && NumDataNodes >= MaxDataNodes)
 		ereport(ERROR,
 				(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
-				 errmsg("Too many datanodes, current value of max_data_nodes is %d",
+				 errmsg("Too many datanodes, current value of max_datanodes is %d",
 						MaxDataNodes)));
 
 #endif
@@ -314,6 +315,39 @@ cmp_nodes(const void *p1, const void *p2)
 	return 1;
 }
 
+/*
+ * Count the number of coordinators and datanodes configured so far.
+ */
+static void
+count_coords_datanodes(Relation rel, int *num_coord, int *num_dns)
+{
+	int			coordCount = 0, dnCount = 0;
+	HeapScanDesc scan;
+	HeapTuple   tuple;
+
+	scan = heap_beginscan(rel, SnapshotSelf, 0, NULL);
+	while ((tuple = heap_getnext(scan, ForwardScanDirection)) != NULL)
+	{
+		Form_pgxc_node  nodeForm = (Form_pgxc_node) GETSTRUCT(tuple);
+
+		/* Take definition for given node type */
+		switch (nodeForm->node_type)
+		{
+			case PGXC_NODE_COORDINATOR:
+				coordCount++;
+				break;
+			case PGXC_NODE_DATANODE:
+				dnCount++;
+				break;
+			default:
+				break;
+		}
+	}
+	heap_endscan(scan);
+
+	*num_coord = coordCount;
+	*num_dns = dnCount;
+}
 
 /*
  * PgxcNodeListAndCount
@@ -692,6 +726,7 @@ PgxcNodeCreate(CreateNodeStmt *stmt)
 	bool		is_primary = false;
 	bool		is_preferred = false;
 	Datum		node_id;
+	int			coordCount = 0, dnCount = 0;
 
 	/* Only a DB administrator can add nodes */
 	if (!superuser())
@@ -763,7 +798,34 @@ PgxcNodeCreate(CreateNodeStmt *stmt)
 	 * There could be a relation race here if a similar Oid
 	 * being created before the heap is inserted.
 	 */
-	pgxcnodesrel = heap_open(PgxcNodeRelationId, RowExclusiveLock);
+	pgxcnodesrel = heap_open(PgxcNodeRelationId, AccessExclusiveLock);
+
+	/*
+	 * Get the count of datanodes and coordinators added so far and make sure
+	 * we're not exceeding the configured limits
+	 *
+	 * XXX This is not full proof because someone may first set
+	 * max_coordinators or max_datanodes to a high value, add nodes and then
+	 * lower the value again.
+	 */
+	count_coords_datanodes(pgxcnodesrel, &coordCount, &dnCount);
+
+	if ((node_type == PGXC_NODE_DATANODE && dnCount >= MaxDataNodes) ||
+		(node_type == PGXC_NODE_COORDINATOR && coordCount >= MaxCoords))
+	{
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_RESOURCES),
+				 errmsg("cannot add more than %d %s",
+					 node_type == PGXC_NODE_COORDINATOR ?
+					 MaxCoords : MaxDataNodes,
+					 node_type == PGXC_NODE_COORDINATOR ?
+					 "coordinators" : "datanodes"),
+				 errhint("increase the value of %s GUC and restart the cluster",
+					 node_type == PGXC_NODE_COORDINATOR ?
+					 "max_coordinators" : "max_datanodes"
+					 )));
+
+	}
 
 	/* Build entry tuple */
 	values[Anum_pgxc_node_name - 1] = DirectFunctionCall1(namein, CStringGetDatum(node_name));
@@ -781,7 +843,7 @@ PgxcNodeCreate(CreateNodeStmt *stmt)
 
 	CatalogUpdateIndexes(pgxcnodesrel, htup);
 
-	heap_close(pgxcnodesrel, RowExclusiveLock);
+	heap_close(pgxcnodesrel, AccessExclusiveLock);
 }
 
 /*
@@ -805,6 +867,7 @@ PgxcNodeAlter(AlterNodeStmt *stmt)
 	bool		new_record_nulls[Natts_pgxc_node];
 	bool		new_record_repl[Natts_pgxc_node];
 	uint32		node_id;
+	int			coordCount = 0, dnCount = 0;
 
 	/* Only a DB administrator can alter cluster nodes */
 	if (!superuser())
@@ -813,7 +876,7 @@ PgxcNodeAlter(AlterNodeStmt *stmt)
 				 errmsg("must be superuser to change cluster nodes")));
 
 	/* Look at the node tuple, and take exclusive lock on it */
-	rel = heap_open(PgxcNodeRelationId, RowExclusiveLock);
+	rel = heap_open(PgxcNodeRelationId, AccessExclusiveLock);
 
 	/* Check that node exists */
 	if (!OidIsValid(nodeOid))
@@ -855,6 +918,29 @@ PgxcNodeAlter(AlterNodeStmt *stmt)
 				(errcode(ERRCODE_SYNTAX_ERROR),
 				 errmsg("PGXC node %s: two nodes cannot be primary",
 						node_name)));
+
+	/*
+	 * Get the count of datanodes and coordinators added so far and make sure
+	 * we're not exceeding the configured limits
+	 */
+	count_coords_datanodes(rel, &coordCount, &dnCount);
+
+	if ((node_type == PGXC_NODE_DATANODE && dnCount >= MaxDataNodes) ||
+		(node_type == PGXC_NODE_COORDINATOR && coordCount >= MaxCoords))
+	{
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_RESOURCES),
+				 errmsg("cannot add more than %d %s",
+					 node_type == PGXC_NODE_COORDINATOR ?
+					 MaxCoords : MaxDataNodes,
+					 node_type == PGXC_NODE_COORDINATOR ?
+					 "coordinators" : "datanodes"),
+				 errhint("increase the value of %s GUC and restart the cluster",
+					 node_type == PGXC_NODE_COORDINATOR ?
+					 "max_coordinators" : "max_datanodes"
+					 )));
+
+	}
 
 	/* Update values for catalog entry */
 	MemSet(new_record, 0, sizeof(new_record));
