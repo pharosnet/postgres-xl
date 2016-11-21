@@ -1853,7 +1853,7 @@ _readTargetEntry(void)
 	READ_UINT_FIELD(ressortgroupref);
 #ifdef XCP
 	if (portable_input)
-		READ_RELID_FIELD(resorigtbl);
+		READ_RELID_FIELD_NOWARN(resorigtbl);
 	else
 #endif
 	READ_OID_FIELD(resorigtbl);
