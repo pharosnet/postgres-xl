@@ -2190,25 +2190,6 @@ transformFKConstraints(CreateStmtContext *cxt,
 	if (cxt->fkconstraints == NIL)
 		return;
 
-#ifdef XCP
-	/*
-	 * If the "loose_constraints" GUC is set, we wholesale avoid creating
-	 * Foreign Keys. Another way is to identify only those unenforceable
-	 * FK constraints and skip over those. However the query string sent to
-	 * the datanodes still contains those FKs and messes up things later.
-	 * This can be handled by re-generating the query string that should be
-	 * passed onto the datanodes, but that's quite a lot of work.
-	 *
-	 * Also supporting some FKs and not some others is also debatable..
-	 * So we go in for an all-or-nothing approach here
-	 */
-	if (loose_constraints)
-	{
-		list_free_deep(cxt->fkconstraints);
-		cxt->fkconstraints = NIL;
-		return;
-	}
-#endif
 	/*
 	 * If CREATE TABLE or adding a column with NULL default, we can safely
 	 * skip validation of FK constraints, and nonetheless mark them valid.
