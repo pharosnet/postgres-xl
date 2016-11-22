@@ -26,6 +26,7 @@
 #include "optimizer/clauses.h"
 #include "parser/parsetree.h"
 #include "rewrite/rewriteHandler.h"
+#include "storage/bufmgr.h"
 #include "tcop/tcopprot.h"
 #include "utils/builtins.h"
 #include "utils/json.h"
@@ -705,8 +706,11 @@ report_triggers(ResultRelInfo *rInfo, bool show_relname, ExplainState *es)
 				appendStringInfo(es->str, " for constraint %s", conname);
 			if (show_relname)
 				appendStringInfo(es->str, " on %s", relname);
-			appendStringInfo(es->str, ": time=%.3f calls=%.0f\n",
-							 1000.0 * instr->total, instr->ntuples);
+			if (es->timing)
+				appendStringInfo(es->str, ": time=%.3f calls=%.0f\n",
+								 1000.0 * instr->total, instr->ntuples);
+			else
+				appendStringInfo(es->str, ": calls=%.0f\n", instr->ntuples);
 		}
 		else
 		{
@@ -714,7 +718,8 @@ report_triggers(ResultRelInfo *rInfo, bool show_relname, ExplainState *es)
 			if (conname)
 				ExplainPropertyText("Constraint Name", conname, es);
 			ExplainPropertyText("Relation", relname, es);
-			ExplainPropertyFloat("Time", 1000.0 * instr->total, 3, es);
+			if (es->timing)
+				ExplainPropertyFloat("Time", 1000.0 * instr->total, 3, es);
 			ExplainPropertyFloat("Calls", instr->ntuples, 0, es);
 		}
 
@@ -1754,8 +1759,11 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			ExplainPropertyLong("Local Written Blocks", usage->local_blks_written, es);
 			ExplainPropertyLong("Temp Read Blocks", usage->temp_blks_read, es);
 			ExplainPropertyLong("Temp Written Blocks", usage->temp_blks_written, es);
-			ExplainPropertyFloat("I/O Read Time", INSTR_TIME_GET_MILLISEC(usage->blk_read_time), 3, es);
-			ExplainPropertyFloat("I/O Write Time", INSTR_TIME_GET_MILLISEC(usage->blk_write_time), 3, es);
+			if (track_io_timing)
+			{
+				ExplainPropertyFloat("I/O Read Time", INSTR_TIME_GET_MILLISEC(usage->blk_read_time), 3, es);
+				ExplainPropertyFloat("I/O Write Time", INSTR_TIME_GET_MILLISEC(usage->blk_write_time), 3, es);
+			}
 		}
 	}
 
@@ -3515,13 +3523,15 @@ ExplainRemoteQuery(RemoteQuery *plan, PlanState *planstate, List *ancestors, Exp
  * Optionally, OR in X_NOWHITESPACE to suppress the whitespace we'd normally
  * add.
  *
- * XML tag names can't contain white space, so we replace any spaces in
- * "tagname" with dashes.
+ * XML restricts tag names more than our other output formats, eg they can't
+ * contain white space or slashes.  Replace invalid characters with dashes,
+ * so that for example "I/O Read Time" becomes "I-O-Read-Time".
  */
 static void
 ExplainXMLTag(const char *tagname, int flags, ExplainState *es)
 {
 	const char *s;
+	const char *valid = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.";
 
 	if ((flags & X_NOWHITESPACE) == 0)
 		appendStringInfoSpaces(es->str, 2 * es->indent);
@@ -3529,7 +3539,7 @@ ExplainXMLTag(const char *tagname, int flags, ExplainState *es)
 	if ((flags & X_CLOSING) != 0)
 		appendStringInfoCharMacro(es->str, '/');
 	for (s = tagname; *s; s++)
-		appendStringInfoCharMacro(es->str, (*s == ' ') ? '-' : *s);
+		appendStringInfoChar(es->str, strchr(valid, *s) ? *s : '-');
 	if ((flags & X_CLOSE_IMMEDIATE) != 0)
 		appendStringInfoString(es->str, " /");
 	appendStringInfoCharMacro(es->str, '>');

@@ -147,8 +147,11 @@ describeTablespaces(const char *pattern, bool verbose)
 
 	if (pset.sversion < 80000)
 	{
-		psql_error("The server (version %d.%d) does not support tablespaces.\n",
-				   pset.sversion / 10000, (pset.sversion / 100) % 100);
+		char		sverbuf[32];
+
+		psql_error("The server (version %s) does not support tablespaces.\n",
+				   formatPGVersionNumber(pset.sversion, false,
+										 sverbuf, sizeof(sverbuf)));
 		return true;
 	}
 
@@ -250,8 +253,11 @@ describeFunctions(const char *functypes, const char *pattern, bool verbose, bool
 
 	if (showWindow && pset.sversion < 80400)
 	{
-		psql_error("\\df does not take a \"w\" option with server version %d.%d\n",
-				   pset.sversion / 10000, (pset.sversion / 100) % 100);
+		char		sverbuf[32];
+
+		psql_error("\\df does not take a \"w\" option with server version %s\n",
+				   formatPGVersionNumber(pset.sversion, false,
+										 sverbuf, sizeof(sverbuf)));
 		return true;
 	}
 
@@ -876,8 +882,11 @@ listDefaultACLs(const char *pattern)
 
 	if (pset.sversion < 90000)
 	{
-		psql_error("The server (version %d.%d) does not support altering default privileges.\n",
-				   pset.sversion / 10000, (pset.sversion / 100) % 100);
+		char		sverbuf[32];
+
+		psql_error("The server (version %s) does not support altering default privileges.\n",
+				   formatPGVersionNumber(pset.sversion, false,
+										 sverbuf, sizeof(sverbuf)));
 		return true;
 	}
 
@@ -3510,8 +3519,11 @@ listCollations(const char *pattern, bool verbose, bool showSystem)
 
 	if (pset.sversion < 90100)
 	{
-		psql_error("The server (version %d.%d) does not support collations.\n",
-				   pset.sversion / 10000, (pset.sversion / 100) % 100);
+		char		sverbuf[32];
+
+		psql_error("The server (version %s) does not support collations.\n",
+				   formatPGVersionNumber(pset.sversion, false,
+										 sverbuf, sizeof(sverbuf)));
 		return true;
 	}
 
@@ -3642,8 +3654,11 @@ listTSParsers(const char *pattern, bool verbose)
 
 	if (pset.sversion < 80300)
 	{
-		psql_error("The server (version %d.%d) does not support full text search.\n",
-				   pset.sversion / 10000, (pset.sversion / 100) % 100);
+		char		sverbuf[32];
+
+		psql_error("The server (version %s) does not support full text search.\n",
+				   formatPGVersionNumber(pset.sversion, false,
+										 sverbuf, sizeof(sverbuf)));
 		return true;
 	}
 
@@ -3877,8 +3892,11 @@ listTSDictionaries(const char *pattern, bool verbose)
 
 	if (pset.sversion < 80300)
 	{
-		psql_error("The server (version %d.%d) does not support full text search.\n",
-				   pset.sversion / 10000, (pset.sversion / 100) % 100);
+		char		sverbuf[32];
+
+		psql_error("The server (version %s) does not support full text search.\n",
+				   formatPGVersionNumber(pset.sversion, false,
+										 sverbuf, sizeof(sverbuf)));
 		return true;
 	}
 
@@ -3945,8 +3963,11 @@ listTSTemplates(const char *pattern, bool verbose)
 
 	if (pset.sversion < 80300)
 	{
-		psql_error("The server (version %d.%d) does not support full text search.\n",
-				   pset.sversion / 10000, (pset.sversion / 100) % 100);
+		char		sverbuf[32];
+
+		psql_error("The server (version %s) does not support full text search.\n",
+				   formatPGVersionNumber(pset.sversion, false,
+										 sverbuf, sizeof(sverbuf)));
 		return true;
 	}
 
@@ -4013,8 +4034,11 @@ listTSConfigs(const char *pattern, bool verbose)
 
 	if (pset.sversion < 80300)
 	{
-		psql_error("The server (version %d.%d) does not support full text search.\n",
-				   pset.sversion / 10000, (pset.sversion / 100) % 100);
+		char		sverbuf[32];
+
+		psql_error("The server (version %s) does not support full text search.\n",
+				   formatPGVersionNumber(pset.sversion, false,
+										 sverbuf, sizeof(sverbuf)));
 		return true;
 	}
 
@@ -4211,8 +4235,11 @@ listForeignDataWrappers(const char *pattern, bool verbose)
 
 	if (pset.sversion < 80400)
 	{
-		psql_error("The server (version %d.%d) does not support foreign-data wrappers.\n",
-				   pset.sversion / 10000, (pset.sversion / 100) % 100);
+		char		sverbuf[32];
+
+		psql_error("The server (version %s) does not support foreign-data wrappers.\n",
+				   formatPGVersionNumber(pset.sversion, false,
+										 sverbuf, sizeof(sverbuf)));
 		return true;
 	}
 
@@ -4291,8 +4318,11 @@ listForeignServers(const char *pattern, bool verbose)
 
 	if (pset.sversion < 80400)
 	{
-		psql_error("The server (version %d.%d) does not support foreign servers.\n",
-				   pset.sversion / 10000, (pset.sversion / 100) % 100);
+		char		sverbuf[32];
+
+		psql_error("The server (version %s) does not support foreign servers.\n",
+				   formatPGVersionNumber(pset.sversion, false,
+										 sverbuf, sizeof(sverbuf)));
 		return true;
 	}
 
@@ -4370,8 +4400,11 @@ listUserMappings(const char *pattern, bool verbose)
 
 	if (pset.sversion < 80400)
 	{
-		psql_error("The server (version %d.%d) does not support user mappings.\n",
-				   pset.sversion / 10000, (pset.sversion / 100) % 100);
+		char		sverbuf[32];
+
+		psql_error("The server (version %s) does not support user mappings.\n",
+				   formatPGVersionNumber(pset.sversion, false,
+										 sverbuf, sizeof(sverbuf)));
 		return true;
 	}
 
@@ -4428,8 +4461,11 @@ listForeignTables(const char *pattern, bool verbose)
 
 	if (pset.sversion < 90100)
 	{
-		psql_error("The server (version %d.%d) does not support foreign tables.\n",
-				   pset.sversion / 10000, (pset.sversion / 100) % 100);
+		char		sverbuf[32];
+
+		psql_error("The server (version %s) does not support foreign tables.\n",
+				   formatPGVersionNumber(pset.sversion, false,
+										 sverbuf, sizeof(sverbuf)));
 		return true;
 	}
 
@@ -4503,8 +4539,11 @@ listExtensions(const char *pattern)
 
 	if (pset.sversion < 90100)
 	{
-		psql_error("The server (version %d.%d) does not support extensions.\n",
-				   pset.sversion / 10000, (pset.sversion / 100) % 100);
+		char		sverbuf[32];
+
+		psql_error("The server (version %s) does not support extensions.\n",
+				   formatPGVersionNumber(pset.sversion, false,
+										 sverbuf, sizeof(sverbuf)));
 		return true;
 	}
 
@@ -4557,8 +4596,11 @@ listExtensionContents(const char *pattern)
 
 	if (pset.sversion < 90100)
 	{
-		psql_error("The server (version %d.%d) does not support extensions.\n",
-				   pset.sversion / 10000, (pset.sversion / 100) % 100);
+		char		sverbuf[32];
+
+		psql_error("The server (version %s) does not support extensions.\n",
+				   formatPGVersionNumber(pset.sversion, false,
+										 sverbuf, sizeof(sverbuf)));
 		return true;
 	}
 

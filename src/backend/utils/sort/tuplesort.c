@@ -1453,7 +1453,7 @@ tuplesort_putindextuplevalues(Tuplesortstate *state, Relation rel,
 			mtup->datum1 = index_getattr(tuple,
 										 1,
 										 RelationGetDescr(state->indexRel),
-										 &stup.isnull1);
+										 &mtup->isnull1);
 		}
 	}
 
@@ -3629,7 +3629,7 @@ copytup_cluster(Tuplesortstate *state, SortTuple *stup, void *tup)
 			mtup->datum1 = heap_getattr(tuple,
 									  state->indexInfo->ii_KeyAttrNumbers[0],
 										state->tupDesc,
-										&stup->isnull1);
+										&mtup->isnull1);
 		}
 	}
 }
@@ -3937,7 +3937,7 @@ copytup_index(Tuplesortstate *state, SortTuple *stup, void *tup)
 			mtup->datum1 = index_getattr(tuple,
 										 1,
 										 RelationGetDescr(state->indexRel),
-										 &stup->isnull1);
+										 &mtup->isnull1);
 		}
 	}
 }

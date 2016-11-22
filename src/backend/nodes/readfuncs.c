@@ -2872,7 +2872,7 @@ _readAgg(void)
 	}
 
 	READ_LONG_FIELD(numGroups);
-
+	READ_BITMAPSET_FIELD(aggParams);
 	READ_NODE_FIELD(groupingSets);
 	READ_NODE_FIELD(chain);
 

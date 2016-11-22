@@ -27,7 +27,7 @@ System Configuration:
 
   Operating System (example: Linux 2.4.18)	:
 
-  PostgreSQL version (example: PostgreSQL 9.5.4):  Postgres-XL 9.5r1.3
+  PostgreSQL version (example: PostgreSQL 9.5.5):  Postgres-XL 9.5r1.3
 
   Compiler used (example: gcc 3.3.5)		:
 
