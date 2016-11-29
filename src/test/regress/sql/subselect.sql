@@ -506,15 +506,12 @@ SELECT clientid::numeric(20),
  (ARRAY['A','B','C','D','E','F'])[(random()*5+1)::integer] as state,
  0 as dim,
  ((ARRAY['Cat','Dog','Duck'])[(clientid / 10  )% 3  +1 ]) ::text as app_name,
-  md5(random()::text) as new_value,
  ((ARRAY['A','B'])[(clientid / 10  )% 2  +1 ]) ::text as platform
  FROM generate_series('2016-01-01'::timestamp,'2016-10-01'::timestamp,interval '15 day') cts , generate_series( 1000,2000,10) clientid , generate_series(1,6) t
-ORDER BY new_value
 ;
 
 SELECT dates::timestamp as dates ,B.platform,B.app_name, B.clientid, B.userid,
-	B.cts, B.state as state, 
-	B.new_value 
+	B.state as state
 FROM ( VALUES
 ('2016.08.30. 08:52:43') ,('2016.08.29. 04:57:12') ,('2016.08.26. 08:15:05') ,
 ('2016.08.24. 11:49:51') ,('2016.08.22. 08:45:29') ,('2016.08.21. 04:53:47') ,('2016.08.20. 08:44:03')
@@ -542,3 +539,4 @@ INNER JOIN LATERAL (
 ORDER BY dates desc, state;
 
 DROP TABLE asd;
+SELECT setseed(0);
