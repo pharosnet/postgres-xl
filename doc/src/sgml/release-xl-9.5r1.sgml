@@ -1,5 +1,88 @@
 <!-- doc/src/sgml/release-9.5.sgml -->
 <!-- See header comment in release.sgml about typical markup -->
+ <sect1 id="release-xl-9-5r1.4">
+  <title>Postgres-XL Release 9.5r1.4</title>
+
+  <note>
+  <title>Release Date</title>
+  <simpara>2016-11-29</simpara>
+  </note>
+  <para>
+   This release includes all the bug fixes and security fixes from PostgreSQL
+   9.5.5. In addition, there are a few Postgres-XL specific bug fixes in this
+   release. For information about new features in the Postgres-XL 9.5r1 major release, see
+   <xref linkend="release-xl-9-5r1">.
+  </para>
+  <sect2>
+   <title>Migration to Version Postgres-XL 9.5r1.4</title>
+   <para>
+    A dump/restore is not required for those running Postgres-XL 9.5r1.2 and
+    above.
+   </para>
+  </sect2>
+  <sect2>
+   <title>Changes</title>
+   <itemizedlist>
+    <listitem>
+     <para>
+      Fix a bug in handling of foreign key constraints when
+      <varname>loose_constraints</varname> is set to TRUE.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Ensure we're not going beyond the configured limits of
+      <varname>max_coordinators</varname> or
+      <varname>max_datanodes</varname>.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix an oversight where we failed to track whether parameter
+      value has been computed or not at all places.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Correctly initialise coordMaxWALSenders and datanodeMaxWALSenders while adding
+      new nodes via pgxc_ctl.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Allow COMMIT/ROLLBACK PREPARED xact to succeed on the local coordinator even if
+      the GTM no longer has state information for the transaction when
+      <varname>xc_maintenance_mode</varname> is active.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Handle remote parameters correctly by sending then down to the remote nodes in
+      the correct order and correction position.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix VPATH build for contrib/pgxc_ctl.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Fix a bug in handling of databases with names requiring quoting.
+     </para>
+    </listitem>
+
+   </itemizedlist>
+  </sect2>
+ </sect1>
+
  <sect1 id="release-xl-9-5r1.3">
   <title>Postgres-XL Release 9.5r1.3</title>
 
