@@ -46,6 +46,7 @@ install: all installdirs
 
 installdirs:
 	$(MKDIR_P) '$(DESTDIR)$(bindir)'
+	$(MKDIR_P) '$(DESTDIR)$(datadir)'
 
 uninstall:
 	rm -f $(DESTDIR)$(bindir)/gtm$(X)
