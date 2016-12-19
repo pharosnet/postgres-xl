@@ -1739,6 +1739,7 @@ IsProxiedMessage(GTM_MessageType mtype)
 		case MSG_SEQUENCE_ALTER:
 		case MSG_SNAPSHOT_GET:
 		case MSG_TXN_COMMIT:
+		case MSG_BARRIER:
 			return true;
 
 		default:
