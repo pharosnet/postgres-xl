@@ -276,3 +276,14 @@ drop table oldstyle_test;
 --
 -- rewrite rules
 --
+
+--
+-- multi-statement cases
+--
+create table testtab_multi (a int, b int); create index testtab_multi_indx on testtab_multi(a); drop table testtab_multi;
+;create table testtab_multi (a int, b int); create index testtab_multi_indx on testtab_multi(a); drop table testtab_multi;
+;;select 1;;create table testtab_multi (a int, b int);;;;; create index testtab_multi_indx on testtab_multi(a);;; drop table testtab_multi;
+create table testtab_multi (a int, b int);;;;; create index testtab_multi_indx on testtab_multi(a);;insert into testtab_multi values (1, 2), (3,4); select * from testtab_multi order by a;drop table testtab_multi;
+;create table testtab_multi (a int, b int);;;;; create index testtab_multi_indx on testtab_multi(a);;insert into testtab_multi values (1, 2), (3,4); select * from testtab_multi_nonexist order by a;drop table testtab_multi;
+;;create table testtab_multi (a int, b int);;;;; create index testtab_multi_indx on testtab_multi(a);;insert into testtab_multi values (1, 2), (3,4); select * from testtab_multi_nonexist order by a;drop table testtab_multi;
+

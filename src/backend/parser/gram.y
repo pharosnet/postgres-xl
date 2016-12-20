@@ -788,17 +788,35 @@ stmtmulti:	stmtmulti ';' stmt
 						 * the ';' token, add '\0' at the corresponding offset
 						 * to get a separated command.
 						 */
-						last = list_tail($1->queries);
-						query = palloc(@2 - $1->offset + 1);
-						memcpy(query, lfirst(last), @2 - $1->offset);
-						query[@2 - $1->offset] = '\0';
+						if ($1 != NULL)
+						{
+							last = list_tail($1->queries);
+							query = palloc(@2 - $1->offset + 1);
+							memcpy(query, lfirst(last), @2 - $1->offset);
+							query[@2 - $1->offset] = '\0';
+							lfirst(last) = query;
 
-						lfirst(last) = query;
-						query = scanner_get_query(@3, -1, yyscanner);
-						$1->offset = @2;
-						$1->parsetrees = lappend($1->parsetrees, $3);
-						$1->queries = lappend($1->queries, query);
-						$$ = $1;
+							query = scanner_get_query(@3, -1, yyscanner);
+							$1->offset = @2;
+							$1->parsetrees = lappend($1->parsetrees, $3);
+							$1->queries = lappend($1->queries, query);
+							$$ = $1;
+						}
+						/*
+						 *
+						 * If the earlier statements were all null, then we
+						 * must initialise the StmtMulti structure and make
+						 * singleton lists
+						 */
+						else
+						{
+							StmtMulti *n = (StmtMulti *) palloc0(sizeof (StmtMulti));
+							query = scanner_get_query(@3, -1, yyscanner);
+							n->offset = @2;
+							n->parsetrees = list_make1($3);
+							n->queries = list_make1(query);
+							$$ = n;
+						}
 					}
 					else
 						$$ = $1;
