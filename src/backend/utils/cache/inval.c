@@ -1070,6 +1070,20 @@ CommandEndInvalidationMessages(void)
 
 	ProcessInvalidationMessages(&transInvalInfo->CurrentCmdInvalidMsgs,
 								LocalExecuteInvalidationMessage);
+
+	/*
+	 * In Postgres-XL, multiple backends can work for a distributed
+	 * transaction. When catalog changes are made by one backend, the other
+	 * backend participating in the distributed transaction must also see the
+	 * changes immediately. So send the messages using shared invalidation
+	 *
+	 * XXX We could investigate if this can cause performance problems and
+	 * check if the messages can be sent only to participating backends
+	 */
+	if (IS_PGXC_DATANODE)
+		ProcessInvalidationMessagesMulti(&transInvalInfo->CurrentCmdInvalidMsgs,
+			SendSharedInvalidMessages);
+
 	AppendInvalidationMessages(&transInvalInfo->PriorCmdInvalidMsgs,
 							   &transInvalInfo->CurrentCmdInvalidMsgs);
 }

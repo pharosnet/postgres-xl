@@ -120,8 +120,18 @@ LockRelationOid(Oid relid, LOCKMODE lockmode)
 	 * relcache entry in an undesirable way.  (In the case where our own xact
 	 * modifies the rel, the relcache update happens via
 	 * CommandCounterIncrement, not here.)
+	 *
+	 * In Postgres-XL, multiple backends may run concurrently to serve a
+	 * distributed transaction. In that case, a conflicting lock may be granted
+	 * to another backend running the same distributed transaction. But it's
+	 * important that such backends process invalidation messages to ensure
+	 * that relcache entry modified by the other cooperating backend is truly
+	 * reflected. For example, the other backend may TRUNCATE the table and
+	 * change the relfilenode. So we must see that change and work with the new
+	 * relfilenode.
 	 */
-	if (res != LOCKACQUIRE_ALREADY_HELD)
+	if ((res != LOCKACQUIRE_ALREADY_HELD) ||
+		(MyProc->coordPid && MyProc->coordId))
 		AcceptInvalidationMessages();
 }
 

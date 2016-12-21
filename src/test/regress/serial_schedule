@@ -185,3 +185,4 @@ test: xl_functions
 test: xl_limitations
 test: xl_user_defined_functions
 test: xl_join
+test: xl_distributed_xact
