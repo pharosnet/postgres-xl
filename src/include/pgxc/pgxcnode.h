@@ -187,7 +187,8 @@ extern void add_error_message(PGXCNodeHandle * handle, const char *message);
 
 extern Datum pgxc_execute_on_nodes(int numnodes, Oid *nodelist, char *query);
 
-extern void PGXCNodeSetParam(bool local, const char *name, const char *value);
+extern void PGXCNodeSetParam(bool local, const char *name, const char *value,
+				int flags);
 extern void PGXCNodeResetParams(bool only_local);
 extern char *PGXCNodeGetSessionParamStr(void);
 extern char *PGXCNodeGetTransactionParamStr(void);

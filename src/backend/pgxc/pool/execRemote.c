@@ -1912,7 +1912,7 @@ pgxc_node_begin(int conn_count, PGXCNodeHandle **connections,
 
 	/* Send virtualXID to the remote nodes using SET command */
 	sprintf(lxid, "%d", MyProc->lxid);
-	PGXCNodeSetParam(true, "coordinator_lxid", lxid);
+	PGXCNodeSetParam(true, "coordinator_lxid", lxid, 0);
 
 	/* after transactions are started send down local set commands */
 	init_str = PGXCNodeGetTransactionParamStr();

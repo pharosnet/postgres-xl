@@ -278,3 +278,99 @@ set default_text_search_config = no_such_config;
 select func_with_bad_set();
 
 reset check_function_bodies;
+
+SET application_name TO "special name";
+CREATE TABLE testtab (a int);
+INSERT INTO testtab VALUES (1), (2), (3);
+SELECT * FROM testtab;
+DROP TABLE testtab;
+
+SET default_transaction_isolation TO "read committed";
+CREATE TABLE testtab (a int);
+INSERT INTO testtab VALUES (1), (2), (3);
+SELECT * FROM testtab;
+DROP TABLE testtab;
+
+SET work_mem TO '64kB';
+CREATE TABLE testtab (a int);
+INSERT INTO testtab VALUES (1), (2), (3);
+SELECT * FROM testtab;
+DROP TABLE testtab;
+
+SET work_mem TO "64kB";
+CREATE TABLE testtab (a int);
+INSERT INTO testtab VALUES (1), (2), (3);
+SELECT * FROM testtab;
+DROP TABLE testtab;
+
+SET log_min_duration_statement = '1s';
+CREATE TABLE testtab (a int);
+INSERT INTO testtab VALUES (1), (2), (3);
+SELECT * FROM testtab;
+DROP TABLE testtab;
+
+CREATE SCHEMA testschema;
+CREATE SCHEMA "testschema 2";
+CREATE SCHEMA "testschema 3";
+CREATE SCHEMA READ;
+CREATE SCHEMA "READ";
+
+-- ERROR
+CREATE SCHEMA SELECT;
+
+-- Ok
+CREATE SCHEMA "SELECT";
+
+SET search_path TO testschema;
+CREATE TABLE testtab (a int);
+\d+ testtab
+INSERT INTO testtab VALUES (1), (2), (3);
+SELECT * FROM testtab;
+DROP TABLE testtab;
+
+SET search_path TO "testschema";
+CREATE TABLE testtab (a int);
+\d+ testtab
+INSERT INTO testtab VALUES (1), (2), (3);
+SELECT * FROM testtab;
+DROP TABLE testtab;
+
+SET search_path TO testschema, "testschema 2";
+CREATE TABLE testtab (a int);
+\d+ testtab
+INSERT INTO testtab VALUES (1), (2), (3);
+SELECT * FROM testtab;
+DROP TABLE testtab;
+
+SET search_path TO "testschema 3", "testschema 2";
+CREATE TABLE testtab (a int);
+\d+ testtab
+INSERT INTO testtab VALUES (1), (2), (3);
+SELECT * FROM testtab;
+DROP TABLE testtab;
+
+-- ERROR
+SET search_path TO "testschema 3", SELECT;
+
+SET search_path TO "SELECT", "testschema 3";
+CREATE TABLE testtab (a int);
+\d+ testtab
+CREATE TABLE "testschema 3".testtab (a int);
+\d+ testtab
+INSERT INTO "testschema 3".testtab VALUES (1), (2), (3);
+INSERT INTO "SELECT".testtab VALUES (4);
+SELECT * FROM "testschema 3".testtab;
+INSERT INTO testtab SELECT * FROM "testschema 3".testtab;
+SELECT * FROM "testschema 3".testtab;
+\d+ testtab
+SELECT * FROM testtab;
+INSERT INTO testtab SELECT * FROM testtab;
+SELECT * FROM testtab;
+DROP TABLE testtab;
+
+DROP SCHEMA testschema CASCADE;
+DROP SCHEMA "testschema 2" CASCADE;
+DROP SCHEMA "testschema 3" CASCADE;
+DROP SCHEMA "READ" CASCADE;
+DROP SCHEMA SELECT CASCADE;
+DROP SCHEMA "SELECT" CASCADE;

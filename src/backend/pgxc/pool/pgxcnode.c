@@ -107,6 +107,7 @@ typedef struct
 {
 	NameData name;
 	NameData value;
+	int		 flags;
 } ParamEntry;
 
 
@@ -2568,7 +2569,7 @@ paramlist_delete_param(List *param_list, const char *name)
  * values on newly connected remote nodes.
  */
 void
-PGXCNodeSetParam(bool local, const char *name, const char *value)
+PGXCNodeSetParam(bool local, const char *name, const char *value, int flags)
 {
 	List *param_list;
 	MemoryContext oldcontext;
@@ -2596,6 +2597,7 @@ PGXCNodeSetParam(bool local, const char *name, const char *value)
 		entry = (ParamEntry *) palloc(sizeof (ParamEntry));
 		strlcpy((char *) (&entry->name), name, NAMEDATALEN);
 		strlcpy((char *) (&entry->value), value, NAMEDATALEN);
+		entry->flags = flags;
 
 		param_list = lappend(param_list, entry);
 	}
@@ -2647,25 +2649,6 @@ PGXCNodeResetParams(bool only_local)
 	local_params = NULL;
 }
 
-
-#ifdef NOT_USED
-static char *
-quote_ident_cstr(char *rawstr)
-{
-	text       *rawstr_text;
-	text       *result_text;
-	char       *result;
-
-	rawstr_text = cstring_to_text(rawstr);
-	result_text = DatumGetTextP(DirectFunctionCall1(quote_ident,
-													PointerGetDatum(rawstr_text)));
-	result = text_to_cstring(result_text);
-
-	return result;
-}
-#endif
-
-
 static void
 get_set_command(List *param_list, StringInfo command, bool local)
 {
@@ -2681,6 +2664,8 @@ get_set_command(List *param_list, StringInfo command, bool local)
 
 		if (strlen(value) == 0)
 			value = "''";
+
+		value = quote_guc_value(value, entry->flags);
 
 		appendStringInfo(command, "SET %s %s TO %s;", local ? "LOCAL" : "",
 			 NameStr(entry->name), value);
