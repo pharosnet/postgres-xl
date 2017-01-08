@@ -5073,33 +5073,69 @@ plan_cluster_use_sort(Oid tableOid, Oid indexOid)
 
 #ifdef XCP
 /*
- * Grouping preserves distribution if distribution key is the
- * first grouping key or if distribution is replicated.
- * In these cases aggregation is fully pushed down to nodes.
- * Otherwise we need 2-phase aggregation so put remote subplan
- * on top of the result_plan. When adding result agg on top of
- * RemoteSubplan first aggregation phase will be pushed down
- * automatically.
+ * grouping_distribution
+ *	Determines whether a redistribution is needed for GROUP BY clause.
+ *
+ * Grouping preserves distribution if distribution key matches any of the
+ * grouping keys. If such a match is found, we can push the aggregation
+ * to the remote node as a whole.
+ *
+ * Otherwise we have to use a 2-phase aggregation. Here we only add a remote
+ * plan on top of the result_plan, and make_agg() will make sure the first
+ * step of the aggregation is pushed inside it.
+ *
+ * None of this is necessary for replicated tables, or for non-distributed
+ * data (when no distribution is available).
  */
 static Plan *
 grouping_distribution(PlannerInfo *root, Plan *plan,
 					  int numGroupCols, AttrNumber *groupColIdx,
 					  List *current_pathkeys, Distribution **distribution)
 {
-	if (*distribution &&
-			!IsLocatorReplicated((*distribution)->distributionType) &&
-			(numGroupCols == 0 ||
-					(*distribution)->distributionExpr == NULL ||
-					!equal(((TargetEntry *)list_nth(plan->targetlist, groupColIdx[0]-1))->expr,
-						   (*distribution)->distributionExpr)))
+	int		i;
+	bool	matches_key = false;
+
+	/*
+	 * With no explicit data distribution or replicated tables, we can simply
+	 * push down the whole aggregation to the remote node, without any sort
+	 * of redistribution.
+	 */
+	if ((*distribution == NULL) ||
+		IsLocatorReplicated((*distribution)->distributionType))
+		return plan;
+
+	/*
+	 * With distributed data and table distributed using an expression, we
+	 * need to check if the distribution expression matches one of the
+	 * grouping keys (arbitrary one).
+	 */
+	if ((*distribution)->distributionExpr != NULL)
 	{
-		Plan *result_plan;
-		result_plan = (Plan *) make_remotesubplan(root, plan, NULL,
+		for (i = 0; i < numGroupCols; i++)
+		{
+			TargetEntry *te = (TargetEntry *)list_nth(plan->targetlist,
+													  groupColIdx[i]-1);
+
+			if (equal(te->expr, (*distribution)->distributionExpr))
+			{
+				matches_key = true;
+				break;
+			}
+		}
+	}
+
+	/*
+	 * When the distribution expression does not match any grouping key, we
+	 * need to inject a data redistribution step.
+	 */
+	if (!matches_key)
+	{
+		plan = (Plan *) make_remotesubplan(root, plan, NULL,
 												  *distribution,
 												  current_pathkeys);
 		*distribution = NULL;
-		return result_plan;
 	}
+
 	return plan;
 }
 
