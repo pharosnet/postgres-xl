@@ -312,6 +312,9 @@ int pingNode(char *host, char *port)
 		snprintf(editBuf, MAXPATH, "port = %d ", atoi(port));
 		strncat(conninfo, editBuf, MAXLINE);
 	}
+
+	strncat(conninfo, "dbname = postgres ", MAXLINE);
+
 	if (conninfo[0])
 	{
 		status = PQping(conninfo);
