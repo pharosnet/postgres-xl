@@ -51,14 +51,79 @@ drop table t1_misc;
 create table my_tab1 (a int);
 insert into my_tab1 values(1);
 create function f1 () returns setof my_tab1 as $$ create table my_tab2 (a int); select * from my_tab1; $$ language sql;
-SET check_function_bodies = false;
-create function f1 () returns setof my_tab1 as $$ create table my_tab2 (a int); select * from my_tab1; $$ language sql;
-ERROR:  function "f1" already exists with same argument types
 select f1();
-ERROR:  Unexpected response from Datanode
-CONTEXT:  SQL function "f1" statement 1
-SET check_function_bodies = true;
+ f1  
+-----
+ (1)
+(1 row)
+
 drop function f1();
+-- fail since my_tab4 does not exist
+create function f1 () returns setof my_tab2 as $$ create table my_tab3 (a int); select * from my_tab4; $$ language sql;
+ERROR:  relation "my_tab4" does not exist
+LINE 1: ...as $$ create table my_tab3 (a int); select * from my_tab4; $...
+                                                             ^
+SET check_function_bodies = false;
+-- should be created since check_function_bodies is false
+create function f1 () returns setof my_tab2 as $$ create table my_tab3 (a int); select * from my_tab4; $$ language sql;
+-- execution would fail though
+select f1();
+ERROR:  relation "my_tab4" does not exist
+LINE 1:  create table my_tab3 (a int); select * from my_tab4; 
+                               ^
+QUERY:   create table my_tab3 (a int); select * from my_tab4; 
+CONTEXT:  SQL function "f1" during startup
+drop function f1();
+SET check_function_bodies = true;
+-- check handling of multi-command statements in plpgsql block
+do
+$$
+declare
+begin
+	execute 'create table my_tab6(a int); create table my_tab7(a int)';
+end
+$$ language plpgsql;
+-- check handling of multi-command statements in sql function
+create or replace function f2() returns void as $$ create table my_tab8(a int); create table my_tab9(a int); $$ language sql;
+select f2();
+ f2 
+----
+ 
+(1 row)
+
+\d+ my_tab6
+                       Table "public.my_tab6"
+ Column |  Type   | Modifiers | Storage | Stats target | Description 
+--------+---------+-----------+---------+--------------+-------------
+ a      | integer |           | plain   |              | 
+Distribute By: HASH(a)
+Location Nodes: ALL DATANODES
+
+\d+ my_tab7
+                       Table "public.my_tab7"
+ Column |  Type   | Modifiers | Storage | Stats target | Description 
+--------+---------+-----------+---------+--------------+-------------
+ a      | integer |           | plain   |              | 
+Distribute By: HASH(a)
+Location Nodes: ALL DATANODES
+
+\d+ my_tab8
+                       Table "public.my_tab8"
+ Column |  Type   | Modifiers | Storage | Stats target | Description 
+--------+---------+-----------+---------+--------------+-------------
+ a      | integer |           | plain   |              | 
+Distribute By: HASH(a)
+Location Nodes: ALL DATANODES
+
+\d+ my_tab9
+                       Table "public.my_tab9"
+ Column |  Type   | Modifiers | Storage | Stats target | Description 
+--------+---------+-----------+---------+--------------+-------------
+ a      | integer |           | plain   |              | 
+Distribute By: HASH(a)
+Location Nodes: ALL DATANODES
+
+drop table my_tab6, my_tab7, my_tab8, my_tab9;
 -- Test pl-pgsql functions containing utility statements
 CREATE OR REPLACE FUNCTION test_fun_2() RETURNS SETOF my_tab1 AS '
 DECLARE

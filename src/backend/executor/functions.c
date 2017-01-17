@@ -72,6 +72,7 @@ typedef struct execution_state
 	bool		lazyEval;		/* true if should fetch one row at a time */
 	Node	   *stmt;			/* PlannedStmt or utility statement */
 	QueryDesc  *qd;				/* null unless status == RUN */
+	char		*src;			/* source query resulting in this state */
 } execution_state;
 
 
@@ -156,6 +157,7 @@ static Node *sql_fn_make_param(SQLFunctionParseInfoPtr pinfo,
 static Node *sql_fn_resolve_param_name(SQLFunctionParseInfoPtr pinfo,
 						  const char *paramname, int location);
 static List *init_execution_state(List *queryTree_list,
+					 List *querySource_list,
 					 SQLFunctionCachePtr fcache,
 					 bool lazyEvalOK);
 static void init_sql_fcache(FmgrInfo *finfo, Oid collation, bool lazyEvalOK);
@@ -474,19 +476,21 @@ sql_fn_resolve_param_name(SQLFunctionParseInfoPtr pinfo,
  */
 static List *
 init_execution_state(List *queryTree_list,
+					 List *querySource_list,
 					 SQLFunctionCachePtr fcache,
 					 bool lazyEvalOK)
 {
 	List	   *eslist = NIL;
 	execution_state *lasttages = NULL;
-	ListCell   *lc1;
+	ListCell   *lc1, *lc3;
 
-	foreach(lc1, queryTree_list)
+	forboth(lc1, queryTree_list, lc3, querySource_list)
 	{
 		List	   *qtlist = (List *) lfirst(lc1);
+		char	   *querysource = (char *) lfirst(lc3);
 		execution_state *firstes = NULL;
 		execution_state *preves = NULL;
-		ListCell   *lc2;
+		ListCell   *lc2, *lc4;
 
 		foreach(lc2, qtlist)
 		{
@@ -551,6 +555,7 @@ init_execution_state(List *queryTree_list,
 			newes->lazyEval = false;	/* might change below */
 			newes->stmt = stmt;
 			newes->qd = NULL;
+			newes->src = pstrdup(querysource);
 
 			if (queryTree->canSetTag)
 				lasttages = newes;
@@ -608,9 +613,10 @@ init_sql_fcache(FmgrInfo *finfo, Oid collation, bool lazyEvalOK)
 	Form_pg_proc procedureStruct;
 	SQLFunctionCachePtr fcache;
 	List	   *raw_parsetree_list;
+	List	   *querysource_list;
 	List	   *queryTree_list;
 	List	   *flat_query_list;
-	ListCell   *lc;
+	ListCell   *lc, *lc2;
 	Datum		tmp;
 	bool		isNull;
 
@@ -711,17 +717,18 @@ init_sql_fcache(FmgrInfo *finfo, Oid collation, bool lazyEvalOK)
 	 * but we'll not worry about it until the module is rewritten to use
 	 * plancache.c.
 	 */
-	raw_parsetree_list = pg_parse_query(fcache->src);
+	raw_parsetree_list = pg_parse_query_get_source(fcache->src, &querysource_list);
 
 	queryTree_list = NIL;
 	flat_query_list = NIL;
-	foreach(lc, raw_parsetree_list)
+	forboth(lc, raw_parsetree_list, lc2, querysource_list)
 	{
 		Node	   *parsetree = (Node *) lfirst(lc);
+		char	   *querysource = (char *) lfirst(lc2);
 		List	   *queryTree_sublist;
 
 		queryTree_sublist = pg_analyze_and_rewrite_params(parsetree,
-														  fcache->src,
+														  querysource,
 									   (ParserSetupHook) sql_fn_parser_setup,
 														  fcache->pinfo);
 		queryTree_list = lappend(queryTree_list, queryTree_sublist);
@@ -772,6 +779,7 @@ init_sql_fcache(FmgrInfo *finfo, Oid collation, bool lazyEvalOK)
 
 	/* Finally, plan the queries */
 	fcache->func_state = init_execution_state(queryTree_list,
+											  querysource_list,
 											  fcache,
 											  lazyEvalOK);
 
@@ -816,14 +824,14 @@ postquel_start(execution_state *es, SQLFunctionCachePtr fcache)
 
 	if (IsA(es->stmt, PlannedStmt))
 		es->qd = CreateQueryDesc((PlannedStmt *) es->stmt,
-								 fcache->src,
+								 es->src,
 								 GetActiveSnapshot(),
 								 InvalidSnapshot,
 								 dest,
 								 fcache->paramLI, 0);
 	else
 		es->qd = CreateUtilityQueryDesc(es->stmt,
-										fcache->src,
+										es->src,
 										GetActiveSnapshot(),
 										dest,
 										fcache->paramLI);
@@ -863,7 +871,7 @@ postquel_getnext(execution_state *es, SQLFunctionCachePtr fcache)
 		ProcessUtility((es->qd->plannedstmt ?
 						(Node *) es->qd->plannedstmt :
 						es->qd->utilitystmt),
-					   fcache->src,
+					   es->src,
 					   PROCESS_UTILITY_QUERY,
 					   es->qd->params,
 					   es->qd->dest,

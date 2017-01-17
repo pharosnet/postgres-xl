@@ -681,13 +681,14 @@ static void
 execute_sql_string(const char *sql, const char *filename)
 {
 	List	   *raw_parsetree_list;
+	List	   *querysource_list;
 	DestReceiver *dest;
-	ListCell   *lc1;
+	ListCell   *lc1, *lc3;
 
 	/*
 	 * Parse the SQL string into a list of raw parse trees.
 	 */
-	raw_parsetree_list = pg_parse_query(sql);
+	raw_parsetree_list = pg_parse_query_get_source(sql, &querysource_list);
 
 	/* All output from SELECTs goes to the bit bucket */
 	dest = CreateDestReceiver(DestNone);
@@ -697,14 +698,15 @@ execute_sql_string(const char *sql, const char *filename)
 	 * parsetree.  We must fully execute each query before beginning parse
 	 * analysis on the next one, since there may be interdependencies.
 	 */
-	foreach(lc1, raw_parsetree_list)
+	forboth(lc1, raw_parsetree_list, lc3, querysource_list)
 	{
 		Node	   *parsetree = (Node *) lfirst(lc1);
+		char	   *querysource = (char *) lfirst(lc3);
 		List	   *stmt_list;
 		ListCell   *lc2;
 
 		stmt_list = pg_analyze_and_rewrite(parsetree,
-										   sql,
+										   querysource,
 										   NULL,
 										   0);
 		stmt_list = pg_plan_queries(stmt_list, 0, NULL);
@@ -728,7 +730,7 @@ execute_sql_string(const char *sql, const char *filename)
 				QueryDesc  *qdesc;
 
 				qdesc = CreateQueryDesc((PlannedStmt *) stmt,
-										sql,
+										querysource,
 										GetActiveSnapshot(), NULL,
 										dest, NULL, 0);
 
@@ -742,7 +744,7 @@ execute_sql_string(const char *sql, const char *filename)
 			else
 			{
 				ProcessUtility(stmt,
-							   sql,
+							   querysource,
 							   PROCESS_UTILITY_QUERY,
 							   NULL,
 							   dest,

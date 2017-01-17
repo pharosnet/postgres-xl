@@ -44,16 +44,39 @@ create table my_tab1 (a int);
 insert into my_tab1 values(1);
 
 create function f1 () returns setof my_tab1 as $$ create table my_tab2 (a int); select * from my_tab1; $$ language sql;
-
-SET check_function_bodies = false;
-
-create function f1 () returns setof my_tab1 as $$ create table my_tab2 (a int); select * from my_tab1; $$ language sql;
-
 select f1();
+drop function f1();
+
+-- fail since my_tab4 does not exist
+create function f1 () returns setof my_tab2 as $$ create table my_tab3 (a int); select * from my_tab4; $$ language sql;
+SET check_function_bodies = false;
+-- should be created since check_function_bodies is false
+create function f1 () returns setof my_tab2 as $$ create table my_tab3 (a int); select * from my_tab4; $$ language sql;
+-- execution would fail though
+select f1();
+drop function f1();
 
 SET check_function_bodies = true;
 
-drop function f1();
+-- check handling of multi-command statements in plpgsql block
+do
+$$
+declare
+begin
+	execute 'create table my_tab6(a int); create table my_tab7(a int)';
+end
+$$ language plpgsql;
+
+-- check handling of multi-command statements in sql function
+create or replace function f2() returns void as $$ create table my_tab8(a int); create table my_tab9(a int); $$ language sql;
+select f2();
+
+\d+ my_tab6
+\d+ my_tab7
+\d+ my_tab8
+\d+ my_tab9
+
+drop table my_tab6, my_tab7, my_tab8, my_tab9;
 
 -- Test pl-pgsql functions containing utility statements
 
