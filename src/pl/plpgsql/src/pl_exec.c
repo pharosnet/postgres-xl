@@ -5211,6 +5211,7 @@ exec_for_query(PLpgSQL_execstate *estate, PLpgSQL_stmt_forq *stmt,
 	bool		found = false;
 	int			rc = PLPGSQL_RC_OK;
 	int			n;
+	long		count;
 
 	/*
 	 * Determine if we assign to a record or a row
@@ -5233,9 +5234,20 @@ exec_for_query(PLpgSQL_execstate *estate, PLpgSQL_stmt_forq *stmt,
 	 * few more rows to avoid multiple trips through executor startup
 	 * overhead.
 	 */
-	SPI_cursor_fetch(portal, true, prefetch_ok ? 10 : 1);
+#define MAX_REMOTE_QUERY_FETCH	10000	
+	if (IsA(linitial(portal->stmts), PlannedStmt) &&
+		IsA(((PlannedStmt *) linitial(portal->stmts))->planTree, RemoteQuery))
+		count = MAX_REMOTE_QUERY_FETCH;
+	else
+		count = prefetch_ok ? 10 : 1;
+
+	SPI_cursor_fetch(portal, true, count);
 	tuptab = SPI_tuptable;
 	n = SPI_processed;
+
+	if (n == MAX_REMOTE_QUERY_FETCH)
+		elog(ERROR, "Can fetch only %d tuples via RemoteQuery execution",
+				MAX_REMOTE_QUERY_FETCH);
 
 	/*
 	 * If the query didn't return any rows, set the target to NULL and fall
