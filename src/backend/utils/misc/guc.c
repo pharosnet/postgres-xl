@@ -217,6 +217,7 @@ static ConfigVariable *ProcessConfigFileInternal(GucContext context,
 #ifdef XCP
 static bool check_storm_catalog_remap_string(char **newval,
 									void **extra, GucSource source);
+static void strreplace_all(char *str, char *needle, char *replacement);
 #endif
 
 
@@ -10768,16 +10769,42 @@ check_storm_catalog_remap_string(char **newval, void **extra, GucSource source)
 /*
  * Return a quoted GUC value, when necessary
  */
-char *
+const char *
 quote_guc_value(const char *value, int flags)
 {
+	char *new_value;
+
 	if (value == NULL)
+		return value;
+
+	/*
+	 * An empty string is what gets created when someone fires SET var TO ''.
+	 * We must send it in its original form to the remote node.
+	 */
+	if (!value[0])
+		return "''";
+
+	/*
+	 * A special case for empty string list members which may get replaced by
+	 * "\"\"" when flatten_set_variable_args gets called. So replace that back
+	 * to ''.
+	 */
+	new_value = pstrdup(value);
+	strreplace_all(new_value, "\"\"", "''");
+	value = new_value;
+
+	/* Finally don't quote empty string */
+	if (strcmp(value, "''") == 0)
 		return value;
 
 	/*
 	 * If the GUC rceives list input, then the individual elements in the list
 	 * must be already quoted correctly by flatten_set_variable_args(). We must
-	 * not quote the entire value again
+	 * not quote the entire value again.
+	 *
+	 * We deal with empty strings which may have already been replaced with ""
+	 * by flatten_set_variable_args. Unquote them so that remote side can
+	 * handle it.
 	 */
 	if (flags & GUC_LIST_INPUT)
 	   return value;
@@ -10788,6 +10815,27 @@ quote_guc_value(const char *value, int flags)
 	 * GUC_UNIT_TIME values.
 	 */
 	return quote_identifier(value);
+}
+
+/*
+ * Replace all occurrences of "needle" with "replacement". We do in-place
+ * replacement, so "replacement" must be smaller or equal to "needle"
+ */
+static void
+strreplace_all(char *str, char *needle, char *replacement)
+{
+	char	   *s;
+
+	s = strstr(str, needle);
+	while (s != NULL)
+	{
+		int			replacementlen = strlen(replacement);
+		char	   *rest = s + strlen(needle);
+
+		memcpy(s, replacement, replacementlen);
+		memmove(s + replacementlen, rest, strlen(rest) + 1);
+		s = strstr(str, needle);
+	}
 }
 #endif
 #include "guc-file.c"
