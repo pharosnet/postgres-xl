@@ -84,3 +84,132 @@ COMMIT;
 CREATE SEQUENCE xc_sequence_tab1_col2_seq START 2344;
 SELECT nextval('xc_sequence_tab1_col2_seq'); -- ok
 DROP SEQUENCE xc_sequence_tab1_col2_seq;
+
+-- As simple test that sequences are dropped properly
+CREATE SEQUENCE xl_s1;
+SELECT nextval('xl_s1');
+DROP SEQUENCE xl_s1;
+
+-- Check if rollback reverses sequence drop properly
+CREATE SEQUENCE xl_s1;
+BEGIN;
+DROP SEQUENCE xl_s1;
+ROLLBACK;
+DROP SEQUENCE xl_s1;
+
+-- Check if commit makes sequence drop permanent
+CREATE SEQUENCE xl_s1;
+BEGIN;
+DROP SEQUENCE xl_s1;
+COMMIT;
+DROP SEQUENCE xl_s1; -- error
+
+-- Drop a sequence and recreate another sequence with the same name in the same
+-- transaction. Check that transaction abort does not cause any surprising
+-- behaviour
+CREATE SEQUENCE xl_s1;
+SELECT nextval('xl_s1');
+SELECT nextval('xl_s1');
+BEGIN;
+DROP SEQUENCE xl_s1;
+CREATE SEQUENCE xl_s1;	-- create again with the same name
+SELECT nextval('xl_s1');-- new value
+ROLLBACK;
+SELECT nextval('xl_s1');-- sequence value changes are not transactional
+DROP SEQUENCE xl_s1;
+
+-- Check sequence renaming works ok
+CREATE SEQUENCE xl_s1;
+SELECT nextval('xl_s1');
+SELECT nextval('xl_s1');
+ALTER SEQUENCE xl_s1 RENAME TO xl_s1_newname;
+SELECT nextval('xl_s1');	-- error
+SELECT nextval('xl_s1_newname');	-- continue with the previous value-space
+DROP SEQUENCE xl_s1;	-- error
+DROP SEQUENCE xl_s1_newname;	-- should be ok
+
+-- A combination of ALTER and RENAME should work ok when transaction aborts
+CREATE SEQUENCE xl_s1;
+SELECT nextval('xl_s1');
+SELECT nextval('xl_s1');
+BEGIN;
+ALTER SEQUENCE xl_s1 RESTART;
+SELECT nextval('xl_s1');	-- restart value
+DROP SEQUENCE xl_s1;
+ROLLBACK;
+SELECT nextval('xl_s1');
+DROP SEQUENCE xl_s1;
+
+-- A combination of ALTER and RENAME should work ok when transacion commits
+CREATE SEQUENCE xl_s1;
+SELECT nextval('xl_s1');
+SELECT nextval('xl_s1');
+BEGIN;
+ALTER SEQUENCE xl_s1 RESTART;
+SELECT nextval('xl_s1');	-- restart value
+ALTER SEQUENCE xl_s1 RENAME TO xl_s1_newname;
+SELECT nextval('xl_s1_newname');
+ALTER SEQUENCE xl_s1_newname RENAME TO xl_s1;
+ALTER SEQUENCE xl_s1 RESTART;
+COMMIT;
+SELECT nextval('xl_s1');
+DROP SEQUENCE xl_s1;
+
+
+-- Multiple RENAMEs in the same transaction
+CREATE SEQUENCE xl_s1;
+SELECT nextval('xl_s1');
+SELECT nextval('xl_s1');
+BEGIN;
+ALTER SEQUENCE xl_s1 RESTART;
+SELECT nextval('xl_s1');	-- restart value
+ALTER SEQUENCE xl_s1 RENAME TO xl_s1_newname;
+SELECT nextval('xl_s1_newname');
+ALTER SEQUENCE xl_s1_newname RENAME TO xl_s1;
+ALTER SEQUENCE xl_s1 RESTART;
+DROP SEQUENCE xl_s1;
+COMMIT;
+SELECT nextval('xl_s1');
+DROP SEQUENCE xl_s1;
+
+-- Multiple RENAMEs in the same transaction and the transaction aborts
+CREATE SEQUENCE xl_s1;
+SELECT nextval('xl_s1');
+SELECT nextval('xl_s1');
+BEGIN;
+ALTER SEQUENCE xl_s1 RESTART;
+SELECT nextval('xl_s1');	-- restart value
+ALTER SEQUENCE xl_s1 RENAME TO xl_s1_newname;
+SELECT nextval('xl_s1_newname');
+ALTER SEQUENCE xl_s1_newname RENAME TO xl_s1;
+ALTER SEQUENCE xl_s1 RESTART;
+DROP SEQUENCE xl_s1;
+ROLLBACK;
+SELECT nextval('xl_s1');
+DROP SEQUENCE xl_s1;
+
+-- Rename back to original value, but abort the transaction
+CREATE SEQUENCE xl_s1;
+SELECT nextval('xl_s1');
+BEGIN;
+ALTER SEQUENCE xl_s1 RENAME TO xl_s1_newname;
+ALTER SEQUENCE xl_s1_newname RENAME TO xl_s1;
+SELECT nextval('xl_s1');
+ROLLBACK;
+SELECT nextval('xl_s1');
+DROP SEQUENCE xl_s1;
+
+-- Rename back to original value
+CREATE SEQUENCE xl_s1;
+SELECT nextval('xl_s1');
+BEGIN;
+ALTER SEQUENCE xl_s1 RENAME TO xl_s1_newname;
+ALTER SEQUENCE xl_s1_newname RENAME TO xl_s1;
+SELECT nextval('xl_s1');
+COMMIT;
+SELECT nextval('xl_s1');
+
+CREATE TABLE xl_testtab (a serial, b int);
+ALTER TABLE xl_testtab RENAME TO xl_testtab_newname;
+\d+ xl_testtab_newname
+

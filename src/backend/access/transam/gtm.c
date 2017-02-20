@@ -16,6 +16,7 @@
 #include "gtm/gtm_client.h"
 #include "access/gtm.h"
 #include "access/transam.h"
+#include "access/xact.h"
 #include "utils/elog.h"
 #include "miscadmin.h"
 #include "pgxc/pgxc.h"
@@ -470,7 +471,8 @@ CreateSequenceGTM(char *seqname, GTM_Sequence increment, GTM_Sequence minval,
 	seqkey.gsk_keylen = strlen(seqname) + 1;
 	seqkey.gsk_key = seqname;
 
-	return conn ? open_sequence(conn, &seqkey, increment, minval, maxval, startval, cycle) : 0;
+	return conn ? open_sequence(conn, &seqkey, increment, minval, maxval,
+			startval, cycle, GetTopTransactionId()) : 0;
 }
 
 /*
@@ -485,7 +487,8 @@ AlterSequenceGTM(char *seqname, GTM_Sequence increment, GTM_Sequence minval,
 	seqkey.gsk_keylen = strlen(seqname) + 1;
 	seqkey.gsk_key = seqname;
 
-	return conn ? alter_sequence(conn, &seqkey, increment, minval, maxval, startval, lastval, cycle, is_restart) : 0;
+	return conn ? alter_sequence(conn, &seqkey, increment, minval, maxval,
+			startval, lastval, cycle, is_restart) : 0;
 }
 
 /*
@@ -596,7 +599,7 @@ DropSequenceGTM(char *name, GTM_SequenceKeyType type)
 	seqkey.gsk_key = name;
 	seqkey.gsk_type = type;
 
-	return conn ? close_sequence(conn, &seqkey) : -1;
+	return conn ? close_sequence(conn, &seqkey, GetTopTransactionId()) : -1;
 }
 
 /*
@@ -612,7 +615,8 @@ RenameSequenceGTM(char *seqname, const char *newseqname)
 	newseqkey.gsk_keylen = strlen(newseqname) + 1;
 	newseqkey.gsk_key = (char *) newseqname;
 
-	return conn ? rename_sequence(conn, &seqkey, &newseqkey) : -1;
+	return conn ? rename_sequence(conn, &seqkey, &newseqkey,
+			GetTopTransactionId()) : -1;
 }
 
 /*

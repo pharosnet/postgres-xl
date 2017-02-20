@@ -56,7 +56,8 @@ static int abort_transaction_multi_internal(GTM_Conn *conn, int txn_count, Globa
 											int *txn_count_out, int *status_out, bool is_backup);
 static int open_sequence_internal(GTM_Conn *conn, GTM_SequenceKey key, GTM_Sequence increment,
 								  GTM_Sequence minval, GTM_Sequence maxval,
-								  GTM_Sequence startval, bool cycle, bool is_backup);
+								  GTM_Sequence startval, bool cycle,
+								  GlobalTransactionId gxid, bool is_backup);
 static int get_next_internal(GTM_Conn *conn, GTM_SequenceKey key,
 				  char *coord_name, int coord_procid, GTM_Sequence range,
 				  GTM_Sequence *result, GTM_Sequence *rangemax, bool is_backup);
@@ -68,11 +69,14 @@ static int commit_transaction_internal(GTM_Conn *conn, GlobalTransactionId gxid,
 		int waited_xid_count,
 		GlobalTransactionId *waited_xids,
 		bool is_backup);
-static int close_sequence_internal(GTM_Conn *conn, GTM_SequenceKey key, bool is_backup);
-static int rename_sequence_internal(GTM_Conn *conn, GTM_SequenceKey key, GTM_SequenceKey newkey, bool is_backup);
+static int close_sequence_internal(GTM_Conn *conn, GTM_SequenceKey key,
+		GlobalTransactionId gxid, bool is_backup);
+static int rename_sequence_internal(GTM_Conn *conn, GTM_SequenceKey key,
+		GTM_SequenceKey newkey, GlobalTransactionId gxid, bool is_backup);
 static int alter_sequence_internal(GTM_Conn *conn, GTM_SequenceKey key, GTM_Sequence increment,
-								   GTM_Sequence minval, GTM_Sequence maxval,
-								   GTM_Sequence startval, GTM_Sequence lastval, bool cycle, bool is_restart, bool is_backup);
+		GTM_Sequence minval, GTM_Sequence maxval,
+		GTM_Sequence startval, GTM_Sequence lastval, bool cycle,
+		bool is_restart, bool is_backup);
 static int node_register_worker(GTM_Conn *conn, GTM_PGXCNodeType type, const char *host, GTM_PGXCNodePort port,
 								char *node_name, char *datafolder,
 								GTM_PGXCNodeStatus status, bool is_backup);
@@ -1139,23 +1143,31 @@ send_failed:
 int
 open_sequence(GTM_Conn *conn, GTM_SequenceKey key, GTM_Sequence increment,
 			  GTM_Sequence minval, GTM_Sequence maxval,
-			  GTM_Sequence startval, bool cycle)
+			  GTM_Sequence startval,
+			  bool cycle,
+			  GlobalTransactionId gxid)
 {
-	return open_sequence_internal(conn, key, increment, minval, maxval, startval, cycle, false);
+	return open_sequence_internal(conn, key, increment, minval, maxval,
+			startval, cycle, gxid, false);
 }
 
 int
 bkup_open_sequence(GTM_Conn *conn, GTM_SequenceKey key, GTM_Sequence increment,
 				   GTM_Sequence minval, GTM_Sequence maxval,
-				   GTM_Sequence startval, bool cycle)
+				   GTM_Sequence startval,
+				   bool cycle,
+				   GlobalTransactionId gxid)
 {
-	return open_sequence_internal(conn, key, increment, minval, maxval, startval, cycle, true);
+	return open_sequence_internal(conn, key, increment, minval, maxval,
+			startval, cycle, gxid, true);
 }
 
 static int
 open_sequence_internal(GTM_Conn *conn, GTM_SequenceKey key, GTM_Sequence increment,
 					   GTM_Sequence minval, GTM_Sequence maxval,
-					   GTM_Sequence startval, bool cycle, bool is_backup)
+					   GTM_Sequence startval, bool cycle,
+					   GlobalTransactionId gxid,
+					   bool is_backup)
 {
 	GTM_Result *res = NULL;
 	time_t finish_time;
@@ -1169,7 +1181,8 @@ open_sequence_internal(GTM_Conn *conn, GTM_SequenceKey key, GTM_Sequence increme
 		gtmpqPutnchar((char *)&minval, sizeof (GTM_Sequence), conn) ||
 		gtmpqPutnchar((char *)&maxval, sizeof (GTM_Sequence), conn) ||
 		gtmpqPutnchar((char *)&startval, sizeof (GTM_Sequence), conn) ||
-		gtmpqPutc(cycle, conn))
+		gtmpqPutc(cycle, conn) ||
+		gtmpqPutnchar((char *)&gxid, sizeof (GlobalTransactionId), conn))
 		goto send_failed;
 
 	/* Finish the message. */
@@ -1204,23 +1217,28 @@ send_failed:
 int
 alter_sequence(GTM_Conn *conn, GTM_SequenceKey key, GTM_Sequence increment,
 			   GTM_Sequence minval, GTM_Sequence maxval,
-			   GTM_Sequence startval, GTM_Sequence lastval, bool cycle, bool is_restart)
+			   GTM_Sequence startval, GTM_Sequence lastval, bool cycle,
+			   bool is_restart)
 {
-	return alter_sequence_internal(conn, key, increment, minval, maxval, startval, lastval, cycle, is_restart, false);
+	return alter_sequence_internal(conn, key, increment, minval, maxval,
+			startval, lastval, cycle, is_restart, false);
 }
 
 int
 bkup_alter_sequence(GTM_Conn *conn, GTM_SequenceKey key, GTM_Sequence increment,
 					GTM_Sequence minval, GTM_Sequence maxval,
-					GTM_Sequence startval, GTM_Sequence lastval, bool cycle, bool is_restart)
+					GTM_Sequence startval, GTM_Sequence lastval, bool cycle,
+					bool is_restart)
 {
-	return alter_sequence_internal(conn, key, increment, minval, maxval, startval, lastval, cycle, is_restart, true);
+	return alter_sequence_internal(conn, key, increment, minval, maxval,
+			startval, lastval, cycle, is_restart, true);
 }
 
 static int
 alter_sequence_internal(GTM_Conn *conn, GTM_SequenceKey key, GTM_Sequence increment,
 						GTM_Sequence minval, GTM_Sequence maxval,
-						GTM_Sequence startval, GTM_Sequence lastval, bool cycle, bool is_restart, bool is_backup)
+						GTM_Sequence startval, GTM_Sequence lastval, bool cycle,
+						bool is_restart, bool is_backup)
 {
 	GTM_Result *res = NULL;
 	time_t finish_time;
@@ -1269,19 +1287,22 @@ send_failed:
 }
 
 int
-close_sequence(GTM_Conn *conn, GTM_SequenceKey key)
+close_sequence(GTM_Conn *conn, GTM_SequenceKey key, GlobalTransactionId gxid)
 {
-	return close_sequence_internal(conn, key, false);
+	return close_sequence_internal(conn, key, gxid, false);
 }
 
 int
-bkup_close_sequence(GTM_Conn *conn, GTM_SequenceKey key)
+bkup_close_sequence(GTM_Conn *conn, GTM_SequenceKey key,
+		GlobalTransactionId gxid)
 {
-	return close_sequence_internal(conn, key, true);
+	return close_sequence_internal(conn, key, gxid, true);
 }
 
 static int
-close_sequence_internal(GTM_Conn *conn, GTM_SequenceKey key, bool is_backup)
+close_sequence_internal(GTM_Conn *conn, GTM_SequenceKey key,
+		GlobalTransactionId gxid,
+		bool is_backup)
 {
 	GTM_Result *res = NULL;
 	time_t finish_time;
@@ -1291,7 +1312,8 @@ close_sequence_internal(GTM_Conn *conn, GTM_SequenceKey key, bool is_backup)
 		gtmpqPutInt(is_backup ? MSG_BKUP_SEQUENCE_CLOSE : MSG_SEQUENCE_CLOSE, sizeof (GTM_MessageType), conn) ||
 		gtmpqPutInt(key->gsk_keylen, 4, conn) ||
 		gtmpqPutnchar(key->gsk_key, key->gsk_keylen, conn) ||
-		gtmpqPutnchar((char *)&key->gsk_type, sizeof(GTM_SequenceKeyType), conn))
+		gtmpqPutnchar((char *)&key->gsk_type, sizeof(GTM_SequenceKeyType), conn) ||
+		gtmpqPutnchar((char *)&gxid, sizeof (GlobalTransactionId), conn))
 		goto send_failed;
 
 	/* Finish the message. */
@@ -1324,19 +1346,22 @@ send_failed:
 }
 
 int
-rename_sequence(GTM_Conn *conn, GTM_SequenceKey key, GTM_SequenceKey newkey)
+rename_sequence(GTM_Conn *conn, GTM_SequenceKey key, GTM_SequenceKey newkey,
+		GlobalTransactionId gxid)
 {
-	return rename_sequence_internal(conn, key, newkey, false);
+	return rename_sequence_internal(conn, key, newkey, gxid, false);
 }
 
 int
-bkup_rename_sequence(GTM_Conn *conn, GTM_SequenceKey key, GTM_SequenceKey newkey)
+bkup_rename_sequence(GTM_Conn *conn, GTM_SequenceKey key,
+		GTM_SequenceKey newkey, GlobalTransactionId gxid)
 {
-	return rename_sequence_internal(conn, key, newkey, true);
+	return rename_sequence_internal(conn, key, newkey, gxid, true);
 }
 
 static int
-rename_sequence_internal(GTM_Conn *conn, GTM_SequenceKey key, GTM_SequenceKey newkey, bool is_backup)
+rename_sequence_internal(GTM_Conn *conn, GTM_SequenceKey key, GTM_SequenceKey newkey,
+		GlobalTransactionId gxid, bool is_backup)
 {
 	GTM_Result *res = NULL;
 	time_t finish_time;
@@ -1347,7 +1372,8 @@ rename_sequence_internal(GTM_Conn *conn, GTM_SequenceKey key, GTM_SequenceKey ne
 		gtmpqPutInt(key->gsk_keylen, 4, conn) ||
 		gtmpqPutnchar(key->gsk_key, key->gsk_keylen, conn)||
 		gtmpqPutInt(newkey->gsk_keylen, 4, conn) ||
-		gtmpqPutnchar(newkey->gsk_key, newkey->gsk_keylen, conn))
+		gtmpqPutnchar(newkey->gsk_key, newkey->gsk_keylen, conn) ||
+		gtmpqPutnchar((char *)&gxid, sizeof (GlobalTransactionId), conn))
 		goto send_failed;
 
 	/* Finish the message. */

@@ -105,12 +105,6 @@ typedef enum
 	GTM_DROP_SEQ
 } GTM_SequenceDropType;
 
-/* Sequence callbacks on GTM */
-extern void register_sequence_rename_cb(char *oldseqname, char *newseqname);
-extern void rename_sequence_cb(GTMEvent event, void *args);
-extern void register_sequence_cb(char *seqname, GTM_SequenceKeyType key, GTM_SequenceDropType type);
-extern void drop_sequence_cb(GTMEvent event, void *args);
-
 extern bool IsTempSequence(Oid relid);
 extern char *GetGlobalSeqName(Relation rel, const char *new_seqname, const char *new_schemaname);
 #endif

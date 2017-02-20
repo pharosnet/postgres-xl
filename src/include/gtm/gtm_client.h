@@ -286,20 +286,24 @@ int report_global_xmin(GTM_Conn *conn, const char *node_name,
  */
 int open_sequence(GTM_Conn *conn, GTM_SequenceKey key, GTM_Sequence increment,
 				  GTM_Sequence minval, GTM_Sequence maxval,
-				  GTM_Sequence startval, bool cycle);
+				  GTM_Sequence startval, bool cycle,
+				  GlobalTransactionId gxid);
 int bkup_open_sequence(GTM_Conn *conn, GTM_SequenceKey key, GTM_Sequence increment,
 					   GTM_Sequence minval, GTM_Sequence maxval,
-					   GTM_Sequence startval, bool cycle);
+					   GTM_Sequence startval, bool cycle,
+					   GlobalTransactionId gxid);
 int alter_sequence(GTM_Conn *conn, GTM_SequenceKey key, GTM_Sequence increment,
 				   GTM_Sequence minval, GTM_Sequence maxval,
 				   GTM_Sequence startval, GTM_Sequence lastval, bool cycle, bool is_restart);
 int bkup_alter_sequence(GTM_Conn *conn, GTM_SequenceKey key, GTM_Sequence increment,
 						GTM_Sequence minval, GTM_Sequence maxval,
 						GTM_Sequence startval, GTM_Sequence lastval, bool cycle, bool is_restart);
-int close_sequence(GTM_Conn *conn, GTM_SequenceKey key);
-int bkup_close_sequence(GTM_Conn *conn, GTM_SequenceKey key);
-int rename_sequence(GTM_Conn *conn, GTM_SequenceKey key, GTM_SequenceKey newkey);
-int bkup_rename_sequence(GTM_Conn *conn, GTM_SequenceKey key, GTM_SequenceKey newkey);
+int close_sequence(GTM_Conn *conn, GTM_SequenceKey key, GlobalTransactionId gxid);
+int bkup_close_sequence(GTM_Conn *conn, GTM_SequenceKey key, GlobalTransactionId gxid);
+int rename_sequence(GTM_Conn *conn, GTM_SequenceKey key,
+						GTM_SequenceKey newkey, GlobalTransactionId gxid);
+int bkup_rename_sequence(GTM_Conn *conn, GTM_SequenceKey key,
+						GTM_SequenceKey newkey, GlobalTransactionId gxid);
 int get_current(GTM_Conn *conn, GTM_SequenceKey key,
 			char *coord_name, int coord_procid, GTM_Sequence *result);
 int get_next(GTM_Conn *conn, GTM_SequenceKey key,

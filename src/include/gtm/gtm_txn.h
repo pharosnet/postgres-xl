@@ -97,6 +97,9 @@ typedef struct GTM_TransactionInfo
 
 	GTM_RWLock				gti_lock;
 	bool					gti_vacuum;
+	gtm_List				*gti_created_seqs;
+	gtm_List				*gti_dropped_seqs;
+	gtm_List				*gti_altered_seqs;
 } GTM_TransactionInfo;
 
 #define GTM_MAX_2PC_NODES				16
@@ -247,4 +250,9 @@ void ProcessBkupBeginTransactionGetGXIDCommandMulti(Port *myport, StringInfo mes
 void ProcessGetSnapshotCommand(Port *myport, StringInfo message, bool get_gxid);
 void ProcessGetSnapshotCommandMulti(Port *myport, StringInfo message);
 void GTM_FreeSnapshotData(GTM_Snapshot snapshot);
+void GTM_RememberDroppedSequence(GlobalTransactionId gxid, void *seq);
+void GTM_ForgetCreatedSequence(GlobalTransactionId gxid, void *seq);
+void GTM_RememberCreatedSequence(GlobalTransactionId gxid, void *seq);
+void GTM_RememberAlteredSequence(GlobalTransactionId gxid, void *seq);
+
 #endif

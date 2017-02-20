@@ -432,8 +432,6 @@ doRename(const ObjectAddress *object, const char *oldname, const char *newname)
 							(errcode(ERRCODE_CONNECTION_FAILURE),
 							 errmsg("GTM error, could not rename sequence")));
 
-				/* Register a rename callback in case transaction is dropped */
-				register_sequence_rename_cb(seqname, newseqname);
 
 				pfree(seqname);
 				pfree(newseqname);
@@ -1286,14 +1284,7 @@ doDeletion(const ObjectAddress *object, int flags)
 							 */
 							relseq = relation_open(object->objectId, AccessShareLock);
 							seqname = GetGlobalSeqName(relseq, NULL, NULL);
-
-							/*
-							 * Sequence is not immediately removed on GTM, but at the end
-							 * of the transaction block. In case this transaction fails,
-							 * all the data remains intact on GTM.
-							 */
-							register_sequence_cb(seqname, GTM_SEQ_FULL_NAME, GTM_DROP_SEQ);
-
+							DropSequenceGTM(seqname, GTM_SEQ_FULL_NAME);
 							pfree(seqname);
 
 							/* Then close the relation opened previously */

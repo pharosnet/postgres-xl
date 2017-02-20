@@ -834,6 +834,67 @@ init_GTM_TransactionInfo(GTM_TransactionInfo *gtm_txninfo,
 static void
 clean_GTM_TransactionInfo(GTM_TransactionInfo *gtm_txninfo)
 {
+	gtm_ListCell *lc;
+
+	if (gtm_txninfo->gti_state == GTM_TXN_ABORT_IN_PROGRESS)
+	{
+		/*
+		 * First drop any sequences created in this transaction. We must do
+		 * this before restoring any dropped sequences because the new sequence
+		 * may have reused old name
+		 */
+		gtm_foreach(lc, gtm_txninfo->gti_created_seqs)
+		{
+			GTM_SeqRemoveCreated(gtm_lfirst(lc));
+		}
+
+		/*
+		 * Restore dropped sequences to their original state
+		 */
+		gtm_foreach(lc, gtm_txninfo->gti_dropped_seqs)
+		{
+			GTM_SeqRestoreDropped(gtm_lfirst(lc));
+		}
+
+		/*
+		 * Restore altered sequences to their original state
+		 */
+		gtm_foreach(lc, gtm_txninfo->gti_altered_seqs)
+		{
+			GTM_SeqRestoreAltered(gtm_lfirst(lc));
+		}
+
+
+	}
+	else if (gtm_txninfo->gti_state == GTM_TXN_COMMIT_IN_PROGRESS)
+	{
+		/*
+		 * Remove sequences dropped in this transaction permanently. No action
+		 * needed for sequences created in this transaction
+		 */
+		gtm_foreach(lc, gtm_txninfo->gti_dropped_seqs)
+		{
+			GTM_SeqRemoveDropped(gtm_lfirst(lc));
+		}
+		/*
+		 * Remove original copies of sequences altered in this transaction
+		 * permanently. The altered copies stay.
+		 */
+		gtm_foreach(lc, gtm_txninfo->gti_altered_seqs)
+		{
+			GTM_SeqRemoveAltered(gtm_lfirst(lc));
+		}
+
+	}
+
+	gtm_list_free(gtm_txninfo->gti_created_seqs);
+	gtm_list_free(gtm_txninfo->gti_dropped_seqs);
+	gtm_list_free(gtm_txninfo->gti_altered_seqs);
+
+	gtm_txninfo->gti_dropped_seqs = gtm_NIL;
+	gtm_txninfo->gti_created_seqs = gtm_NIL;
+	gtm_txninfo->gti_altered_seqs = gtm_NIL;
+
 	gtm_txninfo->gti_state = GTM_TXN_ABORTED;
 	gtm_txninfo->gti_in_use = false;
 	gtm_txninfo->gti_snapshot_set = false;
@@ -2764,6 +2825,72 @@ GTM_GetLatestCompletedXID(void)
 {
 	return GTMTransactions.gt_latestCompletedXid;
 }
+
+void
+GTM_ForgetCreatedSequence(GlobalTransactionId gxid, void *seq)
+{
+	GTM_TransactionInfo *gtm_txninfo;
+	GTM_TransactionHandle txn = GTM_GXIDToHandle(gxid);
+   
+	if (txn == InvalidTransactionHandle)
+		return;
+
+	gtm_txninfo = GTM_HandleToTransactionInfo(txn);
+	gtm_txninfo->gti_created_seqs =
+		gtm_list_delete(gtm_txninfo->gti_created_seqs, seq);
+}
+
+/*
+ * Remember sequence created by transaction 'gxid'.
+ *
+ * This should be removed from the global data structure if the transaction
+ * aborts (see GTM_SeqRemoveCreated). If the sequence is later dropped in the
+ * same transaction, we remove it from the global structure as well as forget
+ * tracking (see GTM_ForgetCreatedSequence). If the transaction commits, just
+ * forget about this tracked sequence.
+ */
+void
+GTM_RememberCreatedSequence(GlobalTransactionId gxid, void *seq)
+{
+	GTM_TransactionInfo *gtm_txninfo;
+	GTM_TransactionHandle txn = GTM_GXIDToHandle(gxid);
+   
+	if (txn == InvalidTransactionHandle)
+		return;
+
+	gtm_txninfo = GTM_HandleToTransactionInfo(txn);
+	gtm_txninfo->gti_created_seqs =
+		gtm_lappend(gtm_txninfo->gti_created_seqs, seq);
+}
+
+void
+GTM_RememberDroppedSequence(GlobalTransactionId gxid, void *seq)
+{
+	GTM_TransactionInfo *gtm_txninfo;
+	GTM_TransactionHandle txn = GTM_GXIDToHandle(gxid);
+   
+	if (txn == InvalidTransactionHandle)
+		return;
+
+	gtm_txninfo = GTM_HandleToTransactionInfo(txn);
+	gtm_txninfo->gti_dropped_seqs =
+		gtm_lappend(gtm_txninfo->gti_dropped_seqs, seq);
+}
+
+void
+GTM_RememberAlteredSequence(GlobalTransactionId gxid, void *seq)
+{
+	GTM_TransactionInfo *gtm_txninfo;
+	GTM_TransactionHandle txn = GTM_GXIDToHandle(gxid);
+   
+	if (txn == InvalidTransactionHandle)
+		return;
+
+	gtm_txninfo = GTM_HandleToTransactionInfo(txn);
+	gtm_txninfo->gti_altered_seqs = gtm_lcons(seq,
+			gtm_txninfo->gti_altered_seqs);
+}
+
 
 /*
  * TODO

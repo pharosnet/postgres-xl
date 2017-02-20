@@ -31,6 +31,7 @@ typedef struct GTM_SeqLastVal
 typedef struct GTM_SeqInfo
 {
 	GTM_SequenceKey	gs_key;
+	GTM_SequenceKey	gs_oldkey;
 	GTM_Sequence	gs_value;
 	GTM_Sequence	gs_backedUpValue;
 	GTM_Sequence	gs_init_value;
@@ -42,6 +43,7 @@ typedef struct GTM_SeqInfo
 	GTM_Sequence	gs_max_value;
 	bool			gs_cycle;
 	bool			gs_called;
+	GlobalTransactionId	gs_created_gxid;
 
 	int32			gs_ref_count;
 	int32			gs_state;
@@ -70,7 +72,8 @@ int GTM_SeqOpen(GTM_SequenceKey seqkey,
 			GTM_Sequence minval,
 			GTM_Sequence maxval,
 			GTM_Sequence startval,
-			bool cycle);
+			bool cycle,
+			GlobalTransactionId gxid);
 int GTM_SeqAlter(GTM_SequenceKey seqkey,
 				 GTM_Sequence increment_by,
 				 GTM_Sequence minval,
@@ -79,8 +82,9 @@ int GTM_SeqAlter(GTM_SequenceKey seqkey,
 				 GTM_Sequence lastval,
 				 bool cycle,
 				 bool is_restart);
-int GTM_SeqClose(GTM_SequenceKey seqkey);
-int GTM_SeqRename(GTM_SequenceKey seqkey, GTM_SequenceKey newseqkey);
+int GTM_SeqClose(GTM_SequenceKey seqkey, GlobalTransactionId gxid);
+int GTM_SeqRename(GTM_SequenceKey seqkey, GTM_SequenceKey newseqkey,
+				  GlobalTransactionId gxid);
 int GTM_SeqGetNext(GTM_SequenceKey seqkey, char *coord_name,
 			   int coord_procid, GTM_Sequence range,
 			   GTM_Sequence *result, GTM_Sequence *rangemax);
@@ -117,4 +121,9 @@ void GTM_CleanupSeqSession(char *coord_name, int coord_procid);
 
 bool GTM_NeedSeqRestoreUpdate(GTM_SequenceKey seqkey);
 void GTM_WriteRestorePointSeq(FILE *f);
+void GTM_SeqRemoveCreated(void *seqinfo);
+void GTM_SeqRestoreDropped(void *seqinfo);
+void GTM_SeqRemoveDropped(void *seqinfo);
+void GTM_SeqRestoreAltered(void *ptr);
+void GTM_SeqRemoveAltered(void *seqinfo);
 #endif
